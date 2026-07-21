@@ -1,26 +1,26 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\UndeclaredOccurrenceOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\UndeclaredOccurrenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -73,8 +73,8 @@ final class SchedulesTest extends TestCase {
 		$this->rig      = EngineRig::set_up( self::NOW );
 		$this->client_a = $this->rig->client( 'owner-a' );
 		$this->client_b = $this->rig->client( 'owner-b' );
-		$this->client_a->tasks()->register( new RecordingTask( 'refresh-index' ) );
-		$this->client_b->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$this->client_a->jobs()->register( new RecordingJob( 'refresh-index' ) );
+		$this->client_b->jobs()->register( new RecordingJob( 'refresh-index' ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
 		$this->reset_backend_observations();
 	}
@@ -189,6 +189,51 @@ final class SchedulesTest extends TestCase {
 	}
 
 	/**
+	 * Anchored schedules seed at the first strictly future instant on their UTC phase grid.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_seeds_anchored_schedules_on_their_utc_phase_grid(): void {
+		$phase    = new Schedule( 'phase', Recurrence::every_anchored( 300, 50 ), 'refresh-index' );
+		$boundary = new Schedule( 'boundary', Recurrence::every_anchored( 300, 200 ), 'refresh-index' );
+		$zero     = new Schedule( 'zero', Recurrence::every_anchored( 300, 0 ), 'refresh-index' );
+		$future   = new Schedule( 'future', Recurrence::every_anchored( 300, 250 ), 'refresh-index' );
+
+		$result = $this->client_a->schedules()->sync( array( $phase, $boundary, $zero, $future ) );
+
+		self::assertInstanceOf( Success::class, $result );
+		$entries = \array_column( $this->owner_entries( 'owner-a' ), null, 'name' );
+		self::assertSame( 1_700_000_150, $entries['owner-a:phase']['next_due'] ?? null );
+		self::assertSame( self::NOW + 300, $entries['owner-a:boundary']['next_due'] ?? null );
+		self::assertSame( 1_700_000_100, $entries['owner-a:zero']['next_due'] ?? null );
+		self::assertSame( self::NOW - ( self::NOW % 300 ) + 250, $entries['owner-a:future']['next_due'] ?? null );
+	}
+
+	/**
+	 * An anchored seed that exceeds positive Unix seconds fails before backend mutation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_rejects_an_overflowing_anchored_seed(): void {
+		$this->rig->clock()->timestamp = \PHP_INT_MAX - 5;
+		$anchor                        = 1;
+		$schedule                      = new Schedule( 'overflow', Recurrence::every_anchored( 10, $anchor ), 'refresh-index' );
+
+		$result = $this->client_a->schedules()->sync( array( $schedule ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertSame( ErrorCode::PayloadRejected, $result->error->code );
+		self::assertSame( array(), $this->write_calls() );
+	}
+
+	/**
 	 * One sync replaces a same-backend surplus and leaves the repaired chain untouched thereafter.
 	 *
 	 * @load-bearing concurrency
@@ -251,7 +296,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( array(), $backend->calls );
 		$backend->assert_not_scheduled( 'owner-a:nightly' );
 		self::assertSame( $before, $this->raw_registry() );
@@ -320,8 +365,8 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
-		self::assertSame( 'Schedule registry option row "a8csp_bgte_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
 		self::assertSame(
 			array(
 				'owner'       => 'owner-a',
@@ -351,7 +396,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 		self::assertSame( array(), $this->write_calls() );
@@ -376,7 +421,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $result->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $result->error->code );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $before, $this->raw_registry() );
 		self::assertSame( 300, $this->owner_entries( 'owner-a' )[0]['recurrence'] ?? null );
@@ -398,7 +443,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( ApiError::class, $failed->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $failed->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $failed->error->code );
 		self::assertSame( array( 'owner-a:nightly' ), \array_column( $this->owner_entries( 'owner-a' ), 'name' ) );
 
 		unset( $this->rig->backend()->results['schedule_recurring'] );
@@ -430,7 +475,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( ApiError::class, $failed->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $failed->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $failed->error->code );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
 		$failed_entry = $this->owner_entries( 'owner-a' )[0];
 		self::assertSame( 600, $failed_entry['recurrence'] ?? null );
@@ -469,7 +514,7 @@ final class SchedulesTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( ApiError::class, $failed->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $failed->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $failed->error->code );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $fixture[1], $this->raw_registry() );
 		$this->rig->backend()->assert_not_scheduled( 'owner-a:nightly' );
@@ -534,7 +579,7 @@ final class SchedulesTest extends TestCase {
 	 * @param   int      $next_due  Next occurrence timestamp.
 	 * @param   int|null $last_fired Last dispatched timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
 	private static function owner_fixture( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
 		$identity = 'owner-a:' . $schedule->name;
@@ -544,7 +589,7 @@ final class SchedulesTest extends TestCase {
 			'declarations'  => array(
 				$identity => array(
 					'schedule' => $schedule,
-					'task'     => 'owner-a:refresh-index',
+					'job'      => 'owner-a:refresh-index',
 				),
 			),
 			'registrations' => array( $identity => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due, $last_fired ) ),

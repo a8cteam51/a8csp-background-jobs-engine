@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\LatestRunPointer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

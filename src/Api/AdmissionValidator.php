@@ -1,14 +1,16 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Enforces shared command and schedule admission boundaries.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -93,7 +95,7 @@ final class AdmissionValidator {
 		}
 
 		return new ApiError(
-			ApiErrorCode::PayloadRejected,
+			ErrorCode::PayloadRejected,
 			\sprintf( '%1$s arguments contain %2$d JSON bytes; the limit is %3$d bytes.', $context, $actual_bytes, self::MAX_ARGUMENTS_BYTES )
 		);
 	}

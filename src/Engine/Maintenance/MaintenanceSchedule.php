@@ -1,13 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -87,15 +86,15 @@ final readonly class MaintenanceSchedule {
 		}
 
 		try {
-			$owner                = WorkIdentity::ENGINE_OWNER;
-			$schedule_identity    = WorkIdentity::compose( $owner, MaintenanceTask::NAME, true );
-			$maintenance_schedule = new Schedule( MaintenanceTask::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceTask::NAME, array(), OverlapPolicy::Skip, CatchUpPolicy::RunOnce );
+			$owner                = JobIdentity::ENGINE_OWNER;
+			$schedule_identity    = JobIdentity::compose( $owner, MaintenanceJob::NAME, true );
+			$maintenance_schedule = new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), CatchUpPolicy::RunOnce );
 			$result               = $this->schedules->sync_owner(
 				$owner,
 				array(
 					$schedule_identity => array(
 						'schedule' => $maintenance_schedule,
-						'task'     => $schedule_identity,
+						'job'      => $schedule_identity,
 					),
 				)
 			);

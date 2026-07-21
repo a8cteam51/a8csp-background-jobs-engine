@@ -1,13 +1,13 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Error;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\ApiErrorMapper;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -56,14 +56,14 @@ final class SchedulingErrorTest extends TestCase {
 	 */
 	public function test_carries_code_message_and_context_unchanged(): void {
 		$context = array(
-			'hook'     => 'a8csp_background_tasks/run_task',
+			'hook'     => 'a8csp_jobs_engine/run_job',
 			'priority' => 10,
 		);
 		$result  = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $result->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $result->error->code );
 		self::assertSame( 'Retry after the backend becomes available.', $result->error->message );
 		self::assertSame( $context, $result->error->context );
 	}
@@ -81,7 +81,7 @@ final class SchedulingErrorTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::BackendUnavailable, $result->error->code );
+		self::assertSame( ErrorCode::BackendUnavailable, $result->error->code );
 		self::assertSame( 'Load a supported scheduling backend.', $result->error->message );
 		self::assertSame( array(), $result->error->context );
 	}
@@ -99,7 +99,7 @@ final class SchedulingErrorTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 	}
@@ -117,7 +117,7 @@ final class SchedulingErrorTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 	}
@@ -128,13 +128,13 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_corruption_surfaces_as_storage_failure(): void {
-		$option_name = 'a8csp_bgte_schedule_registrations_owner-a';
+		$option_name = 'a8csp_bgje_schedule_registrations_owner-a';
 		$result      = ApiErrorMapper::map( new Failure( SchedulingError::registry_corrupt( 'owner-a', $option_name ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
-		self::assertSame( 'Schedule registry option row "a8csp_bgte_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
 		self::assertSame(
 			array(
 				'owner'       => 'owner-a',
@@ -160,13 +160,13 @@ final class SchedulingErrorTest extends TestCase {
 	 */
 	#[DataProvider( 'scheduling_failure_codes' )]
 	public function test_scheduling_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_background_tasks/run_task' ) ) ) );
+		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_jobs_engine/run_job' ) ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
+		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Correct the scheduling request and retry.', $result->error->message );
-		self::assertSame( array( 'hook' => 'a8csp_background_tasks/run_task' ), $result->error->context );
+		self::assertSame( array( 'hook' => 'a8csp_jobs_engine/run_job' ), $result->error->context );
 	}
 
 	// endregion.

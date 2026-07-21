@@ -1,17 +1,17 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\CliHarness;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 
 require_once __DIR__ . '/../bootstrap.php';
 
@@ -33,7 +33,7 @@ try {
 		case 'schedules-dormant':
 			foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
 				$client = $rig->client( $owner );
-				$client->tasks()->register( new RecordingTask( 'refresh' ) );
+				$client->jobs()->register( new RecordingJob( 'refresh' ) );
 				$result = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 				if ( ! $result instanceof Success ) {
 					throw new \LogicException( 'The CLI worker could not register its schedule fixture.' );
@@ -47,8 +47,8 @@ try {
 
 		case 'runs':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->tasks()->register( new RecordingTask( 'email-digest' ) );
-			$enqueued = $client->tasks()->enqueue( 'email-digest' );
+			$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+			$enqueued = $client->jobs()->enqueue( 'email-digest' );
 			if ( ! $enqueued instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not register its run fixture.' );
 			}
@@ -57,14 +57,14 @@ try {
 
 		case 'schedules-remove-declined':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->tasks()->register( new RecordingTask( 'refresh' ) );
+			$client->jobs()->register( new RecordingJob( 'refresh' ) );
 			$synced = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 			if ( ! $synced instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not seed schedule-removal fixtures.' );
 			}
 			$before = array(
 				'wpdb'    => $rig->wpdb()->rows,
-				'options' => $GLOBALS['a8csp_bgte_test_options'],
+				'options' => $GLOBALS['a8csp_bgje_test_options'],
 				'pending' => $rig->backend()->pending_actions,
 			);
 
@@ -76,7 +76,7 @@ try {
 				static function () use ( $rig, $before, $probe ): void {
 					$after   = array(
 						'wpdb'    => $rig->wpdb()->rows,
-						'options' => $GLOBALS['a8csp_bgte_test_options'],
+						'options' => $GLOBALS['a8csp_bgje_test_options'],
 						'pending' => $rig->backend()->pending_actions,
 					);
 					$encoded = \wp_json_encode(
@@ -98,9 +98,9 @@ try {
 
 		case 'failed-runs':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->tasks()->register( new RecordingTask( 'email-digest' ) );
+			$client->jobs()->register( new RecordingJob( 'email-digest' ) );
 			foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
-				$failure        = new RunFailure( identity: $identity, run_id: 'run-1', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+				$failure        = new RunFailure( identity: $identity, run_id: 'run-1', attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
 				[ $name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( $now - 60, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.', \RuntimeException::class ) );
 				$rig->wpdb()->put( $name, $raw );
 			}
@@ -109,17 +109,17 @@ try {
 
 		case 'reset-declined':
 			$client = $rig->client( 'reset-tests' );
-			$client->tasks()->register( new RecordingTask( 'refresh' ) );
-			$enqueued = $client->tasks()->enqueue( 'refresh', array( 'site_id' => 7 ) );
+			$client->jobs()->register( new RecordingJob( 'refresh' ) );
+			$enqueued = $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) );
 			$synced   = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 			if ( ! $enqueued instanceof Success || ! $synced instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not seed reset fixtures.' );
 			}
-			$rig->backend()->pending_actions[ ActionDeliveries::RUN_TASK_HOOK ]  = 2;
-			$rig->backend()->pending_actions[ ActionDeliveries::RUN_CHUNK_HOOK ] = 3;
+			$rig->backend()->pending_actions[ ActionDeliveries::RUN_JOB_HOOK ]  = 2;
+			$rig->backend()->pending_actions[ ActionDeliveries::CONTINUE_HOOK ] = 3;
 			$before = array(
 				'wpdb'    => $rig->wpdb()->rows,
-				'options' => $GLOBALS['a8csp_bgte_test_options'],
+				'options' => $GLOBALS['a8csp_bgje_test_options'],
 				'pending' => $rig->backend()->pending_actions,
 			);
 
@@ -131,7 +131,7 @@ try {
 				static function () use ( $rig, $before, $probe ): void {
 					$after   = array(
 						'wpdb'    => $rig->wpdb()->rows,
-						'options' => $GLOBALS['a8csp_bgte_test_options'],
+						'options' => $GLOBALS['a8csp_bgje_test_options'],
 						'pending' => $rig->backend()->pending_actions,
 					);
 					$encoded = \wp_json_encode(

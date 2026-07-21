@@ -3,7 +3,7 @@
 /**
  * Fails selected authoritative option-row reads after command setup completes.
  *
- * @package A8C\SpecialProjects\BackgroundTasksEngine
+ * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
 \WP_CLI::add_hook(
@@ -15,9 +15,9 @@
 		}
 
 		$failed_option_names = array(
-			'a8csp_bgte_failed_runs_integration-cli-command:integration-cli-command-list-store',
-			'a8csp_bgte_failed_runs_integration-cli-inspection-owner:integration-cli-inspection-task',
-			'a8csp_bgte_schedule_registrations_integration-cli-inspection-owner',
+			'a8csp_bgje_failed_runs_integration-cli-command:integration-cli-command-list-store',
+			'a8csp_bgje_failed_runs_integration-cli-inspection-owner:integration-cli-inspection-job',
+			'a8csp_bgje_schedule_registrations_integration-cli-inspection-owner',
 		);
 		$wpdb->suppress_errors();
 		\add_filter(
@@ -26,7 +26,7 @@
 				if ( \str_contains( $query, 'SELECT `option_value`' ) ) {
 					foreach ( $failed_option_names as $option_name ) {
 						if ( \str_contains( $query, $option_name ) ) {
-							return 'SELECT * FROM `a8csp_bgte_missing_option_rows`';
+							return 'SELECT * FROM `a8csp_bgje_missing_option_rows`';
 						}
 					}
 				}

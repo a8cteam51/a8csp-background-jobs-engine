@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 /**
  * Restores WordPress hook registrations, invocation counts, and the active filter stack after each integration test.

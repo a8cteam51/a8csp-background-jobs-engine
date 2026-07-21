@@ -1,17 +1,17 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Maintenance;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Maintenance;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceSchedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceSchedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -23,7 +23,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( MaintenanceSchedule::class )]
-#[UsesClass( MaintenanceTask::class )]
+#[UsesClass( MaintenanceJob::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( ScheduleRegistry::class )]
@@ -66,7 +66,7 @@ final class MaintenanceScheduleTest extends TestCase {
 		$engine = Component::get_engine();
 		self::assertNotNull( $engine );
 		$maintenance = new MaintenanceSchedule( $engine->schedules, $this->rig->logger() );
-		$option_name = ScheduleRegistry::option_name( WorkIdentity::ENGINE_OWNER );
+		$option_name = ScheduleRegistry::option_name( JobIdentity::ENGINE_OWNER );
 		$poison      = 'poison-maintenance-registry-row';
 		$this->rig->wpdb()->put( $option_name, $poison );
 		$this->rig->backend()->scheduled = true;
@@ -94,7 +94,7 @@ final class MaintenanceScheduleTest extends TestCase {
 		self::assertIsString( $raw );
 		$registrations = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $registrations );
-		self::assertArrayHasKey( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), $registrations );
+		self::assertArrayHasKey( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $registrations );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_values( \array_filter( \array_column( $this->rig->backend()->calls, 'verb' ), static fn ( string $verb ): bool => \in_array( $verb, array( 'unschedule', 'schedule_recurring' ), true ) ) ) );
 		self::assertSame( array(), $this->rig->logger()->records );
 	}

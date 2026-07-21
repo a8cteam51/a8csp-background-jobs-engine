@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -56,7 +56,7 @@ final class ActionSchedulerAbsenceTest extends IntegrationTestCase {
 		self::assertTrue( $backend->is_absent() );
 		self::assertFalse( $backend->is_ready() );
 
-		$result = $backend->enqueue_async( 'a8csp_bgte/integration/action_scheduler_absence' );
+		$result = $backend->enqueue_async( 'a8csp_bgje/integration/action_scheduler_absence' );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( SchedulingError::class, $result->error );
 		self::assertSame( SchedulingErrorReason::BackendNotReady, $result->error->reason );

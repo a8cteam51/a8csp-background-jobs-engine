@@ -1,17 +1,20 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -40,6 +43,7 @@ final class ApiTest extends TestCase {
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
+		require_once __DIR__ . '/wp-cron-stubs.php';
 		EngineRig::bootstrap();
 	}
 
@@ -80,38 +84,34 @@ final class ApiTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Access before init fails with the earliest safe lifecycle contract.
+	 * Access before init returns a lazy owner-bound handle.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_front_door_is_unavailable_before_init(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array();
+	public function test_front_door_is_available_before_init(): void {
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array();
 
-		$this->expectException( \LogicException::class );
-		$this->expectExceptionMessageIs( 'The background tasks client is available from the init hook; call a8csp_bgte() from an init callback or later.' );
-
-		\a8csp_bgte( 'consumer-plugin' );
+		self::assertInstanceOf( Engine::class, \a8csp_bgje( 'consumer-plugin' ) );
 	}
 
 	/**
-	 * Access during and after init returns a working owner-bound facade.
+	 * Access during and after init returns lazy owner-bound handles.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_front_door_flows_during_and_after_init(): void {
-		$GLOBALS['a8csp_bgte_test_doing_actions'] = array( 'init' );
-		$during                                   = \a8csp_bgte( 'during-init' );
-		$during->tasks()->register( new RecordingTask( 'sync' ) );
-		self::assertInstanceOf( Success::class, $during->tasks()->enqueue( 'sync' ) );
+	public function test_front_door_is_independent_of_init_progress(): void {
+		$GLOBALS['a8csp_bgje_test_doing_actions'] = array( 'init' );
+		$during                                   = \a8csp_bgje( 'during-init' );
+		self::assertInstanceOf( Engine::class, $during );
 
-		$GLOBALS['a8csp_bgte_test_doing_actions'] = array();
-		self::assertInstanceOf( Client::class, \a8csp_bgte( 'after-init' ) );
+		$GLOBALS['a8csp_bgje_test_doing_actions'] = array();
+		self::assertInstanceOf( Engine::class, \a8csp_bgje( 'after-init' ) );
 	}
 
 	/**
@@ -122,27 +122,27 @@ final class ApiTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_two_owners_run_the_same_local_task_name_independently(): void {
-		$left       = $this->rig->client( 'owner-left' );
-		$right      = $this->rig->client( 'owner-right' );
-		$left_task  = new RecordingTask( 'sync' );
-		$right_task = new RecordingTask( 'sync' );
-		$left->tasks()->register( $left_task );
-		$right->tasks()->register( $right_task );
+	public function test_two_owners_run_the_same_local_job_name_independently(): void {
+		$left      = $this->rig->client( 'owner-left' );
+		$right     = $this->rig->client( 'owner-right' );
+		$left_job  = new RecordingJob( 'sync' );
+		$right_job = new RecordingJob( 'sync' );
+		$left->jobs()->register( $left_job );
+		$right->jobs()->register( $right_job );
 
-		self::assertInstanceOf( Success::class, $left->tasks()->enqueue( 'sync', array( 'owner' => 'left' ) ) );
-		self::assertInstanceOf( Success::class, $right->tasks()->enqueue( 'sync', array( 'owner' => 'right' ) ) );
+		self::assertInstanceOf( Success::class, $left->jobs()->enqueue( 'sync', array( 'owner' => 'left' ) ) );
+		self::assertInstanceOf( Success::class, $right->jobs()->enqueue( 'sync', array( 'owner' => 'right' ) ) );
 		$this->rig->run_due();
 		$this->rig->run_due();
 
-		self::assertSame( array( array( 'owner' => 'left' ) ), $left_task->calls );
-		self::assertSame( array( array( 'owner' => 'right' ) ), $right_task->calls );
+		self::assertSame( array( array( 'owner' => 'left' ) ), $left_job->calls );
+		self::assertSame( array( array( 'owner' => 'right' ) ), $right_job->calls );
 		self::assertInstanceOf( Success::class, $left->runs()->last_completed_run_id( 'sync' ) );
 		self::assertInstanceOf( Success::class, $right->runs()->last_completed_run_id( 'sync' ) );
 	}
 
 	/**
-	 * Every invalid or reserved owner is rejected at the single public front door.
+	 * Every invalid or reserved owner is rejected by the first handle operation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -153,9 +153,10 @@ final class ApiTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_owners' )]
 	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner ): void {
-		$this->expectException( \InvalidArgumentException::class );
+		$result = \a8csp_bgje( $owner )->enqueue( 'sync' );
 
-		\a8csp_bgte( $owner );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( 'invalid_argument', $result->get_error_code() );
 	}
 
 	/**
@@ -169,9 +170,9 @@ final class ApiTest extends TestCase {
 	public function test_concept_facades_map_internal_failures_to_public_codes(): void {
 		$client = $this->rig->client( 'consumer-plugin' );
 
-		self::assert_api_failure( $client->tasks()->enqueue( 'missing-task' ), ApiErrorCode::UnknownWork, array( 'name' ) );
-		self::assert_api_failure( $client->batches()->start( 'missing-batch' ), ApiErrorCode::UnknownWork, array( 'name' ) );
-		self::assert_api_failure( $client->schedules()->dispatch_now( 'missing-schedule' ), ApiErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
+		self::assert_api_failure( $client->jobs()->enqueue( 'missing-job' ), ErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->chunked_jobs()->start( 'missing-chunked-job' ), ErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->schedules()->dispatch_now( 'missing-schedule' ), ErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
 	}
 
 	/**
@@ -184,13 +185,13 @@ final class ApiTest extends TestCase {
 	 */
 	public function test_last_completed_run_id_retains_the_latest_successful_terminal(): void {
 		$client = $this->rig->client( 'consumer-plugin' );
-		$task   = new RecordingTask( 'sync' );
-		$client->tasks()->register( $task );
+		$job    = new RecordingJob( 'sync' );
+		$client->jobs()->register( $job );
 		$first = $this->enqueue_and_run( $client, array( 'sequence' => 1 ) );
 		$last  = $this->enqueue_and_run( $client, array( 'sequence' => 2 ) );
 		self::assertNotSame( $first, $last );
 
-		$task->throwable = new NonRetryableException( 'Terminal failure.' );
+		$job->throwable = new NonRetryableException( 'Terminal failure.' );
 		$this->enqueue_and_run( $client, array( 'sequence' => 3 ) );
 		$result = $client->runs()->last_completed_run_id( 'sync' );
 
@@ -208,25 +209,96 @@ final class ApiTest extends TestCase {
 	 */
 	public function test_last_completed_run_id_inside_a_completed_hook_returns_the_previous_completion(): void {
 		$client = $this->rig->client( 'consumer-plugin' );
-		$client->tasks()->register( new RecordingTask( 'sync' ) );
+		$client->jobs()->register( new RecordingJob( 'sync' ) );
 		$observed  = array();
-		$callbacks = $GLOBALS['a8csp_bgte_test_action_callbacks'] ?? null;
+		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
-		$callbacks['a8csp_background_tasks/completed/consumer-plugin:sync'] = static function () use ( $client, &$observed ): void {
+		$callbacks['a8csp_jobs_engine/completed/consumer-plugin:sync'] = static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( $client, &$observed ): void {
 			$result = $client->runs()->last_completed_run_id( 'sync' );
 			self::assertInstanceOf( Success::class, $result );
-			$observed[] = $result->value;
+			$observed[] = array( $previous_completed_run_id, $result->value );
 		};
 
-		$GLOBALS['a8csp_bgte_test_action_callbacks'] = $callbacks;
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
 
 		$first  = $this->enqueue_and_run( $client, array( 'sequence' => 1 ) );
 		$second = $this->enqueue_and_run( $client, array( 'sequence' => 2 ) );
 
-		self::assertSame( array( null, $first ), $observed );
+		self::assertSame( array( array( null, null ), array( $first, $first ) ), $observed );
 		$result = $client->runs()->last_completed_run_id( 'sync' );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $second, $result->value );
+	}
+
+	/**
+	 * Callback replay retains the predecessor frozen before a later same-identity completion.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Five scripted marker-CAS losses leave a production terminal row for real maintenance replay; no public result exposes the callback marker or frozen terminal snapshot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_callback_replay_uses_the_frozen_previous_completion(): void {
+		$identity = 'consumer-plugin:sync';
+		$client   = $this->rig->client( 'consumer-plugin' );
+		$job      = new RecordingJob( 'sync' );
+		$client->jobs()->register( $job );
+		$seed_run_id = $this->enqueue_and_run( $client, array( 'sequence' => 'seed' ) );
+
+		++$this->rig->clock()->timestamp;
+		$target = $client->jobs()->enqueue( 'sync', array( 'sequence' => 'target' ) );
+		self::assertInstanceOf( Success::class, $target );
+		self::assertIsString( $target->value );
+		$target_run_id        = $target->value;
+		$intervening_run_id   = null;
+		$target_callback_runs = 0;
+		$job->on_completed    = function ( string $run_id ) use ( $client, $target_run_id, &$intervening_run_id, &$target_callback_runs ): void {
+			if ( $target_run_id !== $run_id || 1 !== ++$target_callback_runs ) {
+				return;
+			}
+
+			++$this->rig->clock()->timestamp;
+			$intervening = $client->jobs()->enqueue( 'sync', array( 'sequence' => 'intervening' ) );
+			self::assertInstanceOf( Success::class, $intervening );
+			self::assertIsString( $intervening->value );
+			$intervening_run_id = $intervening->value;
+			$this->rig->run_due();
+
+			for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
+				$this->rig->wpdb()->before_next(
+					'update',
+					static function ( WpdbLockSpy $database ): void {
+						$database->script_result( 'update', false );
+					}
+				);
+			}
+		};
+
+		$this->rig->run_due();
+
+		$run_store = new RunStore( $identity, $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
+		$terminal  = $run_store->get( $target_run_id );
+		self::assertNotNull( $terminal );
+		self::assertSame( $seed_run_id, $terminal->previous_completed_run_id );
+		self::assertSame( array(), $terminal->effects );
+		$latest_before_replay = $client->runs()->last_completed_run_id( 'sync' );
+		self::assertInstanceOf( Success::class, $latest_before_replay );
+		self::assertSame( $intervening_run_id, $latest_before_replay->value );
+		$this->rig->clock()->timestamp = $terminal->heartbeat_at + 3_601;
+
+		$this->rig->run_maintenance();
+
+		self::assertIsString( $intervening_run_id );
+		$target_callbacks = \array_values( \array_filter( $job->completed_calls, static fn ( array $call ): bool => $target_run_id === $call['run_id'] ) );
+		self::assertCount( 2, $target_callbacks );
+		self::assertSame( array( $seed_run_id, $seed_run_id ), \array_column( $target_callbacks, 'previous_completed_run_id' ) );
+		$intervening_callbacks = \array_values( \array_filter( $job->completed_calls, static fn ( array $call ): bool => $intervening_run_id === $call['run_id'] ) );
+		self::assertCount( 1, $intervening_callbacks );
+		self::assertSame( $seed_run_id, $intervening_callbacks[0]['previous_completed_run_id'] );
+		self::assertNull( $run_store->get( $target_run_id ) );
 	}
 
 	/**
@@ -242,7 +314,7 @@ final class ApiTest extends TestCase {
 	 */
 	public function test_retry_storage_failure_redacts_database_detail(): void {
 		$client = $this->rig->client( 'consumer-plugin' );
-		$client->tasks()->register( new RecordingTask( 'sync' ) );
+		$client->jobs()->register( new RecordingJob( 'sync' ) );
 		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $database ): void {
@@ -252,25 +324,25 @@ final class ApiTest extends TestCase {
 
 		$result = $client->runs()->retry_failed( 'sync', '00000000001700000000-0000000000000000042' );
 
-		self::assert_api_failure( $result, ApiErrorCode::StorageFailure, array( 'option_name' ) );
+		self::assert_api_failure( $result, ErrorCode::StorageFailure, array( 'option_name' ) );
 		if ( ! $result instanceof Failure || ! $result->error instanceof ApiError ) {
 			throw new \LogicException( 'The storage failure did not retain its public API error.' );
 		}
 		self::assertSame( 'Authoritative option-row read failed; repair WordPress option reads and retry.', $result->error->message );
-		self::assertSame( array( 'option_name' => 'a8csp_bgte_failed_runs_consumer-plugin:sync' ), $result->error->context );
+		self::assertSame( array( 'option_name' => 'a8csp_bgje_failed_runs_consumer-plugin:sync' ), $result->error->context );
 		self::assertStringNotContainsString( 'client-controlled', $result->error->message );
 	}
 
 	/**
-	 * The public function surface contains only the owner-bound client front door.
+	 * Removed global spellings do not remain alongside the supported aliases.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_legacy_global_functions_are_absent(): void {
-		foreach ( array( 'a8csp_bgte_engine', 'a8csp_bgte_enqueue_task', 'a8csp_bgte_start_batch', 'a8csp_bgte_sync_schedules', 'a8csp_bgte_run_schedule_now', 'a8csp_bgte_retry_failed_run', 'a8csp_bgte_cancel_run' ) as $function ) {
+	public function test_removed_global_function_spellings_are_absent(): void {
+		foreach ( array( 'a8csp_bgje_engine', 'a8csp_bgje_enqueue_job', 'a8csp_bgje_start_chunked_job' ) as $function ) {
 			self::assertFalse( \function_exists( $function ), $function );
 		}
 	}
@@ -280,19 +352,19 @@ final class ApiTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Enqueues and delivers one task through the public graph.
+	 * Enqueues and delivers one job through the public graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   Client             $client Owner-bound public facade.
-	 * @param   array<string, mixed> $args     Task arguments.
+	 * @param   array<string, mixed> $args     Job arguments.
 	 *
 	 * @return  string
 	 */
 	private function enqueue_and_run( Client $client, array $args ): string {
 		++$this->rig->clock()->timestamp;
-		$result = $client->tasks()->enqueue( 'sync', $args );
+		$result = $client->jobs()->enqueue( 'sync', $args );
 		self::assertInstanceOf( Success::class, $result );
 		if ( ! \is_string( $result->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
@@ -309,15 +381,15 @@ final class ApiTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   AbstractResult $result       Public API result.
-	 * @param   ApiErrorCode   $code         Expected stable error code.
+	 * @param   ErrorCode   $code         Expected stable error code.
 	 * @param   array          $context_keys Expected public context keys.
 	 *
 	 * @return  void
 	 *
-	 * @phpstan-param AbstractResult<mixed, \A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface> $result
+	 * @phpstan-param AbstractResult<mixed, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface> $result
 	 * @phpstan-param list<string> $context_keys
 	 */
-	private static function assert_api_failure( AbstractResult $result, ApiErrorCode $code, array $context_keys ): void {
+	private static function assert_api_failure( AbstractResult $result, ErrorCode $code, array $context_keys ): void {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( $code, $result->error->code );
@@ -342,8 +414,8 @@ final class ApiTest extends TestCase {
 			'uppercase'       => array( 'owner' => 'Consumer' ),
 			'colon'           => array( 'owner' => 'consumer:plugin' ),
 			'33 bytes'        => array( 'owner' => \str_repeat( 'o', 33 ) ),
-			'reserved owner'  => array( 'owner' => 'a8csp-bgte' ),
-			'reserved prefix' => array( 'owner' => 'a8csp-bgte-addon' ),
+			'reserved owner'  => array( 'owner' => 'a8csp-jobs-engine' ),
+			'reserved prefix' => array( 'owner' => 'a8csp-jobs-engine-addon' ),
 		);
 	}
 

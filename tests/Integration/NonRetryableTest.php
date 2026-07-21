@@ -1,17 +1,17 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\NonRetryableException;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
 /**
- * Verifies a non-retryable task failure terminates after its first attempt.
+ * Verifies a non-retryable job failure terminates after its first attempt.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -22,10 +22,10 @@ final class NonRetryableTest extends IntegrationTestCase {
 	/** Public owner unique to this integration-test graph. */
 	private const string OWNER = 'integration-non-retryable';
 
-	/** Task identity unique within the request-persistent integration registry. */
+	/** Job identity unique within the request-persistent integration registry. */
 	private const string NAME = 'integration-non-retryable';
 
-	/** Owner-qualified task identity persisted by the engine. */
+	/** Owner-qualified job identity persisted by the engine. */
 	private const string IDENTITY = self::OWNER . ':' . self::NAME;
 
 	// endregion.
@@ -45,25 +45,24 @@ final class NonRetryableTest extends IntegrationTestCase {
 	 */
 	public function test_non_retryable_exception_is_terminal_on_attempt_one(): void {
 		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
-		$args            = array(
+		$args           = array(
 			'record_id' => 404,
 			'operation' => 'delete',
 		);
-		$task            = new RecordingTask( self::NAME );
-		$task->throwable = new NonRetryableException( 'The requested record is permanently unavailable.' );
+		$job            = new RecordingJob( self::NAME );
+		$job->throwable = new NonRetryableException( 'The requested record is permanently unavailable.' );
 
-		$client = \a8csp_bgte( self::OWNER );
-		$client->tasks()->register( $task );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
+		$client->jobs()->register( $job );
 
-		$this->expect_option( 'a8csp_bgte_latest_run_' . self::IDENTITY );
-		$this->expect_option( 'a8csp_bgte_failed_runs_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
+		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY );
 
 		$named_retry_scheduled   = array();
 		$generic_retry_scheduled = array();
-		$named_failed            = array();
-		$generic_failed          = array();
+		$failed                  = array();
 		\add_action(
-			'a8csp_background_tasks/retry_scheduled/' . self::IDENTITY,
+			'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY,
 			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
 				$named_retry_scheduled[] = array( $run_id, $start_args, $attempt, $delay );
 			},
@@ -71,7 +70,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			4
 		);
 		\add_action(
-			'a8csp_background_tasks/retry_scheduled',
+			'a8csp_jobs_engine/retry_scheduled',
 			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
 				$generic_retry_scheduled[] = array( $name, $run_id, $start_args, $attempt, $delay );
 			},
@@ -79,48 +78,38 @@ final class NonRetryableTest extends IntegrationTestCase {
 			5
 		);
 		\add_action(
-			'a8csp_background_tasks/failed/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args, RunFailure $failure ) use ( &$named_failed ): void {
-				$named_failed[] = array( $run_id, $start_args, $failure );
+			'a8csp_jobs_engine/failed',
+			static function ( RunFailure $failure ) use ( &$failed ): void {
+				$failed[] = $failure;
 			},
 			10,
-			3
-		);
-		\add_action(
-			'a8csp_background_tasks/failed',
-			static function ( string $name, string $run_id, array $start_args, RunFailure $failure ) use ( &$generic_failed ): void {
-				$generic_failed[] = array( $name, $run_id, $start_args, $failure );
-			},
-			10,
-			4
+			1
 		);
 
-		$result = $client->tasks()->enqueue( self::NAME, $args );
-		self::assertInstanceOf( Success::class, $result, 'The non-retryable task must enqueue before its handler fails' );
+		$result = $client->jobs()->enqueue( self::NAME, $args );
+		self::assertInstanceOf( Success::class, $result, 'The non-retryable job must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the non-retryable task action' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the non-retryable job action' );
 
-		self::assertSame( array( $args ), $task->calls, 'A non-retryable task must execute exactly once' );
+		self::assertSame( array( $args ), $job->calls, 'A non-retryable job must execute exactly once' );
 		self::assertSame( array(), $named_retry_scheduled, 'A non-retryable failure must not fire the identity-specific retry-scheduled hook' );
 		self::assertSame( array(), $generic_retry_scheduled, 'A non-retryable failure must not fire the generic retry-scheduled hook' );
-		self::assertCount( 1, $named_failed, 'A non-retryable failure must fire the identity-specific failed hook once' );
-		self::assertCount( 1, $generic_failed, 'A non-retryable failure must fire the generic failed hook once' );
+		self::assertCount( 1, $failed, 'A non-retryable failure must fire the failed hook once' );
 
-		$failure = $named_failed[0][2] ?? null;
+		$failure = $failed[0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class );
 		self::assertSame( self::IDENTITY, $failure->identity );
 		self::assertSame( $run_id, $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( RunFailureStage::Execution, $failure->stage );
-		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( $expected_message, $failure->summary );
 		self::assertStringNotContainsString( 'The requested record is permanently unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
 		self::assertNull( $failure->failed_chunk );
-		self::assertSame( array( array( $run_id, $args, $failure ) ), $named_failed, 'The identity-specific failed hook must receive run ID, start arguments, and run failure' );
-		self::assertSame( array( array( self::IDENTITY, $run_id, $args, $failure ) ), $generic_failed, 'The generic failed hook must prepend the task name to the same failure payload' );
+		self::assertSame( array( $failure ), $failed, 'The failed hook must receive only the self-identifying failure value' );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'A non-retryable failure must not schedule another attempt' );
 		$runs = $this->inspection()->runs( self::IDENTITY );

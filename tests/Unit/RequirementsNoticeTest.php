@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversFunction( 'a8csp_bgte_output_requirements_error' )]
+#[CoversFunction( 'a8csp_bgje_output_requirements_error' )]
 final class RequirementsNoticeTest extends TestCase {
 	/**
 	 * The shared admin-notice hook covers both site and network admin headers.
@@ -30,11 +30,11 @@ final class RequirementsNoticeTest extends TestCase {
 		require_once __DIR__ . '/wp-update-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/functions-bootstrap.php';
 
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_hooks']                = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
 
-		\a8csp_bgte_output_requirements_error( new \WP_Error( 'requirements_failed' ) );
+		\a8csp_bgje_output_requirements_error( new \WP_Error( 'requirements_failed' ) );
 
-		self::assertSame( array( 'all_admin_notices' ), $GLOBALS['a8csp_bgte_test_hooks'] );
+		self::assertSame( array( 'all_admin_notices' ), $GLOBALS['a8csp_bgje_test_hooks'] );
 	}
 }

@@ -1,15 +1,16 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Resolves filterable timing policy for run locks and batch continuation.
+ * Resolves chunked job continuation delay and its twice-delay lock-staleness floor for one-off and
+ * chunked job runs.
  *
  * @internal
  *
@@ -20,7 +21,7 @@ final readonly class LockWindows {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Default delay between completed batch chunks.
+	 * Default inter-chunk delay whose doubled value floors every run's lock staleness.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -64,33 +65,35 @@ final readonly class LockWindows {
 	// region METHODS
 
 	/**
-	 * Resolves the non-negative continuation delay for one task or batch run.
+	 * Resolves the non-negative continuation delay for one job or chunked job run.
 	 *
 	 * The resolved delay also sets the crash-reclamation floor: a run's lock staleness is never
 	 * below twice this value, because a chunk legitimately sleeping its continuation delay must
 	 * never look abandoned. Once twice the delay exceeds the lock-staleness window, filtering
 	 * the delay up extends how long a crashed run waits for reclamation.
+	 * This floor applies to one-off jobs even though they do not sleep between chunks.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $batch_name Complete owner-qualified task or batch identity.
-	 * @param   string $run_id     Run identifier.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  int
 	 */
-	public function continue_delay( string $batch_name, string $run_id ): int {
+	public function continue_delay( string $identity, string $run_id ): int {
 		/**
-		 * Filters the delay between completed batch chunks.
+		 * Filters the inter-chunk delay; twice the resolved value floors every run's lock staleness,
+		 * including one-off jobs.
 		 *
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
-		 * @param   int    $delay      Default inter-chunk delay in seconds.
-		 * @param   string $batch_name Complete owner-qualified task or batch identity.
-		 * @param   string $run_id     Run identifier.
+		 * @param   int    $delay    Default continuation delay in seconds.
+		 * @param   string $identity Complete owner-qualified job or chunked job identity.
+		 * @param   string $run_id   Run identifier.
 		 */
-		$delay = \apply_filters( 'a8csp_background_tasks/continue_delay', self::CONTINUE_DELAY, $batch_name, $run_id );
+		$delay = \apply_filters( 'a8csp_jobs_engine/continue_delay', self::CONTINUE_DELAY, $identity, $run_id );
 		if ( \is_int( $delay ) && 0 <= $delay ) {
 			return $delay;
 		}
@@ -98,7 +101,7 @@ final readonly class LockWindows {
 		$this->logger->warning(
 			'Continue-delay filter returned an invalid value; return a non-negative integer to override the default delay.',
 			array(
-				'name'          => $batch_name,
+				'name'          => $identity,
 				'run_id'        => $run_id,
 				'returned_type' => \get_debug_type( $delay ),
 				'default_delay' => self::CONTINUE_DELAY,
@@ -114,7 +117,7 @@ final readonly class LockWindows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  int
@@ -134,7 +137,7 @@ final readonly class LockWindows {
 		 *
 		 * @param   int $default_staleness Default lock-staleness window in seconds.
 		 */
-		$staleness = \apply_filters( 'a8csp_background_tasks/lock_staleness/' . $identity, $default_staleness );
+		$staleness = \apply_filters( 'a8csp_jobs_engine/lock_staleness/' . $identity, $default_staleness );
 		if ( ! \is_int( $staleness ) || 1 > $staleness ) {
 			$this->logger->warning(
 				'Lock-staleness filter returned an invalid value; return a positive integer to override the default staleness window.',
@@ -167,7 +170,7 @@ final readonly class LockWindows {
 	 */
 	public function execution_lease( ?int $declared ): int {
 		if ( null === $declared || 1 > $declared ) {
-			return WorkInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
+			return JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
 		}
 
 		return \min( $declared, self::MAX_EXECUTION_LEASE );

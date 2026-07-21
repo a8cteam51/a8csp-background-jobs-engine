@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Logging;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Logging;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ThrowableContextNormalizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ThrowableContextNormalizer;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -41,10 +41,10 @@ final class ErrorLogSinkTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_hooks']                = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']        = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
 	}
 
 	/**
@@ -58,13 +58,13 @@ final class ErrorLogSinkTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name'     => 'a8csp_background_tasks/log',
+					'hook_name'     => 'a8csp_jobs_engine/log',
 					'callback'      => array( ErrorLogSink::class, 'log' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
 				),
 			),
-			$GLOBALS['a8csp_bgte_test_action_registrations']
+			$GLOBALS['a8csp_bgje_test_action_registrations']
 		);
 	}
 
@@ -78,7 +78,7 @@ final class ErrorLogSinkTest extends TestCase {
 
 		$output = $this->capture_error_log( 'info', 'Default sink enabled', array(), true );
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.info: Default sink enabled', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.info: Default sink enabled', $output );
 	}
 
 	/**
@@ -87,10 +87,10 @@ final class ErrorLogSinkTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_filter_false_disables_the_default_error_log_handler(): void {
-		$filter_values = $GLOBALS['a8csp_bgte_test_filter_values'] ?? array();
+		$filter_values = $GLOBALS['a8csp_bgje_test_filter_values'] ?? array();
 		self::assertIsArray( $filter_values );
-		$filter_values['a8csp_background_tasks/log_to_error_log'] = false;
-		$GLOBALS['a8csp_bgte_test_filter_values']                 = $filter_values;
+		$filter_values['a8csp_jobs_engine/log_to_error_log'] = false;
+		$GLOBALS['a8csp_bgje_test_filter_values']            = $filter_values;
 
 		ErrorLogSink::register();
 
@@ -107,12 +107,12 @@ final class ErrorLogSinkTest extends TestCase {
 			'warning',
 			'Work will retry',
 			array(
-				'task_id' => 42,
+				'job_id'  => 42,
 				'attempt' => 2,
 			)
 		);
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.warning: Work will retry {"task_id":42,"attempt":2}', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.warning: Work will retry {"job_id":42,"attempt":2}', $output );
 	}
 
 	/**
@@ -125,7 +125,7 @@ final class ErrorLogSinkTest extends TestCase {
 		$context            = array(
 			'exception' => $throwable,
 			'failure'   => $throwable,
-			'task_id'   => 42,
+			'job_id'    => 42,
 		);
 		$normalized_context = \wp_json_encode(
 			array(
@@ -136,7 +136,7 @@ final class ErrorLogSinkTest extends TestCase {
 					'trace_hash' => \substr( \hash( 'sha256', $throwable->getTraceAsString() ), 0, 16 ),
 				),
 				'failure'   => \RuntimeException::class,
-				'task_id'   => 42,
+				'job_id'    => 42,
 			),
 			\JSON_THROW_ON_ERROR
 		);
@@ -144,7 +144,7 @@ final class ErrorLogSinkTest extends TestCase {
 
 		$output = $this->capture_error_log( 'error', 'Work failed', $context );
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.error: Work failed ' . $normalized_context, $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.error: Work failed ' . $normalized_context, $output );
 		self::assertStringNotContainsString( 'secret-token', $output );
 		self::assertStringNotContainsString( 'user@example.com', $output );
 		self::assertStringNotContainsString( __DIR__, $output );
@@ -158,7 +158,7 @@ final class ErrorLogSinkTest extends TestCase {
 	public function test_log_omits_an_empty_context(): void {
 		$output = $this->capture_error_log( 'info', 'Work skipped', array() );
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.info: Work skipped', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.info: Work skipped', $output );
 	}
 
 	/**
@@ -169,7 +169,7 @@ final class ErrorLogSinkTest extends TestCase {
 	public function test_log_escapes_line_breaks(): void {
 		$output = $this->capture_error_log( "notice\nlevel", "First line\r\nSecond line", array( 'detail' => "Third line\r\nFourth line" ) );
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.notice\nlevel: First line\r\nSecond line {"detail":"Third line\\r\\nFourth line"}', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.notice\nlevel: First line\r\nSecond line {"detail":"Third line\\r\\nFourth line"}', $output );
 	}
 
 	/**
@@ -180,7 +180,7 @@ final class ErrorLogSinkTest extends TestCase {
 	public function test_log_reports_an_unencodable_context_without_throwing(): void {
 		$output = $this->capture_error_log( 'error', 'Work failed', array( 'duration' => \INF ) );
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.error: Work failed [context JSON encoding failed: use only JSON-encodable values]', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.error: Work failed [context JSON encoding failed: use only JSON-encodable values]', $output );
 	}
 
 	/**
@@ -203,7 +203,7 @@ final class ErrorLogSinkTest extends TestCase {
 
 		$output = $this->capture_error_log( 'error', 'Work failed', array( 'value' => $unencodable_value ) );
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.error: Work failed {"value":"JsonSerializable@anonymous"}', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.error: Work failed {"value":"JsonSerializable@anonymous"}', $output );
 	}
 
 	/**
@@ -261,7 +261,7 @@ final class ErrorLogSinkTest extends TestCase {
 			)
 		);
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.debug: Bounded context ' . $encoded, $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.debug: Bounded context ' . $encoded, $output );
 	}
 
 	/**
@@ -275,7 +275,7 @@ final class ErrorLogSinkTest extends TestCase {
 
 		$output = $this->capture_error_log( 'debug', 'Recursive context', array( 'value' => $recursive ) );
 
-		$this->assert_error_log_line( 'a8csp-background-tasks-engine.debug: Recursive context {"value":"array"}', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine.debug: Recursive context {"value":"array"}', $output );
 	}
 
 	/**
@@ -289,7 +289,7 @@ final class ErrorLogSinkTest extends TestCase {
 	 * @return  string
 	 */
 	private function capture_error_log( string $level, string $message, array $context, bool $through_registered_handler = false ): string {
-		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-bgte-log-' );
+		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-jobs-engine-log-' );
 		if ( false === $temp_file ) {
 			self::fail( 'Unable to create the error-log capture file; make the system temporary directory writable.' );
 		}
@@ -310,14 +310,14 @@ final class ErrorLogSinkTest extends TestCase {
 
 		try {
 			if ( $through_registered_handler ) {
-				$registrations = $GLOBALS['a8csp_bgte_test_action_registrations'] ?? array();
+				$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'] ?? array();
 				self::assertIsArray( $registrations );
 				foreach ( $registrations as $registration ) {
 					if ( ! \is_array( $registration ) ) {
 						self::fail( 'Action registrations must be arrays.' );
 					}
 
-					if ( 'a8csp_background_tasks/log' === ( $registration['hook_name'] ?? null ) ) {
+					if ( 'a8csp_jobs_engine/log' === ( $registration['hook_name'] ?? null ) ) {
 						$callback = $registration['callback'] ?? null;
 						if ( ! \is_callable( $callback ) ) {
 							self::fail( 'The default log handler must be callable.' );

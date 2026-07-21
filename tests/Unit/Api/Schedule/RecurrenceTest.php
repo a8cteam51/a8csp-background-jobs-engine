@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Api\Schedule;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Api\Schedule;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -33,11 +33,32 @@ final class RecurrenceTest extends TestCase {
 	public function test_every_retains_a_positive_interval(): void {
 		$recurrence = Recurrence::every( 1 );
 
-		self::assertSame( 1, $recurrence->interval() );
+		self::assertSame( 1, $recurrence->interval );
+		self::assertNull( $recurrence->anchor );
 		self::assertSame(
 			array(
 				'type'  => 'every',
 				'value' => 1,
+			),
+			$recurrence->fingerprint_value()
+		);
+	}
+
+	/**
+	 * Anchored recurrences retain one canonical UTC epoch phase.
+	 *
+	 * @return  void
+	 */
+	public function test_every_anchored_reduces_and_fingerprints_the_utc_phase(): void {
+		$recurrence = Recurrence::every_anchored( 86_400, 90_000 );
+
+		self::assertSame( 86_400, $recurrence->interval );
+		self::assertSame( 3_600, $recurrence->anchor );
+		self::assertSame(
+			array(
+				'type'   => 'every',
+				'value'  => 86_400,
+				'anchor' => 3_600,
 			),
 			$recurrence->fingerprint_value()
 		);
@@ -65,5 +86,41 @@ final class RecurrenceTest extends TestCase {
 		$this->expectExceptionMessageIs( 'Recurrence interval must be positive; pass a value of at least one second.' );
 
 		Recurrence::every( -1 );
+	}
+
+	/**
+	 * Anchored recurrence intervals retain the positive lower boundary.
+	 *
+	 * @return  void
+	 */
+	public function test_every_anchored_rejects_zero_with_the_fix(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Recurrence interval must be positive; pass a value of at least one second.' );
+
+		Recurrence::every_anchored( 0, 0 );
+	}
+
+	/**
+	 * Negative anchored recurrence intervals retain the positive lower boundary.
+	 *
+	 * @return  void
+	 */
+	public function test_every_anchored_rejects_a_negative_interval_with_the_fix(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Recurrence interval must be positive; pass a value of at least one second.' );
+
+		Recurrence::every_anchored( -1, 0 );
+	}
+
+	/**
+	 * Negative anchors identify the non-negative UTC phase the caller must supply.
+	 *
+	 * @return  void
+	 */
+	public function test_every_anchored_rejects_a_negative_anchor_with_the_fix(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Recurrence anchor must be non-negative; pass a UTC phase offset of zero seconds or greater.' );
+
+		Recurrence::every_anchored( 300, -1 );
 	}
 }

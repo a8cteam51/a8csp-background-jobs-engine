@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 
 /**
  * Pins Action Scheduler 4.0 unique-action semantics for pending and in-progress rows.
@@ -13,10 +13,10 @@ final class ActionSchedulerUniquePinTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Action hook isolated to this Action Scheduler drift detector. */
-	private const HOOK = 'a8csp_bgte/integration/as_unique';
+	private const HOOK = 'a8csp_bgje/integration/as_unique';
 
 	/** Action group isolated to this Action Scheduler drift detector. */
-	private const GROUP = 'a8csp-bgte-integration-as-unique';
+	private const GROUP = 'a8csp-jobs-engine-integration-as-unique';
 
 	// endregion.
 

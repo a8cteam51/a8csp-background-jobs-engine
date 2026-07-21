@@ -1,22 +1,22 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\BatchInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceFenceOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedeliveryFenceOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\MaintenanceFenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\RedeliveryFenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -46,7 +46,7 @@ final readonly class RunReconciliation {
 	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
 	 * @param   RunTransitions   $terminal_transitions Fenced terminal-write coordinator.
 	 * @param   LifecycleEffects $terminal_effects     Claimed terminal-effect executor.
-	 * @param   WorkRegistry     $work                 Registered task and batch instances.
+	 * @param   JobRegistry      $work                 Registered job and chunked job instances.
 	 * @param   BackendInterface $scheduler            Scheduling facade boundary.
 	 */
 	public function __construct(
@@ -57,7 +57,7 @@ final readonly class RunReconciliation {
 		private LockWindows $lock_windows,
 		private RunTransitions $terminal_transitions,
 		private LifecycleEffects $terminal_effects,
-		private WorkRegistry $work,
+		private JobRegistry $work,
 		private BackendInterface $scheduler,
 	) {}
 
@@ -73,7 +73,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified task or batch identity.
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 * @param   string $run_id    Lock owner run identifier.
 	 *
@@ -128,7 +128,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity       Complete owner-qualified task or batch identity.
+	 * @param   string $identity       Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id         Run identifier.
 	 * @param   int    $terminal_grace Grace before belt-and-braces terminal cleanup.
 	 *
@@ -167,7 +167,7 @@ final readonly class RunReconciliation {
 				: $this->overlap_guard->classify_run_fence( $identity, $state->args_hash, $run_id );
 
 			$work_type = $state->kind;
-			$batch     = 'Batch' === $work_type ? $this->work->batch( $identity ) : null;
+			$contract  = JobType::ChunkedJob === $work_type ? $this->work->chunked_job( $identity ) : $this->work->job( $identity );
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
 				// A transferred lock can appear while the displaced incumbent is still inside its callback; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
 				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
@@ -178,14 +178,18 @@ final readonly class RunReconciliation {
 			}
 
 			if ( $state->executing ) {
-				return $this->reconcile_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $fence, $batch, $work_type );
+				return $this->reconcile_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $fence, $contract, $work_type );
 			}
 
-			return $this->reconcile_non_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $staleness, $batch, $work_type );
+			return $this->reconcile_non_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $staleness, $contract, $work_type );
 		}
 
 		return $this->reconcile_terminal_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $terminal_grace );
 	}
+
+	// endregion
+
+	// region HELPERS
 
 	/**
 	 * Reconciles a running row whose callback owns the execution attempt.
@@ -193,18 +197,18 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity     Complete owner-qualified task or batch identity.
+	 * @param   string                  $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string                  $run_id       Run identifier.
 	 * @param   RunState                $state        Running state observed by maintenance.
 	 * @param   RunStore                $run_store    Name-bound run store.
 	 * @param   string                  $expected_raw Exact observed state.
 	 * @param   MaintenanceFenceOutcome $fence        Executing-run fence outcome.
-	 * @param   BatchInterface|null     $batch        Registered batch, or null when unavailable.
-	 * @param   'Task'|'Batch'          $work_type    Work contract type.
+	 * @param   JobInterface|null       $contract     Registered work contract, or null when unavailable.
+	 * @param   JobType                 $work_type    Work contract type.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, ?BatchInterface $batch, string $work_type ): AbstractResult {
+	private function reconcile_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, ?JobInterface $contract, JobType $work_type ): AbstractResult {
 		if (
 			MaintenanceFenceOutcome::Owned === $fence
 			|| MaintenanceFenceOutcome::Indeterminate === $fence
@@ -221,7 +225,7 @@ final readonly class RunReconciliation {
 			)
 		);
 
-		return $this->fail_crashed_run( $identity, $run_id, $state, $run_store, $error, $batch, $work_type, $expected_raw );
+		return $this->fail_crashed_run( $identity, $run_id, $state, $run_store, $error, $contract, $work_type, $expected_raw );
 	}
 
 	/**
@@ -230,18 +234,18 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $identity     Complete owner-qualified task or batch identity.
-	 * @param   string              $run_id       Run identifier.
-	 * @param   RunState            $state        Running state observed by maintenance.
-	 * @param   RunStore            $run_store    Name-bound run store.
-	 * @param   string              $expected_raw Exact observed state.
-	 * @param   int                 $staleness    Lock-staleness window in seconds.
-	 * @param   BatchInterface|null $batch        Registered batch, or null when unavailable.
-	 * @param   'Task'|'Batch'      $work_type    Work contract type.
+	 * @param   string            $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string            $run_id       Run identifier.
+	 * @param   RunState          $state        Running state observed by maintenance.
+	 * @param   RunStore          $run_store    Name-bound run store.
+	 * @param   string            $expected_raw Exact observed state.
+	 * @param   int               $staleness    Lock-staleness window in seconds.
+	 * @param   JobInterface|null $contract     Registered work contract, or null when unavailable.
+	 * @param   JobType           $work_type    Work contract type.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_non_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, ?BatchInterface $batch, string $work_type ): AbstractResult {
+	private function reconcile_non_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, ?JobInterface $contract, JobType $work_type ): AbstractResult {
 		if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
 			return new Success( null );
 		}
@@ -278,7 +282,7 @@ final readonly class RunReconciliation {
 				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $work_type, $expected_raw );
 			}
 
-			$scheduled = $this->redeliver_pending_action( $identity, $run_id, $state, $work_type );
+			$scheduled = $this->redeliver_pending_action( $identity, $run_id, $state );
 			if ( ! $scheduled->is_failure() ) {
 				return new Success( null );
 			}
@@ -295,7 +299,7 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		return $this->fail_crashed_run( $identity, $run_id, $state, $run_store, $error, $batch, $work_type, $expected_raw );
+		return $this->fail_crashed_run( $identity, $run_id, $state, $run_store, $error, $contract, $work_type, $expected_raw );
 	}
 
 	/**
@@ -304,7 +308,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity       Complete owner-qualified task or batch identity.
+	 * @param   string   $identity       Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id         Run identifier.
 	 * @param   RunState $state          Terminal state observed by maintenance.
 	 * @param   RunStore $run_store      Name-bound run store.
@@ -322,10 +326,10 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		$work_type      = $state->kind;
-		$resolved_batch = 'Batch' === $work_type ? $this->work->batch( $identity ) : null;
+		$work_type       = $state->kind;
+		$callback_target = JobType::ChunkedJob === $work_type ? $this->work->chunked_job( $identity ) : $this->work->job( $identity );
 
-		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $work_type, $resolved_batch ) ) {
+		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $work_type, $callback_target ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(
@@ -345,26 +349,26 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $identity     Complete owner-qualified task or batch identity.
-	 * @param   string              $run_id       Run identifier.
-	 * @param   RunState            $state        Running state observed by maintenance.
-	 * @param   RunStore            $run_store    Name-bound run store.
-	 * @param   EngineError         $error        Crash-reclaim terminal failure detail.
-	 * @param   BatchInterface|null $batch        Registered batch, or null when unavailable.
-	 * @param   'Task'|'Batch'      $work_type    Work contract type.
-	 * @param   string              $expected_raw Exact observed state.
+	 * @param   string            $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string            $run_id       Run identifier.
+	 * @param   RunState          $state        Running state observed by maintenance.
+	 * @param   RunStore          $run_store    Name-bound run store.
+	 * @param   EngineError       $error        Crash-reclaim terminal failure detail.
+	 * @param   JobInterface|null $contract     Registered work contract, or null when unavailable.
+	 * @param   JobType           $work_type    Work contract type.
+	 * @param   string            $expected_raw Exact observed state.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?BatchInterface $batch, string $work_type, string $expected_raw ): AbstractResult {
+	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?JobInterface $contract, JobType $work_type, string $expected_raw ): AbstractResult {
 		$attempts     = RunState::increment_attempts_safely( $state->failed_attempts );
-		$failed_chunk = 'Batch' === $work_type && 'run' === $state->pending?->stage
+		$failed_chunk = JobType::ChunkedJob === $work_type && 'continue' === $state->pending?->stage
 			? ( $state->queue[0] ?? null )
 			: null;
-		if ( 'Batch' === $work_type ) {
-			$this->terminal_transitions->fail_batch( $batch, $identity, $run_id, $state, $run_store, $error, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
+		if ( JobType::ChunkedJob === $work_type ) {
+			$this->terminal_transitions->fail_chunked_job( $contract, $identity, $run_id, $state, $run_store, $error, RunFailureStage::CrashReclaim, ErrorCode::ExecutionFailed, $failed_chunk, $attempts, $expected_raw );
 		} else {
-			$this->terminal_transitions->fail_task( $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::CrashReclaim, ApiErrorCode::ExecutionFailed, null, $expected_raw );
+			$this->terminal_transitions->fail_job( $contract, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::CrashReclaim, ErrorCode::ExecutionFailed, null, $expected_raw );
 		}
 
 		return new Success( null );
@@ -376,16 +380,16 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity     Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id       Run identifier.
-	 * @param   RunState       $state        Running state observed by maintenance.
-	 * @param   RunStore       $run_store    Name-bound run store.
-	 * @param   'Task'|'Batch' $work_type    Work contract type.
-	 * @param   string         $expected_raw Exact observed state.
+	 * @param   string   $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id       Run identifier.
+	 * @param   RunState $state        Running state observed by maintenance.
+	 * @param   RunStore $run_store    Name-bound run store.
+	 * @param   JobType  $work_type    Work contract type.
+	 * @param   string   $expected_raw Exact observed state.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function supersede_transferred_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $work_type, string $expected_raw ): AbstractResult {
+	private function supersede_transferred_run( string $identity, string $run_id, RunState $state, RunStore $run_store, JobType $work_type, string $expected_raw ): AbstractResult {
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$this->terminal_transitions->supersede_run( $identity, $run_id, $latest_run_id, $state, $run_store, $work_type, $expected_raw );
 
@@ -400,27 +404,26 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   string         $run_id    Run identifier.
-	 * @param   RunState       $state     Stale non-executing running state.
-	 * @param   'Task'|'Batch' $work_type Work contract type.
+	 * @param   string   $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Stale non-executing running state.
 	 *
 	 * @throws  \LogicException When a schema-valid descriptor conflicts with its scheduling mode.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function redeliver_pending_action( string $identity, string $run_id, RunState $state, string $work_type ): AbstractResult {
+	private function redeliver_pending_action( string $identity, string $run_id, RunState $state ): AbstractResult {
 		$pending = $state->pending;
 		if ( null === $pending ) {
 			throw new \LogicException( 'Pending-action redelivery requires a durable descriptor.' );
 		}
 
-		$args = array( $identity, $run_id, $state->action_seq );
+		$args = array( $identity, $run_id, $state->action_sequence );
 		$hook = match ( $pending->stage ) {
-			'start'    => 'a8csp_background_tasks/start_batch',
-			'continue' => 'a8csp_background_tasks/continue_batch',
-			'cleanup'  => 'a8csp_background_tasks/cleanup_batch',
-			'run'      => 'Batch' === $work_type ? 'a8csp_background_tasks/run_chunk' : 'a8csp_background_tasks/run_task',
+			'start'    => 'a8csp_jobs_engine/start_chunked_job',
+			'continue' => 'a8csp_jobs_engine/continue_chunked_job',
+			'cleanup'  => 'a8csp_jobs_engine/cleanup_chunked_job',
+			'run'      => 'a8csp_jobs_engine/run_job',
 		};
 		$group = $identity . '|' . $run_id;
 		if ( 'async' === $pending->mode ) {
@@ -441,7 +444,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  EngineError

@@ -1,17 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\Fixtures;
-
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
 /**
  * Demonstrates a client plugin entry point built entirely on the public engine facade.
  *
  * A client plugin constructs this class from its main file. The registered `init` callback then
- * declares its task, batch, and complete owner-scoped schedule set on every request.
+ * declares its job, chunked job, and complete owner-scoped schedule set on every request.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -47,7 +42,7 @@ final readonly class DemoClient {
 	 *
 	 * @var     string
 	 */
-	public const string LOG_HOOK = 'a8csp_bgte_demo/log';
+	public const string LOG_HOOK = 'a8csp_bgje_demo/log';
 
 	// endregion.
 
@@ -91,7 +86,7 @@ final readonly class DemoClient {
 	}
 
 	/**
-	 * Registers one task, one batch, and the owner's complete schedule set.
+	 * Registers one job, one chunked job, and the owner's complete schedule set.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -99,18 +94,31 @@ final readonly class DemoClient {
 	 * @return  void
 	 */
 	public function register_background_work(): void {
-		$client = \a8csp_bgte( self::OWNER );
-		$client->tasks()->register( new SiteHealthPingTask() );
-		$client->batches()->register( new CommentCountRecountBatch() );
-
-		$synced = $client->schedules()->sync(
-			array(
-				new Schedule( self::SCHEDULE_NAME, Recurrence::every( $this->site_health_interval ), SiteHealthPingTask::NAME, array( 'transient' => SiteHealthPingTask::SNAPSHOT_TRANSIENT ), OverlapPolicy::Skip, CatchUpPolicy::RunOnce, 10 ),
-			)
+		$engine   = \a8csp_bgje( self::OWNER );
+		$outcomes = array(
+			'register its site-health job'   => $engine->register( new SiteHealthPingJob() ),
+			'register its comment-count job' => $engine->register( new CommentCountRecountChunkedJob() ),
+			'synchronize its schedule set'   => $engine->sync_schedules(
+				array(
+					array(
+						'name'     => self::SCHEDULE_NAME,
+						'every'    => $this->site_health_interval,
+						'job'      => SiteHealthPingJob::NAME,
+						'args'     => array( 'transient' => SiteHealthPingJob::SNAPSHOT_TRANSIENT ),
+						'catch_up' => 'run_once',
+						'priority' => 10,
+					),
+				)
+			),
 		);
-		if ( $synced->is_failure() ) {
+
+		foreach ( $outcomes as $operation => $outcome ) {
+			if ( ! $outcome instanceof \WP_Error ) {
+				continue;
+			}
+
 			/**
-			 * Fires when the demo client cannot synchronize its schedule declaration.
+			 * Fires when the demo client cannot publish one background-work declaration.
 			 *
 			 * @since   1.0.0
 			 * @version 1.0.0
@@ -119,7 +127,16 @@ final readonly class DemoClient {
 			 * @param   string                  $message Client failure message.
 			 * @param   array<array-key, mixed> $context Structured failure context.
 			 */
-			\do_action( self::LOG_HOOK, 'error', 'The demo client could not synchronize its site-health schedule.', array( 'error_type' => \get_debug_type( $synced->error ) ) );
+			\do_action(
+				self::LOG_HOOK,
+				'error',
+				'The demo client could not ' . $operation . '.',
+				array(
+					'code'    => $outcome->get_error_code(),
+					'message' => $outcome->get_error_message(),
+					'data'    => $outcome->get_error_data(),
+				)
+			);
 		}
 	}
 

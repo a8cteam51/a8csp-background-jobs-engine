@@ -1,24 +1,29 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -99,7 +104,11 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_schedules_join_live_declarations_with_persisted_orphans_and_locks(): void {
 		$client = $this->rig->client( 'owner-a' );
-		$client->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$job    = new RecordingJob( 'refresh-index' );
+
+		$job->overlap_key_resolver = static fn ( array $args ): ?string => 'all' === ( $args['scope'] ?? null ) ? 'scope:all' : null;
+		$client->jobs()->register( $job );
+
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( $schedule ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
@@ -110,7 +119,7 @@ final class InspectionTest extends TestCase {
 					'declarations'  => array(
 						'owner-a:nightly' => array(
 							'schedule' => $schedule,
-							'task'     => 'owner-a:refresh-index',
+							'job'      => 'owner-a:refresh-index',
 						),
 					),
 					'registrations' => array( 'owner-a:nightly' => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, self::NOW - 60, 1, 2 ) ),
@@ -126,8 +135,8 @@ final class InspectionTest extends TestCase {
 				)
 			)
 		);
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgte' ) ] );
-		$this->put( $fixture->lock( $fixture->args_hash( $schedule->args ), 'run-lock', self::NOW, self::NOW ) );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
+		$this->put( $fixture->lock( \hash( 'sha256', 'dedup:scope:all' ), 'run-lock', self::NOW, self::NOW ) );
 		$this->rig->backend()->scheduled = true;
 
 		$snapshot = $this->rig->inspection()->schedules();
@@ -159,23 +168,27 @@ final class InspectionTest extends TestCase {
 	public function test_schedule_locks_preserve_every_discriminated_honesty_state(): void {
 		$client        = $this->rig->client( 'owner' );
 		$schedules     = array(
-			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-task', array( 'case' => 'allow' ), OverlapPolicy::Allow ),
-			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-task', array( 'case' => 'failed' ) ),
-			'free'    => new Schedule( 'free', Recurrence::every( 300 ), 'free-task', array( 'case' => 'free' ) ),
-			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-task', array( 'case' => 'invalid' ) ),
+			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
+			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
+			'free'    => new Schedule( 'free', Recurrence::every( 300 ), 'free-job', array( 'case' => 'free' ) ),
+			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-job', array( 'case' => 'invalid' ) ),
 		);
 		$declarations  = array();
 		$registrations = array( 'owner:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
-			$client->tasks()->register( new RecordingTask( $schedule->task ) );
+			$job = new RecordingJob( $schedule->job );
+			if ( 'allow' === $name ) {
+				$job->overlap_policy = OverlapPolicy::Allow;
+			}
+			$client->jobs()->register( $job );
 			$declarations[ 'owner:' . $name ]  = array(
 				'schedule' => $schedule,
-				'task'     => 'owner:' . $schedule->task,
+				'job'      => 'owner:' . $schedule->job,
 			);
 			$registrations[ 'owner:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
-		$fixture = StoreFixtureBuilder::for_identity( 'owner:invalid-task' );
+		$fixture = StoreFixtureBuilder::for_identity( 'owner:invalid-job' );
 		$this->put(
 			$fixture->schedule_registration(
 				array(
@@ -185,8 +198,8 @@ final class InspectionTest extends TestCase {
 				)
 			)
 		);
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgte' ) ] );
-		$this->rig->wpdb()->put( 'a8csp_bgte_overlap_lock_owner:invalid-task_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
+		$this->rig->wpdb()->put( 'a8csp_bgje_overlap_lock_owner:invalid-job_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
 			'select',
@@ -237,16 +250,16 @@ final class InspectionTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_public_task_lifecycle_is_visible_with_strict_staleness(): void {
-		$identity        = 'owner:email-digest';
-		$client          = $this->rig->client( 'owner' );
-		$task            = new RecordingTask( 'email-digest' );
-		$during          = null;
-		$task->on_handle = function () use ( $identity, &$during ): void {
+	public function test_public_job_lifecycle_is_visible_with_strict_staleness(): void {
+		$identity       = 'owner:email-digest';
+		$client         = $this->rig->client( 'owner' );
+		$job            = new RecordingJob( 'email-digest' );
+		$during         = null;
+		$job->on_handle = function () use ( $identity, &$during ): void {
 			$during = $this->rig->inspection()->runs( $identity )['live'][0] ?? null;
 		};
-		$client->tasks()->register( $task );
-		self::assertInstanceOf( Success::class, $client->tasks()->enqueue( 'email-digest' ) );
+		$client->jobs()->register( $job );
+		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'email-digest' ) );
 
 		$waiting = $this->rig->inspection()->runs( $identity )['live'][0];
 		self::assertFalse( $waiting['executing'] );
@@ -274,10 +287,10 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_runs_merge_valid_live_history_and_failed_store_rows(): void {
 		$identity = 'owner:catalog-sync';
-		$this->rig->client( 'owner' )->batches()->register( new RecordingBatch( 'catalog-sync' ) );
+		$this->rig->client( 'owner' )->chunked_jobs()->register( new RecordingChunkedJob( 'catalog-sync' ) );
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$live_id  = self::run_id( 1 );
-		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'Batch' ) ) );
+		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ), JobType::ChunkedJob ) ) );
 		$this->put(
 			$fixtures->history(
 				array(
@@ -304,14 +317,14 @@ final class InspectionTest extends TestCase {
 				)
 			)
 		);
-		$failure = new RunFailure( identity: $identity, run_id: 'run-failed', attempts: 2, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: $identity, run_id: 'run-failed', attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
 		$this->put( $fixtures->failed( self::NOW - 1, array(), $failure, new EngineError( 'Retained failure.' ) ) );
 		$this->put( $fixtures->unreadable_run( self::run_id( 99 ) ) );
 
 		$snapshot = $this->rig->inspection()->runs( $identity );
 
 		self::assertCount( 1, $snapshot['live'] );
-		self::assertSame( 'batch', $snapshot['live'][0]['kind'] );
+		self::assertSame( 'chunked_job', $snapshot['live'][0]['kind'] );
 		self::assertSame( 2, $snapshot['live'][0]['queue_depth'] );
 		self::assertSame( 1, $snapshot['live_unreadable'] );
 		self::assertSame( array( 'run-failed', 'run-completed', $live_id ), \array_column( $snapshot['history'] ?? array(), 'run_id' ) );
@@ -327,25 +340,25 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_persisted_work_kind_controls_live_run_inspection(): void {
-		$orphaned_identity = 'owner:orphaned';
-		$task_identity     = 'owner-a:shared';
-		$batch_identity    = 'owner-b:shared';
-		$this->rig->client( 'owner-a' )->tasks()->register( new RecordingTask( 'shared' ) );
-		$this->rig->client( 'owner-b' )->batches()->register( new RecordingBatch( 'shared' ) );
-		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'Batch' ) ) );
-		$this->put( StoreFixtureBuilder::for_identity( $task_identity )->run( self::run_id( 2 ), self::state( 'task-hash', array( array( 'page' => 1 ) ), 'Batch' ) ) );
-		$this->put( StoreFixtureBuilder::for_identity( $batch_identity )->run( self::run_id( 3 ), self::state( 'batch-hash', array( array( 'page' => 1 ) ) ) ) );
+		$orphaned_identity    = 'owner:orphaned';
+		$job_identity         = 'owner-a:shared';
+		$chunked_job_identity = 'owner-b:shared';
+		$this->rig->client( 'owner-a' )->jobs()->register( new RecordingJob( 'shared' ) );
+		$this->rig->client( 'owner-b' )->chunked_jobs()->register( new RecordingChunkedJob( 'shared' ) );
+		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ), JobType::ChunkedJob ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $job_identity )->run( self::run_id( 2 ), self::state( 'job-hash', array( array( 'page' => 1 ) ), JobType::ChunkedJob ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $chunked_job_identity )->run( self::run_id( 3 ), self::state( 'chunked-job-hash', array( array( 'page' => 1 ) ) ) ) );
 
-		$orphaned = $this->rig->inspection()->runs( $orphaned_identity )['live'][0];
-		$task     = $this->rig->inspection()->runs( $task_identity )['live'][0];
-		$batch    = $this->rig->inspection()->runs( $batch_identity )['live'][0];
+		$orphaned    = $this->rig->inspection()->runs( $orphaned_identity )['live'][0];
+		$job         = $this->rig->inspection()->runs( $job_identity )['live'][0];
+		$chunked_job = $this->rig->inspection()->runs( $chunked_job_identity )['live'][0];
 
-		self::assertSame( 'batch', $orphaned['kind'] );
+		self::assertSame( 'chunked_job', $orphaned['kind'] );
 		self::assertSame( 2, $orphaned['queue_depth'] );
-		self::assertSame( 'batch', $task['kind'] );
-		self::assertSame( 1, $task['queue_depth'] );
-		self::assertSame( 'task', $batch['kind'] );
-		self::assertNull( $batch['queue_depth'] );
+		self::assertSame( 'chunked_job', $job['kind'] );
+		self::assertSame( 1, $job['queue_depth'] );
+		self::assertSame( 'job', $chunked_job['kind'] );
+		self::assertNull( $chunked_job['queue_depth'] );
 	}
 
 	/**
@@ -385,6 +398,86 @@ final class InspectionTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::run_id( 1 ), $result->value );
+	}
+
+	/**
+	 * Single-run inspection prefers a readable live state and falls back to terminal history.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_status_reads_live_and_terminal_state_without_collapsing_absence(): void {
+		$identity        = 'owner:single-run';
+		$fixtures        = StoreFixtureBuilder::for_identity( $identity );
+		$live_run_id     = self::run_id( 1 );
+		$terminal_run_id = self::run_id( 2 );
+		$this->put( $fixtures->run( $live_run_id, self::state( 'live-hash' ) ) );
+		$this->put( $fixtures->unreadable_run( $terminal_run_id ) );
+		$this->put(
+			$fixtures->history(
+				terminal: array(
+					array(
+						'run_id'    => $terminal_run_id,
+						'args_hash' => 'terminal-hash',
+						'status'    => RunStatus::Failed,
+					),
+				)
+			)
+		);
+
+		$live     = $this->rig->inspection()->run_status( $identity, $live_run_id );
+		$terminal = $this->rig->inspection()->run_status( $identity, $terminal_run_id );
+		$missing  = $this->rig->inspection()->run_status( $identity, self::run_id( 3 ) );
+
+		self::assertInstanceOf( Success::class, $live );
+		self::assertSame( RunStatus::Running, $live->value );
+		self::assertInstanceOf( Success::class, $terminal );
+		self::assertSame( RunStatus::Failed, $terminal->value );
+		self::assertInstanceOf( Success::class, $missing );
+		self::assertNull( $missing->value );
+	}
+
+	/**
+	 * Authoritative live-row and terminal-history failures remain storage failures.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_status_preserves_authoritative_read_failures(): void {
+		$identity = 'owner:read-failure';
+		$run_id   = self::run_id( 1 );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'live row read failed';
+			}
+		);
+
+		$live_failure = $this->rig->inspection()->run_status( $identity, $run_id );
+
+		self::assertInstanceOf( Failure::class, $live_failure );
+		self::assertInstanceOf( EngineError::class, $live_failure->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $live_failure->error->reason );
+		self::assertSame( array( 'option_name' => RunIdentity::option_name( $identity, $run_id ) ), $live_failure->error->context );
+
+		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'history read failed';
+			}
+		);
+
+		$history_failure = $this->rig->inspection()->run_status( $identity, $run_id );
+
+		self::assertInstanceOf( Failure::class, $history_failure );
+		self::assertInstanceOf( EngineError::class, $history_failure->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $history_failure->error->reason );
+		self::assertSame( array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), $history_failure->error->context );
 	}
 
 	/**
@@ -510,16 +603,14 @@ final class InspectionTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'Task'|'Batch' $kind
-	 *
 	 * @param   string             $args_hash Persisted arguments hash.
 	 * @param   list<array<mixed>> $queue     Persisted pending queue.
-	 * @param   string             $kind      Persisted work kind.
+	 * @param   JobType            $kind      Persisted work kind.
 	 *
 	 * @return  RunState
 	 */
-	private static function state( string $args_hash, array $queue = array( array() ), string $kind = 'Task' ): RunState {
-		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: array(), args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW );
+	private static function state( string $args_hash, array $queue = array( array() ), JobType $kind = JobType::Job ): RunState {
+		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: array(), args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
 	}
 
 	/**

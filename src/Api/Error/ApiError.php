@@ -1,6 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Error;
+
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -9,6 +11,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Error;
  *
  * The message is engine-authored and excludes raw client exception text. Context contains only
  * structured detail safe for client diagnostics.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -22,12 +26,12 @@ final readonly class ApiError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiErrorCode         $code    Stable machine-readable classification.
+	 * @param   ErrorCode            $code    Stable machine-readable classification.
 	 * @param   string               $message Engine-authored corrective detail.
 	 * @param   array<string, mixed> $context Structured redaction-safe detail.
 	 */
 	public function __construct(
-		public ApiErrorCode $code,
+		public ErrorCode $code,
 		public string $message,
 		public array $context = array(),
 	) {}

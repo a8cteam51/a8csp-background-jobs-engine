@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Result;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Result;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -12,6 +12,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
  * After a failed predicate branch, clients read {@see self::$error} directly without an
  * additional type check. Exceptions remain reserved for unexpected infrastructure failures and
  * programmer errors rather than expected domain outcomes.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

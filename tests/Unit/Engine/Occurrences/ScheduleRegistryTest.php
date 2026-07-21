@@ -1,25 +1,25 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OwnerReplacementOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\RegistrationUpdateOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\UndeclaredOccurrenceOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OwnerReplacementOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\RegistrationUpdateOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\UndeclaredOccurrenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -86,8 +86,8 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig      = EngineRig::set_up( self::NOW );
 		$this->client_a = $this->rig->client( 'owner-a' );
 		$this->client_b = $this->rig->client( 'owner-b' );
-		$this->client_a->tasks()->register( new RecordingTask( 'refresh-index' ) );
-		$this->client_b->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$this->client_a->jobs()->register( new RecordingJob( 'refresh-index' ) );
+		$this->client_b->jobs()->register( new RecordingJob( 'refresh-index' ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -160,8 +160,8 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertInstanceOf( Success::class, $this->client_b->schedules()->sync( array( $hourly ) ) );
 		self::assertInstanceOf( Success::class, $this->client_a->schedules()->sync( array( $nightly ) ) );
 
-		$owner_a = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgte_schedule_registrations_owner-a'] ?? null );
-		$owner_b = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgte_schedule_registrations_owner-b'] ?? null );
+		$owner_a = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgje_schedule_registrations_owner-a'] ?? null );
+		$owner_b = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgje_schedule_registrations_owner-b'] ?? null );
 
 		self::assertIsArray( $owner_a );
 		self::assertIsArray( $owner_b );
@@ -169,7 +169,7 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertSame( self::registration( $nightly, self::NOW + 300 ), $owner_a['owner-a:nightly'] );
 		self::assertSame( array( 'owner-b:hourly' ), \array_keys( $owner_b ) );
 		self::assertSame( self::registration( $hourly, self::NOW + 3_600 ), $owner_b['owner-b:hourly'] );
-		self::assertArrayNotHasKey( 'a8csp_bgte_schedule_registrations', $this->rig->wpdb()->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgje_schedule_registrations', $this->rig->wpdb()->rows );
 	}
 
 	/**
@@ -293,7 +293,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_numeric_owner_and_schedule_components_remain_canonical_strings(): void {
 		$client = $this->rig->client( '123' );
-		$client->tasks()->register( new RecordingTask( 'refresh-index' ) );
+		$client->jobs()->register( new RecordingJob( 'refresh-index' ) );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( self::schedule( '456', 300 ) ) ) );
 
 		self::assertSame( array( '123:456' ), \array_column( $this->owner_entries( '123' ), 'name' ) );
@@ -356,7 +356,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( array(), $this->rig->backend()->calls );
 		self::assertSame( $before, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 		self::assertSame( array(), $this->write_queries() );
@@ -476,28 +476,28 @@ final class ScheduleRegistryTest extends TestCase {
 		$registry       = new ScheduleRegistry( $this->rows, new HookLogger() );
 		$listener_calls = 0;
 		$nested         = null;
-		$callbacks      = $GLOBALS['a8csp_bgte_test_action_callbacks'] ?? null;
+		$callbacks      = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
-		$callbacks['a8csp_background_tasks/log']     = static function () use ( $registry, &$listener_calls, &$nested ): void {
+		$callbacks['a8csp_jobs_engine/log']          = static function () use ( $registry, &$listener_calls, &$nested ): void {
 			++$listener_calls;
 			if ( 1 === $listener_calls ) {
 				$nested = $registry->registrations_for( 'owner-a' );
 			}
 		};
-		$GLOBALS['a8csp_bgte_test_action_callbacks'] = $callbacks;
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
 
 		$outer = $registry->registrations_for( 'owner-a' );
 
 		self::assertInstanceOf( Failure::class, $outer );
 		self::assertInstanceOf( Failure::class, $nested );
 		self::assertSame( 1, $listener_calls );
-		$fired = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
+		$fired = $GLOBALS['a8csp_bgje_test_fired_actions'] ?? null;
 		self::assertIsArray( $fired );
 		self::assertCount(
 			1,
 			\array_filter(
 				$fired,
-				static fn ( mixed $action ): bool => \is_array( $action ) && 'a8csp_background_tasks/log' === ( $action['hook_name'] ?? null )
+				static fn ( mixed $action ): bool => \is_array( $action ) && 'a8csp_jobs_engine/log' === ( $action['hook_name'] ?? null )
 			)
 		);
 	}
@@ -1020,7 +1020,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @param   int      $next_due    Next occurrence timestamp.
 	 * @param   int|null $last_fired  Last occurrence timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
 	private static function owner_fixture( string $owner, Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
 		return self::owner_fixture_many( $owner, array( $schedule ), array( $next_due ), array( $last_fired ) );
@@ -1041,7 +1041,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @param   array  $next_due    Next occurrence timestamps.
 	 * @param   array  $last_fired  Last occurrence timestamps.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, task: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
+	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
 	private static function owner_fixture_many( string $owner, array $schedules, array $next_due, array $last_fired = array() ): array {
 		$declarations  = array();
@@ -1050,7 +1050,7 @@ final class ScheduleRegistryTest extends TestCase {
 			$identity                   = $owner . ':' . $schedule->name;
 			$declarations[ $identity ]  = array(
 				'schedule' => $schedule,
-				'task'     => $owner . ':' . $schedule->task,
+				'job'      => $owner . ':' . $schedule->job,
 			);
 			$registrations[ $identity ] = self::registration( $schedule, $next_due[ $index ], $last_fired[ $index ] ?? null );
 		}

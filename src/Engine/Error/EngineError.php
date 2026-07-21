@@ -1,9 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -44,18 +45,33 @@ final readonly class EngineError implements ErrorInterface {
 	// region METHODS
 
 	/**
-	 * Returns the public held-lock task failure without relying on message inspection.
+	 * Returns the public held-lock job failure without relying on message inspection.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $task_name      Complete owner-qualified task identity.
+	 * @param   string $job_name      Complete owner-qualified job identity.
 	 * @param   string $running_run_id Discoverable incumbent run identifier.
 	 *
 	 * @return  self
 	 */
-	public static function held_task( string $task_name, string $running_run_id ): self {
-		return new self( \sprintf( 'Task "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or deduplication key.', $task_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
+	public static function held_job( string $job_name, string $running_run_id ): self {
+		return new self( \sprintf( 'Job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', $job_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
+	}
+
+	/**
+	 * Returns the public held-lock chunked job failure without relying on message inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
+	 * @param   string $running_run_id   Discoverable incumbent run identifier.
+	 *
+	 * @return  self
+	 */
+	public static function held_chunked_job( string $chunked_job_name, string $running_run_id ): self {
+		return new self( \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', $chunked_job_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
 	}
 
 	/**
@@ -64,15 +80,15 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch'                     $work_type Work contract type.
-	 * @param   string                             $identity  Complete owner-qualified task or batch identity.
+	 * @param   JobType                            $work_type Work contract type.
+	 * @param   string                             $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   'continue'|'run'|'cleanup'|'retry' $stage     Internal action that was not scheduled.
 	 * @param   SchedulingError                    $error     Scheduling failure.
 	 *
 	 * @return  self
 	 */
-	public static function scheduling( string $work_type, string $identity, string $stage, SchedulingError $error ): self {
-		return new self( \sprintf( '%1$s "%2$s" could not schedule the %3$s action: %4$s', $work_type, $identity, $stage, $error->message ), SchedulingError::class );
+	public static function scheduling( JobType $work_type, string $identity, string $stage, SchedulingError $error ): self {
+		return new self( \sprintf( '%1$s "%2$s" could not schedule the %3$s action: %4$s', $work_type->value, $identity, $stage, $error->message ), SchedulingError::class );
 	}
 
 	/**
@@ -83,19 +99,19 @@ final readonly class EngineError implements ErrorInterface {
 	 *
 	 * @param   SchedulingError $error Scheduling failure.
 	 *
-	 * @return  ApiErrorCode
+	 * @return  ErrorCode
 	 */
-	public static function api_code_for_scheduling( SchedulingError $error ): ApiErrorCode {
+	public static function api_code_for_scheduling( SchedulingError $error ): ErrorCode {
 		if ( SchedulingErrorReason::BackendNotReady === $error->reason ) {
-			return ApiErrorCode::BackendUnavailable;
+			return ErrorCode::BackendUnavailable;
 		}
 
 		// Registry persistence failures classify as storage regardless of which path surfaces them.
 		if ( SchedulingErrorReason::StorageFailure === $error->reason ) {
-			return ApiErrorCode::StorageFailure;
+			return ErrorCode::StorageFailure;
 		}
 
-		return ApiErrorCode::BackendRejected;
+		return ErrorCode::BackendRejected;
 	}
 
 	/**
@@ -120,16 +136,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   \Throwable     $throwable Retry-policy provider or filter failure.
+	 * @param   JobType    $work_type Work contract type.
+	 * @param   string     $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   \Throwable $throwable Retry-policy provider or filter failure.
 	 *
 	 * @return  self
 	 */
-	public static function retry_policy( string $work_type, string $identity, \Throwable $throwable ): self {
+	public static function retry_policy( JobType $work_type, string $identity, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self( \sprintf( '%1$s "%2$s" could not resolve the retry policy because %3$s was thrown. Fix the retry policy provider or filter before retrying the failed run manually.', $work_type, $identity, $exception_type ), $exception_type );
+		return new self( \sprintf( '%1$s "%2$s" could not resolve the retry policy because %3$s was thrown. Fix the retry policy provider or filter before retrying the failed run manually.', $work_type->value, $identity, $exception_type ), $exception_type );
 	}
 
 	/**
@@ -138,16 +154,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   \Throwable     $throwable Retry-state construction failure.
+	 * @param   JobType    $work_type Work contract type.
+	 * @param   string     $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   \Throwable $throwable Retry-state construction failure.
 	 *
 	 * @return  self
 	 */
-	public static function retry_state( string $work_type, string $identity, \Throwable $throwable ): self {
+	public static function retry_state( JobType $work_type, string $identity, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self( \sprintf( '%1$s "%2$s" could not construct the retry state because %3$s was thrown. Restore the engine before retrying the failed run manually.', $work_type, $identity, $exception_type ), $exception_type );
+		return new self( \sprintf( '%1$s "%2$s" could not construct the retry state because %3$s was thrown. Restore the engine before retrying the failed run manually.', $work_type->value, $identity, $exception_type ), $exception_type );
 	}
 
 	/**
@@ -156,16 +172,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'Task'|'Batch' $work_type Work contract type.
-	 * @param   string         $identity  Complete owner-qualified task or batch identity.
-	 * @param   \Throwable     $throwable Retry-policy, randomness, hook, or scheduler failure.
+	 * @param   JobType    $work_type Work contract type.
+	 * @param   string     $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   \Throwable $throwable Retry-policy, randomness, hook, or scheduler failure.
 	 *
 	 * @return  self
 	 */
-	public static function retry_preparation( string $work_type, string $identity, \Throwable $throwable ): self {
+	public static function retry_preparation( JobType $work_type, string $identity, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self( \sprintf( '%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.', $work_type, $identity, $exception_type ), $exception_type );
+		return new self( \sprintf( '%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.', $work_type->value, $identity, $exception_type ), $exception_type );
 	}
 
 	// endregion

@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -76,8 +76,8 @@ final readonly class PendingAction {
 	 * @return  self
 	 */
 	public static function single( string $stage, int $fire_at, int $priority ): self {
-		if ( ! \in_array( $stage, array( 'run', 'continue' ), true ) ) {
-			throw new \InvalidArgumentException( 'Pending single actions require the run or continue lifecycle stage.' );
+		if ( ! \in_array( $stage, array( 'start', 'run', 'continue' ), true ) ) {
+			throw new \InvalidArgumentException( 'Pending single actions require the start, run, or continue lifecycle stage.' );
 		}
 
 		return new self( $stage, 'single', $fire_at, $priority );

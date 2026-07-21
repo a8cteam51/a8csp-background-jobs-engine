@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 /**
  * In-memory wpdb fake for execution-overlap lock statements.
@@ -160,7 +160,7 @@ final class WpdbLockSpy extends \wpdb {
 		$this->run_before( $operation );
 		$this->recorded_queries[] = $query;
 
-		$lifecycle_events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		$lifecycle_events = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
 		if ( \is_array( $lifecycle_events ) ) {
 			$operation_args     = self::without_table( $statement['args'] );
 			$key_index          = 'update' === $operation ? 1 : 0;
@@ -171,7 +171,7 @@ final class WpdbLockSpy extends \wpdb {
 				'raw'       => 'update' === $operation ? ( $operation_args[0] ?? null ) : null,
 			);
 
-			$GLOBALS['a8csp_bgte_test_lifecycle_events'] = $lifecycle_events;
+			$GLOBALS['a8csp_bgje_test_lifecycle_events'] = $lifecycle_events;
 		}
 
 		$scripted = isset( $this->scripted_results[ $operation ] )
@@ -244,6 +244,68 @@ final class WpdbLockSpy extends \wpdb {
 	}
 
 	/**
+	 * Selects modeled raw option rows by exact option name.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param 'OBJECT'|'OBJECT_K'|'ARRAY_A'|'ARRAY_N' $output
+	 * @phpstan-return ($output is 'ARRAY_A' ? list<array{option_name: string, option_value: string}> : ($output is 'ARRAY_N' ? list<list{string, string}> : ($output is 'OBJECT_K' ? array<string, \stdClass> : list<\stdClass>)))
+	 *
+	 * @param   mixed $query  Prepared statement.
+	 * @param   mixed $output Output shape.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	#[\Override]
+	public function get_results( $query = null, $output = 'OBJECT' ): array {
+		if ( ! \is_string( $query ) ) {
+			throw new \InvalidArgumentException( 'WpdbLockSpy selects require a prepared query string.' );
+		}
+
+		$statement = $this->statement( $query );
+		if ( ! \str_starts_with( $statement['template'], 'SELECT `option_name`, `option_value` ' ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy get_results() accepts only option-row SELECT statements.' );
+		}
+
+		$this->last_error = '';
+		$this->run_before( 'select' );
+		$this->recorded_queries[] = $query;
+		if ( '' !== $this->last_error ) {
+			return array();
+		}
+
+		$rows = array();
+		foreach ( self::without_table( $statement['args'] ) as $key ) {
+			if ( ! \is_string( $key ) ) {
+				continue;
+			}
+
+			$raw = $this->raw_value( $key );
+			if ( null === $raw ) {
+				continue;
+			}
+
+			$row = array(
+				'option_name'  => $key,
+				'option_value' => $raw,
+			);
+			if ( 'OBJECT_K' === $output ) {
+				$rows[ $key ] = (object) $row;
+				continue;
+			}
+
+			$rows[] = match ( $output ) {
+				'ARRAY_A' => $row,
+				'ARRAY_N' => \array_values( $row ),
+				default   => (object) $row,
+			};
+		}
+
+		return $rows;
+	}
+
+	/**
 	 * Returns option names matching one prepared escaped-prefix scan.
 	 *
 	 * @param   mixed $query Prepared statement.
@@ -302,7 +364,7 @@ final class WpdbLockSpy extends \wpdb {
 			throw new \UnexpectedValueException( 'WpdbLockSpy could not decode the escaped option prefix.' );
 		}
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		if ( ! \is_array( $options ) ) {
 			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
 		}
@@ -357,7 +419,7 @@ final class WpdbLockSpy extends \wpdb {
 			throw new \UnexpectedValueException( 'WpdbLockSpy could not decode the escaped option prefix.' );
 		}
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		if ( ! \is_array( $options ) ) {
 			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
 		}
@@ -540,7 +602,7 @@ final class WpdbLockSpy extends \wpdb {
 			return true;
 		}
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 
 		return \is_array( $options ) && \array_key_exists( $key, $options );
 	}
@@ -557,7 +619,7 @@ final class WpdbLockSpy extends \wpdb {
 			return $this->rows[ $key ];
 		}
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		if ( ! \is_array( $options ) || ! \array_key_exists( $key, $options ) ) {
 			return null;
 		}
@@ -582,13 +644,13 @@ final class WpdbLockSpy extends \wpdb {
 			return;
 		}
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		if ( ! \is_array( $options ) ) {
 			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
 		}
 
 		$options[ $key ]                    = \maybe_unserialize( $raw );
-		$GLOBALS['a8csp_bgte_test_options'] = $options;
+		$GLOBALS['a8csp_bgje_test_options'] = $options;
 	}
 
 	/**
@@ -605,19 +667,19 @@ final class WpdbLockSpy extends \wpdb {
 			return;
 		}
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		if ( ! \is_array( $options ) ) {
 			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
 		}
 
-		$autoload = $GLOBALS['a8csp_bgte_test_option_autoload'] ?? array();
+		$autoload = $GLOBALS['a8csp_bgje_test_option_autoload'] ?? array();
 		if ( ! \is_array( $autoload ) ) {
 			throw new \UnexpectedValueException( 'Initialize the test option autoload store as an array.' );
 		}
 
 		unset( $options[ $key ], $autoload[ $key ] );
-		$GLOBALS['a8csp_bgte_test_options']         = $options;
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = $autoload;
+		$GLOBALS['a8csp_bgje_test_options']         = $options;
+		$GLOBALS['a8csp_bgje_test_option_autoload'] = $autoload;
 	}
 
 	/**

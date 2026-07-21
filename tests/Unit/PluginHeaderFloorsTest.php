@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 

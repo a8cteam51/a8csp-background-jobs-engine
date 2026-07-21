@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 
@@ -17,27 +17,26 @@ final class HookNameLiteralsTest extends TestCase {
 	 * @var     array<string, string>
 	 */
 	private const array HOOK_LITERALS = array(
-		'started'          => 'a8csp_background_tasks/started',
-		'completed'        => 'a8csp_background_tasks/completed',
-		'failed'           => 'a8csp_background_tasks/failed',
-		'cancelled'        => 'a8csp_background_tasks/cancelled',
-		'retry_scheduled'  => 'a8csp_background_tasks/retry_scheduled',
-		'superseded'       => 'a8csp_background_tasks/superseded',
-		'misfire_skipped'  => 'a8csp_background_tasks/misfire_skipped',
-		'log'              => 'a8csp_background_tasks/log',
-		'log_to_error_log' => 'a8csp_background_tasks/log_to_error_log',
-		'queue'            => 'a8csp_background_tasks/queue/',
-		'continue_delay'   => 'a8csp_background_tasks/continue_delay',
-		'lock_staleness'   => 'a8csp_background_tasks/lock_staleness/',
-		'history_size'     => 'a8csp_background_tasks/history_size',
-		'retry_policy'     => 'a8csp_background_tasks/retry_policy/',
-		'misfire_grace'    => 'a8csp_background_tasks/misfire_grace/',
-		'start_batch'      => 'a8csp_background_tasks/start_batch',
-		'continue_batch'   => 'a8csp_background_tasks/continue_batch',
-		'run_task'         => 'a8csp_background_tasks/run_task',
-		'run_chunk'        => 'a8csp_background_tasks/run_chunk',
-		'cleanup_batch'    => 'a8csp_background_tasks/cleanup_batch',
-		'schedule_due'     => 'a8csp_background_tasks/schedule_due',
+		'started'              => 'a8csp_jobs_engine/started',
+		'completed'            => 'a8csp_jobs_engine/completed',
+		'failed'               => 'a8csp_jobs_engine/failed',
+		'cancelled'            => 'a8csp_jobs_engine/cancelled',
+		'retry_scheduled'      => 'a8csp_jobs_engine/retry_scheduled',
+		'superseded'           => 'a8csp_jobs_engine/superseded',
+		'misfire_skipped'      => 'a8csp_jobs_engine/misfire_skipped',
+		'log'                  => 'a8csp_jobs_engine/log',
+		'log_to_error_log'     => 'a8csp_jobs_engine/log_to_error_log',
+		'queue'                => 'a8csp_jobs_engine/queue/',
+		'continue_delay'       => 'a8csp_jobs_engine/continue_delay',
+		'lock_staleness'       => 'a8csp_jobs_engine/lock_staleness/',
+		'history_size'         => 'a8csp_jobs_engine/history_size',
+		'retry_policy'         => 'a8csp_jobs_engine/retry_policy/',
+		'misfire_grace'        => 'a8csp_jobs_engine/misfire_grace/',
+		'start_chunked_job'    => 'a8csp_jobs_engine/start_chunked_job',
+		'continue_chunked_job' => 'a8csp_jobs_engine/continue_chunked_job',
+		'run_job'              => 'a8csp_jobs_engine/run_job',
+		'cleanup_chunked_job'  => 'a8csp_jobs_engine/cleanup_chunked_job',
+		'schedule_due'         => 'a8csp_jobs_engine/schedule_due',
 	);
 
 	/**

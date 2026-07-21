@@ -1,26 +1,27 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -33,17 +34,22 @@ use PHPUnit\Framework\TestCase;
 final class DispatcherScheduleDispatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const array ARGS      = array( 'site_id' => 7 );
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
-	private const string NAME     = 'email-digest';
-	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
-	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
-	private const string SCHEDULE = 'email-digest-schedule';
+	private const array ARGS              = array( 'site_id' => 7 );
+	private const string CHUNKED_IDENTITY = self::OWNER . ':' . self::CHUNKED_NAME;
+	private const string CHUNKED_NAME     = 'email-digest-chunked';
+	private const string CHUNKED_SCHEDULE = 'email-digest-chunked-schedule';
+	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string NAME             = 'email-digest';
+	private const int NOW                 = 1_700_000_000;
+	private const string OWNER            = 'runs-tests';
+	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
+	private const string SCHEDULE         = 'email-digest-schedule';
 
 	private Client $client;
+	private RecordingChunkedJob $chunked_job;
 	private EngineRig $rig;
 	private StoreFixtureBuilder $fixtures;
+	private RecordingJob $job;
 
 	// endregion.
 
@@ -55,15 +61,16 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		EngineRig::bootstrap();
 	}
 
-	/** Boots one registered task against deterministic interface fakes. */
+	/** Boots one registered job against deterministic interface fakes. */
 	#[\Override]
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
-		$this->client->tasks()->register( new RecordingTask( self::NAME ) );
-		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->rig         = EngineRig::set_up( self::NOW );
+		$this->client      = $this->rig->client( self::OWNER );
+		$this->job         = new RecordingJob( self::NAME );
+		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_NAME );
+		$this->fixtures    = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
 	/** Releases request-local engine state after each scenario. */
@@ -83,7 +90,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	/**
 	 * Every policy dispatches idempotently against an open lock.
 	 *
-	 * @param   string $policy_value Schedule overlap-policy value.
+	 * @param   string $policy_value Job overlap-policy value.
 	 *
 	 * @return  void
 	 */
@@ -104,14 +111,35 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Supplies every schedule overlap policy.
+	 * A scheduled chunked target routes to the internal start action instead of unknown work.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_now_routes_a_chunked_schedule_target_to_the_internal_start_action(): void {
+		$this->sync_chunked_schedule( OverlapPolicy::Allow, 23 );
+
+		$result = $this->client->schedules()->dispatch_now( self::CHUNKED_SCHEDULE );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$calls = $this->chunked_start_calls();
+		self::assertCount( 1, $calls );
+		self::assertSame( 23, $calls[0]['args']['priority'] ?? null );
+		$this->rig->backend()->assert_scheduled( self::CHUNKED_IDENTITY );
+	}
+
+	/**
+	 * Supplies every Job overlap policy.
 	 *
 	 * @return array<string, array{policy_value: string}>
 	 */
 	public static function open_lock_policies(): array {
 		return array(
 			'allow'   => array( 'policy_value' => 'allow' ),
-			'skip'    => array( 'policy_value' => 'skip' ),
+			'reject'  => array( 'policy_value' => 'reject' ),
 			'replace' => array( 'policy_value' => 'replace' ),
 		);
 	}
@@ -129,7 +157,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
 				$observed = true;
 				self::assertArrayNotHasKey( RunHistory::OPTION_PREFIX . self::IDENTITY, $wpdb->rows );
-				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_background_tasks/started' ) );
+				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
 			}
 		);
 
@@ -139,15 +167,51 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertTrue( $observed );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/started/' . self::IDENTITY,
-				'a8csp_background_tasks/started',
+				'a8csp_jobs_engine/started/' . self::IDENTITY,
+				'a8csp_jobs_engine/started',
 			),
 			$this->rig->hooks()->sequence()
 		);
 	}
 
 	/**
-	 * Allow salts the fence identity while retaining the original task arguments.
+	 * Chunked schedule acceptance persists occurrence state before started run history.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The first schedule-registration update is entered by the acceptance callback, so the absent history row at that boundary pins lease release and cadence persistence before chunked started history.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_chunked_accepted_callback_runs_before_started_history(): void {
+		$this->sync_chunked_schedule( OverlapPolicy::Allow );
+		$observed = false;
+		$this->rig->wpdb()->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
+				$observed = true;
+				self::assertArrayNotHasKey( RunHistory::OPTION_PREFIX . self::CHUNKED_IDENTITY, $wpdb->rows );
+				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
+			}
+		);
+
+		$result = $this->client->schedules()->dispatch_now( self::CHUNKED_SCHEDULE );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $observed );
+		self::assertArrayHasKey( RunHistory::OPTION_PREFIX . self::CHUNKED_IDENTITY, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
+
+		$this->rig->run_due();
+
+		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
+		self::assertSame( array( array( self::RUN_ID, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
+	}
+
+	/**
+	 * Allow salts the fence identity while retaining the original job arguments.
 	 *
 	 * @return  void
 	 */
@@ -160,7 +224,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
-		$run = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
 		self::assertSame( array( self::ARGS ), $run['queue'] ?? null );
@@ -179,7 +243,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->sync_schedule( OverlapPolicy::Allow );
 		$first = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 		self::assertInstanceOf( Success::class, $first );
-		$run = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		$salted_hash = $run['args_hash'] ?? null;
 		self::assertIsString( $salted_hash );
@@ -189,7 +253,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $collision );
 		$error = $this->api_error( $collision );
-		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );
+		self::assertSame( ErrorCode::OverlapHeld, $error->code );
 		self::assertStringContainsString( 'duplicate per-run overlap identity', $error->message );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}
@@ -207,27 +271,27 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
-		self::assertSame( ApiErrorCode::StorageFailure, $error->code );
+		self::assertSame( ErrorCode::StorageFailure, $error->code );
 		self::assertStringContainsString( 'repair WordPress option reads and writes', $error->message );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
 	/**
-	 * Skip returns a benign overlap failure and leaves the incumbent untouched.
+	 * Reject returns a typed overlap failure and leaves the incumbent untouched.
 	 *
 	 * @return  void
 	 */
-	public function test_skip_dispatch_returns_a_typed_held_outcome(): void {
-		$this->sync_schedule( OverlapPolicy::Skip );
+	public function test_reject_dispatch_returns_a_typed_held_outcome(): void {
+		$this->sync_schedule( OverlapPolicy::Reject );
 		$this->seed_held_lock();
-		$latest_pointer = 'a8csp_bgte_latest_run_' . self::IDENTITY;
+		$latest_pointer = 'a8csp_bgje_latest_run_' . self::IDENTITY;
 		unset( $this->rig->wpdb()->rows[ $latest_pointer ], $this->rig->wpdb()->autoload[ $latest_pointer ] );
 
 		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
-		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );
+		self::assertSame( ErrorCode::OverlapHeld, $error->code );
 		self::assertSame( 'run-incumbent', $error->context['run_id'] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
 		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
@@ -235,7 +299,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Skip fails closed when contention cannot be tied to an authoritative owner.
+	 * Reject fails closed when contention cannot be tied to an authoritative owner.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The nested insert interception forces a failed overlap-lock claim after the provisional run row exists, a mid-claim database race the public schedule facade cannot stage.
@@ -245,8 +309,8 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_skip_dispatch_does_not_consume_an_unconfirmed_held_outcome(): void {
-		$this->sync_schedule( OverlapPolicy::Skip );
+	public function test_reject_dispatch_does_not_consume_an_unconfirmed_held_outcome(): void {
+		$this->sync_schedule( OverlapPolicy::Reject );
 		// Two insert interceptions are required because the overlap-lock claim follows the provisional run-row insert.
 		$this->rig->wpdb()->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
 
@@ -254,7 +318,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
-		self::assertSame( ApiErrorCode::OverlapHeld, $error->code );
+		self::assertSame( ErrorCode::OverlapHeld, $error->code );
 		self::assertStringContainsString( 'could not confirm the owner', $error->message );
 		self::assertSame( array(), $this->run_delivery_calls() );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
@@ -309,7 +373,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->api_error( $result );
-		self::assertSame( ApiErrorCode::BackendRejected, $error->code );
+		self::assertSame( ErrorCode::BackendRejected, $error->code );
 		self::assertNull( $this->lock_owner( $this->args_hash() ) );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
@@ -321,11 +385,31 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	/**
 	 * Synchronizes one declaration through the owner-bound schedule facade.
 	 *
-	 * @param   OverlapPolicy $policy   Overlap policy.
+	 * @param   OverlapPolicy $policy   Job overlap policy.
 	 * @param   int           $priority Delivery priority.
 	 */
 	private function sync_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
-		$result = $this->client->schedules()->sync( array( new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::NAME, self::ARGS, $policy, priority: $priority ) ) );
+		$this->job->overlap_policy = $policy;
+		$this->client->jobs()->register( $this->job );
+		$result = $this->client->schedules()->sync( array( new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::NAME, self::ARGS, priority: $priority ) ) );
+		self::assertInstanceOf( Success::class, $result );
+	}
+
+	/**
+	 * Synchronizes one chunked-target declaration through the owner-bound schedule facade.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   OverlapPolicy $policy   Chunked Job overlap policy.
+	 * @param   int           $priority Delivery priority.
+	 *
+	 * @return  void
+	 */
+	private function sync_chunked_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
+		$this->chunked_job->overlap_policy = $policy;
+		$this->client->chunked_jobs()->register( $this->chunked_job );
+		$result = $this->client->schedules()->sync( array( new Schedule( self::CHUNKED_SCHEDULE, Recurrence::every( 300 ), self::CHUNKED_NAME, self::ARGS, priority: $priority ) ) );
 		self::assertInstanceOf( Success::class, $result );
 	}
 
@@ -384,19 +468,31 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @param   string $name Option name.
 	 */
 	private function option( string $name ): mixed {
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );
 
 		return $options[ $name ] ?? null;
 	}
 
 	/**
-	 * Returns backend calls that schedule task-run delivery.
+	 * Returns backend calls that schedule job-run delivery.
 	 *
 	 * @return list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_background_tasks/run_task' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/run_job' === ( $call['args']['hook'] ?? null ) ) );
+	}
+
+	/**
+	 * Returns backend calls that schedule chunked-job start delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
+	 */
+	private function chunked_start_calls(): array {
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/start_chunked_job' === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**

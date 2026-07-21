@@ -1,40 +1,39 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\RegistrationUpdateOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\EngineFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\RegistrationUpdateOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 
 /**
  * Verifies fixed-recurrence misfire policy, hook payloads, counters, and the strict grace boundary.
@@ -52,7 +51,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	private ?ScheduleRegistry $deterministic_registry = null;
 
 	/** Registered work used by the deterministic graph. */
-	private ?WorkRegistry $deterministic_work = null;
+	private ?JobRegistry $deterministic_work = null;
 
 	/** Fixed interval shared by deterministic recurrence probes. */
 	private const int INTERVAL = 300;
@@ -66,11 +65,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/** Owner-qualified RunOnce schedule identity. */
 	private const string RUN_ONCE_SCHEDULE_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_SCHEDULE;
 
-	/** Task isolated to the RunOnce occurrence. */
-	private const string RUN_ONCE_TASK = 'integration-misfire-run-once-task';
+	/** Job isolated to the RunOnce occurrence. */
+	private const string RUN_ONCE_JOB = 'integration-misfire-run-once-job';
 
 	/** Owner-qualified RunOnce target identity. */
-	private const string RUN_ONCE_TASK_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_TASK;
+	private const string RUN_ONCE_JOB_IDENTITY = self::RUN_ONCE_OWNER . ':' . self::RUN_ONCE_JOB;
 
 	/** Owner isolated to the Skip occurrence. */
 	private const string SKIP_OWNER = 'integration-misfire-skip';
@@ -81,11 +80,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/** Owner-qualified Skip schedule identity. */
 	private const string SKIP_SCHEDULE_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE;
 
-	/** Task isolated to the Skip occurrence. */
-	private const string SKIP_TASK = 'integration-misfire-skip-task';
+	/** Job isolated to the Skip occurrence. */
+	private const string SKIP_JOB = 'integration-misfire-skip-job';
 
 	/** Owner-qualified Skip target identity. */
-	private const string SKIP_TASK_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_TASK;
+	private const string SKIP_JOB_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_JOB;
 
 	/** Owner isolated to the grace-boundary occurrences. */
 	private const string BOUNDARY_OWNER = 'integration-misfire-boundary';
@@ -96,11 +95,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/** Owner-qualified exact-boundary schedule identity. */
 	private const string EXACT_SCHEDULE_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_SCHEDULE;
 
-	/** Task exactly at the grace boundary. */
-	private const string EXACT_TASK = 'integration-misfire-exact-task';
+	/** Job exactly at the grace boundary. */
+	private const string EXACT_JOB = 'integration-misfire-exact-job';
 
 	/** Owner-qualified exact-boundary target identity. */
-	private const string EXACT_TASK_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_TASK;
+	private const string EXACT_JOB_IDENTITY = self::BOUNDARY_OWNER . ':' . self::EXACT_JOB;
 
 	/** Schedule one second beyond the grace boundary. */
 	private const string BEYOND_SCHEDULE = 'beyond-grace';
@@ -108,11 +107,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/** Owner-qualified beyond-boundary schedule identity. */
 	private const string BEYOND_SCHEDULE_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_SCHEDULE;
 
-	/** Task one second beyond the grace boundary. */
-	private const string BEYOND_TASK = 'integration-misfire-beyond-task';
+	/** Job one second beyond the grace boundary. */
+	private const string BEYOND_JOB = 'integration-misfire-beyond-job';
 
 	/** Owner-qualified beyond-boundary target identity. */
-	private const string BEYOND_TASK_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_TASK;
+	private const string BEYOND_JOB_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_JOB;
 
 	// endregion.
 
@@ -131,11 +130,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
 		$this->expect_option( ScheduleRegistry::option_name( self::RUN_ONCE_OWNER ) );
-		$this->expect_option( 'a8csp_bgte_latest_run_' . self::RUN_ONCE_TASK_IDENTITY );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::RUN_ONCE_JOB_IDENTITY );
 		$engine = $this->build_engine( $clock, $logger );
-		$task   = new RecordingTask( self::RUN_ONCE_TASK );
-		$this->register_deterministic_task( self::RUN_ONCE_TASK_IDENTITY, $task );
-		$schedule = new Schedule( self::RUN_ONCE_SCHEDULE, Recurrence::every( self::INTERVAL ), self::RUN_ONCE_TASK, array( 'policy' => 'run-once' ), OverlapPolicy::Skip );
+		$job    = new RecordingJob( self::RUN_ONCE_JOB );
+		$this->register_deterministic_job( self::RUN_ONCE_JOB_IDENTITY, $job );
+		$schedule = new Schedule( self::RUN_ONCE_SCHEDULE, Recurrence::every( self::INTERVAL ), self::RUN_ONCE_JOB, array( 'policy' => 'run-once' ) );
 		$this->assert_sync_success( $engine->schedules, self::RUN_ONCE_OWNER, array( $schedule ) );
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
@@ -144,11 +143,11 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$generic_misfire_skips = array();
 		$this->record_misfire_skipped_hooks( self::RUN_ONCE_SCHEDULE_IDENTITY, $dynamic_misfire_skips, $generic_misfire_skips );
 
-		\do_action( 'a8csp_background_tasks/schedule_due', self::RUN_ONCE_SCHEDULE_IDENTITY );
-		self::assertSame( array(), $task->calls, 'RunOnce must enqueue the make-up occurrence instead of invoking the task inline' );
+		\do_action( 'a8csp_jobs_engine/schedule_due', self::RUN_ONCE_SCHEDULE_IDENTITY );
+		self::assertSame( array(), $job->calls, 'RunOnce must enqueue the make-up occurrence instead of invoking the job inline' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the single RunOnce make-up occurrence' );
 
-		self::assertSame( array( array( 'policy' => 'run-once' ) ), $task->calls, 'RunOnce must execute exactly one make-up occurrence' );
+		self::assertSame( array( array( 'policy' => 'run-once' ) ), $job->calls, 'RunOnce must execute exactly one make-up occurrence' );
 		self::assertSame( array(), $dynamic_misfire_skips, 'RunOnce must not publish the dynamic misfire-skipped hook' );
 		self::assertSame( array(), $generic_misfire_skips, 'RunOnce must not publish the generic misfire-skipped hook' );
 		$registration = $this->registration( self::RUN_ONCE_OWNER, self::RUN_ONCE_SCHEDULE );
@@ -172,9 +171,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$logger = new RecordingLogger();
 		$this->expect_option( ScheduleRegistry::option_name( self::SKIP_OWNER ) );
 		$engine = $this->build_engine( $clock, $logger );
-		$task   = new RecordingTask( self::SKIP_TASK );
-		$this->register_deterministic_task( self::SKIP_TASK_IDENTITY, $task );
-		$schedule = new Schedule( self::SKIP_SCHEDULE, Recurrence::every( self::INTERVAL ), self::SKIP_TASK, array( 'policy' => 'skip' ), OverlapPolicy::Skip, CatchUpPolicy::Skip );
+		$job    = new RecordingJob( self::SKIP_JOB );
+		$this->register_deterministic_job( self::SKIP_JOB_IDENTITY, $job );
+		$schedule = new Schedule( self::SKIP_SCHEDULE, Recurrence::every( self::INTERVAL ), self::SKIP_JOB, array( 'policy' => 'skip' ), CatchUpPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::SKIP_OWNER, array( $schedule ) );
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
@@ -183,10 +182,10 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$generic_misfire_skips = array();
 		$this->record_misfire_skipped_hooks( self::SKIP_SCHEDULE_IDENTITY, $dynamic_misfire_skips, $generic_misfire_skips );
 
-		\do_action( 'a8csp_background_tasks/schedule_due', self::SKIP_SCHEDULE_IDENTITY );
+		\do_action( 'a8csp_jobs_engine/schedule_due', self::SKIP_SCHEDULE_IDENTITY );
 
-		self::assertSame( 0, $this->run_next_due_action(), 'Skip must not enqueue a target-task action for the dropped occurrence' );
-		self::assertSame( array(), $task->calls, 'Skip must not execute a task for the dropped occurrence' );
+		self::assertSame( 0, $this->run_next_due_action(), 'Skip must not enqueue a target-job action for the dropped occurrence' );
+		self::assertSame( array(), $job->calls, 'Skip must not execute a job for the dropped occurrence' );
 		self::assertSame( array( array( self::SKIP_OWNER, $aged_due, $now ) ), $dynamic_misfire_skips, 'The dynamic misfire-skipped hook must receive owner, due instant, and fired instant' );
 		self::assertSame( array( array( self::SKIP_SCHEDULE_IDENTITY, self::SKIP_OWNER, $aged_due, $now ) ), $generic_misfire_skips, 'The generic misfire-skipped hook must prepend the complete schedule identity to the same payload' );
 		$expected_due = self::realigned_due( $aged_due, $now );
@@ -222,14 +221,14 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
 		$this->expect_option( ScheduleRegistry::option_name( self::BOUNDARY_OWNER ) );
-		$this->expect_option( 'a8csp_bgte_latest_run_' . self::EXACT_TASK_IDENTITY );
-		$engine      = $this->build_engine( $clock, $logger );
-		$exact_task  = new RecordingTask( self::EXACT_TASK );
-		$beyond_task = new RecordingTask( self::BEYOND_TASK );
-		$this->register_deterministic_task( self::EXACT_TASK_IDENTITY, $exact_task );
-		$this->register_deterministic_task( self::BEYOND_TASK_IDENTITY, $beyond_task );
-		$exact  = new Schedule( self::EXACT_SCHEDULE, Recurrence::every( self::INTERVAL ), self::EXACT_TASK, catch_up: CatchUpPolicy::Skip );
-		$beyond = new Schedule( self::BEYOND_SCHEDULE, Recurrence::every( self::INTERVAL ), self::BEYOND_TASK, catch_up: CatchUpPolicy::Skip );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::EXACT_JOB_IDENTITY );
+		$engine     = $this->build_engine( $clock, $logger );
+		$exact_job  = new RecordingJob( self::EXACT_JOB );
+		$beyond_job = new RecordingJob( self::BEYOND_JOB );
+		$this->register_deterministic_job( self::EXACT_JOB_IDENTITY, $exact_job );
+		$this->register_deterministic_job( self::BEYOND_JOB_IDENTITY, $beyond_job );
+		$exact  = new Schedule( self::EXACT_SCHEDULE, Recurrence::every( self::INTERVAL ), self::EXACT_JOB, catch_up: CatchUpPolicy::Skip );
+		$beyond = new Schedule( self::BEYOND_SCHEDULE, Recurrence::every( self::INTERVAL ), self::BEYOND_JOB, catch_up: CatchUpPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::BOUNDARY_OWNER, array( $exact, $beyond ) );
 
 		$exact_due  = $now - self::INTERVAL;
@@ -243,13 +242,13 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->record_misfire_skipped_hooks( self::EXACT_SCHEDULE_IDENTITY, $exact_dynamic, $exact_generic );
 		$this->record_misfire_skipped_hooks( self::BEYOND_SCHEDULE_IDENTITY, $beyond_dynamic, $beyond_generic );
 
-		\do_action( 'a8csp_background_tasks/schedule_due', self::EXACT_SCHEDULE_IDENTITY );
+		\do_action( 'a8csp_jobs_engine/schedule_due', self::EXACT_SCHEDULE_IDENTITY );
 		self::assertSame( 1, $this->run_next_due_action(), 'An occurrence exactly at grace must execute normally' );
-		\do_action( 'a8csp_background_tasks/schedule_due', self::BEYOND_SCHEDULE_IDENTITY );
+		\do_action( 'a8csp_jobs_engine/schedule_due', self::BEYOND_SCHEDULE_IDENTITY );
 		self::assertSame( 0, $this->run_next_due_action(), 'An occurrence one second beyond grace must be dropped' );
 
-		self::assertSame( array( array() ), $exact_task->calls, 'Exactly-at-grace must remain a due task occurrence' );
-		self::assertSame( array(), $beyond_task->calls, 'One-second-beyond must not execute the target task' );
+		self::assertSame( array( array() ), $exact_job->calls, 'Exactly-at-grace must remain a due job occurrence' );
+		self::assertSame( array(), $beyond_job->calls, 'One-second-beyond must not execute the target job' );
 		self::assertSame( array(), $exact_dynamic, 'Exactly-at-grace must not fire the dynamic misfire-skipped hook' );
 		self::assertSame( array(), $exact_generic, 'Exactly-at-grace must not fire the generic misfire-skipped hook' );
 		self::assertSame( array( array( self::BOUNDARY_OWNER, $beyond_due, $now ) ), $beyond_dynamic, 'One-second-beyond must fire the dynamic misfire-skipped hook' );
@@ -271,17 +270,17 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	// region HELPERS.
 
 	/**
-	 * Registers one task in the deterministic graph.
+	 * Registers one job in the deterministic graph.
 	 *
-	 * @param   string        $identity Complete owner-qualified task identity.
-	 * @param   RecordingTask $task     Task to register.
+	 * @param   string        $identity Complete owner-qualified job identity.
+	 * @param   RecordingJob $job     Job to register.
 	 *
 	 * @return  void
 	 */
-	private function register_deterministic_task( string $identity, RecordingTask $task ): void {
+	private function register_deterministic_job( string $identity, RecordingJob $job ): void {
 		$work = $this->deterministic_work;
 		self::assertNotNull( $work );
-		$work->register_task( $identity, $task );
+		$work->register_job( $identity, $job );
 	}
 
 	/**
@@ -300,7 +299,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 		$rows                 = new OptionRows( $wpdb );
-		$work                 = new WorkRegistry();
+		$work                 = new JobRegistry();
 		$schedule_registry    = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$locks                = new OptionRows( $wpdb );
@@ -323,19 +322,18 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new Schedules( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
-		$inspection           = new Inspection( $schedule_registry, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
+		$inspection           = new Inspection( $schedule_registry, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
 
 		$this->deterministic_inspection = $inspection;
 		$this->deterministic_registry   = $schedule_registry;
 		$this->deterministic_work       = $work;
 
-		\remove_all_actions( 'a8csp_background_tasks/start_batch' );
-		\remove_all_actions( 'a8csp_background_tasks/continue_batch' );
-		\remove_all_actions( 'a8csp_background_tasks/run_task' );
-		\remove_all_actions( 'a8csp_background_tasks/run_chunk' );
-		\remove_all_actions( 'a8csp_background_tasks/cleanup_batch' );
-		\remove_all_actions( 'a8csp_background_tasks/schedule_due' );
+		\remove_all_actions( 'a8csp_jobs_engine/start_chunked_job' );
+		\remove_all_actions( 'a8csp_jobs_engine/continue_chunked_job' );
+		\remove_all_actions( 'a8csp_jobs_engine/run_job' );
+		\remove_all_actions( 'a8csp_jobs_engine/cleanup_chunked_job' );
+		\remove_all_actions( 'a8csp_jobs_engine/schedule_due' );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
@@ -361,7 +359,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			$identity                  = $owner . ':' . $schedule->name;
 			$declarations[ $identity ] = array(
 				'schedule' => $schedule,
-				'task'     => $owner . ':' . $schedule->task,
+				'job'      => $owner . ':' . $schedule->job,
 			);
 		}
 
@@ -465,7 +463,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 */
 	private function record_misfire_skipped_hooks( string $identity, array &$dynamic, array &$generic ): void {
 		\add_action(
-			'a8csp_background_tasks/misfire_skipped/' . $identity,
+			'a8csp_jobs_engine/misfire_skipped/' . $identity,
 			static function ( string $owner, int $due, int $fired_at ) use ( &$dynamic ): void {
 				$dynamic[] = array( $owner, $due, $fired_at );
 			},
@@ -473,7 +471,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_background_tasks/misfire_skipped',
+			'a8csp_jobs_engine/misfire_skipped',
 			static function ( string $schedule, string $owner, int $due, int $fired_at ) use ( $identity, &$generic ): void {
 				if ( $schedule === $identity ) {
 					$generic[] = array( $schedule, $owner, $due, $fired_at );

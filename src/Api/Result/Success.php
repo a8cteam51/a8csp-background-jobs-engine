@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Result;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Result;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -10,6 +10,8 @@ namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Result;
  * After a successful predicate branch, clients read {@see self::$value} directly without an
  * additional type check. Expected failure outcomes use {@see Failure}; unexpected failures remain
  * exceptions.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

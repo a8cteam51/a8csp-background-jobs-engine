@@ -1,43 +1,45 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingRandomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Randomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\LatestRunPointer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins active-run fencing and terminal task transitions across storage, hooks, locks, and logs.
+ * Pins active-run fencing and terminal job transitions across storage, hooks, locks, and logs.
  *
  * @load-bearing concurrency
  * @pin-rationale Terminal ownership is decided by exact run-state and lock-row races whose losing transitions are not observable or controllable through the public run facade.
@@ -65,7 +67,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunStore::class )]
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( LifecycleEffects::class )]
-#[UsesClass( WorkRegistry::class )]
+#[UsesClass( JobRegistry::class )]
 final class RunTransitionsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -87,7 +89,7 @@ final class RunTransitionsTest extends TestCase {
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
 	private OptionRows $rows;
-	private RecordingTask $task;
+	private RecordingJob $job;
 	private RunTransitions $terminal_transitions;
 	private WpdbLockSpy $wpdb;
 	private Dispatcher $dispatcher;
@@ -115,7 +117,7 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * Resets every observable boundary and constructs one registered task lifecycle.
+	 * Resets every observable boundary and constructs one registered job lifecycle.
 	 *
 	 * @return  void
 	 */
@@ -123,28 +125,28 @@ final class RunTransitionsTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$GLOBALS['a8csp_bgje_test_options']              = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']         = array();
+		$GLOBALS['a8csp_bgje_test_option_autoload']      = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']        = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']        = array();
+		$GLOBALS['a8csp_bgje_test_action_throwables']    = array();
+		$GLOBALS['a8csp_bgje_test_hooks']                = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']              = 1;
+		$GLOBALS['a8csp_bgje_test_cache']                = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events']     = array();
+		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
 		$this->clock      = new FixedClock( self::NOW );
 		$this->backend    = new RecordingBackend();
 		$this->logger     = new RecordingLogger();
 		$this->randomizer = new RecordingRandomizer( 42 );
-		$this->task       = new RecordingTask( self::NAME );
-		$work             = new WorkRegistry();
-		$work->register_task( self::IDENTITY, $this->task );
+		$this->job        = new RecordingJob( self::NAME );
+		$work             = new JobRegistry();
+		$work->register_job( self::IDENTITY, $this->job );
 		$this->wpdb                 = new WpdbLockSpy();
 		$this->rows                 = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
@@ -169,20 +171,20 @@ final class RunTransitionsTest extends TestCase {
 		$this->wpdb->before_next(
 			'update',
 			function (): void {
-				$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+				$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 			}
 		);
 
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertSame( array(), $this->logger->records );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::IDENTITY,
-				'a8csp_background_tasks/completed',
+				'a8csp_jobs_engine/completed/' . self::IDENTITY,
+				'a8csp_jobs_engine/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -190,7 +192,7 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A stale task delivery exits after its authoritative read and before heartbeats, callbacks, or writes.
+	 * A stale job delivery exits after its authoritative read and before heartbeats, callbacks, or writes.
 	 *
 	 * @return  void
 	 */
@@ -199,20 +201,20 @@ final class RunTransitionsTest extends TestCase {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
-		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_action_seq( 2 ) ) );
+		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_action_sequence( 2 ) ) );
 		$expected = $this->option( $this->run_option_name() );
 
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 		$this->wpdb->recorded_queries                = array();
 
-		$this->handle_task_run_action( self::RUN_ID, 1 );
+		$this->handle_job_run_action( self::RUN_ID, 1 );
 
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( $expected, $this->option( $this->run_option_name() ) );
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
+		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_option_calls'] );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'info', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
@@ -229,7 +231,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_claim_delivery_ownership_drops_a_fresh_same_sequence_delivery(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
+		$first     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 		$expected_run  = $this->option( $this->run_option_name() );
@@ -237,22 +239,22 @@ final class RunTransitionsTest extends TestCase {
 
 		$this->logger->records                       = array();
 		$this->wpdb->recorded_queries                = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 
-		$duplicate = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
+		$duplicate = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
 
 		self::assertNull( $duplicate );
 		self::assertSame( $expected_run, $this->option( $this->run_option_name() ) );
 		self::assertSame( $expected_lock, $this->lock() );
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_option_calls'] );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_lifecycle_events'] );
+		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_option_calls'] );
+		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_lifecycle_events'] );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
-		self::assertSame( 1, $this->logger->records[0]['context']['action_seq'] ?? null );
+		self::assertSame( 1, $this->logger->records[0]['context']['action_sequence'] ?? null );
 	}
 
 	/**
@@ -263,14 +265,14 @@ final class RunTransitionsTest extends TestCase {
 	public function test_claim_delivery_ownership_admits_and_refences_a_stale_execution_marker(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
+		$first     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 
 		$this->clock->timestamp = self::NOW + 991;
 		$this->logger->records  = array();
 
-		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store );
+		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
 
 		self::assertInstanceOf( RunState::class, $reclaimed );
 		self::assertTrue( $reclaimed->executing );
@@ -289,21 +291,21 @@ final class RunTransitionsTest extends TestCase {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$credit_at = self::NOW + 390;
-		$incumbent = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $this->action_seq(), $run_store, static fn (): int => $credit_at );
+		$incumbent = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store, static fn (): int => $credit_at );
 		self::assertInstanceOf( RunState::class, $incumbent );
 
 		$reset_at               = $credit_at + 901;
-		$advanced               = $incumbent->with_heartbeat_at( $reset_at )->with_action_seq( $incumbent->action_seq + 1 );
+		$advanced               = $incumbent->with_heartbeat_at( $reset_at )->with_action_sequence( $incumbent->action_sequence + 1 );
 		$this->clock->timestamp = $reset_at;
 		$this->wpdb->before_next(
 			'select',
 			function () use ( $advanced, $incumbent, $reset_at, $run_store ): void {
-				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( 'Task', self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
+				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
 				self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $incumbent, $advanced ) );
 			}
 		);
 
-		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, self::RUN_ID, $incumbent->action_seq, $run_store, static fn (): int => $reset_at + 300 );
+		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $incumbent->action_sequence, $run_store, static fn (): int => $reset_at + 300 );
 
 		self::assertNull( $reclaimed );
 		self::assertSame( $reset_at, $this->lock()['heartbeat_at'] ?? null );
@@ -328,13 +330,13 @@ final class RunTransitionsTest extends TestCase {
 		$state            = $before_snapshot['state'];
 		$expected_run_raw = $before_snapshot['raw'];
 		$expected_lock    = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
-		$expected_history = $this->option( 'a8csp_bgte_history_' . self::IDENTITY );
+		$expected_history = $this->option( 'a8csp_bgje_history_' . self::IDENTITY );
 		self::assertIsString( $expected_lock );
 
 		$this->logger->records                       = array();
 		$this->wpdb->recorded_queries                = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -342,7 +344,7 @@ final class RunTransitionsTest extends TestCase {
 			}
 		);
 
-		$must_abort = $this->terminal_transitions->enforce_delivery_fence( 'Task', self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		$after = $run_store->inspect( self::RUN_ID );
@@ -357,7 +359,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( RunStatus::Running, $after_state->status );
 		self::assertSame( self::NOW, $after_state->heartbeat_at );
 		self::assertSame( $expected_lock, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
-		self::assertSame( $expected_history, $this->option( 'a8csp_bgte_history_' . self::IDENTITY ) );
+		self::assertSame( $expected_history, $this->option( 'a8csp_bgje_history_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
 		foreach ( $this->wpdb->recorded_queries as $query ) {
@@ -370,7 +372,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( self::ARGS_HASH, $this->logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'debug', $this->logger->records[1]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[1]['context']['run_id'] ?? null );
 	}
 
@@ -393,7 +395,7 @@ final class RunTransitionsTest extends TestCase {
 
 		try {
 			$this->terminal_transitions->cancel_run(
-				'Task',
+				JobType::Job,
 				self::IDENTITY,
 				self::RUN_ID,
 				$snapshot['state'],
@@ -417,11 +419,11 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/cancelled/' . self::IDENTITY,
+					'hook_name' => 'a8csp_jobs_engine/cancelled/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp_background_tasks/cancelled',
+					'hook_name' => 'a8csp_jobs_engine/cancelled',
 					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
@@ -436,16 +438,16 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_resets_the_counter_after_a_successful_retry(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->job->throwable    = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
 
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
-		$this->task->throwable  = null;
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
+		$this->job->throwable   = null;
 		$this->clock->timestamp = self::NOW + 95;
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 
 		self::assertSame( 0, $this->recorded_run_state( 'completed' )['failed_attempts'] );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
@@ -457,30 +459,30 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_a_scheduled_retry_executes(): void {
-		$this->task->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->task->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
+		$this->job->throwable    = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 95 );
 		$this->backend->calls = array();
 
-		$GLOBALS['a8csp_bgte_test_fired_actions'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
 
 		$this->clock->timestamp = self::NOW + 95;
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
+				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+				'a8csp_jobs_engine/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -489,13 +491,13 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'info', $this->logger->records[1]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[1]['context']['run_id'] ?? null );
 		self::assertSame( 'run-newer', $this->logger->records[1]['context']['latest_run_id'] ?? null );
 	}
 
 	/**
-	 * Moved replacement ownership fences the run before task execution and uses quiet cleanup.
+	 * Moved replacement ownership fences the run before job execution and uses quiet cleanup.
 	 *
 	 * @return  void
 	 */
@@ -503,23 +505,23 @@ final class RunTransitionsTest extends TestCase {
 		$this->prepare_run_action();
 		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_background_tasks/superseded/' . self::IDENTITY,
+					'hook_name' => 'a8csp_jobs_engine/superseded/' . self::IDENTITY,
 					'args'      => array( self::RUN_ID, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp_background_tasks/superseded',
+					'hook_name' => 'a8csp_jobs_engine/superseded',
 					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
 				),
 			),
@@ -527,7 +529,7 @@ final class RunTransitionsTest extends TestCase {
 		);
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'info', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'run-newer', $this->logger->records[0]['context']['latest_run_id'] ?? null );
 		self::assertSame(
@@ -554,13 +556,13 @@ final class RunTransitionsTest extends TestCase {
 		$this->prepare_run_action();
 		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-losing-starter', self::ARGS_HASH ) );
 
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 
-		self::assertSame( array( self::ARGS ), $this->task->calls );
+		self::assertSame( array( self::ARGS ), $this->job->calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::IDENTITY,
-				'a8csp_background_tasks/completed',
+				'a8csp_jobs_engine/completed/' . self::IDENTITY,
+				'a8csp_jobs_engine/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -569,7 +571,7 @@ final class RunTransitionsTest extends TestCase {
 				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
-			$this->option( 'a8csp_bgte_latest_run_' . self::IDENTITY )
+			$this->option( 'a8csp_bgje_latest_run_' . self::IDENTITY )
 		);
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->lock() );
@@ -595,7 +597,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
@@ -620,19 +622,19 @@ final class RunTransitionsTest extends TestCase {
 		$first_run_id = $run_ids[0];
 
 		$this->clock->timestamp = self::NOW + 90;
-		$this->task->calls      = array();
+		$this->job->calls       = array();
 		$this->logger->records  = array();
 
-		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']    = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 
-		$this->handle_task_run_action( $first_run_id, $this->action_seq( $first_run_id ) );
+		$this->handle_job_run_action( $first_run_id, $this->action_sequence( $first_run_id ) );
 
-		self::assertSame( array( array( 'identity' => 0 ) ), $this->task->calls );
+		self::assertSame( array( array( 'identity' => 0 ) ), $this->job->calls );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::IDENTITY,
-				'a8csp_background_tasks/completed',
+				'a8csp_jobs_engine/completed/' . self::IDENTITY,
+				'a8csp_jobs_engine/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -656,14 +658,14 @@ final class RunTransitionsTest extends TestCase {
 		self::assertIsString( $foreign_lock );
 		$this->wpdb->put( $this->lock_option_name(), $foreign_lock );
 
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
+				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+				'a8csp_jobs_engine/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -683,7 +685,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
-		$must_abort = $this->terminal_transitions->enforce_delivery_fence( 'Task', self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -691,8 +693,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( 'superseded', $this->recorded_run_state( 'superseded' )['status'] );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/superseded/' . self::IDENTITY,
-				'a8csp_background_tasks/superseded',
+				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+				'a8csp_jobs_engine/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -700,7 +702,7 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A persisted terminal state never re-enters task execution before reconciliation.
+	 * A persisted terminal state never re-enters job execution before reconciliation.
 	 *
 	 * @return  void
 	 */
@@ -714,17 +716,17 @@ final class RunTransitionsTest extends TestCase {
 
 		$this->logger->records = array();
 
-		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']    = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 
-		$this->handle_task_run_action( self::RUN_ID, $this->action_seq() );
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( $status, $this->logger->records[0]['context']['status'] ?? null );
 	}
@@ -756,8 +758,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
 
-		$this->terminal_transitions->fail_task( self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
-		$this->terminal_transitions->fail_task( self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ApiErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );
@@ -774,17 +776,17 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_drops_an_absent_run_as_stale(): void {
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 
-		$this->handle_task_run_action( 'missing-run', 1 );
+		$this->handle_job_run_action( 'missing-run', 1 );
 
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
 		$this->assert_only_authoritative_run_read( 'missing-run' );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
 		self::assertSame( 'missing-run', $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'finished or cancelled', $this->logger->records[0]['message'] ?? '' );
 	}
@@ -797,14 +799,14 @@ final class RunTransitionsTest extends TestCase {
 	public function test_handle_run_action_warns_when_run_state_is_corrupt(): void {
 		$this->wpdb->put( $this->run_option_name(), 'corrupt-run-state' );
 
-		$this->handle_task_run_action( self::RUN_ID, 1 );
+		$this->handle_job_run_action( self::RUN_ID, 1 );
 
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertSame( array(), $this->fired_actions() );
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'corrupt', $this->logger->records[0]['message'] ?? '' );
 	}
@@ -822,14 +824,14 @@ final class RunTransitionsTest extends TestCase {
 			}
 		);
 
-		$this->handle_task_run_action( self::RUN_ID, 1 );
+		$this->handle_job_run_action( self::RUN_ID, 1 );
 
-		self::assertSame( array(), $this->task->calls );
+		self::assertSame( array(), $this->job->calls );
 		self::assertSame( array(), $this->fired_actions() );
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'could not be read', $this->logger->records[0]['message'] ?? '' );
 		$read_error = $this->logger->records[0]['context']['error'] ?? null;
@@ -862,7 +864,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertCount( 1, $this->wpdb->recorded_queries );
 		$query = $this->wpdb->recorded_queries[0];
 		self::assertStringStartsWith( 'SELECT `option_value` FROM ', $query );
-		self::assertStringContainsString( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id, $query );
+		self::assertStringContainsString( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_id, $query );
 		self::assertStringEndsWith( ' LIMIT 1', $query );
 	}
 
@@ -873,13 +875,13 @@ final class RunTransitionsTest extends TestCase {
 	 *
 	 * @return  int
 	 */
-	private function action_seq( string $run_id = self::RUN_ID ): int {
-		$state = $this->option( 'a8csp_bgte_run_' . self::IDENTITY . '_' . $run_id );
+	private function action_sequence( string $run_id = self::RUN_ID ): int {
+		$state = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_id );
 		self::assertIsArray( $state );
-		$action_seq = $state['action_seq'] ?? null;
-		self::assertIsInt( $action_seq );
+		$action_sequence = $state['action_sequence'] ?? null;
+		self::assertIsInt( $action_sequence );
 
-		return $action_seq;
+		return $action_sequence;
 	}
 
 	/**
@@ -896,39 +898,39 @@ final class RunTransitionsTest extends TestCase {
 		$this->logger->records        = array();
 		$this->wpdb->recorded_queries = array();
 
-		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']    = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 	}
 
 	/**
-	 * Runs one task attempt through the terminal-transition product services.
+	 * Runs one job attempt through the terminal-transition product services.
 	 *
 	 * @param   string $run_id     Run identifier.
-	 * @param   int    $action_seq Received lifecycle action sequence.
+	 * @param   int    $action_sequence Received lifecycle action sequence.
 	 *
 	 * @return  void
 	 */
-	private function handle_task_run_action( string $run_id, int $action_seq ): void {
+	private function handle_job_run_action( string $run_id, int $action_sequence ): void {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( 'Task', self::IDENTITY, $run_id, $action_seq, $run_store );
+		$state     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
 			return;
 		}
 
 		try {
-			$this->task->handle( $state->start_args );
+			$this->job->handle( $state->start_args, new RunContext( $run_id, $state->start_args ) );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_task_failure( $this->task, self::IDENTITY, $run_id, $state, $run_store, $throwable );
+			$this->failure_lifecycle->handle_job_failure( $this->job, self::IDENTITY, $run_id, $state, $run_store, $throwable );
 
 			return;
 		}
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( 'Task', self::IDENTITY, $run_id, $state, $run_store ) ) {
+		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, $run_id, $state, $run_store ) ) {
 			return;
 		}
 
-		$this->terminal_transitions->complete_task( self::IDENTITY, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_job( $this->job, self::IDENTITY, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -964,7 +966,7 @@ final class RunTransitionsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
+			$this->option( 'a8csp_bgje_history_' . self::IDENTITY )
 		);
 	}
 
@@ -980,13 +982,13 @@ final class RunTransitionsTest extends TestCase {
 	 *     args_hash: mixed,
 	 *     queue: mixed,
 	 *     failed_attempts: mixed,
-	 *     action_seq: mixed,
+	 *     action_sequence: mixed,
 	 *     created_at: mixed,
 	 *     heartbeat_at: mixed
 	 * }
 	 */
 	private function recorded_run_state( string $status ): array {
-		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		$events = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
 		self::assertIsArray( $events );
 		foreach ( $events as $event ) {
 			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) ) {
@@ -1007,14 +1009,14 @@ final class RunTransitionsTest extends TestCase {
 					'args_hash'       => $state['args_hash'] ?? null,
 					'queue'           => $state['queue'] ?? null,
 					'failed_attempts' => $state['failed_attempts'] ?? null,
-					'action_seq'      => $state['action_seq'] ?? null,
+					'action_sequence' => $state['action_sequence'] ?? null,
 					'created_at'      => $state['created_at'] ?? null,
 					'heartbeat_at'    => $state['heartbeat_at'] ?? null,
 				);
 			}
 		}
 
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		$calls = $GLOBALS['a8csp_bgje_test_option_calls'] ?? null;
 		self::assertIsArray( $calls );
 		foreach ( $calls as $call ) {
 			self::assertIsArray( $call );
@@ -1039,7 +1041,7 @@ final class RunTransitionsTest extends TestCase {
 					'args_hash'       => $state['args_hash'] ?? null,
 					'queue'           => $state['queue'] ?? null,
 					'failed_attempts' => $state['failed_attempts'] ?? null,
-					'action_seq'      => $state['action_seq'] ?? null,
+					'action_sequence' => $state['action_sequence'] ?? null,
 					'created_at'      => $state['created_at'] ?? null,
 					'heartbeat_at'    => $state['heartbeat_at'] ?? null,
 				);
@@ -1055,7 +1057,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private function lifecycle_labels(): array {
-		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		$events = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
 		self::assertIsArray( $events );
 		$labels = array();
 
@@ -1076,11 +1078,11 @@ final class RunTransitionsTest extends TestCase {
 
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_failed_runs_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgje_failed_runs_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'failed-store';
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgte_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgje_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'history';
 					continue;
 				}
@@ -1088,15 +1090,15 @@ final class RunTransitionsTest extends TestCase {
 				continue;
 			}
 
-			if ( 'task' === $type ) {
-				$labels[] = 'task:handle';
+			if ( 'job' === $type ) {
+				$labels[] = 'job:handle';
 				continue;
 			}
 
 			if ( 'action' === $type ) {
 				$hook_name = $event['hook_name'];
 				self::assertIsString( $hook_name );
-				$labels[] = 'hook:' . \str_replace( 'a8csp_background_tasks/', '', $hook_name );
+				$labels[] = 'hook:' . \str_replace( 'a8csp_jobs_engine/', '', $hook_name );
 				continue;
 			}
 
@@ -1122,9 +1124,9 @@ final class RunTransitionsTest extends TestCase {
 				$value = $args[1] ?? null;
 				self::assertIsArray( $value );
 				$labels[] = self::run_state_label( $value );
-			} elseif ( 'a8csp_bgte_failed_runs_' . self::IDENTITY === $option_name ) {
+			} elseif ( 'a8csp_bgje_failed_runs_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgte_history_' . self::IDENTITY === $option_name ) {
+			} elseif ( 'a8csp_bgje_history_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'history';
 			}
 		}
@@ -1225,7 +1227,7 @@ final class RunTransitionsTest extends TestCase {
 			return RawOptionDecoder::decode( $raw );
 		}
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
 		self::assertIsArray( $options );
 
 		return $options[ $name ] ?? null;
@@ -1237,7 +1239,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  list<array{hook_name: string, args: list<mixed>}>
 	 */
 	private function fired_actions(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
+		$actions = $GLOBALS['a8csp_bgje_test_fired_actions'] ?? null;
 		self::assertIsArray( $actions );
 		$typed_actions = array();
 		foreach ( $actions as $action ) {

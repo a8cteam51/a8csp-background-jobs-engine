@@ -1,21 +1,22 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -28,7 +29,7 @@ use Psr\Clock\ClockInterface;
  *
  * @internal
  *
- * @phpstan-type StoredPendingAction = array{stage: 'start'|'run'|'continue'|'cleanup', mode: 'async', fire_at: null, priority: int}|array{stage: 'run'|'continue', mode: 'single', fire_at: int, priority: int}
+ * @phpstan-type StoredPendingAction = array{stage: 'start'|'run'|'continue'|'cleanup', mode: 'async', fire_at: null, priority: int}|array{stage: 'start'|'run'|'continue', mode: 'single', fire_at: int, priority: int}
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -44,7 +45,7 @@ final readonly class RunStore {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_run_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_run_';
 
 	/**
 	 * Maximum exact-row attempts before a contended terminal effect append fails safely.
@@ -66,7 +67,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity Complete owner-qualified task or batch identity.
+	 * @param   string         $identity Complete owner-qualified job or chunked job identity.
 	 * @param   ClockInterface $clock    Timestamp source.
 	 * @param   OptionRows     $rows     Authoritative raw option-row I/O.
 	 */
@@ -86,10 +87,10 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'Task'|'Batch' $kind
+	 * @phpstan-param JobType $kind
 	 *
 	 * @param   string                        $run_id     Run identifier.
-	 * @param   string                        $kind       Admitted work contract type.
+	 * @param   JobType                       $kind       Admitted work contract type.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
 	 * @param   string                        $args_hash  Stable single-flight identity.
 	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.
@@ -97,10 +98,10 @@ final readonly class RunStore {
 	 *
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
-	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
+	public function create( string $run_id, JobType $kind, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
-		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_seq: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
+		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
 
 		if ( ! \add_option( RunIdentity::option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
@@ -373,6 +374,8 @@ final readonly class RunStore {
 	/**
 	 * Converts typed state to its persisted option shape.
 	 *
+	 * The `kind` field contains a JobType backing value.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -380,30 +383,31 @@ final readonly class RunStore {
 	 *
 	 * @return  array{
 	 *     status: string,
-	 *     kind: 'Task'|'Batch',
+	 *     kind: 'Job'|'ChunkedJob',
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     failed_attempts: int,
-	 *     action_seq: int,
+	 *     action_sequence: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
+	 *     previous_completed_run_id?: string,
 	 *     effects?: non-empty-list<string>
 	 * }
 	 */
 	private static function to_option( RunState $state ): array {
 		$option = array(
 			'status'          => $state->status->value,
-			'kind'            => $state->kind,
+			'kind'            => $state->kind->value,
 			'executing'       => $state->executing,
 			'start_args'      => $state->start_args,
 			'args_hash'       => $state->args_hash,
 			'queue'           => $state->queue,
 			'failed_attempts' => $state->failed_attempts,
-			'action_seq'      => $state->action_seq,
+			'action_sequence' => $state->action_sequence,
 			'created_at'      => $state->created_at,
 			'heartbeat_at'    => $state->heartbeat_at,
 		);
@@ -417,6 +421,9 @@ final readonly class RunStore {
 		}
 		if ( null !== $state->error ) {
 			$option['error'] = $state->error;
+		}
+		if ( null !== $state->previous_completed_run_id ) {
+			$option['previous_completed_run_id'] = $state->previous_completed_run_id;
 		}
 		if ( array() !== $state->effects ) {
 			$option['effects'] = $state->effects;
@@ -465,10 +472,12 @@ final readonly class RunStore {
 		if ( null === $status ) {
 			return null;
 		}
-		$error   = $value['error'] ?? null;
-		$effects = $value['effects'] ?? array();
+		$error                     = $value['error'] ?? null;
+		$previous_completed_run_id = $value['previous_completed_run_id'] ?? null;
+		$effects                   = $value['effects'] ?? array();
 		if (
 			( RunStatus::Failed !== $status && null !== $error )
+			|| ( RunStatus::Completed !== $status && null !== $previous_completed_run_id )
 			|| ( RunStatus::Running === $status && array() !== $effects )
 		) {
 			return null;
@@ -481,28 +490,31 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_seq: $value['action_seq'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, effects: $effects, );
+		return new RunState( status: $status, kind: JobType::from( $value['kind'] ), executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, );
 	}
 
 	/**
 	 * Returns whether a value carries every persisted field with its required type.
+	 *
+	 * The `kind` field contains a JobType backing value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @phpstan-assert-if-true array{
 	 *     status: string,
-	 *     kind: 'Task'|'Batch',
+	 *     kind: 'Job'|'ChunkedJob',
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
 	 *     queue: list<array<array-key, mixed>>,
 	 *     failed_attempts: int,
-	 *     action_seq: int,
+	 *     action_sequence: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending?: StoredPendingAction,
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
+	 *     previous_completed_run_id?: string,
 	 *     effects?: non-empty-list<string>
 	 * } $value
 	 *
@@ -515,7 +527,7 @@ final readonly class RunStore {
 			! \is_array( $value )
 			|| ! \is_string( $value['status'] ?? null )
 			|| ! \is_string( $value['kind'] ?? null )
-			|| ! \in_array( $value['kind'], RunState::KINDS, true )
+			|| null === JobType::tryFrom( $value['kind'] )
 			|| ! \is_bool( $value['executing'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
 			|| ! PortableArguments::is_valid( $value['start_args'] )
@@ -523,11 +535,12 @@ final readonly class RunStore {
 			|| ! \is_array( $value['queue'] ?? null )
 			|| ! \array_is_list( $value['queue'] )
 			|| ! \is_int( $value['failed_attempts'] ?? null )
-			|| ! \is_int( $value['action_seq'] ?? null )
+			|| ! \is_int( $value['action_sequence'] ?? null )
 			|| ! \is_int( $value['created_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 			|| ( \array_key_exists( 'pending', $value ) && ! self::is_stored_pending( $value['pending'] ) )
 			|| ( \array_key_exists( 'error', $value ) && ! self::is_stored_error( $value['error'] ) )
+			|| ( \array_key_exists( 'previous_completed_run_id', $value ) && ! \is_string( $value['previous_completed_run_id'] ) )
 			|| ( \array_key_exists( 'effects', $value ) && ! self::is_stored_effects( $value['effects'] ) )
 		) {
 			return false;
@@ -563,12 +576,12 @@ final readonly class RunStore {
 			return false;
 		}
 
-		// The acceptance set is exactly PendingAction's six factory combinations: async pairs with every
-		// guard-permitted stage, while single pairs only with run and continue. PendingAction's factories
+		// The acceptance set is exactly PendingAction's seven factory combinations: async pairs with every
+		// guard-permitted stage, while single pairs only with start, run, and continue. PendingAction's factories
 		// are the only writers, so anything else is a corrupt row.
 		return 'async' === $value['mode']
 			? null === $value['fire_at']
-			: \is_int( $value['fire_at'] ) && \in_array( $value['stage'], array( 'run', 'continue' ), true );
+			: \is_int( $value['fire_at'] ) && \in_array( $value['stage'], array( 'start', 'run', 'continue' ), true );
 	}
 
 	/**
@@ -593,7 +606,7 @@ final readonly class RunStore {
 			|| ! \is_string( $value['stage'] ?? null )
 			|| null === RunFailureStage::tryFrom( $value['stage'] )
 			|| ! \is_string( $value['code'] ?? null )
-			|| null === ApiErrorCode::tryFrom( $value['code'] )
+			|| null === ErrorCode::tryFrom( $value['code'] )
 		) {
 			return false;
 		}

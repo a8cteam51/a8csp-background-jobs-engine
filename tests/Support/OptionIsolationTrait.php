@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
 
 /**
  * Sweeps engine options and rejects undeclared steady-state rows before cleanup.
@@ -21,7 +21,7 @@ trait OptionIsolationTrait {
 	 *
 	 * @var     string
 	 */
-	private const string ENGINE_OPTION_PREFIX = 'a8csp_bgte_';
+	private const string ENGINE_OPTION_PREFIX = 'a8csp_bgje_';
 
 	/**
 	 * Deliberate non-history leftovers declared by the current test.
@@ -51,7 +51,7 @@ trait OptionIsolationTrait {
 	 */
 	protected function expect_option( string $name ): void {
 		if ( ! \str_starts_with( $name, self::ENGINE_OPTION_PREFIX ) ) {
-			throw new \InvalidArgumentException( 'Expected integration leftovers must use the a8csp_bgte_ option prefix.' );
+			throw new \InvalidArgumentException( 'Expected integration leftovers must use the a8csp_bgje_ option prefix.' );
 		}
 
 		$this->expected_engine_options[ $name ] = true;

@@ -1,14 +1,14 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Backends;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Backends;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\ApiErrorMapper;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -24,7 +24,7 @@ use PHPUnit\Framework\TestCase;
 final class WPCronBackendTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string HOOK = 'a8csp_bgte_test_hook';
+	private const string HOOK = 'a8csp_bgje_test_hook';
 
 	// endregion.
 
@@ -59,15 +59,15 @@ final class WPCronBackendTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_cron_array']                  = array();
-		$GLOBALS['a8csp_bgte_test_cron_calls']                  = array();
-		$GLOBALS['a8csp_bgte_test_cron_results']                = array();
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence']         = 0;
-		$GLOBALS['a8csp_bgte_test_cron_before_unschedule']      = null;
-		$GLOBALS['a8csp_bgte_test_cron_preserve_on_unschedule'] = false;
-		$GLOBALS['a8csp_bgte_test_hooks']                       = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations']        = array();
-		$GLOBALS['a8csp_bgte_test_get_option']                  = null;
+		$GLOBALS['a8csp_bgje_test_cron_array']                  = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']                  = array();
+		$GLOBALS['a8csp_bgje_test_cron_results']                = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence']         = 0;
+		$GLOBALS['a8csp_bgje_test_cron_before_unschedule']      = null;
+		$GLOBALS['a8csp_bgje_test_cron_preserve_on_unschedule'] = false;
+		$GLOBALS['a8csp_bgje_test_hooks']                       = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations']        = array();
+		$GLOBALS['a8csp_bgje_test_get_option']                  = null;
 	}
 
 	// endregion.
@@ -90,7 +90,7 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( Success::class, $scheduled );
 		self::assertTrue( $backend->is_scheduled( self::HOOK, array( 'schedule-17' ), 'another-ignored-group' ) );
 		self::assertSame( 1_700_000_300, $backend->get_next_scheduled( self::HOOK, array( 'schedule-17' ) ) );
-		self::assertSame( array( 1_700_000_300, 'a8csp_bgte_every_300s', self::HOOK, array( 'schedule-17' ), true ), $this->calls( 'wp_schedule_event' )[0]['args'] );
+		self::assertSame( array( 1_700_000_300, 'a8csp_bgje_every_300s', self::HOOK, array( 'schedule-17' ), true ), $this->calls( 'wp_schedule_event' )[0]['args'] );
 
 		$cleared = $backend->unschedule( self::HOOK, array( 'schedule-17' ), 'ignored-group' );
 
@@ -107,9 +107,9 @@ final class WPCronBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_scheduled_count_includes_every_matching_timestamp(): void {
-		a8csp_bgte_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'schedule-17' ), 'a8csp_bgte_every_300s' );
-		a8csp_bgte_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'schedule-17' ), 'a8csp_bgte_every_300s' );
-		a8csp_bgte_test_store_cron_event( 1_700_000_900, self::HOOK, array( 'other-schedule' ), 'a8csp_bgte_every_300s' );
+		a8csp_bgje_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'schedule-17' ), 'a8csp_bgje_every_300s' );
+		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'schedule-17' ), 'a8csp_bgje_every_300s' );
+		a8csp_bgje_test_store_cron_event( 1_700_000_900, self::HOOK, array( 'other-schedule' ), 'a8csp_bgje_every_300s' );
 
 		$count = ( new WPCronBackend() )->scheduled_count( self::HOOK, array( 'schedule-17' ), 'ignored-group' );
 
@@ -125,21 +125,21 @@ final class WPCronBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_scheduled_counts_buckets_multiple_identities_from_one_cron_read(): void {
-		a8csp_bgte_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'single' ), 'a8csp_bgte_every_300s' );
-		a8csp_bgte_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'many' ), 'a8csp_bgte_every_300s' );
-		a8csp_bgte_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'many' ), 'a8csp_bgte_every_300s' );
-		a8csp_bgte_test_store_cron_event( 1_700_001_200, self::HOOK, array( 'many', 'extra' ), 'a8csp_bgte_every_300s' );
-		a8csp_bgte_test_store_cron_event( 1_700_001_500, 'other-hook', array( 'many' ), 'a8csp_bgte_every_300s' );
+		a8csp_bgje_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'single' ), 'a8csp_bgje_every_300s' );
+		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'many' ), 'a8csp_bgje_every_300s' );
+		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'many' ), 'a8csp_bgje_every_300s' );
+		a8csp_bgje_test_store_cron_event( 1_700_001_200, self::HOOK, array( 'many', 'extra' ), 'a8csp_bgje_every_300s' );
+		a8csp_bgje_test_store_cron_event( 1_700_001_500, 'other-hook', array( 'many' ), 'a8csp_bgje_every_300s' );
 		$cron_reads = 0;
 
-		$GLOBALS['a8csp_bgte_test_get_option'] = static function ( string $option, mixed $default_value ) use ( &$cron_reads ): mixed {
+		$GLOBALS['a8csp_bgje_test_get_option'] = static function ( string $option, mixed $default_value ) use ( &$cron_reads ): mixed {
 			if ( 'cron' !== $option ) {
 				return $default_value;
 			}
 
 			++$cron_reads;
 
-			return $GLOBALS['a8csp_bgte_test_cron_array'];
+			return $GLOBALS['a8csp_bgje_test_cron_array'];
 		};
 
 		$counts = ( new WPCronBackend() )->scheduled_counts( self::HOOK, array( 'single', 'missing', 'many' ) );
@@ -172,8 +172,8 @@ final class WPCronBackendTest extends TestCase {
 		$insertions       = 0;
 		self::assertTrue( \wp_schedule_single_event( $first_timestamp, self::HOOK, array( 'a' ), true ) );
 		self::assertTrue( \wp_schedule_single_event( $second_timestamp, self::HOOK, array( 'a' ), true ) );
-		$GLOBALS['a8csp_bgte_test_cron_calls']             = array();
-		$GLOBALS['a8csp_bgte_test_cron_before_unschedule'] = static function ( int $timestamp, string $hook, array $args ) use ( &$insertions ): void {
+		$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_before_unschedule'] = static function ( int $timestamp, string $hook, array $args ) use ( &$insertions ): void {
 			++$insertions;
 			if ( 2 < $insertions ) {
 				throw new \LogicException( 'Unscheduling exceeded the initial snapshot length.' );
@@ -182,7 +182,7 @@ final class WPCronBackendTest extends TestCase {
 				throw new \UnexpectedValueException( 'Pass list arguments to the pre-unschedule test hook.' );
 			}
 
-			a8csp_bgte_test_store_cron_event( $timestamp + 10_000 + $insertions, $hook, $args, false );
+			a8csp_bgje_test_store_cron_event( $timestamp + 10_000 + $insertions, $hook, $args, false );
 		};
 
 		$result = ( new WPCronBackend() )->unschedule( self::HOOK, array( 'a' ) );
@@ -205,7 +205,7 @@ final class WPCronBackendTest extends TestCase {
 	 */
 	public function test_wordpress_error_detail_is_redacted_at_the_public_boundary(): void {
 		$secret                                  = 'password=hunter2';
-		$GLOBALS['a8csp_bgte_test_cron_results'] = array(
+		$GLOBALS['a8csp_bgje_test_cron_results'] = array(
 			'wp_schedule_single_event' => array( new \WP_Error( 'single_failed', $secret ) ),
 		);
 
@@ -217,7 +217,7 @@ final class WPCronBackendTest extends TestCase {
 		self::assertSame( $secret, $internal->error->context['wp_error'] ?? null );
 		self::assertInstanceOf( Failure::class, $public );
 		self::assertInstanceOf( ApiError::class, $public->error );
-		self::assertSame( ApiErrorCode::BackendRejected, $public->error->code );
+		self::assertSame( ErrorCode::BackendRejected, $public->error->code );
 		self::assertArrayNotHasKey( 'wp_error', $public->error->context );
 		self::assertStringNotContainsString( $secret, $public->error->message );
 	}
@@ -236,14 +236,14 @@ final class WPCronBackendTest extends TestCase {
 			1_700_000_000 => array(
 				'persisted_hook' => array(
 					array(
-						'schedule' => 'a8csp_bgte_every_300s',
+						'schedule' => 'a8csp_bgje_every_300s',
 						'args'     => array(),
 					),
 				),
 			),
 		);
 
-		$GLOBALS['a8csp_bgte_test_get_option'] = static function ( string $option, mixed $default_value ) use ( &$cron_reads, $stored ): mixed {
+		$GLOBALS['a8csp_bgje_test_get_option'] = static function ( string $option, mixed $default_value ) use ( &$cron_reads, $stored ): mixed {
 			if ( 'cron' !== $option ) {
 				return $default_value;
 			}
@@ -254,15 +254,15 @@ final class WPCronBackendTest extends TestCase {
 		};
 
 		$backend = new WPCronBackend();
-		self::assertArrayHasKey( 'a8csp_bgte_every_300s', $backend->register_synthetic_schedules( array() ) );
-		self::assertArrayHasKey( 'a8csp_bgte_every_300s', $backend->register_synthetic_schedules( array() ) );
+		self::assertArrayHasKey( 'a8csp_bgje_every_300s', $backend->register_synthetic_schedules( array() ) );
+		self::assertArrayHasKey( 'a8csp_bgje_every_300s', $backend->register_synthetic_schedules( array() ) );
 		self::assertSame( 1, $cron_reads, 'Repeated cron_schedules evaluations must reuse the request snapshot' );
 
 		self::assertInstanceOf( Success::class, $backend->schedule_recurring( self::HOOK, 600, array(), 1_700_000_600 ) );
 		$schedules = $backend->register_synthetic_schedules( array() );
 
-		self::assertArrayHasKey( 'a8csp_bgte_every_300s', $schedules );
-		self::assertArrayHasKey( 'a8csp_bgte_every_600s', $schedules );
+		self::assertArrayHasKey( 'a8csp_bgje_every_300s', $schedules );
+		self::assertArrayHasKey( 'a8csp_bgje_every_600s', $schedules );
 		self::assertSame( 2, $cron_reads, 'Registering a new interval must invalidate and rebuild the request snapshot once' );
 	}
 
@@ -282,7 +282,7 @@ final class WPCronBackendTest extends TestCase {
 	 */
 	private function calls( ?string $function_name = null ): array {
 		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_cron_calls'];
+		$calls = $GLOBALS['a8csp_bgje_test_cron_calls'];
 
 		return null === $function_name
 			? $calls

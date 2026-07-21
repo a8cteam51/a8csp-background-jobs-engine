@@ -1,37 +1,38 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLeaseOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OwnerReplacementOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\WorkRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLeaseOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OwnerReplacementOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\LatestRunPointer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
 use Psr\Log\NullLogger;
 
 /**
@@ -71,7 +72,7 @@ final readonly class StoreFixtureBuilder {
 	 */
 	public static function for_identity( string $identity ): self {
 		EngineRig::bootstrap();
-		if ( null === WorkIdentity::parts( $identity ) ) {
+		if ( null === JobIdentity::parts( $identity ) ) {
 			throw new \InvalidArgumentException( 'Store fixtures require one canonical owner-qualified work identity.' );
 		}
 
@@ -322,7 +323,7 @@ final readonly class StoreFixtureBuilder {
 	 *
 	 * @phpstan-param array{
 	 *     owner: string,
-	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule, task: string}>,
+	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule, job: string}>,
 	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>
 	 * } $owner
 	 *
@@ -392,6 +393,33 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
+	 * Returns the cursor row authored by one bounded production cleanup-intent sweep.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $created_at Intent timestamp.
+	 *
+	 * @return  array{string, string}
+	 */
+	public function cleanup_intent_sweep_cursor( int $created_at ): array {
+		return $this->isolated(
+			function ( \wpdb $wpdb ) use ( $created_at ): array {
+				$rows      = new OptionRows( $wpdb );
+				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
+				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
+				for ( $index = 0; $index < 500; ++$index ) {
+					$intents->record_intent( $this->identity . '-' . \sprintf( '%03d', $index ) );
+				}
+
+				$intents->converge_pending_intents();
+
+				return $this->row( $wpdb, CleanupIntents::SWEEP_CURSOR_OPTION );
+			}
+		);
+	}
+
+	/**
 	 * Returns the cursor row authored by one incomplete production maintenance pass.
 	 *
 	 * @since   1.0.0
@@ -418,13 +446,13 @@ final readonly class StoreFixtureBuilder {
 				$windows        = new LockWindows( $clock, $logger );
 				$effects        = new LifecycleEffects( $guard, $stores, $logger );
 				$transitions    = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
-				$reconciliation = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, new WorkRegistry(), $backend );
+				$reconciliation = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, new JobRegistry(), $backend );
 				$intents        = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
 
-				( new MaintenanceTask( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array() );
+				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( 'fixture-maintenance-run', array() ) );
 				$added = \array_values( \array_diff( $this->option_names( $rows, '' ), $before ) );
 				if ( 1 !== \count( $added ) ) {
-					throw new \LogicException( 'Production MaintenanceTask did not emit exactly one isolated cursor row.' );
+					throw new \LogicException( 'Production MaintenanceJob did not emit exactly one isolated cursor row.' );
 				}
 
 				return $this->row( $wpdb, $added[0] );
@@ -583,7 +611,7 @@ final readonly class StoreFixtureBuilder {
 			return $this->isolated_wordpress( $produce );
 		}
 
-		$keys      = array( 'wpdb', 'a8csp_bgte_test_options', 'a8csp_bgte_test_option_autoload', 'a8csp_bgte_test_option_calls', 'a8csp_bgte_test_before_add_option', 'a8csp_bgte_test_get_option', 'a8csp_bgte_test_update_option_results', 'a8csp_bgte_test_update_option_values', 'a8csp_bgte_test_delete_option_results', 'a8csp_bgte_test_lifecycle_events', 'a8csp_bgte_test_blog_id', 'a8csp_bgte_test_cache', 'a8csp_bgte_test_cache_calls' );
+		$keys      = array( 'wpdb', 'a8csp_bgje_test_options', 'a8csp_bgje_test_option_autoload', 'a8csp_bgje_test_option_calls', 'a8csp_bgje_test_before_add_option', 'a8csp_bgje_test_get_option', 'a8csp_bgje_test_update_option_results', 'a8csp_bgje_test_update_option_values', 'a8csp_bgje_test_delete_option_results', 'a8csp_bgje_test_lifecycle_events', 'a8csp_bgje_test_blog_id', 'a8csp_bgje_test_cache', 'a8csp_bgje_test_cache_calls' );
 		$preserved = array();
 		foreach ( $keys as $key ) {
 			$preserved[ $key ] = array(
@@ -594,17 +622,17 @@ final readonly class StoreFixtureBuilder {
 
 		$wpdb                                       = new WpdbLockSpy();
 		$GLOBALS['wpdb']                            = $wpdb;
-		$GLOBALS['a8csp_bgte_test_options']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload'] = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']    = array();
-		$GLOBALS['a8csp_bgte_test_update_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_update_option_values']  = array();
-		$GLOBALS['a8csp_bgte_test_delete_option_results'] = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']      = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']               = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                 = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']           = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'], $GLOBALS['a8csp_bgte_test_get_option'] );
+		$GLOBALS['a8csp_bgje_test_options']         = array();
+		$GLOBALS['a8csp_bgje_test_option_autoload'] = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']    = array();
+		$GLOBALS['a8csp_bgje_test_update_option_results'] = array();
+		$GLOBALS['a8csp_bgje_test_update_option_values']  = array();
+		$GLOBALS['a8csp_bgje_test_delete_option_results'] = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events']      = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']               = 1;
+		$GLOBALS['a8csp_bgje_test_cache']                 = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls']           = array();
+		unset( $GLOBALS['a8csp_bgje_test_before_add_option'], $GLOBALS['a8csp_bgje_test_get_option'] );
 
 		try {
 			$pair = $produce( $wpdb );
@@ -637,7 +665,7 @@ final readonly class StoreFixtureBuilder {
 	 */
 	private function isolated_wordpress( \Closure $produce ): array {
 		$wpdb    = $this->wordpress_database();
-		$pattern = $wpdb->esc_like( 'a8csp_bgte_' ) . '%';
+		$pattern = $wpdb->esc_like( 'a8csp_bgje_' ) . '%';
 		$rows    = $wpdb->get_results( $wpdb->prepare( 'SELECT `option_name`, `option_value`, `autoload` FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $pattern ), \ARRAY_A );
 		if ( ! \is_array( $rows ) ) {
 			throw new \LogicException( 'Store fixtures could not snapshot the real WordPress option rows.' );
@@ -763,11 +791,12 @@ final readonly class StoreFixtureBuilder {
 			&& $left->args_hash === $right->args_hash
 			&& $left->queue === $right->queue
 			&& $left->failed_attempts === $right->failed_attempts
-			&& $left->action_seq === $right->action_seq
+			&& $left->action_sequence === $right->action_sequence
 			&& $left->created_at === $right->created_at
 			&& $left->heartbeat_at === $right->heartbeat_at
 			&& ( $left->pending === $right->pending || ( null !== $left->pending && null !== $right->pending && $left->pending->stage === $right->pending->stage && $left->pending->mode === $right->pending->mode && $left->pending->fire_at === $right->pending->fire_at && $left->pending->priority === $right->pending->priority ) )
 			&& $left->error === $right->error
+			&& $left->previous_completed_run_id === $right->previous_completed_run_id
 			&& $left->effects === $right->effects;
 	}
 
@@ -788,7 +817,7 @@ final readonly class StoreFixtureBuilder {
 			$wpdb = $this->wordpress_database();
 			$raw  = $wpdb->get_var( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s', $wpdb->options, $option_name ) );
 		} else {
-			$options = $GLOBALS['a8csp_bgte_test_options'] ?? array();
+			$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 			$raw     = \is_array( $options ) && \array_key_exists( $option_name, $options )
 				? \maybe_serialize( $options[ $option_name ] )
 				: null;

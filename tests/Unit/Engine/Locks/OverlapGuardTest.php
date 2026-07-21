@@ -1,19 +1,19 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Locks;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Locks;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\HeartbeatOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceFenceOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\MaintenanceLockSweep;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\RedeliveryFenceOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\MaintenanceFenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\MaintenanceLockSweep;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\RedeliveryFenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -48,7 +48,7 @@ final class LockRowWakeupProbe {
 #[UsesClass( RawOptionDecoder::class )]
 final class OverlapGuardTest extends TestCase {
 	private const string ARGS_HASH = 'args-123';
-	private const string KEY       = 'a8csp_bgte_overlap_lock_email-digest_args-123';
+	private const string KEY       = 'a8csp_bgje_overlap_lock_email-digest_args-123';
 	private const string NAME      = 'email-digest';
 
 	private WpdbLockSpy $wpdb;
@@ -70,9 +70,9 @@ final class OverlapGuardTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_blog_id']     = 1;
-		$GLOBALS['a8csp_bgte_test_cache']       = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']     = 1;
+		$GLOBALS['a8csp_bgje_test_cache']       = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls'] = array();
 		$this->wpdb                             = new WpdbLockSpy();
 		$this->rows                             = new OptionRows( $this->wpdb );
 	}
@@ -81,18 +81,18 @@ final class OverlapGuardTest extends TestCase {
 	public function test_option_name_parser_uses_the_canonical_lock_key_grammar(): void {
 		$hash = \str_repeat( 'a', 64 );
 
-		self::assertSame( 'a8csp_bgte_overlap_lock_', OverlapGuard::OPTION_PREFIX );
+		self::assertSame( 'a8csp_bgje_overlap_lock_', OverlapGuard::OPTION_PREFIX );
 		self::assertSame(
 			array(
 				'name'      => 'owner:under_score',
 				'args_hash' => $hash,
 			),
-			OverlapGuard::identity_from_option_name( 'a8csp_bgte_overlap_lock_owner:under_score_' . $hash )
+			OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_owner:under_score_' . $hash )
 		);
 		self::assertNull( OverlapGuard::identity_from_option_name( 'other_lock_owner:under_score_' . $hash ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgte_overlap_lock_invalid-owner_' . $hash ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgte_overlap_lock_owner:sync_' . \str_repeat( 'A', 64 ) ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( "a8csp_bgte_overlap_lock_owner:sync_{$hash}\n" ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_invalid-owner_' . $hash ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_owner:sync_' . \str_repeat( 'A', 64 ) ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( "a8csp_bgje_overlap_lock_owner:sync_{$hash}\n" ) );
 	}
 
 	/** An absent lock is claimed with the exact schema and non-autoload policy. */

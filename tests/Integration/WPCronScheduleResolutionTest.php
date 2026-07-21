@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Integration;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -18,10 +18,10 @@ final class WPCronScheduleResolutionTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook isolated to synthetic schedule reconstruction. */
-	private const string RESOLUTION_HOOK = 'a8csp_bgte/integration/wp_cron_resolution';
+	private const string RESOLUTION_HOOK = 'a8csp_bgje/integration/wp_cron_resolution';
 
 	/** Hook isolated to recurring occurrence delivery. */
-	private const string RECURRING_HOOK = 'a8csp_bgte/integration/wp_cron_recurring';
+	private const string RECURRING_HOOK = 'a8csp_bgje/integration/wp_cron_recurring';
 
 	// endregion.
 
@@ -56,7 +56,7 @@ final class WPCronScheduleResolutionTest extends IntegrationTestCase {
 				'interval' => $interval,
 				'display'  => 'Every 137 seconds',
 			),
-			$schedules['a8csp_bgte_every_137s'] ?? null,
+			$schedules['a8csp_bgje_every_137s'] ?? null,
 			'The fresh request must rebuild the synthetic schedule from the persisted cron array'
 		);
 	}

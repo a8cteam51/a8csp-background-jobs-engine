@@ -1,11 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\RandomizerInterface;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -14,7 +14,7 @@ use Psr\Clock\ClockInterface;
  * Serializes one schedule occurrence's read-decide-persist critical section.
  *
  * The sixty-second stale window bounds crash recovery around scheduler acceptance and the registry
- * CAS; accepted dispatches release before client hooks, and asynchronous task execution is never leased.
+ * CAS; accepted dispatches release before client hooks, and asynchronous job execution is never leased.
  *
  * @internal
  *
@@ -32,7 +32,7 @@ final readonly class OccurrenceLease {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_occurrence_lease_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_occurrence_lease_';
 
 	/**
 	 * Maximum lease age in seconds before a new occurrence may reclaim it.

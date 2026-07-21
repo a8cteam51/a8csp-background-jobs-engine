@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -181,7 +181,7 @@ final readonly class ScheduleOutput {
 	 * @return  void
 	 */
 	public static function removal_error( string $owner, string $message ): void {
-		self::error( \sprintf( '%1$s Owner removal converges incrementally; after resolving this error, rerun "wp background-tasks schedules remove %2$s" to clear any remaining registrations.', $message, $owner ) );
+		self::error( \sprintf( '%1$s Owner removal converges incrementally; after resolving this error, rerun "wp background-jobs schedules remove %2$s" to clear any remaining registrations.', $message, $owner ) );
 	}
 
 	/**

@@ -1,15 +1,15 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Storage;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Storage;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -26,7 +26,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RowDeleteOutcome::class )]
 #[UsesClass( RowWriteOutcome::class )]
 final class OptionRowsTest extends TestCase {
-	private const string KEY = 'a8csp_bgte_run_email-digest_run-123';
+	private const string KEY = 'a8csp_bgje_run_email-digest_run-123';
 
 	/** Loads the guarded WordPress cache and site functions. */
 	#[\Override]
@@ -43,9 +43,9 @@ final class OptionRowsTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_blog_id']     = 1;
-		$GLOBALS['a8csp_bgte_test_cache']       = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']     = 1;
+		$GLOBALS['a8csp_bgje_test_cache']       = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls'] = array();
 	}
 
 	/** An UPDATE-only replacement cannot recreate a row deleted before the CAS. */
@@ -100,10 +100,10 @@ final class OptionRowsTest extends TestCase {
 	 * @pin-rationale A wildcard-bearing caller prefix must remain a literal storage boundary even when the database returns imprecise candidates.
 	 */
 	public function test_option_names_refilters_a_literal_prefix_boundary(): void {
-		$prefix                    = 'a8csp_bgte_%_';
+		$prefix                    = 'a8csp_bgje_%_';
 		$expected                  = $prefix . 'intent';
 		$wpdb                      = new WpdbLockSpy();
-		$wpdb->option_name_results = array( $expected, 'a8cspXbgteXwildcard-match', 42 );
+		$wpdb->option_name_results = array( $expected, 'a8cspXbgjeXwildcard-match', 42 );
 
 		$result = ( new OptionRows( $wpdb ) )->option_names( $prefix );
 		self::assertFalse( $result->is_failure() );
@@ -122,10 +122,10 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_refilters_the_literal_prefix_boundary(): void {
-		$prefix                    = 'a8csp_bgte_%_';
+		$prefix                    = 'a8csp_bgje_%_';
 		$expected                  = $prefix . 'intent';
 		$wpdb                      = new WpdbLockSpy();
-		$wpdb->option_name_results = array( $expected, 'a8cspXbgteXwildcard-match', 42 );
+		$wpdb->option_name_results = array( $expected, 'a8cspXbgjeXwildcard-match', 42 );
 
 		$result = ( new OptionRows( $wpdb ) )->option_names_after( $prefix, null, 10 );
 
@@ -149,7 +149,7 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_excludes_the_cursor_and_orders_by_binary_name(): void {
-		$prefix = 'a8csp_bgte_run_';
+		$prefix = 'a8csp_bgje_run_';
 		$wpdb   = new WpdbLockSpy();
 		$wpdb->put( $prefix . 'B', 'second' );
 		$wpdb->put( $prefix . 'a', 'third' );
@@ -177,7 +177,7 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_applies_the_limit_and_returns_a_short_final_page(): void {
-		$prefix = 'a8csp_bgte_run_';
+		$prefix = 'a8csp_bgje_run_';
 		$wpdb   = new WpdbLockSpy();
 		$wpdb->put( $prefix . '1', 'first' );
 		$wpdb->put( $prefix . '2', 'second' );
@@ -219,8 +219,8 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_pages_by_raw_case_colliding_candidates(): void {
-		$prefix    = 'a8csp_bgte_run_';
-		$collision = 'A8CSP_BGTE_RUN_collision';
+		$prefix    = 'a8csp_bgje_run_';
+		$collision = 'A8CSP_BGJE_RUN_collision';
 		$wpdb      = new WpdbLockSpy();
 		$wpdb->put( $collision, 'foreign' );
 		$wpdb->put( $prefix . '1', 'first' );
@@ -259,11 +259,11 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_rejects_a_non_advancing_raw_cursor(): void {
-		$cursor                    = 'a8csp_bgte_run_cursor';
+		$cursor                    = 'a8csp_bgje_run_cursor';
 		$wpdb                      = new WpdbLockSpy();
 		$wpdb->option_name_results = array( $cursor );
 
-		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgte_run_', $cursor, 1 );
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgje_run_', $cursor, 1 );
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -281,7 +281,7 @@ final class OptionRowsTest extends TestCase {
 	public function test_option_names_after_rejects_a_non_positive_limit(): void {
 		$this->expectException( \InvalidArgumentException::class );
 
-		(void) ( new OptionRows( new WpdbLockSpy() ) )->option_names_after( 'a8csp_bgte_', null, 0 );
+		(void) ( new OptionRows( new WpdbLockSpy() ) )->option_names_after( 'a8csp_bgje_', null, 0 );
 	}
 
 	/**
@@ -301,7 +301,7 @@ final class OptionRowsTest extends TestCase {
 			}
 		);
 
-		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgte_', null, 10 );
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgje_', null, 10 );
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -311,7 +311,7 @@ final class OptionRowsTest extends TestCase {
 
 	/** A bounded page keysets past rejected candidates and counts only accepted names. */
 	public function test_option_names_page_applies_the_limit_after_validation(): void {
-		$prefix       = 'a8csp_bgte_run_owner:email-digest_';
+		$prefix       = 'a8csp_bgje_run_owner:email-digest_';
 		$first_valid  = $prefix . \sprintf( '%020d-%019d', 1, 1 );
 		$second_valid = $prefix . \sprintf( '%020d-%019d', 2, 2 );
 		$wpdb         = new WpdbLockSpy();
@@ -375,7 +375,7 @@ final class OptionRowsTest extends TestCase {
 			}
 		);
 
-		$result = ( new OptionRows( $wpdb ) )->option_names( 'a8csp_bgte_' );
+		$result = ( new OptionRows( $wpdb ) )->option_names( 'a8csp_bgje_' );
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -430,7 +430,7 @@ final class OptionRowsTest extends TestCase {
 		$missing = $rows->read( self::KEY );
 		self::assertFalse( $missing->is_failure() );
 		self::assertNull( $missing->value );
-		self::assertSame( array(), $GLOBALS['a8csp_bgte_test_cache_calls'] );
+		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_cache_calls'] );
 	}
 
 	/**
@@ -638,14 +638,14 @@ final class OptionRowsTest extends TestCase {
 		$wpdb = new WpdbLockSpy();
 		$rows = new OptionRows( $wpdb );
 
-		$GLOBALS['a8csp_bgte_test_blog_id'] = 2;
+		$GLOBALS['a8csp_bgje_test_blog_id'] = 2;
 
 		try {
 			$operation( $rows );
 		} catch ( \LogicException $exception ) {
 			self::assertStringContainsString( 'switch_to_blog', $exception->getMessage() );
 			self::assertSame( array(), $wpdb->recorded_queries );
-			self::assertSame( array(), $GLOBALS['a8csp_bgte_test_cache_calls'] );
+			self::assertSame( array(), $GLOBALS['a8csp_bgje_test_cache_calls'] );
 			return;
 		}
 
@@ -684,7 +684,7 @@ final class OptionRowsTest extends TestCase {
 
 	/** Primes both stale option-cache representations and clears their call ledger. */
 	private static function prime_stale_caches(): void {
-		$GLOBALS['a8csp_bgte_test_cache']       = array(
+		$GLOBALS['a8csp_bgje_test_cache']       = array(
 			'options' => array(
 				self::KEY    => 'stale',
 				'notoptions' => array(
@@ -693,13 +693,13 @@ final class OptionRowsTest extends TestCase {
 				),
 			),
 		);
-		$GLOBALS['a8csp_bgte_test_cache_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls'] = array();
 	}
 
 	/** Asserts Core-shaped per-key and notoptions invalidation. */
 	private static function assert_cache_purge(): void {
 		/** @var array<string, array<int|string, mixed>> $cache */
-		$cache = $GLOBALS['a8csp_bgte_test_cache'];
+		$cache = $GLOBALS['a8csp_bgje_test_cache'];
 		self::assertArrayNotHasKey( self::KEY, $cache['options'] );
 		self::assertSame( array( 'other' => true ), $cache['options']['notoptions'] );
 	}

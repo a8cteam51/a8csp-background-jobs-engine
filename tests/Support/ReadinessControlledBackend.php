@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
 
 /**
  * Readiness-controlled delegate over the live Action Scheduler backend.

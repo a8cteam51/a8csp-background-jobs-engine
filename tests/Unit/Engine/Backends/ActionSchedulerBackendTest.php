@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Backends;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Backends;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
 final class ActionSchedulerBackendTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string HOOK = 'a8csp_bgte_test_hook';
+	private const string HOOK = 'a8csp_bgje_test_hook';
 
 	// endregion.
 
@@ -56,9 +56,9 @@ final class ActionSchedulerBackendTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_as_calls']    = array();
-		$GLOBALS['a8csp_bgte_test_as_results']  = array();
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array(
+		$GLOBALS['a8csp_bgje_test_as_calls']    = array();
+		$GLOBALS['a8csp_bgje_test_as_results']  = array();
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
 		);
@@ -81,7 +81,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 		self::assertTrue( $backend->is_ready() );
 		self::assertFalse( $backend->is_absent() );
 
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'init' => 1 );
 		self::assertFalse( $backend->is_ready() );
 		self::assertFalse( $backend->is_absent() );
 	}
@@ -118,7 +118,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_occurrence_count_uses_an_identity_scoped_id_query(): void {
-		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+		$GLOBALS['a8csp_bgje_test_as_results'] = array(
 			'as_get_scheduled_actions' => array( array( 41, 42 ) ),
 		);
 
@@ -150,7 +150,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_scheduled_counts_buckets_multiple_identities_from_one_query(): void {
-		$GLOBALS['a8csp_bgte_test_as_results'] = array(
+		$GLOBALS['a8csp_bgje_test_as_results'] = array(
 			'as_get_scheduled_actions' => array(
 				array(
 					41 => self::action( array( 'single' ), 'single' ),
@@ -198,7 +198,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_unready_adapter_rejects_writes_without_touching_the_vendor_api(): void {
-		$GLOBALS['a8csp_bgte_test_did_actions'] = array( 'init' => 1 );
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'init' => 1 );
 
 		$result = ( new ActionSchedulerBackend() )->enqueue_async( self::HOOK );
 
@@ -224,7 +224,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 */
 	private function calls( ?string $function_name = null ): array {
 		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_as_calls'];
+		$calls = $GLOBALS['a8csp_bgje_test_as_calls'];
 
 		return null === $function_name
 			? $calls

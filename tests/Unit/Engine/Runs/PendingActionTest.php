@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -43,7 +43,7 @@ final class PendingActionTest extends TestCase {
 	}
 
 	/**
-	 * Only run and continue support scheduled single delivery.
+	 * Retryable work stages support scheduled single delivery.
 	 *
 	 * @param   string $stage Supported lifecycle stage.
 	 *
@@ -98,6 +98,7 @@ final class PendingActionTest extends TestCase {
 	 * @return  iterable<string, array{string}>
 	 */
 	public static function single_stage_provider(): iterable {
+		yield 'start' => array( 'start' );
 		yield 'run' => array( 'run' );
 		yield 'continue' => array( 'continue' );
 	}
@@ -108,7 +109,6 @@ final class PendingActionTest extends TestCase {
 	 * @return  iterable<string, array{string}>
 	 */
 	public static function async_only_stage_provider(): iterable {
-		yield 'start' => array( 'start' );
 		yield 'cleanup' => array( 'cleanup' );
 		yield 'unknown' => array( 'unknown' );
 	}

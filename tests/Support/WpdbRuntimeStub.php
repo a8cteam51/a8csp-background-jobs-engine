@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 /**
  * Supplies the runtime surface that static analysis receives from wordpress-stubs.
@@ -82,6 +82,21 @@ class WpdbRuntimeStub {
 	 * @return  array<array-key, mixed>|\stdClass|null
 	 */
 	public function get_row( mixed $query = null, mixed $output = 'OBJECT', mixed $y = 0 ): array|\stdClass|null {
+		return throw new \BadMethodCallException( 'Use WpdbLockSpy in unit tests.' );
+	}
+
+	/**
+	 * Returns selected rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $query  Prepared query.
+	 * @param   mixed $output Output shape.
+	 *
+	 * @return  array<array-key, mixed>|object|null
+	 */
+	public function get_results( mixed $query = null, mixed $output = 'OBJECT' ): array|object|null {
 		return throw new \BadMethodCallException( 'Use WpdbLockSpy in unit tests.' );
 	}
 }

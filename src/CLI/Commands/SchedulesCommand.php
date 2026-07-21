@@ -1,11 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\Format;
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\ScheduleOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ScheduleOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -46,10 +46,10 @@ final readonly class SchedulesCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-tasks schedules list
-	 *     $ wp background-tasks schedules list --owner=consumer-plugin --format=json
-	 *     $ wp background-tasks schedules remove consumer-plugin
-	 *     $ wp background-tasks schedules remove consumer-plugin --yes
+	 *     $ wp background-jobs schedules list
+	 *     $ wp background-jobs schedules list --owner=consumer-plugin --format=json
+	 *     $ wp background-jobs schedules remove consumer-plugin
+	 *     $ wp background-jobs schedules remove consumer-plugin --yes
 	 *
 	 * An overdue `next_due` with `occurrence_visible: no` means no occurrence is visible on currently-ready
 	 * backends. A separately reported dormant backend candidate may retain an occurrence outside that
@@ -113,13 +113,13 @@ final readonly class SchedulesCommand {
 			) {
 				return array(
 					'action'  => 'error',
-					'message' => 'Schedule removal requires exactly one owner and accepts only --yes; use wp background-tasks schedules remove <owner> [--yes].',
+					'message' => 'Schedule removal requires exactly one owner and accepts only --yes; use wp background-jobs schedules remove <owner> [--yes].',
 				);
 			}
 
 			$owner = $args[1];
 			try {
-				WorkIdentity::validate_owner( $owner );
+				JobIdentity::validate_owner( $owner );
 			} catch ( \InvalidArgumentException ) {
 				return array(
 					'action'  => 'error',
@@ -143,7 +143,7 @@ final readonly class SchedulesCommand {
 		if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'owner', 'format' ) ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Schedule list accepts only --owner and --format; use wp background-tasks schedules list [--owner=<owner>] [--format=<format>].',
+				'message' => 'Schedule list accepts only --owner and --format; use wp background-jobs schedules list [--owner=<owner>] [--format=<format>].',
 			);
 		}
 
@@ -159,7 +159,7 @@ final readonly class SchedulesCommand {
 
 			$owner = $owner_argument;
 			try {
-				WorkIdentity::validate_owner( $owner, true );
+				JobIdentity::validate_owner( $owner, true );
 			} catch ( \InvalidArgumentException ) {
 				return array(
 					'action'  => 'error',
@@ -201,7 +201,7 @@ final readonly class SchedulesCommand {
 	private function list_schedules( ?string $owner, string $format ): void {
 		$inspection = Component::get_inspection();
 		if ( null === $inspection ) {
-			\WP_CLI::error( 'The background tasks inspection service is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
@@ -227,7 +227,7 @@ final readonly class SchedulesCommand {
 	private function remove_schedules( string $owner ): void {
 		$inspection = Component::get_inspection();
 		if ( null === $inspection ) {
-			ScheduleOutput::error( 'The background tasks inspection service is unavailable; run the command after plugins_loaded.' );
+			ScheduleOutput::error( 'The background jobs inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
@@ -243,12 +243,12 @@ final readonly class SchedulesCommand {
 
 		$engine = Component::get_engine();
 		if ( null === $engine ) {
-			ScheduleOutput::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
+			ScheduleOutput::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 		$scheduler = Component::get_scheduler();
 		if ( null === $scheduler ) {
-			ScheduleOutput::error( 'The background tasks scheduler is unavailable; run the command after plugins_loaded.' );
+			ScheduleOutput::error( 'The background jobs scheduler is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 		$has_dormant_candidate = $scheduler->has_dormant_candidate();

@@ -1,13 +1,13 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -39,7 +39,7 @@ final class WPCronBackend implements BackendInterface {
 	 *
 	 * @var     string
 	 */
-	private const string SCHEDULE_PREFIX = 'a8csp_bgte_every_';
+	private const string SCHEDULE_PREFIX = 'a8csp_bgje_every_';
 
 	/**
 	 * Pattern matching valid synthetic recurrence schedule names.
@@ -49,7 +49,7 @@ final class WPCronBackend implements BackendInterface {
 	 *
 	 * @var     string
 	 */
-	private const string SCHEDULE_PATTERN = '/^a8csp_bgte_every_([1-9]\d*)s$/';
+	private const string SCHEDULE_PATTERN = '/^a8csp_bgje_every_([1-9]\d*)s$/';
 
 	/**
 	 * WordPress filter that supplies registered recurrence schedules.
@@ -394,7 +394,7 @@ final class WPCronBackend implements BackendInterface {
 				'interval' => $interval,
 				'display'  => \sprintf(
 					/* translators: %d: interval in seconds. */
-					\__( 'Every %d seconds', 'a8csp-background-tasks-engine' ),
+					\__( 'Every %d seconds', 'a8csp-background-jobs-engine' ),
 					$interval
 				),
 			);

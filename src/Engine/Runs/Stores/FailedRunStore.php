@@ -1,18 +1,18 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\PortableArguments;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -50,7 +50,7 @@ final readonly class FailedRunStore {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_failed_runs_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_failed_runs_';
 
 	/**
 	 * Maximum compare-and-swap attempts before a contended update fails safely.
@@ -82,7 +82,7 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $identity Complete owner-qualified task or batch identity.
+	 * @param   string          $identity Complete owner-qualified job or chunked job identity.
 	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
 	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
@@ -566,7 +566,7 @@ final readonly class FailedRunStore {
 			|| ! \is_string( $error['stage'] ?? null )
 			|| null === RunFailureStage::tryFrom( $error['stage'] )
 			|| ! \is_string( $error['code'] ?? null )
-			|| null === ApiErrorCode::tryFrom( $error['code'] )
+			|| null === ErrorCode::tryFrom( $error['code'] )
 		) {
 			return null;
 		}

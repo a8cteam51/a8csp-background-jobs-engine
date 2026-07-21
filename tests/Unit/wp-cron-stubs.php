@@ -7,7 +7,7 @@
  * exposing scripted WordPress errors and a call ledger. Function guards keep it inert when
  * WordPress supplies the real cron API.
  *
- * @package A8C\SpecialProjects\BackgroundTasksEngine
+ * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
 require_once __DIR__ . '/wp-hook-stubs.php';
@@ -15,7 +15,7 @@ require_once __DIR__ . '/wp-options-stubs.php';
 require_once \dirname( __DIR__ ) . '/Support/WPErrorStub.php';
 
 if ( ! \class_exists( 'WP_Error' ) ) {
-	\class_alias( A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WPErrorStub::class, 'WP_Error' );
+	\class_alias( A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WPErrorStub::class, 'WP_Error' );
 }
 
 if ( ! \function_exists( '__' ) ) {
@@ -50,7 +50,7 @@ if ( ! \function_exists( 'maybe_serialize' ) ) {
 	}
 }
 
-if ( ! \function_exists( 'a8csp_bgte_test_record_cron_call' ) ) {
+if ( ! \function_exists( 'a8csp_bgje_test_record_cron_call' ) ) {
 	/**
 	 * Appends a cron-function call to the test ledger.
 	 *
@@ -61,17 +61,17 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_cron_call' ) ) {
 	 *
 	 * @return  void
 	 */
-	function a8csp_bgte_test_record_cron_call( string $function_name, array $args ): void {
+	function a8csp_bgje_test_record_cron_call( string $function_name, array $args ): void {
 		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls   = $GLOBALS['a8csp_bgte_test_cron_calls'] ?? array();
+		$calls   = $GLOBALS['a8csp_bgje_test_cron_calls'] ?? array();
 		$calls[] = array(
 			'function' => $function_name,
 			'args'     => $args,
 		);
 
-		$GLOBALS['a8csp_bgte_test_cron_calls'] = $calls;
+		$GLOBALS['a8csp_bgje_test_cron_calls'] = $calls;
 
-		$site_calls = $GLOBALS['a8csp_bgte_test_cron_site_calls'] ?? null;
+		$site_calls = $GLOBALS['a8csp_bgje_test_cron_site_calls'] ?? null;
 		if ( \is_array( $site_calls ) ) {
 			$blog_id      = \get_current_blog_id();
 			$site_calls[] = array(
@@ -80,12 +80,12 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_cron_call' ) ) {
 				'args'     => $args,
 			);
 
-			$GLOBALS['a8csp_bgte_test_cron_site_calls'] = $site_calls;
+			$GLOBALS['a8csp_bgje_test_cron_site_calls'] = $site_calls;
 		}
 	}
 }
 
-if ( ! \function_exists( 'a8csp_bgte_test_scripted_cron_result' ) ) {
+if ( ! \function_exists( 'a8csp_bgje_test_scripted_cron_result' ) ) {
 	/**
 	 * Shifts the next scripted result for a cron function.
 	 *
@@ -93,9 +93,9 @@ if ( ! \function_exists( 'a8csp_bgte_test_scripted_cron_result' ) ) {
 	 *
 	 * @return  true|WP_Error|null Scripted result, or null for the default successful path.
 	 */
-	function a8csp_bgte_test_scripted_cron_result( string $function_name ): true|WP_Error|null {
+	function a8csp_bgje_test_scripted_cron_result( string $function_name ): true|WP_Error|null {
 		/** @var array<string, list<true|WP_Error>> $scripts */
-		$scripts = $GLOBALS['a8csp_bgte_test_cron_results'] ?? array();
+		$scripts = $GLOBALS['a8csp_bgje_test_cron_results'] ?? array();
 		$queue   = $scripts[ $function_name ] ?? array();
 
 		if ( array() === $queue ) {
@@ -106,13 +106,13 @@ if ( ! \function_exists( 'a8csp_bgte_test_scripted_cron_result' ) ) {
 
 		$scripts[ $function_name ] = $queue;
 
-		$GLOBALS['a8csp_bgte_test_cron_results'] = $scripts;
+		$GLOBALS['a8csp_bgje_test_cron_results'] = $scripts;
 
 		return $result;
 	}
 }
 
-if ( ! \function_exists( 'a8csp_bgte_test_store_cron_event' ) ) {
+if ( ! \function_exists( 'a8csp_bgje_test_store_cron_event' ) ) {
 	/**
 	 * Stores an event in the fake cron array.
 	 *
@@ -125,10 +125,10 @@ if ( ! \function_exists( 'a8csp_bgte_test_store_cron_event' ) ) {
 	 *
 	 * @return  void
 	 */
-	function a8csp_bgte_test_store_cron_event( int $timestamp, string $hook, array $args, string|false $schedule ): void {
+	function a8csp_bgje_test_store_cron_event( int $timestamp, string $hook, array $args, string|false $schedule ): void {
 		/** @var array<int, array<string, array<int, array{schedule: string|false, args: list<mixed>}>>> $cron */
-		$cron     = $GLOBALS['a8csp_bgte_test_cron_array'] ?? array();
-		$sequence = $GLOBALS['a8csp_bgte_test_cron_event_sequence'] ?? 0;
+		$cron     = $GLOBALS['a8csp_bgje_test_cron_array'] ?? array();
+		$sequence = $GLOBALS['a8csp_bgje_test_cron_event_sequence'] ?? 0;
 		if ( ! \is_int( $sequence ) ) {
 			throw new \UnexpectedValueException( 'Initialize the fake cron event sequence as an integer before scheduling.' );
 		}
@@ -138,20 +138,20 @@ if ( ! \function_exists( 'a8csp_bgte_test_store_cron_event' ) ) {
 			'args'     => $args,
 		);
 
-		$GLOBALS['a8csp_bgte_test_cron_array']          = $cron;
-		$GLOBALS['a8csp_bgte_test_cron_event_sequence'] = $sequence + 1;
+		$GLOBALS['a8csp_bgje_test_cron_array']          = $cron;
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence'] = $sequence + 1;
 	}
 }
 
-if ( ! \function_exists( 'a8csp_bgte_test_filtered_cron_schedules' ) ) {
+if ( ! \function_exists( 'a8csp_bgje_test_filtered_cron_schedules' ) ) {
 	/**
 	 * Applies the registered cron-schedule callbacks in priority order.
 	 *
 	 * @return  array<string, array{interval: int, display: string}>
 	 */
-	function a8csp_bgte_test_filtered_cron_schedules(): array {
+	function a8csp_bgje_test_filtered_cron_schedules(): array {
 		/** @var list<array{hook_name: string, callback: mixed, priority: int, accepted_args: int}> $registrations */
-		$registrations = $GLOBALS['a8csp_bgte_test_filter_registrations'] ?? array();
+		$registrations = $GLOBALS['a8csp_bgje_test_filter_registrations'] ?? array();
 		\usort( $registrations, static fn ( array $left, array $right ): int => $left['priority'] <=> $right['priority'] );
 
 		$schedules = array();
@@ -179,7 +179,7 @@ if ( ! \function_exists( 'a8csp_bgte_test_filtered_cron_schedules' ) ) {
 	}
 }
 
-if ( ! \function_exists( 'a8csp_bgte_test_has_duplicate_cron_event' ) ) {
+if ( ! \function_exists( 'a8csp_bgje_test_has_duplicate_cron_event' ) ) {
 	/**
 	 * Returns whether Core's single-event window contains the same serialized identity.
 	 *
@@ -191,12 +191,12 @@ if ( ! \function_exists( 'a8csp_bgte_test_has_duplicate_cron_event' ) ) {
 	 *
 	 * @return  bool
 	 */
-	function a8csp_bgte_test_has_duplicate_cron_event( int $timestamp, string $hook, array $args ): bool {
+	function a8csp_bgje_test_has_duplicate_cron_event( int $timestamp, string $hook, array $args ): bool {
 		$now           = \time();
 		$min_timestamp = $timestamp < $now + 600 ? 0 : $timestamp - 600;
 		$max_timestamp = $timestamp < $now ? $now + 600 : $timestamp + 600;
 
-		$cron = $GLOBALS['a8csp_bgte_test_cron_array'] ?? array();
+		$cron = $GLOBALS['a8csp_bgje_test_cron_array'] ?? array();
 		if ( ! \is_array( $cron ) ) {
 			return false;
 		}
@@ -239,23 +239,23 @@ if ( ! \function_exists( 'wp_schedule_event' ) ) {
 	 * @return  bool|WP_Error
 	 */
 	function wp_schedule_event( $timestamp, $recurrence, $hook, $args = array(), $wp_error = false ) {
-		a8csp_bgte_test_record_cron_call( 'wp_schedule_event', array( $timestamp, $recurrence, $hook, $args, $wp_error ) );
+		a8csp_bgje_test_record_cron_call( 'wp_schedule_event', array( $timestamp, $recurrence, $hook, $args, $wp_error ) );
 
 		if ( ! \is_numeric( $timestamp ) || 0 >= $timestamp ) {
 			return $wp_error ? new WP_Error( 'invalid_timestamp', 'Event timestamp must be a valid Unix timestamp.' ) : false;
 		}
 
-		$result = a8csp_bgte_test_scripted_cron_result( 'wp_schedule_event' );
+		$result = a8csp_bgje_test_scripted_cron_result( 'wp_schedule_event' );
 
 		if ( $result instanceof WP_Error ) {
 			return $result;
 		}
 
-		if ( ! isset( a8csp_bgte_test_filtered_cron_schedules()[ $recurrence ] ) ) {
+		if ( ! isset( a8csp_bgje_test_filtered_cron_schedules()[ $recurrence ] ) ) {
 			return $wp_error ? new WP_Error( 'invalid_schedule', 'Event schedule does not exist.' ) : false;
 		}
 
-		a8csp_bgte_test_store_cron_event( $timestamp, $hook, $args, $recurrence );
+		a8csp_bgje_test_store_cron_event( $timestamp, $hook, $args, $recurrence );
 
 		return true;
 	}
@@ -273,23 +273,23 @@ if ( ! \function_exists( 'wp_schedule_single_event' ) ) {
 	 * @return  bool|WP_Error
 	 */
 	function wp_schedule_single_event( $timestamp, $hook, $args = array(), $wp_error = false ) {
-		a8csp_bgte_test_record_cron_call( 'wp_schedule_single_event', array( $timestamp, $hook, $args, $wp_error ) );
+		a8csp_bgje_test_record_cron_call( 'wp_schedule_single_event', array( $timestamp, $hook, $args, $wp_error ) );
 
 		if ( ! \is_numeric( $timestamp ) || 0 >= $timestamp ) {
 			return $wp_error ? new WP_Error( 'invalid_timestamp', 'Event timestamp must be a valid Unix timestamp.' ) : false;
 		}
 
-		$result = a8csp_bgte_test_scripted_cron_result( 'wp_schedule_single_event' );
+		$result = a8csp_bgje_test_scripted_cron_result( 'wp_schedule_single_event' );
 
 		if ( $result instanceof WP_Error ) {
 			return $result;
 		}
 
-		if ( a8csp_bgte_test_has_duplicate_cron_event( $timestamp, $hook, $args ) ) {
+		if ( a8csp_bgje_test_has_duplicate_cron_event( $timestamp, $hook, $args ) ) {
 			return $wp_error ? new WP_Error( 'duplicate_event', 'A duplicate event already exists.' ) : false;
 		}
 
-		a8csp_bgte_test_store_cron_event( $timestamp, $hook, $args, false );
+		a8csp_bgje_test_store_cron_event( $timestamp, $hook, $args, false );
 
 		return true;
 	}
@@ -305,10 +305,10 @@ if ( ! \function_exists( 'wp_next_scheduled' ) ) {
 	 * @return  int|false
 	 */
 	function wp_next_scheduled( $hook, $args = array() ) {
-		a8csp_bgte_test_record_cron_call( 'wp_next_scheduled', array( $hook, $args ) );
+		a8csp_bgje_test_record_cron_call( 'wp_next_scheduled', array( $hook, $args ) );
 
 		/** @var array<int, array<string, array<int, array{schedule: string|false, args: list<mixed>}>>> $cron */
-		$cron = $GLOBALS['a8csp_bgte_test_cron_array'] ?? array();
+		$cron = $GLOBALS['a8csp_bgje_test_cron_array'] ?? array();
 		\ksort( $cron, SORT_NUMERIC );
 
 		foreach ( $cron as $timestamp => $hooks ) {
@@ -335,10 +335,10 @@ if ( ! \function_exists( 'wp_unschedule_event' ) ) {
 	 * @return  true|WP_Error
 	 */
 	function wp_unschedule_event( $timestamp, $hook, $args = array(), $wp_error = false ) {
-		a8csp_bgte_test_record_cron_call( 'wp_unschedule_event', array( $timestamp, $hook, $args, $wp_error ) );
+		a8csp_bgje_test_record_cron_call( 'wp_unschedule_event', array( $timestamp, $hook, $args, $wp_error ) );
 
 		/** @var callable(int, string, list<mixed>): void|null $before_unschedule */
-		$before_unschedule = $GLOBALS['a8csp_bgte_test_cron_before_unschedule'] ?? null;
+		$before_unschedule = $GLOBALS['a8csp_bgje_test_cron_before_unschedule'] ?? null;
 		if ( null !== $before_unschedule ) {
 			if ( ! \is_callable( $before_unschedule ) ) {
 				throw new \UnexpectedValueException( 'Configure the pre-unschedule test hook as a callable.' );
@@ -347,18 +347,18 @@ if ( ! \function_exists( 'wp_unschedule_event' ) ) {
 			$before_unschedule( $timestamp, $hook, $args );
 		}
 
-		$result = a8csp_bgte_test_scripted_cron_result( 'wp_unschedule_event' );
+		$result = a8csp_bgje_test_scripted_cron_result( 'wp_unschedule_event' );
 
 		if ( $result instanceof WP_Error ) {
 			return $result;
 		}
 
-		if ( true === ( $GLOBALS['a8csp_bgte_test_cron_preserve_on_unschedule'] ?? false ) ) {
+		if ( true === ( $GLOBALS['a8csp_bgje_test_cron_preserve_on_unschedule'] ?? false ) ) {
 			return true;
 		}
 
 		/** @var array<int, array<string, array<int, array{schedule: string|false, args: list<mixed>}>>> $cron */
-		$cron = $GLOBALS['a8csp_bgte_test_cron_array'] ?? array();
+		$cron = $GLOBALS['a8csp_bgje_test_cron_array'] ?? array();
 
 		foreach ( $cron[ $timestamp ][ $hook ] ?? array() as $key => $event ) {
 			if ( \maybe_serialize( $args ) !== \maybe_serialize( $event['args'] ) ) {
@@ -369,7 +369,7 @@ if ( ! \function_exists( 'wp_unschedule_event' ) ) {
 			break;
 		}
 
-		$GLOBALS['a8csp_bgte_test_cron_array'] = $cron;
+		$GLOBALS['a8csp_bgje_test_cron_array'] = $cron;
 
 		return true;
 	}
@@ -385,10 +385,10 @@ if ( ! \function_exists( 'wp_unschedule_hook' ) ) {
 	 * @return  int
 	 */
 	function wp_unschedule_hook( $hook, $wp_error = false ) {
-		a8csp_bgte_test_record_cron_call( 'wp_unschedule_hook', array( $hook, $wp_error ) );
+		a8csp_bgje_test_record_cron_call( 'wp_unschedule_hook', array( $hook, $wp_error ) );
 
 		/** @var array<int, array<string, array<int, array{schedule: string|false, args: list<mixed>}>>> $cron */
-		$cron    = $GLOBALS['a8csp_bgte_test_cron_array'] ?? array();
+		$cron    = $GLOBALS['a8csp_bgje_test_cron_array'] ?? array();
 		$removed = 0;
 		foreach ( $cron as $timestamp => $hooks ) {
 			$events = $hooks[ $hook ] ?? array();
@@ -403,7 +403,7 @@ if ( ! \function_exists( 'wp_unschedule_hook' ) ) {
 			}
 		}
 
-		$GLOBALS['a8csp_bgte_test_cron_array'] = $cron;
+		$GLOBALS['a8csp_bgje_test_cron_array'] = $cron;
 
 		return $removed;
 	}

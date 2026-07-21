@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 
 \defined( 'ABSPATH' ) || exit;
 

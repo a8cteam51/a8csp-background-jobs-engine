@@ -1,21 +1,22 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs\Stores;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\RetryPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -53,7 +54,7 @@ final class RunStoreTest extends TestCase {
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
-	private RecordingTask $task;
+	private RecordingJob $job;
 
 	// endregion.
 
@@ -73,7 +74,7 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Boots one registered task against deterministic interface fakes.
+	 * Boots one registered job against deterministic interface fakes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -86,8 +87,8 @@ final class RunStoreTest extends TestCase {
 
 		$this->rig    = EngineRig::set_up( self::NOW );
 		$this->client = $this->rig->client( self::OWNER );
-		$this->task   = new RecordingTask( self::NAME );
-		$this->client->tasks()->register( $this->task );
+		$this->job    = new RecordingJob( self::NAME );
+		$this->client->jobs()->register( $this->job );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -122,11 +123,11 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_live_state_is_visible_while_running_and_disappears_after_completion(): void {
-		$during_callback       = null;
-		$this->task->on_handle = function () use ( &$during_callback ): void {
+		$during_callback      = null;
+		$this->job->on_handle = function () use ( &$during_callback ): void {
 			$during_callback = $this->single_live_run();
 		};
-		$result                = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		$result               = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$queued = $this->single_live_run();
@@ -155,10 +156,10 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_transition_is_visible_through_live_run_inspection(): void {
-		$this->task->retry_policy       = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 );
-		$this->task->throwable          = new \RuntimeException( 'Transient failure.' );
+		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 );
+		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
-		$result                         = $this->client->tasks()->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->rig->run_due();
@@ -169,7 +170,7 @@ final class RunStoreTest extends TestCase {
 		self::assertGreaterThanOrEqual( self::NOW, $retrying['heartbeat_at'] );
 		$this->rig->run_due();
 		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
-		$this->rig->assert_failed( ApiErrorCode::ExecutionFailed );
+		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
 	/**
@@ -214,7 +215,7 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * A stored work kind outside the canonical Task/Batch vocabulary is corrupt.
+	 * A stored work kind outside the canonical Job/Chunked Job vocabulary is corrupt.
 	 *
 	 * @return  void
 	 */
@@ -222,7 +223,7 @@ final class RunStoreTest extends TestCase {
 		$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
 		$stored  = \maybe_unserialize( $fixture[1] );
 		self::assertIsArray( $stored );
-		$stored['kind'] = 'task';
+		$stored['kind'] = 'job';
 		$raw            = \maybe_serialize( $stored );
 		self::assertIsString( $raw );
 		$this->rig->wpdb()->put( $fixture[0], $raw );
@@ -283,8 +284,8 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_lost_state_cas_preserves_the_fixture_built_rival_generation(): void {
 		$running = $this->state();
-		$rival   = $running->with_action_seq( 2 );
-		$caller  = $running->with_action_seq( 3 );
+		$rival   = $running->with_action_sequence( 2 );
+		$caller  = $running->with_action_sequence( 3 );
 		$before  = $this->fixtures->run( self::RUN_ID, $running );
 		$winner  = $this->fixtures->run( self::RUN_ID, $rival );
 		$this->put_fixture( $before );
@@ -351,8 +352,8 @@ final class RunStoreTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 
 		$last_rival = $fixture;
-		for ( $action_seq = 2; $action_seq <= 6; ++$action_seq ) {
-			$rival      = $this->fixtures->run( self::RUN_ID, $terminal->with_action_seq( $action_seq ) );
+		for ( $action_sequence = 2; $action_sequence <= 6; ++$action_sequence ) {
+			$rival      = $this->fixtures->run( self::RUN_ID, $terminal->with_action_sequence( $action_sequence ) );
 			$last_rival = $rival;
 			$this->rig->wpdb()->before_next(
 				'update',
@@ -392,6 +393,33 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * A completed run round-trips its frozen predecessor through production serialization.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale The predecessor must survive the raw terminal row because callback replay occurs after the completion claim that freezes it.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_state_round_trips_its_previous_completed_run_id(): void {
+		$terminal = $this->state()->with_status( RunStatus::Completed )->with_previous_completed_run_id( 'previous-run-id' );
+		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
+		$this->put_fixture( $fixture );
+
+		$stored = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		self::assertSame( 'previous-run-id', $stored['previous_completed_run_id'] ?? null );
+		$inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( 'previous-run-id', $inspected->value['state']->previous_completed_run_id );
+	}
+
+	/**
 	 * Corrupt object-bearing rows remain raw evidence without constructing their classes.
 	 *
 	 * @load-bearing security
@@ -406,13 +434,13 @@ final class RunStoreTest extends TestCase {
 		$raw = \maybe_serialize(
 			array(
 				'status'          => 'running',
-				'kind'            => 'Task',
+				'kind'            => 'Job',
 				'executing'       => false,
 				'start_args'      => array(),
 				'args_hash'       => 'hash-a',
 				'queue'           => array( array( 'payload' => new RunStoreWakeupProbe() ) ),
 				'failed_attempts' => 0,
-				'action_seq'      => 1,
+				'action_sequence' => 1,
 				'created_at'      => self::NOW,
 				'heartbeat_at'    => self::NOW,
 			)
@@ -429,6 +457,48 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( $raw, $inspected->value['raw'] ?? null );
 		self::assertNull( $inspected->value['state'] ?? null );
 		self::assertSame( 0, RunStoreWakeupProbe::$wakeups );
+	}
+
+	/**
+	 * A scheduled start successor survives production serialization and hydration.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Start-stage single deliveries must remain recoverable from persisted run state; fixture-built bytes exercise the writer and guarded hydrator together.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_start_single_pending_action_round_trips_through_run_storage(): void {
+		$fire_at = self::NOW + 60;
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state( JobType::ChunkedJob )->with_pending( PendingAction::single( 'start', $fire_at, 10 ) ) );
+		$this->put_fixture( $fixture );
+
+		$stored = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		self::assertSame( 'ChunkedJob', $stored['kind'] ?? null );
+		self::assertSame(
+			array(
+				'stage'    => 'start',
+				'mode'     => 'single',
+				'fire_at'  => $fire_at,
+				'priority' => 10,
+			),
+			$stored['pending'] ?? null
+		);
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( JobType::ChunkedJob, $inspected->value['state']->kind );
+		self::assertInstanceOf( PendingAction::class, $inspected->value['state']->pending );
+		self::assertSame( 'start', $inspected->value['state']->pending->stage );
+		self::assertSame( 'single', $inspected->value['state']->pending->mode );
+		self::assertSame( $fire_at, $inspected->value['state']->pending->fire_at );
+		self::assertSame( 10, $inspected->value['state']->pending->priority );
 	}
 
 	/**
@@ -476,12 +546,6 @@ final class RunStoreTest extends TestCase {
 				'extra'    => true,
 			),
 			array(
-				'stage'    => 'start',
-				'mode'     => 'single',
-				'fire_at'  => 2,
-				'priority' => 10,
-			),
-			array(
 				'stage'    => 'cleanup',
 				'mode'     => 'single',
 				'fire_at'  => 2,
@@ -509,6 +573,12 @@ final class RunStoreTest extends TestCase {
 	public function test_noncanonical_terminal_metadata_never_hydrates(): void {
 		$invalid = array(
 			array( 'error' => null ),
+			array( 'previous_completed_run_id' => null ),
+			array( 'previous_completed_run_id' => 42 ),
+			array(
+				'status'                    => 'failed',
+				'previous_completed_run_id' => 'previous-run-id',
+			),
 			array( 'error' => array( 'message' => 'Failure.' ) ),
 			array(
 				'error' => array(
@@ -534,7 +604,7 @@ final class RunStoreTest extends TestCase {
 					'class'   => null,
 					'message' => 'Failure.',
 					'stage'   => 'unknown',
-					'code'    => ApiErrorCode::ExecutionFailed->value,
+					'code'    => ErrorCode::ExecutionFailed->value,
 				),
 			),
 			array( 'effects' => array() ),
@@ -584,15 +654,19 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Returns the shared valid fixture state.
+	 * Returns the shared valid fixture state for one work kind.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   JobType $kind Admitted work contract type.
+	 *
 	 * @return  RunState
 	 */
-	private function state(): RunState {
-		return new RunState( status: RunStatus::Running, kind: 'Task', executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_seq: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+	private function state( JobType $kind = JobType::Job ): RunState {
+		$pending_stage = JobType::Job === $kind ? 'run' : 'start';
+
+		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( $pending_stage, 10 ) );
 	}
 
 	/**
@@ -634,13 +708,13 @@ final class RunStoreTest extends TestCase {
 	private function put_corrupt_state( array $metadata ): void {
 		$value = array(
 			'status'          => 'failed',
-			'kind'            => 'Task',
+			'kind'            => 'Job',
 			'executing'       => false,
 			'start_args'      => array(),
 			'args_hash'       => 'hash-a',
 			'queue'           => array(),
 			'failed_attempts' => 0,
-			'action_seq'      => 1,
+			'action_sequence' => 1,
 			'created_at'      => self::NOW,
 			'heartbeat_at'    => self::NOW,
 			...$metadata,

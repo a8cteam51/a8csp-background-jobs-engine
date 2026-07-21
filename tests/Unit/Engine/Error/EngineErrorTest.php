@@ -1,13 +1,14 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Error;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -53,14 +54,14 @@ final class EngineErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_public_failure_carries_summary_and_code_unchanged(): void {
-		$failure = self::failure( ApiErrorCode::ExecutionFailed, 'Index refresh failed.' );
+		$failure = self::failure( ErrorCode::ExecutionFailed, 'Index refresh failed.' );
 
 		self::assertSame( 'Index refresh failed.', $failure->summary );
-		self::assertSame( ApiErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 	}
 
 	/**
-	 * Terminal failures without a failed batch chunk expose null through the public value.
+	 * Terminal failures without a failed chunked job chunk expose null through the public value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -68,7 +69,7 @@ final class EngineErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_public_failure_carries_an_absent_chunk_as_null(): void {
-		$failure = self::failure( ApiErrorCode::ExecutionFailed, 'Work failed.' );
+		$failure = self::failure( ErrorCode::ExecutionFailed, 'Work failed.' );
 
 		self::assertNull( $failure->failed_chunk );
 	}
@@ -94,8 +95,8 @@ final class EngineErrorTest extends TestCase {
 	public function test_throwable_content_is_redacted_before_terminal_detail_is_retained( string $boundary, \Throwable $throwable, string $secret, string $expected_class, string $corrective_prose ): void {
 		$error = match ( $boundary ) {
 			'callback', 'anonymous callback' => EngineError::from_throwable( $throwable ),
-			'retry policy'                   => EngineError::retry_policy( 'Task', 'email-digest', $throwable ),
-			'retry preparation'              => EngineError::retry_preparation( 'Batch', 'catalog-sync', $throwable ),
+			'retry policy'                   => EngineError::retry_policy( JobType::Job, 'email-digest', $throwable ),
+			'retry preparation'              => EngineError::retry_preparation( JobType::ChunkedJob, 'catalog-sync', $throwable ),
 			default                          => self::fail( 'Unknown throwable boundary: ' . $boundary ),
 		};
 
@@ -126,7 +127,7 @@ final class EngineErrorTest extends TestCase {
 	public function test_scheduling_failures_expose_public_codes( string $reason, string $expected_code ): void {
 		$error = new SchedulingError( SchedulingErrorReason::from( $reason ), 'Corrective engine prose.' );
 
-		self::assertSame( ApiErrorCode::from( $expected_code ), EngineError::api_code_for_scheduling( $error ) );
+		self::assertSame( ErrorCode::from( $expected_code ), EngineError::api_code_for_scheduling( $error ) );
 	}
 
 	// endregion.
@@ -221,12 +222,12 @@ final class EngineErrorTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiErrorCode $code    Client-visible classification.
+	 * @param   ErrorCode $code    Client-visible classification.
 	 * @param   string       $summary Engine-authored redacted summary.
 	 *
 	 * @return  RunFailure
 	 */
-	private static function failure( ApiErrorCode $code, string $summary ): RunFailure {
+	private static function failure( ErrorCode $code, string $summary ): RunFailure {
 		return new RunFailure( identity: 'consumer-plugin:sync', run_id: 'run-7', attempts: 1, stage: RunFailureStage::Scheduling, code: $code, summary: $summary, failed_chunk: null, );
 	}
 

@@ -1,19 +1,19 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\RegistrationUpdateOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\SkippedTaskDispatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\RegistrationUpdateOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\SkippedJobDispatch;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -38,7 +38,7 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @var     string
 	 */
-	public const string SCHEDULE_HOOK = 'a8csp_background_tasks/schedule_due';
+	public const string SCHEDULE_HOOK = 'a8csp_jobs_engine/schedule_due';
 
 	/** Three consecutive gaps tolerate two transient occurrence-time declaration misses. */
 	private const int INACTIVE_WARNING_DELIVERY_THRESHOLD = 3;
@@ -54,7 +54,7 @@ final readonly class OccurrenceDelivery {
 	 * @version 1.0.0
 	 *
 	 * @param   ScheduleRegistry $registry        Owner-scoped schedule registry.
-	 * @param   Dispatcher       $dispatcher      Policy-aware target-task dispatcher.
+	 * @param   Dispatcher       $dispatcher      Policy-aware target-job dispatcher.
 	 * @param   OccurrenceLease  $lease           Per-registration occurrence decision lease.
 	 * @param   CleanupIntents   $cleanup_intents Durable unknown-chain cleanup boundary.
 	 * @param   ClockInterface   $clock           Current-time source.
@@ -88,7 +88,7 @@ final readonly class OccurrenceDelivery {
 	/**
 	 * Handles one recurring schedule occurrence.
 	 *
-	 * Schedule-driven tasks must be idempotent because backend redelivery, crash reclaim, and Replace
+	 * Schedule-driven jobs must be idempotent because backend redelivery, crash reclaim, and Replace
 	 * takeover retain bounded at-least-once execution windows.
 	 *
 	 * @since   1.0.0
@@ -144,7 +144,7 @@ final readonly class OccurrenceDelivery {
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now_under_lease( string $registration_key ): AbstractResult {
-		$parts = WorkIdentity::parts( $registration_key );
+		$parts = JobIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return new Failure( new EngineError( 'Schedule identity is invalid; pass one canonical {owner}:{name} identity.', reason: EngineErrorReason::PayloadRejected, ) );
 		}
@@ -184,339 +184,6 @@ final readonly class OccurrenceDelivery {
 		} finally {
 			$lease_handle->release();
 		}
-	}
-
-	/**
-	 * Executes one leased occurrence decision against freshly read registration state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string       $registration_key `{owner}:{name}` schedule identity.
-	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
-	 *
-	 * @return  void
-	 */
-	private function handle_occurrence( string $registration_key, ClaimedLease $lease_handle ): void {
-		$registration_read = $this->registry->registration( $registration_key );
-		if ( $registration_read->is_failure() ) {
-			$this->logger->warning(
-				'Schedule occurrence registration could not be read: {error}',
-				array(
-					'registration_key' => $registration_key,
-					'error'            => $registration_read->error->message,
-				)
-			);
-
-			return;
-		}
-
-		$registration = $registration_read->value;
-		if ( null === $registration ) {
-			$this->cleanup_intents->record_intent( $registration_key );
-			$converged = $this->cleanup_intents->converge_unknown_chain( $registration_key );
-			$context   = array(
-				'registration_key' => $registration_key,
-				'converged'        => $converged,
-			);
-
-			$this->logger->warning( \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key ), $context );
-
-			return;
-		}
-
-		$declaration = $this->registry->declaration( $registration_key );
-		if ( null === $declaration ) {
-			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'registration_key' => $registration_key ) );
-			// Aging is best-effort because a lost fenced increment never affects delivery and a later occurrence retries it.
-			$aging = $this->registry->record_undeclared_occurrence( $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
-			if ( UndeclaredOccurrenceOutcome::Escalated === $aging ) {
-				$parts = WorkIdentity::parts( $registration_key );
-				if ( null !== $parts ) {
-					$this->logger->warning(
-						\sprintf(
-							'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync( array() ) on deactivation, or run "wp background-tasks schedules remove %3$s".',
-							$registration_key,
-							self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
-							$parts[0]
-						),
-						array(
-							'owner'                  => $parts[0],
-							'registration_key'       => $registration_key,
-							'undeclared_occurrences' => self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
-						)
-					);
-				}
-			}
-			return;
-		}
-
-		$schedule = $declaration['schedule'];
-
-		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
-			$this->logger->debug( 'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.', array( 'registration_key' => $registration_key ) );
-
-			return;
-		}
-
-		$parts = WorkIdentity::parts( $registration_key );
-		if ( null === $parts ) {
-			return;
-		}
-		$owner = $parts[0];
-		$name  = $parts[1];
-		$now   = $this->clock->now()->getTimestamp();
-		if ( $now < $registration['next_due'] ) {
-			$this->logger->debug(
-				'Stale schedule occurrence redelivery dropped after its next-due token advanced.',
-				array(
-					'owner'    => $owner,
-					'name'     => $registration_key,
-					'next_due' => $registration['next_due'],
-					'fired_at' => $now,
-				)
-			);
-
-			return;
-		}
-
-		$interval = $schedule->recurrence->interval();
-
-		/**
-		 * Filters the grace window for one schedule occurrence.
-		 *
-		 * The dynamic portion of the hook name, `$identity`, is the complete owner-qualified
-		 * schedule identity.
-		 *
-		 * @since   1.0.0
-		 * @version 1.0.0
-		 *
-		 * @param   int    $interval         Default grace window in seconds.
-		 * @param   string $owner            Stable client identifier.
-		 * @param   string $identity         Complete owner-qualified schedule identity.
-		 */
-		$grace = \apply_filters( 'a8csp_background_tasks/misfire_grace/' . $registration_key, $interval, $owner, $registration_key );
-		if ( ! \is_int( $grace ) || 0 > $grace ) {
-			$this->logger->warning(
-				'Misfire grace filter returned an invalid value; return a non-negative integer to override the recurrence interval.',
-				array(
-					'owner'         => $owner,
-					'name'          => $registration_key,
-					'returned_type' => \get_debug_type( $grace ),
-					'default_grace' => $interval,
-				)
-			);
-			$grace = $interval;
-		}
-
-		$misfired = $registration['next_due'] <= \PHP_INT_MAX - $grace
-			&& $now > $registration['next_due'] + $grace;
-		$next_due = self::realigned_next_due( $registration['next_due'], $interval, $now );
-		if ( null === $next_due ) {
-			$this->logger->error(
-				'Schedule recurrence cannot advance beyond the current timestamp; correct the system clock or synchronize a smaller interval.',
-				array(
-					'owner'    => $owner,
-					'name'     => $registration_key,
-					'next_due' => $registration['next_due'],
-					'fired_at' => $now,
-				)
-			);
-
-			return;
-		}
-
-		if ( $misfired && CatchUpPolicy::Skip === $schedule->catch_up ) {
-			$misfired_due                  = $registration['next_due'];
-			$registration['next_due']      = $next_due;
-			$registration['misfire_skips'] = self::increment_counter( $registration['misfire_skips'] );
-			$this->persist_delivery_state( $registration_key, $owner, $registration );
-			try {
-				try {
-					/**
-					 * Fires when a Skip schedule drops one beyond-grace occurrence.
-					 *
-					 * The dynamic portion of the hook name, `$identity`, is the complete
-					 * owner-qualified schedule identity.
-					 *
-					 * @since   1.0.0
-					 * @version 1.0.0
-					 *
-					 * @param   string $owner        Stable client identifier.
-					 * @param   int    $misfired_due Dropped occurrence due timestamp.
-					 * @param   int    $now          Occurrence observation timestamp.
-					 */
-					\do_action( 'a8csp_background_tasks/misfire_skipped/' . $registration_key, $owner, $misfired_due, $now );
-				} finally {
-					/**
-					 * Fires after the identity-specific misfire-skipped schedule hook.
-					 *
-					 * @since   1.0.0
-					 * @version 1.0.0
-					 *
-					 * @param   string $identity         Complete owner-qualified schedule identity.
-					 * @param   string $owner            Stable client identifier.
-					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
-					 * @param   int    $now              Occurrence observation timestamp.
-					 */
-					\do_action( 'a8csp_background_tasks/misfire_skipped', $registration_key, $owner, $misfired_due, $now );
-				}
-			} catch ( \Throwable $throwable ) {
-				$this->logger->error(
-					'Misfire-skipped schedule listener failed after the occurrence state was persisted; fix the hook listener.',
-					array(
-						'owner'     => $owner,
-						'name'      => $registration_key,
-						'exception' => $throwable,
-					)
-				);
-			}
-			$this->logger->info(
-				'Misfired schedule occurrence skipped and realigned to its recurrence.',
-				array(
-					'owner'    => $owner,
-					'name'     => $registration_key,
-					'next_due' => $next_due,
-					'fired_at' => $now,
-				)
-			);
-
-			return;
-		}
-
-		$accepted_registration               = $registration;
-		$accepted_registration['next_due']   = $next_due;
-		$accepted_registration['last_fired'] = $now;
-		$dispatched                          = $this->dispatcher->dispatch_scheduled_task(
-			$declaration['task'],
-			$schedule->args,
-			$schedule->overlap,
-			$schedule->priority,
-			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
-				try {
-					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
-				} finally {
-					$lease_handle->release();
-				}
-			}
-		);
-		if ( $dispatched->is_failure() ) {
-			$this->logger->error(
-				'Schedule occurrence could not enqueue its target task: {error}',
-				array(
-					'owner' => $owner,
-					'name'  => $registration_key,
-					'error' => $dispatched->error->message,
-				)
-			);
-
-			return;
-		}
-
-		$registration['next_due'] = $next_due;
-		if ( $dispatched->value instanceof SkippedTaskDispatch ) {
-			// RunOnce makes the occurrence up, so it is not recorded as a misfire; `misfire_skips` counts Skip-policy drops, `overlap_skips` counts overlap skips.
-			$registration['overlap_skips'] = self::increment_counter( $registration['overlap_skips'] );
-			$this->persist_delivery_state( $registration_key, $owner, $registration );
-			$this->logger->info(
-				'Schedule occurrence skipped because the target task lock is held.',
-				array(
-					'owner'          => $owner,
-					'name'           => $registration_key,
-					'running_run_id' => $dispatched->value->running_run_id,
-				)
-			);
-
-			return;
-		}
-	}
-
-	/**
-	 * Dispatches one manual schedule run against freshly read registration state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string       $registration_key Complete owner-qualified schedule identity.
-	 * @param   string       $owner            Stable client identifier.
-	 * @param   string       $name             Stable schedule name.
-	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
-	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
-	 */
-	private function dispatch_now( string $registration_key, string $owner, string $name, ClaimedLease $lease_handle ): AbstractResult {
-		$registration_read = $this->registry->registration( $registration_key );
-		if ( $registration_read->is_failure() ) {
-			return new Failure( $registration_read->error );
-		}
-
-		$registration = $registration_read->value;
-		if ( null === $registration ) {
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Schedule "%1$s" for owner "%2$s" is not synchronized; declare it with sync() before running it now.', $name, $owner ),
-					reason: EngineErrorReason::UnknownSchedule,
-					context: array(
-						'owner'    => $owner,
-						'schedule' => $name,
-					),
-				)
-			);
-		}
-
-		$declaration = $this->registry->declaration( $registration_key );
-		if ( null === $declaration ) {
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Schedule "%1$s" for owner "%2$s" is inactive in this request; synchronize its declaration before running it now.', $name, $owner ),
-					reason: EngineErrorReason::UnknownSchedule,
-					context: array(
-						'owner'    => $owner,
-						'schedule' => $name,
-					),
-				)
-			);
-		}
-
-		$schedule = $declaration['schedule'];
-
-		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Schedule "%1$s" for owner "%2$s" changed after this request synchronized; synchronize its current declaration before running it now.', $name, $owner ),
-					reason: EngineErrorReason::UnknownSchedule,
-					context: array(
-						'owner'    => $owner,
-						'schedule' => $name,
-					),
-				)
-			);
-		}
-
-		$accepted_registration               = $registration;
-		$accepted_registration['last_fired'] = $this->clock->now()->getTimestamp();
-		$dispatched                          = $this->dispatcher->dispatch_scheduled_task(
-			$declaration['task'],
-			$schedule->args,
-			$schedule->overlap,
-			$schedule->priority,
-			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
-				try {
-					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
-				} finally {
-					$lease_handle->release();
-				}
-			}
-		);
-		if ( $dispatched->is_failure() ) {
-			return $dispatched;
-		}
-
-		if ( $dispatched->value instanceof SkippedTaskDispatch ) {
-			return new Failure( $dispatched->value->error );
-		}
-
-		return new Success( $dispatched->value );
 	}
 
 	// endregion
@@ -612,6 +279,337 @@ final readonly class OccurrenceDelivery {
 	 */
 	private static function increment_counter( int $counter ): int {
 		return \PHP_INT_MAX === $counter ? $counter : $counter + 1;
+	}
+
+	/**
+	 * Executes one leased occurrence decision against freshly read registration state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string       $registration_key `{owner}:{name}` schedule identity.
+	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
+	 *
+	 * @return  void
+	 */
+	private function handle_occurrence( string $registration_key, ClaimedLease $lease_handle ): void {
+		$registration_read = $this->registry->registration( $registration_key );
+		if ( $registration_read->is_failure() ) {
+			$this->logger->warning(
+				'Schedule occurrence registration could not be read: {error}',
+				array(
+					'registration_key' => $registration_key,
+					'error'            => $registration_read->error->message,
+				)
+			);
+
+			return;
+		}
+
+		$registration = $registration_read->value;
+		if ( null === $registration ) {
+			$this->cleanup_intents->record_intent( $registration_key );
+			$converged = $this->cleanup_intents->converge_unknown_chain( $registration_key );
+			$context   = array(
+				'registration_key' => $registration_key,
+				'converged'        => $converged,
+			);
+
+			$this->logger->warning( \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key ), $context );
+
+			return;
+		}
+
+		$declaration = $this->registry->declaration( $registration_key );
+		if ( null === $declaration ) {
+			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'registration_key' => $registration_key ) );
+			// Aging is best-effort because a lost fenced increment never affects delivery and a later occurrence retries it.
+			$aging = $this->registry->record_undeclared_occurrence( $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
+			if ( UndeclaredOccurrenceOutcome::Escalated === $aging ) {
+				$parts = JobIdentity::parts( $registration_key );
+				if ( null !== $parts ) {
+					$this->logger->warning(
+						\sprintf(
+							'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync( array() ) on deactivation, or run "wp background-jobs schedules remove %3$s".',
+							$registration_key,
+							self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
+							$parts[0]
+						),
+						array(
+							'owner'                  => $parts[0],
+							'registration_key'       => $registration_key,
+							'undeclared_occurrences' => self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
+						)
+					);
+				}
+			}
+			return;
+		}
+
+		$schedule = $declaration['schedule'];
+
+		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
+			$this->logger->debug( 'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.', array( 'registration_key' => $registration_key ) );
+
+			return;
+		}
+
+		$parts = JobIdentity::parts( $registration_key );
+		if ( null === $parts ) {
+			return;
+		}
+		$owner = $parts[0];
+		$name  = $parts[1];
+		$now   = $this->clock->now()->getTimestamp();
+		if ( $now < $registration['next_due'] ) {
+			$this->logger->debug(
+				'Stale schedule occurrence redelivery dropped after its next-due token advanced.',
+				array(
+					'owner'    => $owner,
+					'name'     => $registration_key,
+					'next_due' => $registration['next_due'],
+					'fired_at' => $now,
+				)
+			);
+
+			return;
+		}
+
+		$interval = $schedule->recurrence->interval;
+
+		/**
+		 * Filters the grace window for one schedule occurrence.
+		 *
+		 * The dynamic portion of the hook name, `$identity`, is the complete owner-qualified
+		 * schedule identity.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int    $interval         Default grace window in seconds.
+		 * @param   string $owner            Stable client identifier.
+		 * @param   string $identity         Complete owner-qualified schedule identity.
+		 */
+		$grace = \apply_filters( 'a8csp_jobs_engine/misfire_grace/' . $registration_key, $interval, $owner, $registration_key );
+		if ( ! \is_int( $grace ) || 0 > $grace ) {
+			$this->logger->warning(
+				'Misfire grace filter returned an invalid value; return a non-negative integer to override the recurrence interval.',
+				array(
+					'owner'         => $owner,
+					'name'          => $registration_key,
+					'returned_type' => \get_debug_type( $grace ),
+					'default_grace' => $interval,
+				)
+			);
+			$grace = $interval;
+		}
+
+		$misfired = $registration['next_due'] <= \PHP_INT_MAX - $grace
+			&& $now > $registration['next_due'] + $grace;
+		$next_due = self::realigned_next_due( $registration['next_due'], $interval, $now );
+		if ( null === $next_due ) {
+			$this->logger->error(
+				'Schedule recurrence cannot advance beyond the current timestamp; correct the system clock or synchronize a smaller interval.',
+				array(
+					'owner'    => $owner,
+					'name'     => $registration_key,
+					'next_due' => $registration['next_due'],
+					'fired_at' => $now,
+				)
+			);
+
+			return;
+		}
+
+		if ( $misfired && CatchUpPolicy::Skip === $schedule->catch_up ) {
+			$misfired_due                  = $registration['next_due'];
+			$registration['next_due']      = $next_due;
+			$registration['misfire_skips'] = self::increment_counter( $registration['misfire_skips'] );
+			$this->persist_delivery_state( $registration_key, $owner, $registration );
+			try {
+				try {
+					/**
+					 * Fires when a Skip schedule drops one beyond-grace occurrence.
+					 *
+					 * The dynamic portion of the hook name, `$identity`, is the complete
+					 * owner-qualified schedule identity.
+					 *
+					 * @since   1.0.0
+					 * @version 1.0.0
+					 *
+					 * @param   string $owner        Stable client identifier.
+					 * @param   int    $misfired_due Dropped occurrence due timestamp.
+					 * @param   int    $now          Occurrence observation timestamp.
+					 */
+					\do_action( 'a8csp_jobs_engine/misfire_skipped/' . $registration_key, $owner, $misfired_due, $now );
+				} finally {
+					/**
+					 * Fires after the identity-specific misfire-skipped schedule hook.
+					 *
+					 * @since   1.0.0
+					 * @version 1.0.0
+					 *
+					 * @param   string $identity         Complete owner-qualified schedule identity.
+					 * @param   string $owner            Stable client identifier.
+					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
+					 * @param   int    $now              Occurrence observation timestamp.
+					 */
+					\do_action( 'a8csp_jobs_engine/misfire_skipped', $registration_key, $owner, $misfired_due, $now );
+				}
+			} catch ( \Throwable $throwable ) {
+				$this->logger->error(
+					'Misfire-skipped schedule listener failed after the occurrence state was persisted; fix the hook listener.',
+					array(
+						'owner'     => $owner,
+						'name'      => $registration_key,
+						'exception' => $throwable,
+					)
+				);
+			}
+			$this->logger->info(
+				'Misfired schedule occurrence skipped and realigned to its recurrence.',
+				array(
+					'owner'    => $owner,
+					'name'     => $registration_key,
+					'next_due' => $next_due,
+					'fired_at' => $now,
+				)
+			);
+
+			return;
+		}
+
+		$accepted_registration               = $registration;
+		$accepted_registration['next_due']   = $next_due;
+		$accepted_registration['last_fired'] = $now;
+		$dispatched                          = $this->dispatcher->dispatch_scheduled_target(
+			$declaration['job'],
+			$schedule->args,
+			$schedule->priority,
+			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
+				try {
+					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
+				} finally {
+					$lease_handle->release();
+				}
+			}
+		);
+		if ( $dispatched->is_failure() ) {
+			$this->logger->error(
+				'Schedule occurrence could not enqueue its target job: {error}',
+				array(
+					'owner' => $owner,
+					'name'  => $registration_key,
+					'error' => $dispatched->error->message,
+				)
+			);
+
+			return;
+		}
+
+		$registration['next_due'] = $next_due;
+		if ( $dispatched->value instanceof SkippedJobDispatch ) {
+			// RunOnce makes the occurrence up, so it is not recorded as a misfire; `misfire_skips` counts Skip-policy drops, `overlap_skips` counts overlap skips.
+			$registration['overlap_skips'] = self::increment_counter( $registration['overlap_skips'] );
+			$this->persist_delivery_state( $registration_key, $owner, $registration );
+			$this->logger->info(
+				'Schedule occurrence skipped because the target job lock is held.',
+				array(
+					'owner'          => $owner,
+					'name'           => $registration_key,
+					'running_run_id' => $dispatched->value->running_run_id,
+				)
+			);
+
+			return;
+		}
+	}
+
+	/**
+	 * Dispatches one manual schedule run against freshly read registration state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string       $registration_key Complete owner-qualified schedule identity.
+	 * @param   string       $owner            Stable client identifier.
+	 * @param   string       $name             Stable schedule name.
+	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
+	 *
+	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 */
+	private function dispatch_now( string $registration_key, string $owner, string $name, ClaimedLease $lease_handle ): AbstractResult {
+		$registration_read = $this->registry->registration( $registration_key );
+		if ( $registration_read->is_failure() ) {
+			return new Failure( $registration_read->error );
+		}
+
+		$registration = $registration_read->value;
+		if ( null === $registration ) {
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Schedule "%1$s" for owner "%2$s" is not synchronized; declare it with sync() before running it now.', $name, $owner ),
+					reason: EngineErrorReason::UnknownSchedule,
+					context: array(
+						'owner'    => $owner,
+						'schedule' => $name,
+					),
+				)
+			);
+		}
+
+		$declaration = $this->registry->declaration( $registration_key );
+		if ( null === $declaration ) {
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Schedule "%1$s" for owner "%2$s" is inactive in this request; synchronize its declaration before running it now.', $name, $owner ),
+					reason: EngineErrorReason::UnknownSchedule,
+					context: array(
+						'owner'    => $owner,
+						'schedule' => $name,
+					),
+				)
+			);
+		}
+
+		$schedule = $declaration['schedule'];
+
+		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Schedule "%1$s" for owner "%2$s" changed after this request synchronized; synchronize its current declaration before running it now.', $name, $owner ),
+					reason: EngineErrorReason::UnknownSchedule,
+					context: array(
+						'owner'    => $owner,
+						'schedule' => $name,
+					),
+				)
+			);
+		}
+
+		$accepted_registration               = $registration;
+		$accepted_registration['last_fired'] = $this->clock->now()->getTimestamp();
+		$dispatched                          = $this->dispatcher->dispatch_scheduled_target(
+			$declaration['job'],
+			$schedule->args,
+			$schedule->priority,
+			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
+				try {
+					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
+				} finally {
+					$lease_handle->release();
+				}
+			}
+		);
+		if ( $dispatched->is_failure() ) {
+			return $dispatched;
+		}
+
+		if ( $dispatched->value instanceof SkippedJobDispatch ) {
+			return new Failure( $dispatched->value->error );
+		}
+
+		return new Success( $dispatched->value );
 	}
 
 	// endregion

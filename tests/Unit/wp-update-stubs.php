@@ -5,7 +5,7 @@
  *
  * The guards keep this file inert wherever WordPress supplies the real APIs.
  *
- * @package A8C\SpecialProjects\BackgroundTasksEngine
+ * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
 require_once __DIR__ . '/wp-hook-stubs.php';
@@ -15,7 +15,7 @@ if ( ! \defined( 'WP_PLUGIN_DIR' ) ) {
 }
 
 if ( ! \class_exists( 'WP_Error' ) ) {
-	\class_alias( \A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WPErrorStub::class, 'WP_Error' );
+	\class_alias( \A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WPErrorStub::class, 'WP_Error' );
 }
 
 if ( ! \function_exists( 'trailingslashit' ) ) {
@@ -84,20 +84,20 @@ if ( ! \function_exists( 'get_plugin_data' ) ) {
 	 */
 	function get_plugin_data( $plugin_file, $markup = true, $translate = true ) {
 		return array(
-			'Name'            => 'A8CSP Background Tasks Engine',
+			'Name'            => 'A8CSP Background Jobs Engine',
 			'PluginURI'       => 'https://specialprojects.automattic.com',
 			'Version'         => '1.0.0',
 			'Description'     => 'A background-work engine for WordPress sites.',
 			'Author'          => 'A8C Special Projects',
 			'AuthorURI'       => 'https://specialprojects.automattic.com',
-			'TextDomain'      => 'a8csp-background-tasks-engine',
+			'TextDomain'      => 'a8csp-background-jobs-engine',
 			'DomainPath'      => '/languages',
 			'Network'         => false,
 			'RequiresWP'      => '7.0',
 			'RequiresPHP'     => '8.5',
-			'UpdateURI'       => 'https://github.com/a8cteam51/a8csp-background-tasks-engine',
+			'UpdateURI'       => 'https://github.com/a8cteam51/a8csp-background-jobs-engine',
 			'RequiresPlugins' => '',
-			'Title'           => 'A8CSP Background Tasks Engine',
+			'Title'           => 'A8CSP Background Jobs Engine',
 			'AuthorName'      => 'A8C Special Projects',
 		);
 	}
@@ -140,7 +140,7 @@ if ( ! \function_exists( 'load_plugin_textdomain' ) ) {
 	 * @return  true
 	 */
 	function load_plugin_textdomain( $domain, $deprecated = false, $plugin_rel_path = false ) {
-		$calls = $GLOBALS['a8csp_bgte_test_loaded_textdomains'] ?? array();
+		$calls = $GLOBALS['a8csp_bgje_test_loaded_textdomains'] ?? array();
 		if ( ! \is_array( $calls ) ) {
 			throw new \UnexpectedValueException( 'Initialize the text-domain test ledger as an array.' );
 		}
@@ -151,7 +151,7 @@ if ( ! \function_exists( 'load_plugin_textdomain' ) ) {
 			'plugin_rel_path' => $plugin_rel_path,
 		);
 
-		$GLOBALS['a8csp_bgte_test_loaded_textdomains'] = $calls;
+		$GLOBALS['a8csp_bgje_test_loaded_textdomains'] = $calls;
 
 		return true;
 	}
@@ -169,7 +169,7 @@ if ( ! \function_exists( 'get_transient' ) ) {
 	 */
 	function get_transient( $transient ) {
 		/** @var array<string, mixed> $transients */
-		$transients = $GLOBALS['a8csp_bgte_test_transients'] ?? array();
+		$transients = $GLOBALS['a8csp_bgje_test_transients'] ?? array();
 
 		return \array_key_exists( $transient, $transients ) ? $transients[ $transient ] : false;
 	}
@@ -189,9 +189,9 @@ if ( ! \function_exists( 'set_transient' ) ) {
 	 */
 	function set_transient( $transient, $value, $expiration = 0 ) {
 		/** @var array<string, mixed> $transients */
-		$transients = $GLOBALS['a8csp_bgte_test_transients'] ?? array();
+		$transients = $GLOBALS['a8csp_bgje_test_transients'] ?? array();
 		/** @var list<array{transient: string, value: mixed, expiration: int}> $calls */
-		$calls = $GLOBALS['a8csp_bgte_test_set_transient_calls'] ?? array();
+		$calls = $GLOBALS['a8csp_bgje_test_set_transient_calls'] ?? array();
 
 		$transients[ $transient ] = $value;
 		$calls[]                  = array(
@@ -200,8 +200,8 @@ if ( ! \function_exists( 'set_transient' ) ) {
 			'expiration' => $expiration,
 		);
 
-		$GLOBALS['a8csp_bgte_test_transients']          = $transients;
-		$GLOBALS['a8csp_bgte_test_set_transient_calls'] = $calls;
+		$GLOBALS['a8csp_bgje_test_transients']          = $transients;
+		$GLOBALS['a8csp_bgje_test_set_transient_calls'] = $calls;
 
 		return true;
 	}
@@ -220,16 +220,16 @@ if ( ! \function_exists( 'wp_remote_get' ) ) {
 	 */
 	function wp_remote_get( $url, $args = array() ) {
 		/** @var list<string> $requests */
-		$requests   = $GLOBALS['a8csp_bgte_test_remote_requests'] ?? array();
+		$requests   = $GLOBALS['a8csp_bgje_test_remote_requests'] ?? array();
 		$requests[] = $url;
 
-		$GLOBALS['a8csp_bgte_test_remote_requests'] = $requests;
+		$GLOBALS['a8csp_bgje_test_remote_requests'] = $requests;
 
-		if ( ! \array_key_exists( 'a8csp_bgte_test_remote_response', $GLOBALS ) ) {
+		if ( ! \array_key_exists( 'a8csp_bgje_test_remote_response', $GLOBALS ) ) {
 			throw new \UnexpectedValueException( 'Script an update-check HTTP response before requesting it.' );
 		}
 
-		return $GLOBALS['a8csp_bgte_test_remote_response'];
+		return $GLOBALS['a8csp_bgje_test_remote_response'];
 	}
 }
 

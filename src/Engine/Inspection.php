@@ -1,25 +1,27 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -46,7 +48,7 @@ use Psr\Clock\ClockInterface;
  * }
  * @phpstan-type LiveRunEntry array{
  *     run_id: string,
- *     kind: 'batch'|'task',
+ *     kind: 'chunked_job'|'job',
  *     status: 'running',
  *     executing: bool,
  *     attempts: int,
@@ -84,6 +86,7 @@ final readonly class Inspection {
 	 * @version 1.0.0
 	 *
 	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
+	 * @param   JobRegistry      $work         Registered Job instances.
 	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
 	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
 	 * @param   StoreFactory     $stores       Name-bound run stores.
@@ -93,6 +96,7 @@ final readonly class Inspection {
 	 */
 	public function __construct(
 		private ScheduleRegistry $schedules,
+		private JobRegistry $work,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
 		private StoreFactory $stores,
@@ -106,12 +110,55 @@ final readonly class Inspection {
 	// region METHODS
 
 	/**
+	 * Returns one retained run's observable lifecycle status.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string $run_id   Retained run identifier.
+	 *
+	 * @throws  \InvalidArgumentException When the run identifier is malformed.
+	 *
+	 * @return  AbstractResult<RunStatus|null, EngineError>
+	 */
+	#[\NoDiscard( 'a run-status inspection result must be handled, not dropped' )]
+	public function run_status( string $identity, string $run_id ): AbstractResult {
+		if ( null === RunIdentity::parse( $run_id ) ) {
+			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
+		}
+
+		$inspected = $this->stores->run_store( $identity )->inspect( $run_id );
+		if ( $inspected->is_failure() ) {
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunIdentity::option_name( $identity, $run_id ) ), ) );
+		}
+
+		$snapshot = $inspected->value;
+		if ( null !== $snapshot && null !== $snapshot['state'] ) {
+			return new Success( $snapshot['state']->status );
+		}
+
+		$entries = $this->stores->run_history( $identity )->terminal_entries();
+		if ( null === $entries ) {
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
+		}
+
+		foreach ( \array_reverse( $entries ) as $entry ) {
+			if ( $run_id === $entry['run_id'] ) {
+				return new Success( RunStatus::from( $entry['status'] ) );
+			}
+		}
+
+		return new Success( null );
+	}
+
+	/**
 	 * Returns the last completed run ID in the retained terminal recording order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
@@ -122,7 +169,7 @@ final readonly class Inspection {
 			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
 		}
 
-		return new Success( \array_find( \array_reverse( $entries ), static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status'] )['run_id'] ?? null );
+		return new Success( RunHistory::newest_completed_run_id( $entries ) );
 	}
 
 	/**
@@ -149,7 +196,7 @@ final readonly class Inspection {
 
 		$entries = array();
 		foreach ( $registrations as $registration_key => $registration ) {
-			$parts = WorkIdentity::parts( $registration_key );
+			$parts = JobIdentity::parts( $registration_key );
 			if ( null === $parts ) {
 				continue;
 			}
@@ -163,7 +210,7 @@ final readonly class Inspection {
 			$entries[]   = array(
 				'owner'              => $registration_owner,
 				'name'               => $registration_key,
-				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval(),
+				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval,
 				'next_due'           => $registration['next_due'],
 				'last_fired'         => $registration['last_fired'],
 				'misfire_skips'      => $registration['misfire_skips'],
@@ -203,7 +250,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified task or batch identity.
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @phpstan-return array{
 	 *     observed_at: int,
@@ -286,14 +333,14 @@ final readonly class Inspection {
 			}
 
 			$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
-			$kind      = \strtolower( $state->kind );
+			$kind      = $state->kind->machine_key();
 			$live[]    = array(
 				'run_id'       => $run_id,
 				'kind'         => $kind,
 				'status'       => 'running',
 				'executing'    => $state->executing,
 				'attempts'     => $state->failed_attempts,
-				'queue_depth'  => 'task' === $kind ? null : \count( $state->queue ),
+				'queue_depth'  => JobType::Job === $state->kind ? null : \count( $state->queue ),
 				'heartbeat_at' => $state->heartbeat_at,
 				'stale'        => self::heartbeat_is_stale( $state->heartbeat_at, $observed_at, $staleness ),
 			);
@@ -320,7 +367,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{schedule: Schedule, task: string}|null $declaration
+	 * @phpstan-param array{schedule: Schedule, job: string}|null $declaration
 	 *
 	 * @param   array|null $declaration Current-request schedule declaration, when available.
 	 * @param   int        $observed_at Inspection timestamp.
@@ -334,23 +381,37 @@ final readonly class Inspection {
 		}
 
 		$schedule = $declaration['schedule'];
-		if ( OverlapPolicy::Allow === $schedule->overlap ) {
+		$job      = $this->work->job( $declaration['job'] );
+		if ( null === $job ) {
+			return array( 'state' => 'invalid' );
+		}
+		if ( OverlapPolicy::Allow === $job->overlap_policy() ) {
 			return array( 'state' => 'overlap_allowed' );
 		}
 
-		// Both sites feed the same lock namespace, so this formula remains byte-identical to PortableArguments::hash();
-		// it stays inline to bypass PortableArguments::is_valid() and report the invalid state instead.
-		try {
-			$encoded_args = \wp_json_encode( $schedule->args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		} catch ( \JsonException ) {
-			return array( 'state' => 'invalid' );
-		}
-		if ( ! \is_string( $encoded_args ) ) {
-			return array( 'state' => 'invalid' );
-		}
+		$overlap_key = $job->overlap_key( $schedule->args );
+		if ( null !== $overlap_key ) {
+			if ( '' === $overlap_key || JobInterface::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
+				return array( 'state' => 'invalid' );
+			}
 
-		$args_hash = \hash( 'sha256', $encoded_args );
-		$inspected = $this->guard->inspect_persisted_lock( $declaration['task'], $args_hash );
+			// Both sites share one lock namespace, so this formula remains byte-identical to the Dispatcher overlap-key lane.
+			$args_hash = \hash( 'sha256', 'dedup:' . $overlap_key );
+		} else {
+			// Both sites feed the same lock namespace, so this formula remains byte-identical to PortableArguments::hash();
+			// it stays inline to bypass PortableArguments::is_valid() and report the invalid state instead.
+			try {
+				$encoded_args = \wp_json_encode( $schedule->args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
+			} catch ( \JsonException ) {
+				return array( 'state' => 'invalid' );
+			}
+			if ( ! \is_string( $encoded_args ) ) {
+				return array( 'state' => 'invalid' );
+			}
+
+			$args_hash = \hash( 'sha256', $encoded_args );
+		}
+		$inspected = $this->guard->inspect_persisted_lock( $declaration['job'], $args_hash );
 		if ( $inspected->is_failure() ) {
 			return array( 'state' => 'read_failed' );
 		}
@@ -365,7 +426,7 @@ final readonly class Inspection {
 			return array( 'state' => 'invalid' );
 		}
 
-		$staleness = $this->lock_windows->lock_staleness( $declaration['task'], $lock['run_id'] );
+		$staleness = $this->lock_windows->lock_staleness( $declaration['job'], $lock['run_id'] );
 
 		return array(
 			'state'  => 'held',

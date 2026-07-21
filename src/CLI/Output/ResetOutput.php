@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -43,7 +43,7 @@ final readonly class ResetOutput {
 	public static function report( int $option_rows, int $pending_actions ): void {
 		\WP_CLI::line( \sprintf( 'Option rows deleted: %d', $option_rows ) );
 		\WP_CLI::line( \sprintf( 'Pending backend actions unscheduled: %d', $pending_actions ) );
-		\WP_CLI::success( 'Background tasks development state reset.' );
+		\WP_CLI::success( 'Background jobs development state reset.' );
 	}
 
 	/**

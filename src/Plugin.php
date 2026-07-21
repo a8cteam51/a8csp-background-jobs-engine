@@ -1,14 +1,16 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * The plugin's composition root: assembles the top-level components and runs the boot pipeline.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

@@ -1,13 +1,13 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 // The top-level fixture components below link the guarded production interface at file-load
 // time, before any setUpBeforeClass() can run — so the guard's constant must exist here.
 \defined( 'ABSPATH' ) || \define( 'ABSPATH', __DIR__ . '/' );
 
-use A8C\SpecialProjects\BackgroundTasksEngine\ComponentCollection;
-use A8C\SpecialProjects\BackgroundTasksEngine\ComponentInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ComponentCollection;
+use A8C\SpecialProjects\BackgroundJobsEngine\ComponentInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

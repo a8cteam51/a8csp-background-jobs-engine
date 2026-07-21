@@ -1,18 +1,18 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowDeleteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -46,7 +46,7 @@ final class ScheduleRegistry {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgte_schedule_registrations_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_schedule_registrations_';
 
 	/**
 	 * Maximum compare-and-swap attempts before a contended write fails safely.
@@ -64,7 +64,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<string, array<string, array{schedule: Schedule, task: string}>>
+	 * @var     array<string, array<string, array{schedule: Schedule, job: string}>>
 	 */
 	private array $declarations = array();
 
@@ -204,7 +204,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: Schedule, task: string}> $schedules
+	 * @phpstan-param array<string, array{schedule: Schedule, job: string}> $schedules
 	 * @phpstan-param array<string, Registration>                            $registrations
 	 *
 	 * @param   string $owner                       Stable client identifier.
@@ -335,10 +335,10 @@ final class ScheduleRegistry {
 	 *
 	 * @param   string $registration_key `{owner}:{name}` schedule identity.
 	 *
-	 * @return  array{schedule: Schedule, task: string}|null
+	 * @return  array{schedule: Schedule, job: string}|null
 	 */
 	public function declaration( string $registration_key ): ?array {
-		$parts = WorkIdentity::parts( $registration_key );
+		$parts = JobIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return null;
 		}
@@ -358,7 +358,7 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registration( string $registration_key ): AbstractResult {
-		$parts = WorkIdentity::parts( $registration_key );
+		$parts = JobIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return new Success( null );
 		}
@@ -387,7 +387,7 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
 	public function update_registration( string $registration_key, string $observed_fingerprint, array $registration ): RegistrationUpdateOutcome {
-		$parts = WorkIdentity::parts( $registration_key );
+		$parts = JobIdentity::parts( $registration_key );
 		if ( null === $parts ) {
 			return RegistrationUpdateOutcome::Failed;
 		}
@@ -465,7 +465,7 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'an undeclared occurrence outcome must be handled, not dropped' )]
 	public function record_undeclared_occurrence( string $registration_key, int $warning_threshold ): UndeclaredOccurrenceOutcome {
-		$parts = WorkIdentity::parts( $registration_key );
+		$parts = JobIdentity::parts( $registration_key );
 		if ( null === $parts || 1 > $warning_threshold ) {
 			return UndeclaredOccurrenceOutcome::Failed;
 		}
@@ -554,7 +554,7 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$parts = WorkIdentity::parts( $registration_key );
+			$parts = JobIdentity::parts( $registration_key );
 			if ( null === $parts || $owner !== $parts[0] ) {
 				continue;
 			}
@@ -585,7 +585,7 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$parts = WorkIdentity::parts( $registration_key );
+			$parts = JobIdentity::parts( $registration_key );
 			if ( null === $parts || $owner !== $parts[0] ) {
 				continue;
 			}
@@ -648,7 +648,7 @@ final class ScheduleRegistry {
 				return null;
 			}
 
-			$parts = WorkIdentity::parts( $registration_key );
+			$parts = JobIdentity::parts( $registration_key );
 			if ( null === $parts || $owner !== $parts[0] ) {
 				return null;
 			}
@@ -672,7 +672,7 @@ final class ScheduleRegistry {
 	 * @return  string
 	 */
 	public static function option_name( string $owner ): string {
-		WorkIdentity::validate_owner( $owner, true );
+		JobIdentity::validate_owner( $owner, true );
 
 		return self::OPTION_PREFIX . $owner;
 	}
@@ -727,7 +727,7 @@ final class ScheduleRegistry {
 	public static function owner_from_option_name( string $option_name ): ?string {
 		$owner = \substr( $option_name, \strlen( self::OPTION_PREFIX ) );
 		try {
-			WorkIdentity::validate_owner( $owner, true );
+			JobIdentity::validate_owner( $owner, true );
 		} catch ( \InvalidArgumentException ) {
 			return null;
 		}
@@ -767,8 +767,8 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                                                 $owner     Stable client identifier.
-	 * @param   array<string, array{schedule: Schedule, task: string}> $schedules Declared schedules keyed by complete identity.
+	 * @param   string                                                $owner     Stable client identifier.
+	 * @param   array<string, array{schedule: Schedule, job: string}> $schedules Declared schedules keyed by complete identity.
 	 *
 	 * @return  void
 	 */

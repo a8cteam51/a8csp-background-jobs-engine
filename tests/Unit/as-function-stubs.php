@@ -6,10 +6,10 @@
  * Each guarded stub records its positional arguments and shifts a scripted return value. The
  * guards keep this file inert when a client loads the real Action Scheduler API.
  *
- * @package A8C\SpecialProjects\BackgroundTasksEngine
+ * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
-if ( ! \function_exists( 'a8csp_bgte_test_record_as_call' ) ) {
+if ( ! \function_exists( 'a8csp_bgje_test_record_as_call' ) ) {
 	/**
 	 * Appends an Action Scheduler function call to the test ledger.
 	 *
@@ -20,17 +20,17 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_as_call' ) ) {
 	 *
 	 * @return  void
 	 */
-	function a8csp_bgte_test_record_as_call( string $function_name, array $args ): void {
+	function a8csp_bgje_test_record_as_call( string $function_name, array $args ): void {
 		/** @var list<array{function: string, args: list<mixed>}> $calls */
-		$calls   = $GLOBALS['a8csp_bgte_test_as_calls'] ?? array();
+		$calls   = $GLOBALS['a8csp_bgje_test_as_calls'] ?? array();
 		$calls[] = array(
 			'function' => $function_name,
 			'args'     => $args,
 		);
 
-		$GLOBALS['a8csp_bgte_test_as_calls'] = $calls;
+		$GLOBALS['a8csp_bgje_test_as_calls'] = $calls;
 
-		$site_calls = $GLOBALS['a8csp_bgte_test_as_site_calls'] ?? null;
+		$site_calls = $GLOBALS['a8csp_bgje_test_as_site_calls'] ?? null;
 		if ( \is_array( $site_calls ) ) {
 			$blog_id      = \get_current_blog_id();
 			$site_calls[] = array(
@@ -39,12 +39,12 @@ if ( ! \function_exists( 'a8csp_bgte_test_record_as_call' ) ) {
 				'args'     => $args,
 			);
 
-			$GLOBALS['a8csp_bgte_test_as_site_calls'] = $site_calls;
+			$GLOBALS['a8csp_bgje_test_as_site_calls'] = $site_calls;
 		}
 	}
 }
 
-if ( ! \function_exists( 'a8csp_bgte_test_scripted_as_result' ) ) {
+if ( ! \function_exists( 'a8csp_bgje_test_scripted_as_result' ) ) {
 	/**
 	 * Shifts the next scripted result for an Action Scheduler function.
 	 *
@@ -53,9 +53,9 @@ if ( ! \function_exists( 'a8csp_bgte_test_scripted_as_result' ) ) {
 	 *
 	 * @return  mixed
 	 */
-	function a8csp_bgte_test_scripted_as_result( string $function_name, mixed $fallback ): mixed {
+	function a8csp_bgje_test_scripted_as_result( string $function_name, mixed $fallback ): mixed {
 		/** @var array<string, list<mixed>> $scripts */
-		$scripts = $GLOBALS['a8csp_bgte_test_as_results'] ?? array();
+		$scripts = $GLOBALS['a8csp_bgje_test_as_results'] ?? array();
 		$queue   = $scripts[ $function_name ] ?? array();
 
 		if ( array() === $queue ) {
@@ -66,7 +66,7 @@ if ( ! \function_exists( 'a8csp_bgte_test_scripted_as_result' ) ) {
 
 		$scripts[ $function_name ] = $queue;
 
-		$GLOBALS['a8csp_bgte_test_as_results'] = $scripts;
+		$GLOBALS['a8csp_bgje_test_as_results'] = $scripts;
 
 		return $result;
 	}
@@ -85,9 +85,9 @@ if ( ! \function_exists( 'as_enqueue_async_action' ) ) {
 	 * @return  int
 	 */
 	function as_enqueue_async_action( $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call( 'as_enqueue_async_action', array( $hook, $args, $group, $unique, $priority ) );
+		a8csp_bgje_test_record_as_call( 'as_enqueue_async_action', array( $hook, $args, $group, $unique, $priority ) );
 
-		$result = a8csp_bgte_test_scripted_as_result( 'as_enqueue_async_action', 1 );
+		$result = a8csp_bgje_test_scripted_as_result( 'as_enqueue_async_action', 1 );
 		if ( ! \is_int( $result ) ) {
 			throw new \UnexpectedValueException( 'Script as_enqueue_async_action with an integer result.' );
 		}
@@ -110,9 +110,9 @@ if ( ! \function_exists( 'as_schedule_single_action' ) ) {
 	 * @return  int
 	 */
 	function as_schedule_single_action( $timestamp, $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call( 'as_schedule_single_action', array( $timestamp, $hook, $args, $group, $unique, $priority ) );
+		a8csp_bgje_test_record_as_call( 'as_schedule_single_action', array( $timestamp, $hook, $args, $group, $unique, $priority ) );
 
-		$result = a8csp_bgte_test_scripted_as_result( 'as_schedule_single_action', 1 );
+		$result = a8csp_bgje_test_scripted_as_result( 'as_schedule_single_action', 1 );
 		if ( ! \is_int( $result ) ) {
 			throw new \UnexpectedValueException( 'Script as_schedule_single_action with an integer result.' );
 		}
@@ -136,9 +136,9 @@ if ( ! \function_exists( 'as_schedule_recurring_action' ) ) {
 	 * @return  int
 	 */
 	function as_schedule_recurring_action( $timestamp, $interval_in_seconds, $hook, $args = array(), $group = '', $unique = false, $priority = 10 ) {
-		a8csp_bgte_test_record_as_call( 'as_schedule_recurring_action', array( $timestamp, $interval_in_seconds, $hook, $args, $group, $unique, $priority ) );
+		a8csp_bgje_test_record_as_call( 'as_schedule_recurring_action', array( $timestamp, $interval_in_seconds, $hook, $args, $group, $unique, $priority ) );
 
-		$result = a8csp_bgte_test_scripted_as_result( 'as_schedule_recurring_action', 1 );
+		$result = a8csp_bgje_test_scripted_as_result( 'as_schedule_recurring_action', 1 );
 		if ( ! \is_int( $result ) ) {
 			throw new \UnexpectedValueException( 'Script as_schedule_recurring_action with an integer result.' );
 		}
@@ -158,7 +158,7 @@ if ( ! \function_exists( 'as_unschedule_all_actions' ) ) {
 	 * @return  void
 	 */
 	function as_unschedule_all_actions( $hook, $args = array(), $group = '' ) {
-		a8csp_bgte_test_record_as_call( 'as_unschedule_all_actions', array( $hook, $args, $group ) );
+		a8csp_bgje_test_record_as_call( 'as_unschedule_all_actions', array( $hook, $args, $group ) );
 	}
 }
 
@@ -172,9 +172,9 @@ if ( ! \function_exists( 'as_get_scheduled_actions' ) ) {
 	 * @return  array<int, object>|list<int>
 	 */
 	function as_get_scheduled_actions( $args = array(), $return_format = OBJECT ) {
-		a8csp_bgte_test_record_as_call( 'as_get_scheduled_actions', array( $args, $return_format ) );
+		a8csp_bgje_test_record_as_call( 'as_get_scheduled_actions', array( $args, $return_format ) );
 
-		$result = a8csp_bgte_test_scripted_as_result( 'as_get_scheduled_actions', array() );
+		$result = a8csp_bgje_test_scripted_as_result( 'as_get_scheduled_actions', array() );
 		if ( ! \is_array( $result ) ) {
 			throw new \UnexpectedValueException( 'Script as_get_scheduled_actions with an array result.' );
 		}
@@ -214,9 +214,9 @@ if ( ! \function_exists( 'as_next_scheduled_action' ) ) {
 	 * @return  int|bool
 	 */
 	function as_next_scheduled_action( $hook, $args = null, $group = '' ) {
-		a8csp_bgte_test_record_as_call( 'as_next_scheduled_action', array( $hook, $args, $group ) );
+		a8csp_bgje_test_record_as_call( 'as_next_scheduled_action', array( $hook, $args, $group ) );
 
-		$result = a8csp_bgte_test_scripted_as_result( 'as_next_scheduled_action', false );
+		$result = a8csp_bgje_test_scripted_as_result( 'as_next_scheduled_action', false );
 		if ( ! \is_int( $result ) && ! \is_bool( $result ) ) {
 			throw new \UnexpectedValueException( 'Script as_next_scheduled_action with an integer or boolean result.' );
 		}
@@ -236,9 +236,9 @@ if ( ! \function_exists( 'as_has_scheduled_action' ) ) {
 	 * @return  bool
 	 */
 	function as_has_scheduled_action( $hook, $args = null, $group = '' ) {
-		a8csp_bgte_test_record_as_call( 'as_has_scheduled_action', array( $hook, $args, $group ) );
+		a8csp_bgje_test_record_as_call( 'as_has_scheduled_action', array( $hook, $args, $group ) );
 
-		$result = a8csp_bgte_test_scripted_as_result( 'as_has_scheduled_action', false );
+		$result = a8csp_bgje_test_scripted_as_result( 'as_has_scheduled_action', false );
 		if ( ! \is_bool( $result ) ) {
 			throw new \UnexpectedValueException( 'Script as_has_scheduled_action with a boolean result.' );
 		}

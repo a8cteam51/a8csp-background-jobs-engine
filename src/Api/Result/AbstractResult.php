@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Api\Result;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Result;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ErrorInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -12,6 +12,8 @@ use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ErrorInterface;
  * Clients branch with {@see self::is_success()} or {@see self::is_failure()}, then read the
  * narrowed variant's public payload. Expected failures remain data in a result; unexpected
  * infrastructure failures and programmer errors remain exceptions.
+ *
+ * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

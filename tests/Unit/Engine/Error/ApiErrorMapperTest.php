@@ -1,16 +1,16 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Error;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Error;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\ApiErrorMapper;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\ApiErrorMapper;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -70,7 +70,7 @@ final class ApiErrorMapperTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
+		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Engine-authored corrective detail.', $result->error->message );
 		self::assertSame( array( 'run_id' => 'run-7' ), $result->error->context );
 	}
@@ -91,13 +91,13 @@ final class ApiErrorMapperTest extends TestCase {
 	 */
 	#[DataProvider( 'scheduling_failure_codes' )]
 	public function test_scheduling_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_background_tasks/run_task' ) ) ) );
+		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_jobs_engine/run_job' ) ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
-		self::assertSame( ApiErrorCode::from( $expected_code ), $result->error->code );
+		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Engine-authored scheduling detail.', $result->error->message );
-		self::assertSame( array( 'hook' => 'a8csp_background_tasks/run_task' ), $result->error->context );
+		self::assertSame( array( 'hook' => 'a8csp_jobs_engine/run_job' ), $result->error->context );
 	}
 
 	/**

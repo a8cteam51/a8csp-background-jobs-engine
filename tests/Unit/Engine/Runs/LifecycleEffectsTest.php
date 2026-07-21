@@ -1,25 +1,27 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine\Runs;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockClaimOutcome;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\WpdbLockSpy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -101,20 +103,20 @@ final class LifecycleEffectsTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['a8csp_bgte_test_options']              = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']         = array();
-		$GLOBALS['a8csp_bgte_test_option_autoload']      = array();
-		$GLOBALS['a8csp_bgte_test_filter_values']        = array();
-		$GLOBALS['a8csp_bgte_test_filter_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_fired_actions']        = array();
-		$GLOBALS['a8csp_bgte_test_action_throwables']    = array();
-		$GLOBALS['a8csp_bgte_test_hooks']                = array();
-		$GLOBALS['a8csp_bgte_test_action_registrations'] = array();
-		$GLOBALS['a8csp_bgte_test_blog_id']              = 1;
-		$GLOBALS['a8csp_bgte_test_cache']                = array();
-		$GLOBALS['a8csp_bgte_test_cache_calls']          = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events']     = array();
-		unset( $GLOBALS['a8csp_bgte_test_before_add_option'] );
+		$GLOBALS['a8csp_bgje_test_options']              = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']         = array();
+		$GLOBALS['a8csp_bgje_test_option_autoload']      = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']        = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']        = array();
+		$GLOBALS['a8csp_bgje_test_action_throwables']    = array();
+		$GLOBALS['a8csp_bgje_test_hooks']                = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']              = 1;
+		$GLOBALS['a8csp_bgje_test_cache']                = array();
+		$GLOBALS['a8csp_bgje_test_cache_calls']          = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events']     = array();
+		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
 		$this->clock            = new FixedClock( self::NOW );
 		$this->logger           = new RecordingLogger();
@@ -150,31 +152,33 @@ final class LifecycleEffectsTest extends TestCase {
 				'class'   => $error->exception_class,
 				'message' => $error->message,
 				'stage'   => RunFailureStage::Execution->value,
-				'code'    => ApiErrorCode::ExecutionFailed->value,
+				'code'    => ErrorCode::ExecutionFailed->value,
 			)
 		);
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, 'Task' );
+		$job      = new RecordingJob( self::NAME );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, JobType::Job, $job );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $remaining );
 		self::assertSame( RunStatus::Failed, $remaining->status );
-		self::assertSame( array( 'hooks', 'history' ), $remaining->effects );
+		self::assertSame( array( 'callbacks', 'hooks', 'history' ), $remaining->effects );
+		self::assertCount( 1, $job->failed_calls );
+		self::assertSame( self::RUN_ID, $job->failed_calls[0]['run_id'] );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
+		$actions = $this->fired_actions();
 		self::assertSame(
-			array(
-				'a8csp_background_tasks/failed/' . self::IDENTITY,
-				'a8csp_background_tasks/failed',
-			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			array( 'a8csp_jobs_engine/failed' ),
+			\array_column( $actions, 'hook_name' )
 		);
+		self::assertSame( array( $job->failed_calls[0]['error'] ), $actions[0]['args'] ?? null );
 		$this->assert_terminal_history( 'failed' );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['task_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
@@ -186,31 +190,43 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertNotNull( $state );
 		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next(
 			'update',
 			function ( WpdbLockSpy $wpdb ): void {
 				$terminal = $this->option( $this->run_option_name() );
 				self::assertIsArray( $terminal );
 				self::assertSame( 'completed', $terminal['status'] ?? null );
-				self::assertSame( array( 'hooks' ), $terminal['effects'] ?? null );
+				self::assertSame( array( 'callbacks', 'hooks' ), $terminal['effects'] ?? null );
 				$wpdb->script_result( 'update', false );
 			}
 		);
 		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, 'Task' );
+		$job      = new RecordingJob( self::NAME );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, JobType::Job, $job );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $remaining );
 		self::assertSame( RunStatus::Completed, $remaining->status );
-		self::assertSame( array( 'hooks' ), $remaining->effects );
+		self::assertSame( array( 'callbacks', 'hooks' ), $remaining->effects );
+		self::assertSame(
+			array(
+				array(
+					'run_id'                    => self::RUN_ID,
+					'start_args'                => self::ARGS,
+					'previous_completed_run_id' => null,
+				),
+			),
+			$job->completed_calls
+		);
 		self::assertNull( $this->lock() );
 		self::assertSame(
 			array(
-				'a8csp_background_tasks/completed/' . self::IDENTITY,
-				'a8csp_background_tasks/completed',
+				'a8csp_jobs_engine/completed/' . self::IDENTITY,
+				'a8csp_jobs_engine/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -230,19 +246,23 @@ final class LifecycleEffectsTest extends TestCase {
 		$claim_raw = $run_store->replace_if_state_matches( self::RUN_ID, $running, $terminal );
 		self::assertIsString( $claim_raw );
 
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $claim_raw, $run_store, 'Task' ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $claim_raw, $run_store, JobType::Job ) );
 		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
 		self::assertNull( $this->lock() );
 
-		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'hooks' );
+		$callbacks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'callbacks' );
+		self::assertNotNull( $callbacks );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $callbacks['state'], $callbacks['raw'], $run_store, JobType::Job ) );
+
+		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $callbacks['state'], $callbacks['raw'], 'hooks' );
 		self::assertNotNull( $hooks );
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store, 'Task' ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store, JobType::Job ) );
 
 		$complete = $run_store->append_terminal_effect( self::RUN_ID, $hooks['state'], $hooks['raw'], 'history' );
 		self::assertNotNull( $complete );
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store, 'Task' ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store, JobType::Job ) );
 		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
-		self::assertTrue( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $complete['raw'], $run_store, 'Task' ) );
+		self::assertTrue( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $complete['raw'], $run_store, JobType::Job ) );
 		self::assertNull( $run_store->get( self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
 	}
@@ -250,59 +270,63 @@ final class LifecycleEffectsTest extends TestCase {
 	/**
 	 * Durable terminal effects are derived from one outcome-by-work-kind table.
 	 *
-	 * @phpstan-param 'Task'|'Batch' $work_type
 	 * @phpstan-param list<string> $effects
 	 */
 	#[DataProvider( 'terminal_effect_rows' )]
-	public function test_expected_terminal_effects( string $status, string $work_type, array $effects ): void {
+	public function test_expected_terminal_effects( string $status, JobType $work_type, array $effects ): void {
 		self::assertSame( $effects, LifecycleEffects::expected_effects( RunStatus::from( $status ), $work_type ) );
 	}
 
 	/**
 	 * Supplies every terminal outcome and work-kind combination.
 	 *
-	 * @return  array<string, array{status: string, work_type: 'Task'|'Batch', effects: list<string>}>
+	 * @return  array<string, array{status: string, work_type: JobType, effects: list<string>}>
 	 */
 	public static function terminal_effect_rows(): array {
+		// Data providers run before setUpBeforeClass, while guarded source enums require the WordPress bootstrap constant.
+		if ( ! \defined( 'ABSPATH' ) ) {
+			\define( 'ABSPATH', __DIR__ . '/' );
+		}
+
 		return array(
-			'failed batch'     => array(
+			'failed chunked job'     => array(
 				'status'    => 'failed',
-				'work_type' => 'Batch',
+				'work_type' => JobType::ChunkedJob,
 				'effects'   => array( 'retention', 'callbacks', 'hooks', 'history' ),
 			),
-			'failed task'      => array(
+			'failed job'             => array(
 				'status'    => 'failed',
-				'work_type' => 'Task',
-				'effects'   => array( 'retention', 'hooks', 'history' ),
+				'work_type' => JobType::Job,
+				'effects'   => array( 'retention', 'callbacks', 'hooks', 'history' ),
 			),
-			'completed batch'  => array(
+			'completed chunked job'  => array(
 				'status'    => 'completed',
-				'work_type' => 'Batch',
+				'work_type' => JobType::ChunkedJob,
 				'effects'   => array( 'callbacks', 'hooks', 'history' ),
 			),
-			'completed task'   => array(
+			'completed job'          => array(
 				'status'    => 'completed',
-				'work_type' => 'Task',
-				'effects'   => array( 'hooks', 'history' ),
+				'work_type' => JobType::Job,
+				'effects'   => array( 'callbacks', 'hooks', 'history' ),
 			),
-			'cancelled batch'  => array(
+			'cancelled chunked job'  => array(
 				'status'    => 'cancelled',
-				'work_type' => 'Batch',
+				'work_type' => JobType::ChunkedJob,
 				'effects'   => array( 'hooks', 'history' ),
 			),
-			'cancelled task'   => array(
+			'cancelled job'          => array(
 				'status'    => 'cancelled',
-				'work_type' => 'Task',
+				'work_type' => JobType::Job,
 				'effects'   => array( 'hooks', 'history' ),
 			),
-			'superseded batch' => array(
+			'superseded chunked job' => array(
 				'status'    => 'superseded',
-				'work_type' => 'Batch',
+				'work_type' => JobType::ChunkedJob,
 				'effects'   => array( 'hooks', 'history' ),
 			),
-			'superseded task'  => array(
+			'superseded job'         => array(
 				'status'    => 'superseded',
-				'work_type' => 'Task',
+				'work_type' => JobType::Job,
 				'effects'   => array( 'hooks', 'history' ),
 			),
 		);
@@ -323,7 +347,7 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( LockClaimOutcome::Claimed, $claim );
 
 		$run_store = $this->stores->run_store( self::IDENTITY );
-		if ( null === $run_store->create( self::RUN_ID, 'Task', self::ARGS, self::ARGS_HASH, array() ) ) {
+		if ( null === $run_store->create( self::RUN_ID, JobType::Job, self::ARGS, self::ARGS_HASH, array() ) ) {
 			throw new \RuntimeException( 'The terminal-effect fixture could not create its running row.' );
 		}
 		if ( ! $this->stores->run_history( self::IDENTITY )->record_started( self::RUN_ID, self::ARGS_HASH ) ) {
@@ -334,9 +358,9 @@ final class LifecycleEffectsTest extends TestCase {
 		$this->logger->records        = array();
 		$this->wpdb->recorded_queries = array();
 
-		$GLOBALS['a8csp_bgte_test_fired_actions']    = array();
-		$GLOBALS['a8csp_bgte_test_option_calls']     = array();
-		$GLOBALS['a8csp_bgte_test_lifecycle_events'] = array();
+		$GLOBALS['a8csp_bgje_test_fired_actions']    = array();
+		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
+		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 	}
 
 	/**
@@ -390,7 +414,7 @@ final class LifecycleEffectsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgte_history_' . self::IDENTITY )
+			$this->option( 'a8csp_bgje_history_' . self::IDENTITY )
 		);
 	}
 
@@ -402,7 +426,7 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private function recorded_run_state( string $status ): array {
-		$events = $GLOBALS['a8csp_bgte_test_lifecycle_events'] ?? null;
+		$events = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
 		self::assertIsArray( $events );
 		foreach ( $events as $event ) {
 			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) ) {
@@ -420,7 +444,7 @@ final class LifecycleEffectsTest extends TestCase {
 			}
 		}
 
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		$calls = $GLOBALS['a8csp_bgje_test_option_calls'] ?? null;
 		self::assertIsArray( $calls );
 		foreach ( $calls as $call ) {
 			self::assertIsArray( $call );
@@ -451,7 +475,7 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgte_run_' . self::IDENTITY . '_' . self::RUN_ID;
+		return 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -506,7 +530,7 @@ final class LifecycleEffectsTest extends TestCase {
 			return RawOptionDecoder::decode( $raw );
 		}
 
-		$options = $GLOBALS['a8csp_bgte_test_options'] ?? null;
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
 		self::assertIsArray( $options );
 
 		return $options[ $name ] ?? null;
@@ -518,7 +542,7 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @return  list<array{hook_name: string, args: list<mixed>}>
 	 */
 	private function fired_actions(): array {
-		$actions = $GLOBALS['a8csp_bgte_test_fired_actions'] ?? null;
+		$actions = $GLOBALS['a8csp_bgje_test_fired_actions'] ?? null;
 		self::assertIsArray( $actions );
 		$typed_actions = array();
 		foreach ( $actions as $action ) {

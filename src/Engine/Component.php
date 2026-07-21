@@ -1,39 +1,39 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\Batches as ApiBatches;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Run\Runs as ApiRuns;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedules as ApiSchedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Task\Tasks as ApiTasks;
-use A8C\SpecialProjects\BackgroundTasksEngine\AbstractComponent;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Randomizer;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\SystemClock;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceSchedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Maintenance\MaintenanceTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobs as ApiChunkedJobs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Run\Runs as ApiRuns;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedules as ApiSchedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\Jobs as ApiJobs;
+use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\EngineFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Randomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\SystemClock;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceSchedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -79,14 +79,14 @@ final class Component extends AbstractComponent {
 	private static ?Inspection $inspection = null;
 
 	/**
-	 * Registered task and batch instances published by the initialized component.
+	 * Registered job and chunked job instances published by the initialized component.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     WorkRegistry|null
+	 * @var     JobRegistry|null
 	 */
-	private static ?WorkRegistry $work = null;
+	private static ?JobRegistry $work = null;
 
 	/**
 	 * Schedule operations published by the initialized component.
@@ -178,7 +178,7 @@ final class Component extends AbstractComponent {
 			 * @var \wpdb $wpdb
 			 */
 			$option_rows          = new OptionRows( $wpdb );
-			$work                 = new WorkRegistry();
+			$work                 = new JobRegistry();
 			$logger               = new HookLogger();
 			$schedules            = new ScheduleRegistry( $option_rows, $logger );
 			$clock                = new SystemClock();
@@ -201,10 +201,10 @@ final class Component extends AbstractComponent {
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
-			$work->register_task( WorkIdentity::compose( WorkIdentity::ENGINE_OWNER, MaintenanceTask::NAME, true ), new MaintenanceTask( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) );
+			$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) );
 			$schedule_api         = new Schedules( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
-			$inspection           = new Inspection( $schedules, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
+			$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
 			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 			$this->action_deliveries    = $action_deliveries;
@@ -268,21 +268,21 @@ final class Component extends AbstractComponent {
 	 * @return  Client
 	 */
 	public static function client( string $owner ): Client {
-		WorkIdentity::validate_owner( $owner );
+		JobIdentity::validate_owner( $owner );
 		$work       = self::$work;
 		$schedules  = self::$schedules;
 		$dispatcher = self::$dispatcher;
 		$inspection = self::$inspection;
 		if ( null === self::$engine || null === $work || null === $schedules || null === $dispatcher || null === $inspection ) {
-			throw new \LogicException( 'The background tasks engine graph is unavailable after engine boot.' );
+			throw new \LogicException( 'The background jobs engine graph is unavailable after engine boot.' );
 		}
 
 		$adapter = new ApiAdapter( $owner, $work, $schedules, $dispatcher, $inspection );
 
 		return new Client(
 			$owner,
-			new ApiTasks( $owner, $adapter ),
-			new ApiBatches( $owner, $adapter ),
+			new ApiJobs( $owner, $adapter ),
+			new ApiChunkedJobs( $owner, $adapter ),
 			new ApiSchedules( $owner, $adapter ),
 			new ApiRuns( $owner, $adapter )
 		);

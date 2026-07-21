@@ -1,16 +1,16 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\CLI\Commands;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\FailedRunOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\Format;
-use A8C\SpecialProjects\BackgroundTasksEngine\CLI\Output\RunOutput;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -41,7 +41,7 @@ final readonly class RunsCommand {
 	 * : Operation to perform: list or cancel.
 	 *
 	 * <identity>
-	 * : Composed `{owner}:{name}` task or batch identity.
+	 * : Composed `{owner}:{name}` job or chunked job identity.
 	 *
 	 * [<run_id>]
 	 * : Retained engine-run identifier. Required by cancel.
@@ -51,15 +51,15 @@ final readonly class RunsCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-tasks runs list consumer-plugin:email-digest
-	 *     $ wp background-tasks runs list consumer-plugin:email-digest --format=json
-	 *     $ wp background-tasks runs cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
+	 *     $ wp background-jobs runs list consumer-plugin:email-digest
+	 *     $ wp background-jobs runs list consumer-plugin:email-digest --format=json
+	 *     $ wp background-jobs runs cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 	 *
 	 * A waiting live run has a backend delivery or retry pending. An executing run has an admitted
 	 * lifecycle action in progress, whether engine orchestration or a client callback, and a stale
 	 * heartbeat means maintenance can reclaim the abandoned execution. The `recent history` section
 	 * is bounded; `failed store` identifies failures still available to
-	 * `wp background-tasks failed-runs retry`.
+	 * `wp background-jobs failed-runs retry`.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -119,10 +119,10 @@ final readonly class RunsCommand {
 			if ( 3 !== \count( $args ) || array() !== $assoc_args ) {
 				return array(
 					'action'  => 'error',
-					'message' => 'Cancel requires exactly an identity and run_id; use wp background-tasks runs cancel <identity> <run_id>.',
+					'message' => 'Cancel requires exactly an identity and run_id; use wp background-jobs runs cancel <identity> <run_id>.',
 				);
 			}
-			if ( null === WorkIdentity::parts( $args[1] ) ) {
+			if ( null === JobIdentity::parts( $args[1] ) ) {
 				return array(
 					'action'  => 'error',
 					'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
@@ -145,12 +145,12 @@ final readonly class RunsCommand {
 		if ( 2 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'format' ) ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Run list requires exactly one identity and accepts only --format; use wp background-tasks runs list <identity> [--format=<format>].',
+				'message' => 'Run list requires exactly one identity and accepts only --format; use wp background-jobs runs list <identity> [--format=<format>].',
 			);
 		}
 
 		$name = $args[1];
-		if ( null === WorkIdentity::parts( $name ) ) {
+		if ( null === JobIdentity::parts( $name ) ) {
 			return array(
 				'action'  => 'error',
 				'message' => 'Run identity is invalid; use a composed {owner}:{name} identity.',
@@ -181,7 +181,7 @@ final readonly class RunsCommand {
 	 * : Operation to perform: list, retry, or purge.
 	 *
 	 * [<identity>]
-	 * : Composed `{owner}:{name}` task or batch identity. Required by retry and by an identity-scoped purge.
+	 * : Composed `{owner}:{name}` job or chunked job identity. Required by retry and by an identity-scoped purge.
 	 *
 	 * [<run_id>]
 	 * : Retained failed-run identifier. Required by retry.
@@ -205,11 +205,11 @@ final readonly class RunsCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-tasks failed-runs list
-	 *     $ wp background-tasks failed-runs list --owner=consumer-plugin --format=json
-	 *     $ wp background-tasks failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
-	 *     $ wp background-tasks failed-runs purge consumer-plugin:email-digest
-	 *     $ wp background-tasks failed-runs purge --all
+	 *     $ wp background-jobs failed-runs list
+	 *     $ wp background-jobs failed-runs list --owner=consumer-plugin --format=json
+	 *     $ wp background-jobs failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
+	 *     $ wp background-jobs failed-runs purge consumer-plugin:email-digest
+	 *     $ wp background-jobs failed-runs purge --all
 	 *
 	 * List output excludes unreadable entries or whole option rows and reports one count warning on
 	 * STDERR for every format.
@@ -274,7 +274,7 @@ final readonly class RunsCommand {
 				if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'owner', 'format' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'List accepts only --owner and --format; use wp background-tasks failed-runs list [--owner=<owner>] [--format=<format>].',
+						'message' => 'List accepts only --owner and --format; use wp background-jobs failed-runs list [--owner=<owner>] [--format=<format>].',
 					);
 				}
 
@@ -290,7 +290,7 @@ final readonly class RunsCommand {
 
 					$owner = $owner_argument;
 					try {
-						WorkIdentity::validate_owner( $owner, true );
+						JobIdentity::validate_owner( $owner, true );
 					} catch ( \InvalidArgumentException ) {
 						return array(
 							'action'  => 'error',
@@ -317,10 +317,10 @@ final readonly class RunsCommand {
 				if ( 3 !== \count( $args ) || array() !== $assoc_args ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Retry requires exactly an identity and run_id; use wp background-tasks failed-runs retry <identity> <run_id>.',
+						'message' => 'Retry requires exactly an identity and run_id; use wp background-jobs failed-runs retry <identity> <run_id>.',
 					);
 				}
-				if ( null === WorkIdentity::parts( $args[1] ) ) {
+				if ( null === JobIdentity::parts( $args[1] ) ) {
 					return array(
 						'action'  => 'error',
 						'message' => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
@@ -342,7 +342,7 @@ final readonly class RunsCommand {
 				if ( ! self::has_only_keys( $assoc_args, array( 'all' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Purge accepts only --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
+						'message' => 'Purge accepts only --all; use wp background-jobs failed-runs purge <identity> or purge --all.',
 					);
 				}
 
@@ -355,7 +355,7 @@ final readonly class RunsCommand {
 
 				if ( 2 === \count( $args ) && ! \array_key_exists( 'all', $assoc_args ) ) {
 					$name = $args[1];
-					if ( null === WorkIdentity::parts( $name ) ) {
+					if ( null === JobIdentity::parts( $name ) ) {
 						return array(
 							'action'  => 'error',
 							'message' => 'Purge identity is invalid; use a composed {owner}:{name} identity.',
@@ -370,7 +370,7 @@ final readonly class RunsCommand {
 
 				return array(
 					'action'  => 'error',
-					'message' => 'Purge requires exactly one identity or --all; use wp background-tasks failed-runs purge <identity> or purge --all.',
+					'message' => 'Purge requires exactly one identity or --all; use wp background-jobs failed-runs purge <identity> or purge --all.',
 				);
 			default:
 				return array(
@@ -400,7 +400,7 @@ final readonly class RunsCommand {
 			}
 
 			$name = \substr( $option_name, \strlen( FailedRunStore::OPTION_PREFIX ) );
-			if ( null !== WorkIdentity::parts( $name ) ) {
+			if ( null !== JobIdentity::parts( $name ) ) {
 				$names[ $name ] = true;
 			}
 		}
@@ -421,7 +421,7 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Composed task or batch identity.
+	 * @param   string $name   Composed job or chunked job identity.
 	 * @param   string $run_id Retained run identifier.
 	 *
 	 * @return  void
@@ -429,7 +429,7 @@ final readonly class RunsCommand {
 	private function cancel_run( string $name, string $run_id ): void {
 		$engine = Component::get_engine();
 		if ( null === $engine ) {
-			\WP_CLI::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
@@ -448,7 +448,7 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Composed task or batch identity.
+	 * @param   string $name   Composed job or chunked job identity.
 	 * @param   string $format WP-CLI output format.
 	 *
 	 * @return  void
@@ -456,7 +456,7 @@ final readonly class RunsCommand {
 	private function list_runs( string $name, string $format ): void {
 		$inspection = Component::get_inspection();
 		if ( null === $inspection ) {
-			\WP_CLI::error( 'The background tasks inspection service is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
@@ -485,7 +485,7 @@ final readonly class RunsCommand {
 				\array_filter(
 					$names,
 					static function ( string $name ) use ( $owner ): bool {
-						$parts = WorkIdentity::parts( $name );
+						$parts = JobIdentity::parts( $name );
 
 						return null !== $parts && $owner === $parts[0];
 					}
@@ -528,7 +528,7 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Composed task or batch identity.
+	 * @param   string $name   Composed job or chunked job identity.
 	 * @param   string $run_id Retained failed-run identifier.
 	 *
 	 * @return  void
@@ -536,7 +536,7 @@ final readonly class RunsCommand {
 	private function retry_failed_run( string $name, string $run_id ): void {
 		$engine = Component::get_engine();
 		if ( null === $engine ) {
-			\WP_CLI::error( 'The background tasks engine is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
@@ -557,7 +557,7 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $name Composed task or batch identity, or null for every identity.
+	 * @param   string|null $name Composed job or chunked job identity, or null for every identity.
 	 *
 	 * @return  void
 	 */

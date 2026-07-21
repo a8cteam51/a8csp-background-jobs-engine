@@ -1,25 +1,25 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\WorkIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Client API for declarative recurring task schedules.
+ * Client API for declarative recurring job schedules.
  *
  * @internal
  *
@@ -63,7 +63,7 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param  array<string, array{schedule: Schedule, task: string}> $declarations
+	 * @phpstan-param  array<string, array{schedule: Schedule, job: string}> $declarations
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
 	 * @param   string $owner        Stable client identifier captured by the owner-bound facade.
@@ -75,7 +75,7 @@ final readonly class Schedules {
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	public function sync( string $owner, array $declarations ): AbstractResult {
-		WorkIdentity::validate_owner( $owner );
+		JobIdentity::validate_owner( $owner );
 
 		return $this->sync_owner( $owner, $declarations );
 	}
@@ -88,7 +88,7 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param  array<string, array{schedule: Schedule, task: string}> $declarations
+	 * @phpstan-param  array<string, array{schedule: Schedule, job: string}> $declarations
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
 	 * @param   string $owner        Stable client or engine identifier.
@@ -99,7 +99,7 @@ final readonly class Schedules {
 	 * @return  AbstractResult
 	 */
 	public function sync_owner( string $owner, array $declarations ): AbstractResult {
-		WorkIdentity::validate_owner( $owner, true );
+		JobIdentity::validate_owner( $owner, true );
 
 		$declared = array();
 		foreach ( $declarations as $schedule_identity => $declaration ) {
@@ -107,7 +107,7 @@ final readonly class Schedules {
 				throw new \InvalidArgumentException( 'Schedule sync declaration keys must be canonical owner-qualified schedule identities.' );
 			}
 
-			$registration_parts = WorkIdentity::parts( $schedule_identity );
+			$registration_parts = JobIdentity::parts( $schedule_identity );
 			if ( null === $registration_parts || $owner !== $registration_parts[0] ) {
 				throw new \InvalidArgumentException( 'Schedule sync declaration identities must be canonical and belong to the bound owner.' );
 			}
@@ -121,19 +121,19 @@ final readonly class Schedules {
 				throw new \InvalidArgumentException( 'Schedule sync declaration identities must match their Schedule value-object names.' );
 			}
 
-			$task = $declaration['task'] ?? null;
-			if ( ! \is_string( $task ) ) {
-				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical owner-qualified task identities.' );
+			$job = $declaration['job'] ?? null;
+			if ( ! \is_string( $job ) ) {
+				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical owner-qualified job identities.' );
 			}
 
-			$task_parts = WorkIdentity::parts( $task );
-			if ( null === $task_parts || $owner !== $task_parts[0] || $schedule->task !== $task_parts[1] ) {
-				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical, belong to the bound owner, and match their Schedule value-object task names.' );
+			$job_parts = JobIdentity::parts( $job );
+			if ( null === $job_parts || $owner !== $job_parts[0] || $schedule->job !== $job_parts[1] ) {
+				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical, belong to the bound owner, and match their Schedule value-object job names.' );
 			}
 
 			$declared[ $schedule_identity ] = array(
 				'schedule' => $schedule,
-				'task'     => $task,
+				'job'      => $job,
 			);
 		}
 
@@ -151,7 +151,7 @@ final readonly class Schedules {
 		$next_due_by_identity = array();
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
-			$interval = $schedule->recurrence->interval();
+			$interval = $schedule->recurrence->interval;
 
 			$interval_by_identity[ $schedule_identity ] = $interval;
 			$current                                    = $existing[ $schedule_identity ] ?? null;
@@ -160,12 +160,12 @@ final readonly class Schedules {
 			}
 
 			$now      = $this->clock->now()->getTimestamp();
-			$next_due = $now > \PHP_INT_MAX - $interval ? null : $now + $interval;
+			$next_due = self::next_anchored_due( $now, $interval, $schedule->recurrence->anchor );
 			if ( null === $next_due || 1 > $next_due ) {
 				return new Failure(
 					new SchedulingError(
 						SchedulingErrorReason::InvalidTimeInput,
-						\sprintf( 'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Recurrence::every() value.', $schedule->name ),
+						\sprintf( 'Schedule "%s" first occurrence falls outside positive supported Unix seconds; correct the system clock or pass a smaller Recurrence::every()/every_anchored() interval.', $schedule->name ),
 						array(
 							'current_timestamp' => $now,
 							'interval'          => $interval,
@@ -260,7 +260,7 @@ final readonly class Schedules {
 	/**
 	 * Immediately dispatches one declared schedule target without changing its recurrence.
 	 *
-	 * Schedule-driven tasks must be idempotent because manual dispatch uses the same overlap and
+	 * Schedule-driven jobs must be idempotent because manual dispatch uses the same overlap and
 	 * at-least-once execution machinery as recurring occurrences.
 	 *
 	 * @since   1.0.0
@@ -274,7 +274,7 @@ final readonly class Schedules {
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now( string $registration_key ): AbstractResult {
-		if ( null === WorkIdentity::parts( $registration_key ) ) {
+		if ( null === JobIdentity::parts( $registration_key ) ) {
 			throw new \InvalidArgumentException( 'Schedule identity is invalid; pass one canonical {owner}:{name} identity.' );
 		}
 
@@ -284,6 +284,35 @@ final readonly class Schedules {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Returns the first strictly future instant on the recurrence's UTC phase grid.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int      $now      Current UTC Unix timestamp.
+	 * @param   int      $interval Positive recurrence interval.
+	 * @param   int|null $anchor   Canonical UTC phase offset, or null when unanchored.
+	 *
+	 * @return  int|null Future due instant, or null when positive Unix seconds overflow.
+	 */
+	private static function next_anchored_due( int $now, int $interval, ?int $anchor ): ?int {
+		if ( $now > \PHP_INT_MAX - $interval ) {
+			return null;
+		}
+		if ( null === $anchor ) {
+			return $now + $interval;
+		}
+
+		$phase     = $anchor % $interval;
+		$candidate = $now - ( $now % $interval ) + $phase;
+		while ( $candidate <= $now ) {
+			$candidate += $interval;
+		}
+
+		return $candidate;
+	}
 
 	/**
 	 * Returns the failed verified-clear result for a schedule replacement.

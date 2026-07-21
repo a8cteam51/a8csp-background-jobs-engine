@@ -1,12 +1,12 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use wpdb;
 
 \defined( 'ABSPATH' ) || exit;
@@ -119,6 +119,48 @@ final readonly class OptionRows {
 		}
 
 		return new Success( $row['option_value'] );
+	}
+
+	/**
+	 * Reads a bounded set of exact raw option values in one authoritative query.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<string> $keys Option names.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site.
+	 *
+	 * @return  AbstractResult<array<string, string>, EngineError>
+	 */
+	#[\NoDiscard( 'an authoritative read outcome must be handled, not dropped' )]
+	public function read_many( array $keys ): AbstractResult {
+		$this->assert_site();
+		if ( array() === $keys ) {
+			return new Success( array() );
+		}
+
+		$wpdb         = $this->wpdb;
+		$placeholders = \implode( ', ', \array_fill( 0, \count( $keys ), '%s' ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- IN-list placeholders are array_fill()-built literals; every option name binds through prepare().
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT `option_name`, `option_value` FROM %i WHERE `option_name` IN (' . $placeholders . ')', $wpdb->options, ...$keys ), \ARRAY_A );
+		if ( $this->last_read_failed() ) {
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
+		}
+
+		$requested = \array_fill_keys( $keys, true );
+		$selected  = array();
+		foreach ( $rows ?? array() as $row ) {
+			$option_name  = $row['option_name'] ?? null;
+			$option_value = $row['option_value'] ?? null;
+			if ( \is_string( $option_name ) && \is_string( $option_value ) && isset( $requested[ $option_name ] ) ) {
+				$selected[ $option_name ] = $option_value;
+			}
+		}
+
+		return new Success( $selected );
 	}
 
 	/**

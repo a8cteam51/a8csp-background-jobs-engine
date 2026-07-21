@@ -1,23 +1,22 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundTasksEngine\Tests\Unit\Engine;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Batch\ExistingRunPolicy;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\ApiErrorCode;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Error\RunFailureStage;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Failure;
-use A8C\SpecialProjects\BackgroundTasksEngine\Api\Result\Success;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\ApiAdapter;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundTasksEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingBatch;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\RecordingTask;
-use A8C\SpecialProjects\BackgroundTasksEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\ApiAdapter;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\EngineFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -91,48 +90,48 @@ final class EngineFacadeTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Task registration, admission, delivery, and completion cross the complete facade stack.
+	 * Job registration, admission, delivery, and completion cross the complete facade stack.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_task_facade_round_trips_one_public_run(): void {
+	public function test_job_facade_round_trips_one_public_run(): void {
 		$client = $this->rig->client( 'facade-tests' );
-		$task   = new RecordingTask( 'email-digest' );
-		$client->tasks()->register( $task );
+		$job    = new RecordingJob( 'email-digest' );
+		$client->jobs()->register( $job );
 
-		$result = $client->tasks()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, dedup_key: 'site-7', priority: 5 );
+		$result = $client->jobs()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->backend()->assert_scheduled( 'facade-tests:email-digest' );
 		$this->rig->run_due();
-		self::assertSame( array( array( 'site_id' => 7 ) ), $task->calls );
+		self::assertSame( array( array( 'site_id' => 7 ) ), $job->calls );
 		$this->rig->assert_completed();
 	}
 
 	/**
-	 * Batch registration, admission, queue generation, and completion cross the same facade stack.
+	 * Chunked Job registration, admission, queue generation, and completion cross the same facade stack.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_batch_facade_round_trips_one_public_run(): void {
-		$client = $this->rig->client( 'facade-tests' );
-		$batch  = new RecordingBatch( 'catalog-sync' );
-		$client->batches()->register( $batch );
+	public function test_chunked_job_facade_round_trips_one_public_run(): void {
+		$client      = $this->rig->client( 'facade-tests' );
+		$chunked_job = new RecordingChunkedJob( 'catalog-sync' );
+		$client->chunked_jobs()->register( $chunked_job );
 
-		$result = $client->batches()->start( 'catalog-sync', array( 'site_id' => 7 ), existing: ExistingRunPolicy::Reject, priority: 23 );
+		$result = $client->chunked_jobs()->start( 'catalog-sync', array( 'site_id' => 7 ), priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
 		$this->rig->run_due();
 		$this->rig->run_due();
-		self::assertSame( array( array( 'site_id' => 7 ) ), $batch->generate_calls );
-		self::assertCount( 1, $batch->completed_calls );
+		self::assertSame( array( array( 'site_id' => 7 ) ), $chunked_job->generate_calls );
+		self::assertCount( 1, $chunked_job->completed_calls );
 		$this->rig->assert_completed();
 	}
 
@@ -147,18 +146,18 @@ final class EngineFacadeTest extends TestCase {
 	public function test_facade_rejects_unknown_and_ambiguous_work_before_scheduling(): void {
 		$client                      = $this->rig->client( 'facade-tests' );
 		$this->rig->backend()->calls = array();
-		$unknown                     = $client->tasks()->enqueue( 'missing' );
+		$unknown                     = $client->jobs()->enqueue( 'missing' );
 		self::assertInstanceOf( Failure::class, $unknown );
 		if ( ! $unknown->error instanceof ApiError ) {
 			throw new \LogicException( 'Unknown work must produce a public API error.' );
 		}
-		self::assertSame( ApiErrorCode::UnknownWork, $unknown->error->code );
+		self::assertSame( ErrorCode::UnknownWork, $unknown->error->code );
 		self::assertSame( array(), $this->rig->backend()->calls );
 
-		$client->tasks()->register( new RecordingTask( 'shared' ) );
+		$client->jobs()->register( new RecordingJob( 'shared' ) );
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work identity "facade-tests:shared" is already registered as a task; it cannot also be registered as a batch.' );
-		$client->batches()->register( new RecordingBatch( 'shared' ) );
+		$this->expectExceptionMessageIs( 'Background-work identity "facade-tests:shared" is already registered as a job; it cannot also be registered as a chunked job.' );
+		$client->chunked_jobs()->register( new RecordingChunkedJob( 'shared' ) );
 	}
 
 	/**
@@ -176,11 +175,11 @@ final class EngineFacadeTest extends TestCase {
 	public function test_retry_failed_consumes_authoritative_storage_without_option_function_writes(): void {
 		$identity = 'facade-tests:email-digest';
 		$client   = $this->rig->client( 'facade-tests' );
-		$client->tasks()->register( new RecordingTask( 'email-digest' ) );
-		$failure               = new RunFailure( identity: $identity, run_id: self::FAILED_RUN_ID, attempts: 1, stage: RunFailureStage::Execution, code: ApiErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+		$failure               = new RunFailure( identity: $identity, run_id: self::FAILED_RUN_ID, attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
 		$this->rig->wpdb()->put( $option_name, $raw );
-		$GLOBALS['a8csp_bgte_test_option_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_option_calls'] = array();
 
 		$result = $client->runs()->retry_failed( 'email-digest', self::FAILED_RUN_ID );
 
@@ -202,8 +201,8 @@ final class EngineFacadeTest extends TestCase {
 	 */
 	public function test_cancel_terminalizes_a_waiting_public_run(): void {
 		$client = $this->rig->client( 'facade-tests' );
-		$client->tasks()->register( new RecordingTask( 'email-digest' ) );
-		$enqueued = $client->tasks()->enqueue( 'email-digest' );
+		$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+		$enqueued = $client->jobs()->enqueue( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
 		if ( ! \is_string( $enqueued->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
@@ -230,7 +229,7 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_option_functions_did_not_write( string $option_name ): void {
-		$calls = $GLOBALS['a8csp_bgte_test_option_calls'] ?? null;
+		$calls = $GLOBALS['a8csp_bgje_test_option_calls'] ?? null;
 		self::assertIsArray( $calls );
 		foreach ( $calls as $call ) {
 			if ( ! \is_array( $call ) ) {
