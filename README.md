@@ -17,9 +17,9 @@ A **Job** is one named unit of background work, authored as a callable or a `Job
 
 Consumers use four connected surfaces:
 
-- **The Engine handle** — `a8csp_bgje( $owner )` returns an owner-bound `Engine` with ten verbs for registration, dispatch, schedules, inspection, retry, and cancellation.
+- **The Engine handle** — `a8csp_bgje( $owner )` returns an owner-bound `Engine` with `jobs()`, `schedules()`, and `runs()` portals to capability managers.
 - **The public models** — extend `Job\AbstractJob` or `Job\Chunked\AbstractChunkedJob`; work receives `Job\RunContext` or `Job\Chunked\ChunkContext`; run-producing commands return `Run\Run` snapshots, terminal failures use `Run\RunFailure`, and verb failures return `WP_Error`.
-- **The procedural aliases** — ten thin `a8csp_bgje_*()` functions take `$owner` first and mirror the Engine verbs.
+- **The procedural aliases** — ten thin `a8csp_bgje_*()` functions take `$owner` first and mirror the capability-manager verbs.
 - **The lifecycle hooks** — observe runs through the `a8csp_jobs_engine/*` actions.
 
 The data boundary is deliberate: payloads the engine hands to consumer code are typed objects such as `Run\Run`, `Job\RunContext`, `Job\Chunked\ChunkContext`, and `Run\RunFailure`; configuration supplied to the engine uses arrays and scalars, including callable options and schedule specifications.
@@ -45,7 +45,7 @@ Action Scheduler is optional and preferred when ready; when absent, the engine r
 
 ## When to call the engine
 
-`a8csp_bgje( $owner )` constructs a handle lazily and infallibly. Verb calls belong on the WordPress `init` hook or later. Invalid owners and unavailable engine state return `WP_Error` from the first verb instead of failing handle construction. The request that activates the engine stays dormant until the next request.
+`a8csp_bgje( $owner )` constructs a handle lazily and infallibly. Capability-manager verb calls belong on the WordPress `init` hook or later. Invalid owners and unavailable engine state return `WP_Error` from the first verb instead of failing handle construction. The request that activates the engine stays dormant until the next request.
 
 Register work and synchronize schedules from `init` **on every request**: registration is per-request, and schedule synchronization treats the supplied array as the owner's complete declaration. Prefer `init` priority `2` or later so Action Scheduler's `init:1` store initialization has run; synchronizing before it routes that request's occurrences to WP-Cron.
 
@@ -73,7 +73,7 @@ final class RefreshCache extends AbstractJob {
 add_action( 'init', static function (): void {
 	$bg = a8csp_bgje( 'my-plugin' );
 
-	$registered = $bg->register( new RefreshCache() );
+	$registered = $bg->jobs()->register( new RefreshCache() );
 	if ( is_wp_error( $registered ) ) {
 		error_log( $registered->get_error_message() );
 	}
@@ -81,7 +81,7 @@ add_action( 'init', static function (): void {
 
 function my_plugin_queue_cache_refresh( int $site_id ): void {
 	$bg  = a8csp_bgje( 'my-plugin' );
-	$run = $bg->enqueue( 'refresh-cache', array( 'site_id' => $site_id ) );
+	$run = $bg->jobs()->enqueue( 'refresh-cache', array( 'site_id' => $site_id ) );
 	if ( is_wp_error( $run ) ) {
 		error_log( $run->get_error_message() );
 		return;
@@ -91,7 +91,7 @@ function my_plugin_queue_cache_refresh( int $site_id ): void {
 }
 ```
 
-Each successful enqueue returns an immutable `Run\Run` snapshot with `identity`, `run_id`, and `status`. Automatic attempts for one admitted run keep the same run ID. Every Engine verb returns its success value or `WP_Error` for an expected validation, registration, readiness, or engine failure. Errors have a stable string code and an engine-authored message, and may carry redaction-safe structured context.
+Each successful enqueue returns an immutable `Run\Run` snapshot with `identity`, `run_id`, and `status`. Automatic attempts for one admitted run keep the same run ID. Every capability-manager verb returns its success value or `WP_Error` for an expected validation, registration, readiness, or engine failure. Errors have a stable string code and an engine-authored message, and may carry redaction-safe structured context.
 
 ## Examples
 
@@ -118,13 +118,13 @@ final class PruneTransients extends AbstractJob {
 add_action( 'init', static function (): void {
 	$bg = a8csp_bgje( 'my-plugin' );
 
-	$registered = $bg->register( new PruneTransients() );
+	$registered = $bg->jobs()->register( new PruneTransients() );
 	if ( is_wp_error( $registered ) ) {
 		error_log( $registered->get_error_message() );
 		return;
 	}
 
-	$synced = $bg->sync_schedules(
+	$synced = $bg->schedules()->sync(
 		array(
 			array(
 				'name'     => 'nightly-prune',
@@ -156,7 +156,7 @@ An unanchored schedule first runs one interval after synchronization. An anchore
 
 ### 2. A one-shot callable, dispatched asynchronously
 
-`register_callable()` is the class-free authoring form. Its handler receives the invocation arguments and a typed `Job\RunContext`.
+`jobs()->register_callable()` is the class-free authoring form. Its handler receives the invocation arguments and a typed `Job\RunContext`.
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
@@ -300,7 +300,7 @@ function my_plugin_start_recount(): void {
 }
 ```
 
-Chunks run one at a time with a short pause between them. `Job\Chunked\ChunkContext` also exposes `prepend()`, `get_run_id()`, and `get_start_args()`. A failed chunked job starts a fresh run from its original arguments through `retry_failed_run()`.
+Chunks run one at a time with a short pause between them. `Job\Chunked\ChunkContext` also exposes `prepend()`, `get_run_id()`, and `get_start_args()`. A failed chunked job starts a fresh run from its original arguments through `runs()->retry_failed()`.
 
 ### 4. Day-2 operations: inspection, retry, cancellation, and the CLI
 
@@ -309,20 +309,20 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 
 function my_plugin_review_digest_run( string $run_id ): void {
 	$bg  = a8csp_bgje( 'my-plugin' );
-	$run = $bg->inspect_run( 'email-digest', $run_id );
+	$run = $bg->runs()->inspect( 'email-digest', $run_id );
 	if ( is_wp_error( $run ) ) {
 		error_log( $run->get_error_message() );
 		return;
 	}
 
 	if ( RunStatus::Failed === $run->status ) {
-		$retry = $bg->retry_failed_run( 'email-digest', $run->run_id );
+		$retry = $bg->runs()->retry_failed( 'email-digest', $run->run_id );
 		if ( is_wp_error( $retry ) ) {
 			error_log( $retry->get_error_message() );
 		}
 	}
 
-	$last = $bg->last_completed_run( 'email-digest' );
+	$last = $bg->runs()->last_completed( 'email-digest' );
 	if ( is_wp_error( $last ) ) {
 		error_log( $last->get_error_message() );
 	} elseif ( null !== $last ) {
@@ -338,7 +338,7 @@ function my_plugin_cancel_digest( string $run_id ): void {
 }
 ```
 
-`inspect_run()` returns a retained `Run\Run` or `WP_Error`; absence is `run_not_retained`. `last_completed_run()` adds `null` when no completion is present in retained history. After a manual retry admits a fresh run, the engine attempts to remove the retained source entry and logs a cleanup failure.
+`runs()->inspect()` returns a retained `Run\Run` or `WP_Error`; absence is `run_not_retained`. `runs()->last_completed()` adds `null` when no completion is present in retained history. After a manual retry admits a fresh run, the engine attempts to remove the retained source entry and logs a cleanup failure.
 
 Every CLI `<identity>` is the composed `{owner}:{name}`:
 
@@ -418,20 +418,20 @@ The engine retains up to 20 failed runs per owner-qualified identity for manual 
 
 ## The procedural functions
 
-`a8csp_bgje( string $owner ): Engine` returns the lazy owner-bound handle. Each thin alias below takes `$owner` first, invokes the matching Engine verb, and returns the same shape.
+`a8csp_bgje( string $owner ): Engine` returns the lazy owner-bound handle. Each thin alias below takes `$owner` first, invokes the matching capability-manager verb, and returns the same shape.
 
-| Engine verb | Procedural alias | Returns |
+| Capability-manager verb | Procedural alias | Returns |
 | --- | --- | --- |
-| `register( Job\JobInterface $job )` | `a8csp_bgje_register( string $owner, Job\JobInterface $job )` | `true \| WP_Error` |
-| `register_callable( string $name, callable $handler, array $options = [] )` | `a8csp_bgje_register_callable( string $owner, string $name, callable $handler, array $options = [] )` | `true \| WP_Error` |
-| `enqueue( string $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | `a8csp_bgje_enqueue( string $owner, string $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | `Run\Run \| WP_Error` |
-| `start( string $name, array $start_args = [], int $priority = 10 )` | `a8csp_bgje_start( string $owner, string $name, array $start_args = [], int $priority = 10 )` | `Run\Run \| WP_Error` |
-| `sync_schedules( array $schedules )` | `a8csp_bgje_sync_schedules( string $owner, array $schedules )` | `true \| WP_Error` |
-| `dispatch_schedule( string $name )` | `a8csp_bgje_dispatch_schedule( string $owner, string $name )` | `Run\Run \| WP_Error` |
-| `inspect_run( string $name, string $run_id )` | `a8csp_bgje_inspect_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
-| `last_completed_run( string $name )` | `a8csp_bgje_last_completed_run( string $owner, string $name )` | `Run\Run \| null \| WP_Error` |
-| `retry_failed_run( string $name, string $run_id )` | `a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
-| `cancel_run( string $name, string $run_id )` | `a8csp_bgje_cancel_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
+| `jobs()->register( Job\JobInterface $job )` | `a8csp_bgje_register( string $owner, Job\JobInterface $job )` | `true \| WP_Error` |
+| `jobs()->register_callable( string $name, callable $handler, array $options = [] )` | `a8csp_bgje_register_callable( string $owner, string $name, callable $handler, array $options = [] )` | `true \| WP_Error` |
+| `jobs()->enqueue( string $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | `a8csp_bgje_enqueue( string $owner, string $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | `Run\Run \| WP_Error` |
+| `jobs()->start( string $name, array $start_args = [], int $priority = 10 )` | `a8csp_bgje_start( string $owner, string $name, array $start_args = [], int $priority = 10 )` | `Run\Run \| WP_Error` |
+| `schedules()->sync( array $schedules )` | `a8csp_bgje_sync_schedules( string $owner, array $schedules )` | `true \| WP_Error` |
+| `schedules()->dispatch( string $name )` | `a8csp_bgje_dispatch_schedule( string $owner, string $name )` | `Run\Run \| WP_Error` |
+| `runs()->inspect( string $name, string $run_id )` | `a8csp_bgje_inspect_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
+| `runs()->last_completed( string $name )` | `a8csp_bgje_last_completed_run( string $owner, string $name )` | `Run\Run \| null \| WP_Error` |
+| `runs()->retry_failed( string $name, string $run_id )` | `a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
+| `runs()->cancel( string $name, string $run_id )` | `a8csp_bgje_cancel_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
 
 The callable handler receives `(array $args, Job\RunContext $context)`. Its options are:
 
@@ -450,7 +450,10 @@ All public type names below are relative to the `A8C\SpecialProjects\BackgroundJ
 
 | Type | Public shape |
 | --- | --- |
-| `Engine` | Owner-bound readonly handle returned by `a8csp_bgje()`. |
+| `Engine` | Owner-bound readonly handle returned by `a8csp_bgje()` with `jobs()`, `schedules()`, and `runs()` portals. |
+| `Jobs` | Owner-bound readonly manager for registration and job dispatch. |
+| `Schedules` | Owner-bound readonly manager for schedule synchronization and immediate dispatch. |
+| `Runs` | Owner-bound readonly manager for run inspection, retry, and cancellation. |
 | `Run\Run` | Readonly snapshot with `string $identity`, `string $run_id`, and `Run\RunStatus $status`. |
 | `Run\RunFailure` | Readonly value with `string $identity`, `string $run_id`, `int $attempts`, `Run\RunFailureStage $stage`, `Error\ErrorCode $code`, `string $summary`, and `?array $failed_chunk`. |
 | `Job\RetryPolicy` | Readonly value constructed from `max_attempts`, `base_delay`, `multiplier`, and `max_delay`; defaults are 3, `MINUTE_IN_SECONDS`, 2, and `HOUR_IN_SECONDS`. `max_attempts` includes the initial attempt. Attempts, base delay, and multiplier are at least 1, and maximum delay is at least the base delay. It exposes `delay_ceiling_for_attempt( int $attempt ): int`. |
@@ -492,11 +495,11 @@ A class-authored Chunked Job extends `Job\Chunked\AbstractChunkedJob` and implem
 
 It uses `Job\JobDefaults` for the same policy and terminal-callback methods as `Job\AbstractJob`. The runtime ceiling applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution; the complete queue is capped at 1,048,576 bytes and each chunk at 8,192 bytes.
 
-Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `Run\RunFailureStage::CrashReclaim`, preserving the in-flight chunk in `Run\RunFailure::$failed_chunk`; `retry_failed_run()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
+Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `Run\RunFailureStage::CrashReclaim`, preserving the in-flight chunk in `Run\RunFailure::$failed_chunk`; `runs()->retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
 
 ### Schedule
 
-Schedules are complete specification arrays passed to `sync_schedules()`. Each entry has this configuration shape:
+Schedules are complete specification arrays passed to `schedules()->sync()`. Each entry has this configuration shape:
 
 `[ 'name' => string, 'every' => int, 'job' => string, 'anchor' => ?int, 'args' => array, 'catch_up' => 'run_once'|'skip', 'priority' => int ]`
 
@@ -511,12 +514,12 @@ Register work for each former action hook, then use an owner-bound handle or its
 | `as_enqueue_async_action( $hook, $args, $group )` | `a8csp_bgje_enqueue( 'my-plugin', 'name', $args )` |
 | `as_schedule_single_action( $ts, $hook, $args, $group )` | `a8csp_bgje_enqueue( 'my-plugin', 'name', $args, delay_seconds: max( 0, $ts - time() ) )` — a **relative** delay, not a timestamp. |
 | `as_schedule_recurring_action( $ts, $interval, $hook, $args, $group )` | Include `[ 'name' => 'name', 'every' => $interval, 'anchor' => $ts, 'job' => 'name', 'args' => $args ]` in the complete array passed to `a8csp_bgje_sync_schedules( 'my-plugin', [...] )`. The anchor preserves the fixed UTC phase modulo the interval, not the exact first timestamp or site-local time. |
-| `as_unschedule_action( $hook, $args, $group )` | Omit that schedule from the next complete `sync_schedules()` array. |
+| `as_unschedule_action( $hook, $args, $group )` | Omit that schedule from the next complete `schedules()->sync()` array. |
 | `as_unschedule_all_actions( … )` | `a8csp_bgje_sync_schedules( 'my-plugin', [] )` removes every schedule this owner declares. |
-| `as_next_scheduled_action( … )` | No public next-due query. Treat the array passed to a successful `sync_schedules()` as the source of truth. |
+| `as_next_scheduled_action( … )` | No public next-due query. Treat the array passed to a successful `schedules()->sync()` as the source of truth. |
 | `as_has_scheduled_action( … )` | No public pending/running boolean query. |
 
-The key difference is ownership: Action Scheduler's `$group` defaults to `''`, leaving work ownerless and easy to clear by accident. The engine requires the owner up front and composes it into every identity. Repeated `enqueue()` calls reject matching live work under the default overlap policy.
+The key difference is ownership: Action Scheduler's `$group` defaults to `''`, leaving work ownerless and easy to clear by accident. The engine requires the owner up front and composes it into every identity. Repeated `jobs()->enqueue()` calls reject matching live work under the default overlap policy.
 
 ## Idempotency invariant
 
@@ -597,7 +600,7 @@ The engine is designed for a handful of plugins with tens of jobs and schedules 
 
 ## Testing consumer code
 
-Do not redefine `a8csp_bgje()` or the `a8csp_bgje_*()` aliases; the engine declares them unconditionally, so a test redefinition fatals. Keep application code testable by placing Engine calls behind an application-owned interface or callable and fake that boundary in unit tests. Exercise the public models and functions in WordPress integration tests. Types under `src/Internal/` are internal engine seams, not consumer injection contracts.
+Do not redefine `a8csp_bgje()` or the `a8csp_bgje_*()` aliases; the engine declares them unconditionally, so a test redefinition fatals. Keep application code testable by placing engine capability calls behind an application-owned interface or callable and fake that boundary in unit tests. Exercise the public models and functions in WordPress integration tests. Types under `src/Internal/` are internal engine seams, not consumer injection contracts.
 
 ## Multisite
 

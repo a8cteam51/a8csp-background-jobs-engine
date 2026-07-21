@@ -153,7 +153,7 @@ final class ApiTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_owners' )]
 	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner ): void {
-		$result = \a8csp_bgje( $owner )->enqueue( 'sync' );
+		$result = \a8csp_bgje( $owner )->jobs()->enqueue( 'sync' );
 
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( 'invalid_argument', $result->get_error_code() );

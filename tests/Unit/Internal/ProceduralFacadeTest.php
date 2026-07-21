@@ -215,7 +215,7 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * All aliases expose the exact Engine-mirror signatures and NoDiscard attributes.
+	 * All aliases expose the exact capability-manager verb signatures and NoDiscard attributes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -51,6 +51,13 @@ final class InternalBoundaryTest extends TestCase {
 		'Schedule\\SchedulesEngineInterface',
 	);
 
+	private const array PUBLIC_SERVICE_TYPES = array(
+		self::ROOT_NAMESPACE . 'Engine',
+		self::ROOT_NAMESPACE . 'Jobs',
+		self::ROOT_NAMESPACE . 'Schedules',
+		self::ROOT_NAMESPACE . 'Runs',
+	);
+
 	private const array PROCEDURAL_FUNCTIONS = array(
 		'a8csp_bgje',
 		'a8csp_bgje_register',
@@ -133,7 +140,7 @@ final class InternalBoundaryTest extends TestCase {
 	}
 
 	/**
-	 * No public model declaration or public signature references a machinery namespace.
+	 * No public model or service declaration or public signature references a machinery namespace.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -141,7 +148,7 @@ final class InternalBoundaryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_public_model_signatures_reference_no_machinery_namespace(): void {
-		$types = self::declared_public_model_types();
+		$types = \array_merge( self::declared_public_model_types(), self::PUBLIC_SERVICE_TYPES );
 		self::assertNotEmpty( $types );
 
 		foreach ( $types as $type ) {

@@ -32,8 +32,14 @@ final class PublicSurfaceTest extends TestCase {
 		'a8csp_bgje_cancel_run',
 	);
 
-	private const array PUBLIC_MODEL_TYPES = array(
+	private const array PUBLIC_SERVICE_TYPES = array(
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Engine',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Jobs',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Schedules',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Runs',
+	);
+
+	private const array PUBLIC_MODEL_TYPES = array(
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Error\\ErrorCode',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\AbstractJob',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\Batch\\AbstractBatchJob',
@@ -78,6 +84,50 @@ final class PublicSurfaceTest extends TestCase {
 	// endregion.
 
 	// region TESTS.
+
+	/**
+	 * The public service census is declared by the corresponding root src files.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_public_services_are_declared_from_the_src_boundary(): void {
+		$src_directory = \dirname( __DIR__, 2 ) . '/src';
+
+		foreach ( self::PUBLIC_SERVICE_TYPES as $type ) {
+			self::assertTrue( \class_exists( $type ), 'The service layer must declare ' . $type );
+
+			$reflection       = new \ReflectionClass( $type );
+			$declaration_file = $reflection->getFileName();
+			self::assertIsString( $declaration_file );
+			$short_name = \substr( $type, \strlen( self::ROOT_NAMESPACE ) );
+			self::assertSame( \realpath( $src_directory . '/' . $short_name . '.php' ), \realpath( $declaration_file ), $type . ' must be declared by its root src file.' );
+
+			$parent = $reflection->getParentClass();
+			while ( false !== $parent ) {
+				self::assert_supported_type_name( $parent->getName(), $type . ' parent' );
+				$parent = $parent->getParentClass();
+			}
+
+			foreach ( $reflection->getInterfaceNames() as $interface ) {
+				self::assert_supported_type_name( $interface, $type . ' interface' );
+			}
+
+			foreach ( $reflection->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
+				$location = $type . '::' . $method->getName() . '()';
+				foreach ( $method->getParameters() as $parameter ) {
+					self::assert_supported_reflection_type( $parameter->getType(), $method->getDeclaringClass(), $location . ' $' . $parameter->getName() );
+				}
+				self::assert_supported_reflection_type( $method->getReturnType(), $method->getDeclaringClass(), $location . ' return' );
+			}
+
+			foreach ( $reflection->getProperties( \ReflectionProperty::IS_PUBLIC ) as $property ) {
+				self::assert_supported_reflection_type( $property->getType(), $property->getDeclaringClass(), $type . '::$' . $property->getName() );
+			}
+		}
+	}
 
 	/**
 	 * Every public model declaration and signature remains inside the supported boundary.
@@ -302,7 +352,7 @@ final class PublicSurfaceTest extends TestCase {
 	}
 
 	/**
-	 * Allows public models, PHP-native types, and PSR contracts.
+	 * Allows public services, public models, PHP-native types, and PSR contracts.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -313,7 +363,7 @@ final class PublicSurfaceTest extends TestCase {
 	 * @return  void
 	 */
 	private static function assert_supported_type_name( string $name, string $location ): void {
-		if ( 'WP_Error' === $name || \in_array( $name, self::PUBLIC_MODEL_TYPES, true ) || \str_starts_with( $name, 'Psr\\' ) ) {
+		if ( 'WP_Error' === $name || \in_array( $name, self::PUBLIC_SERVICE_TYPES, true ) || \in_array( $name, self::PUBLIC_MODEL_TYPES, true ) || \str_starts_with( $name, 'Psr\\' ) ) {
 			return;
 		}
 

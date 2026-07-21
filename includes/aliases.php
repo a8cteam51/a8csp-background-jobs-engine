@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
  */
 #[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
 function a8csp_bgje_register( string $owner, JobInterface $job ): true|\WP_Error {
-	return a8csp_bgje( $owner )->register( $job );
+	return a8csp_bgje( $owner )->jobs()->register( $job );
 }
 
 /**
@@ -36,7 +36,7 @@ function a8csp_bgje_register( string $owner, JobInterface $job ): true|\WP_Error
  */
 #[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
 function a8csp_bgje_register_callable( string $owner, string $name, callable $handler, array $options = array() ): true|\WP_Error {
-	return a8csp_bgje( $owner )->register_callable( $name, $handler, $options );
+	return a8csp_bgje( $owner )->jobs()->register_callable( $name, $handler, $options );
 }
 
 /**
@@ -55,7 +55,7 @@ function a8csp_bgje_register_callable( string $owner, string $name, callable $ha
  */
 #[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 function a8csp_bgje_enqueue( string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10 ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->enqueue( $name, $args, $delay_seconds, $priority );
+	return a8csp_bgje( $owner )->jobs()->enqueue( $name, $args, $delay_seconds, $priority );
 }
 
 /**
@@ -73,7 +73,7 @@ function a8csp_bgje_enqueue( string $owner, string $name, array $args = array(),
  */
 #[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
 function a8csp_bgje_start( string $owner, string $name, array $start_args = array(), int $priority = 10 ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->start( $name, $start_args, $priority );
+	return a8csp_bgje( $owner )->jobs()->start( $name, $start_args, $priority );
 }
 
 /**
@@ -89,7 +89,7 @@ function a8csp_bgje_start( string $owner, string $name, array $start_args = arra
  */
 #[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 function a8csp_bgje_sync_schedules( string $owner, array $schedules ): true|\WP_Error {
-	return a8csp_bgje( $owner )->sync_schedules( $schedules );
+	return a8csp_bgje( $owner )->schedules()->sync( $schedules );
 }
 
 /**
@@ -105,7 +105,7 @@ function a8csp_bgje_sync_schedules( string $owner, array $schedules ): true|\WP_
  */
 #[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 function a8csp_bgje_dispatch_schedule( string $owner, string $name ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->dispatch_schedule( $name );
+	return a8csp_bgje( $owner )->schedules()->dispatch( $name );
 }
 
 /**
@@ -122,7 +122,7 @@ function a8csp_bgje_dispatch_schedule( string $owner, string $name ): Run|\WP_Er
  */
 #[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 function a8csp_bgje_inspect_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->inspect_run( $name, $run_id );
+	return a8csp_bgje( $owner )->runs()->inspect( $name, $run_id );
 }
 
 /**
@@ -138,7 +138,7 @@ function a8csp_bgje_inspect_run( string $owner, string $name, string $run_id ): 
  */
 #[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 function a8csp_bgje_last_completed_run( string $owner, string $name ): Run|null|\WP_Error {
-	return a8csp_bgje( $owner )->last_completed_run( $name );
+	return a8csp_bgje( $owner )->runs()->last_completed( $name );
 }
 
 /**
@@ -155,7 +155,7 @@ function a8csp_bgje_last_completed_run( string $owner, string $name ): Run|null|
  */
 #[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 function a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->retry_failed_run( $name, $run_id );
+	return a8csp_bgje( $owner )->runs()->retry_failed( $name, $run_id );
 }
 
 /**
@@ -172,5 +172,5 @@ function a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_i
  */
 #[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 function a8csp_bgje_cancel_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->cancel_run( $name, $run_id );
+	return a8csp_bgje( $owner )->runs()->cancel( $name, $run_id );
 }

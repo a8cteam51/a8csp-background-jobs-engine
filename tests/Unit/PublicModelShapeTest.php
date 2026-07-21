@@ -212,24 +212,6 @@ final class PublicModelShapeTest extends TestCase {
 	}
 
 	/**
-	 * The engine handle registers any job kind through the common public contract.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_the_engine_handle_registers_on_the_common_contract(): void {
-		$register   = new \ReflectionMethod( self::ROOT_NAMESPACE . 'Engine', 'register' );
-		$parameters = $register->getParameters();
-
-		self::assertCount( 1, $parameters );
-		$type = $parameters[0]->getType();
-		self::assertInstanceOf( \ReflectionNamedType::class, $type );
-		self::assertSame( self::ROOT_NAMESPACE . 'Job\\JobInterface', $type->getName(), 'register() must accept the common job contract.' );
-	}
-
-	/**
 	 * No retired root-namespace, machinery-contract, or OneOff name survives.
 	 *
 	 * @since   1.0.0

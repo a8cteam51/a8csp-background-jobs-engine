@@ -20,15 +20,17 @@ every surviving component is initialized before any hook can fire.
   bootstrap files stay parsable below the plugin's PHP floor, and CI lints them against the older
   PHP versions.
 - `functions.php` provides the construction-only composition-root accessor and the owner-bound
-  front door `a8csp_bgje( string $owner ): Engine`; handle construction is lazy, while verb
-  readiness starts at `init`.
-- `src/` root holds only the bootstrapping mechanism: `src/ComponentInterface.php` is the one
-  contract, `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php`
-  the optional defaults-only base, and `src/Plugin.php` the composition root — the one file to
-  edit when wiring a top-level component into `COMPONENTS`; they boot in registration order
-  behind a non-retryable latch.
-- `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound consumer surface:
-  the owner-scoped `Engine` handle, authoring bases, contexts, and returned value types.
+  front door `a8csp_bgje( string $owner ): Engine`; handle and manager construction is lazy, while
+  capability readiness starts at `init`.
+- `src/` root holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services alongside the
+  bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
+  `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the
+  optional defaults-only base, and `src/Plugin.php` the composition root — the one file to edit
+  when wiring a top-level component into `COMPONENTS`; they boot in registration order behind a
+  non-retryable latch.
+- The root services, `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound
+  consumer surface: the owner-scoped `Engine` handle and capability managers plus authoring bases,
+  contexts, and returned value types.
   `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph
   is likewise `@internal`.
 - `src/Engine/` is the engine capability tree: `Component.php` assembles and publishes the
