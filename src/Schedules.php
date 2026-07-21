@@ -7,11 +7,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -49,15 +47,14 @@ final readonly class Schedules {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $schedules Complete schedule specification set.
+	 * @param   Schedule ...$schedules Complete declared schedule set.
 	 *
 	 * @return  true|\WP_Error
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
-	public function sync( array $schedules ): true|\WP_Error {
+	public function sync( Schedule ...$schedules ): true|\WP_Error {
 		try {
-			$built  = self::schedules( $schedules );
-			$result = $this->client()->schedules()->sync( $built );
+			$result = $this->client()->schedules()->sync( $schedules );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -99,70 +96,6 @@ final readonly class Schedules {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Builds internal schedule values from public specification arrays.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $specifications Complete schedule specification set.
-	 *
-	 * @throws  \InvalidArgumentException When an entry or field is malformed.
-	 *
-	 * @return  list<Schedule>
-	 */
-	private static function schedules( array $specifications ): array {
-		$schedules = array();
-		foreach ( $specifications as $specification ) {
-			if ( ! \is_array( $specification ) ) {
-				throw new \InvalidArgumentException( 'schedule entries must be arrays' );
-			}
-
-			if ( ! isset( $specification['name'], $specification['every'], $specification['job'] ) ) {
-				throw new \InvalidArgumentException( 'schedule entries must include name, every, and job' );
-			}
-
-			$name  = $specification['name'];
-			$every = $specification['every'];
-			$job   = $specification['job'];
-			if ( ! \is_string( $name ) || ! \is_string( $job ) ) {
-				throw new \InvalidArgumentException( 'name and job must be strings' );
-			}
-			if ( ! \is_int( $every ) ) {
-				throw new \InvalidArgumentException( 'every must be an integer number of seconds' );
-			}
-
-			$anchor = $specification['anchor'] ?? null;
-			if ( null !== $anchor && ! \is_int( $anchor ) ) {
-				throw new \InvalidArgumentException( 'anchor must be an integer number of seconds' );
-			}
-
-			$args = $specification['args'] ?? array();
-			if ( ! \is_array( $args ) ) {
-				throw new \InvalidArgumentException( 'args must be an array' );
-			}
-
-			$catch_up_value = $specification['catch_up'] ?? 'run_once';
-			if ( ! \is_string( $catch_up_value ) ) {
-				throw new \InvalidArgumentException( 'catch_up must be run_once or skip' );
-			}
-			$catch_up = CatchUpPolicy::tryFrom( $catch_up_value );
-			if ( null === $catch_up ) {
-				throw new \InvalidArgumentException( 'catch_up must be run_once or skip' );
-			}
-
-			$priority = $specification['priority'] ?? 10;
-			if ( ! \is_int( $priority ) ) {
-				throw new \InvalidArgumentException( 'priority must be an integer' );
-			}
-
-			$recurrence  = null === $anchor ? Recurrence::every( $every ) : Recurrence::every_anchored( $every, $anchor );
-			$schedules[] = new Schedule( $name, $recurrence, $job, $args, $catch_up, $priority );
-		}
-
-		return $schedules;
-	}
 
 	/**
 	 * Resolves the internal client for the bound owner.

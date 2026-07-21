@@ -1,13 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
  * Policy applied when a schedule occurrence is discovered after its due instant.
- *
- * @internal
  *
  * @since   1.0.0
  * @version 1.0.0

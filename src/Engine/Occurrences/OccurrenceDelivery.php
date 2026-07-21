@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
@@ -330,7 +330,7 @@ final readonly class OccurrenceDelivery {
 				if ( null !== $parts ) {
 					$this->logger->warning(
 						\sprintf(
-							'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync( array() ) on deactivation, or run "wp background-jobs schedules remove %3$s".',
+							'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp background-jobs schedules remove %3$s".',
 							$registration_key,
 							self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
 							$parts[0]

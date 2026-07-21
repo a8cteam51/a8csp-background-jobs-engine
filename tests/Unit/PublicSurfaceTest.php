@@ -58,6 +58,9 @@ final class PublicSurfaceTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run\\RunFailure',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run\\RunFailureStage',
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run\\RunStatus',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Schedule\\CatchUpPolicy',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Schedule\\Recurrence',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Schedule\\Schedule',
 	);
 
 	// endregion.

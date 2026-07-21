@@ -323,7 +323,7 @@ final readonly class StoreFixtureBuilder {
 	 *
 	 * @phpstan-param array{
 	 *     owner: string,
-	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule, job: string}>,
+	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule, job: string}>,
 	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>
 	 * } $owner
 	 *

@@ -2,6 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+
 /**
  * Demonstrates a client plugin entry point built entirely on the public engine facade.
  *
@@ -99,15 +103,13 @@ final readonly class DemoClient {
 			'register its site-health job'   => $engine->jobs()->register( new SiteHealthPingJob() ),
 			'register its comment-count job' => $engine->jobs()->register( new CommentCountRecountChunkedJob() ),
 			'synchronize its schedule set'   => $engine->schedules()->sync(
-				array(
-					array(
-						'name'     => self::SCHEDULE_NAME,
-						'every'    => $this->site_health_interval,
-						'job'      => SiteHealthPingJob::NAME,
-						'args'     => array( 'transient' => SiteHealthPingJob::SNAPSHOT_TRANSIENT ),
-						'catch_up' => 'run_once',
-						'priority' => 10,
-					),
+				new Schedule(
+					name: self::SCHEDULE_NAME,
+					recurrence: Recurrence::every( $this->site_health_interval ),
+					job: SiteHealthPingJob::NAME,
+					args: array( 'transient' => SiteHealthPingJob::SNAPSHOT_TRANSIENT ),
+					catch_up: CatchUpPolicy::RunOnce,
+					priority: 10,
 				)
 			),
 		);

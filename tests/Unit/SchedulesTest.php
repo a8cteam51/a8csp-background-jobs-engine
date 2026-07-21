@@ -3,9 +3,11 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedules;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Exercises the owner-bound schedules manager through the production engine graph.
@@ -18,7 +20,7 @@ final class SchedulesTest extends CapabilityManagerTestCase {
 	// region TESTS.
 
 	/**
-	 * Complete schedule specifications synchronize and immediate dispatch projects the schedule run.
+	 * Complete schedule values synchronize and immediate dispatch projects the schedule run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -36,18 +38,10 @@ final class SchedulesTest extends CapabilityManagerTestCase {
 			}
 		);
 		self::assertTrue( $engine->jobs()->register( $job ) );
-		$args = array( 'scope' => 'all' );
-		$spec = array(
-			'name'     => 'nightly',
-			'every'    => 300,
-			'anchor'   => 650,
-			'job'      => 'scheduled-job',
-			'args'     => $args,
-			'catch_up' => 'skip',
-			'priority' => 41,
-		);
+		$args     = array( 'scope' => 'all' );
+		$schedule = new Schedule( name: 'nightly', recurrence: Recurrence::every_anchored( 300, 650 ), job: 'scheduled-job', args: $args, catch_up: CatchUpPolicy::Skip, priority: 41 );
 
-		self::assertTrue( $engine->schedules()->sync( array( $spec ) ) );
+		self::assertTrue( $engine->schedules()->sync( $schedule ) );
 		$schedule_call = self::latest_backend_call( $this->rig, 'schedule_recurring' );
 		self::assertSame( 300, $schedule_call['args']['interval'] ?? null );
 		self::assertSame( 41, $schedule_call['args']['priority'] ?? null );
@@ -62,54 +56,27 @@ final class SchedulesTest extends CapabilityManagerTestCase {
 	}
 
 	/**
-	 * Malformed schedule declarations remain inside the invalid-argument boundary.
+	 * The variadic surface accepts several schedules at once, and no arguments clears the set.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $schedules Invalid schedule specifications.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'invalid_schedules' )]
-	public function test_sync_rejects_malformed_entries( array $schedules ): void {
-		self::assert_wp_error( \a8csp_bgje( self::OWNER )->schedules()->sync( $schedules ), 'invalid_argument' );
-	}
+	public function test_sync_accepts_several_schedules_and_no_arguments_clears_the_set(): void {
+		$engine = \a8csp_bgje( self::OWNER );
+		self::assertTrue( $engine->jobs()->register( self::job( 'hourly-job', static function (): void {} ) ) );
+		self::assertTrue( $engine->jobs()->register( self::job( 'daily-job', static function (): void {} ) ) );
 
-	// endregion.
+		$hourly = new Schedule( 'hourly', Recurrence::every( 3_600 ), 'hourly-job', array(), CatchUpPolicy::RunOnce, 10 );
+		$daily  = new Schedule( 'daily', Recurrence::every( 86_400 ), 'daily-job', array(), CatchUpPolicy::RunOnce, 10 );
 
-	// region DATA PROVIDERS.
+		self::assertTrue( $engine->schedules()->sync( $hourly, $daily ) );
+		self::assert_run( $engine->schedules()->dispatch( 'hourly' ), self::OWNER . ':hourly', RunStatus::Running );
+		self::assert_run( $engine->schedules()->dispatch( 'daily' ), self::OWNER . ':daily', RunStatus::Running );
 
-	/**
-	 * Supplies representative malformed schedule shapes and fields.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{schedules: array<array-key, mixed>}>
-	 */
-	public static function invalid_schedules(): array {
-		return array(
-			'non-array entry'  => array( 'schedules' => array( 'nightly' ) ),
-			'missing name'     => array(
-				'schedules' => array(
-					array(
-						'every' => 300,
-						'job'   => 'job',
-					),
-				),
-			),
-			'invalid catch up' => array(
-				'schedules' => array(
-					array(
-						'name'     => 'nightly',
-						'every'    => 300,
-						'job'      => 'job',
-						'catch_up' => 'replay_all',
-					),
-				),
-			),
-		);
+		self::assertTrue( $engine->schedules()->sync() );
+		self::assertInstanceOf( \WP_Error::class, $engine->schedules()->dispatch( 'hourly' ), 'A cleared schedule must no longer be dispatchable.' );
 	}
 
 	// endregion.

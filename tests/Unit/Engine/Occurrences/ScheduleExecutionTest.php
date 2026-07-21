@@ -4,10 +4,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Occurrences
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
@@ -486,7 +486,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$warning_message = $warning_record['message'] ?? null;
 		self::assertIsString( $warning_message );
 		self::assertStringContainsString( 'reinstate', $warning_message );
-		self::assertStringContainsString( 'sync( array() )', $warning_message );
+		self::assertStringContainsString( 'sync()', $warning_message );
 		self::assertStringContainsString( 'wp background-jobs schedules remove ' . self::OWNER, $warning_message );
 
 		$this->rig->run_due();

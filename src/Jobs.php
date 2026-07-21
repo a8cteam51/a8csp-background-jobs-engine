@@ -84,16 +84,30 @@ final readonly class Jobs {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name    Stable owner-local job name.
-	 * @param   callable                $handler Job handler.
-	 * @param   array<array-key, mixed> $options Optional policy and lifecycle-callback overrides.
+	 * @param   string             $name         Stable owner-local job name.
+	 * @param   callable           $handler      Job handler.
+	 * @param   int|null           $max_runtime  Optional callback-runtime ceiling in seconds.
+	 * @param   RetryPolicy|null   $retry        Optional retry policy.
+	 * @param   OverlapPolicy|null $overlap      Optional overlap policy.
+	 * @param   callable|null      $overlap_key  Optional argument-aware overlap-key resolver.
+	 * @param   callable|null      $on_completed Optional completed-run callback.
+	 * @param   callable|null      $on_failed    Optional failed-run callback.
 	 *
 	 * @return  true|\WP_Error
 	 */
 	#[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
-	public function register_callable( string $name, callable $handler, array $options = array() ): true|\WP_Error {
+	public function register_callable(
+		string $name,
+		callable $handler,
+		?int $max_runtime = null,
+		?RetryPolicy $retry = null,
+		?OverlapPolicy $overlap = null,
+		?callable $overlap_key = null,
+		?callable $on_completed = null,
+		?callable $on_failed = null,
+	): true|\WP_Error {
 		try {
-			$callable_job = self::callable_job( $name, $handler, $options );
+			$callable_job = new CallableJob( $name, \Closure::fromCallable( $handler ), $max_runtime, $retry, $overlap, self::optional_closure( $overlap_key ), self::optional_closure( $on_completed ), self::optional_closure( $on_failed ) );
 			$this->client()->jobs()->register( $callable_job );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
@@ -168,113 +182,17 @@ final readonly class Jobs {
 	// region HELPERS
 
 	/**
-	 * Builds one callable-backed job from validated public options.
+	 * Converts one optional callable to the closure required by the callable-job representation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name    Stable owner-local job name.
-	 * @param   callable                $handler Job handler.
-	 * @param   array<array-key, mixed> $options Optional policy and lifecycle-callback overrides.
-	 *
-	 * @throws  \InvalidArgumentException When an option name, type, or policy is invalid.
-	 *
-	 * @return  CallableJob
-	 */
-	private static function callable_job( string $name, callable $handler, array $options ): CallableJob {
-		$allowed = array( 'max_runtime', 'retry', 'overlap', 'overlap_key', 'on_completed', 'on_failed' );
-		foreach ( $options as $option => $value ) {
-			if ( ! \is_string( $option ) || ! \in_array( $option, $allowed, true ) ) {
-				throw new \InvalidArgumentException( 'Callable job options accept only max_runtime, retry, overlap, overlap_key, on_completed, and on_failed.' );
-			}
-		}
-
-		$max_runtime = null;
-		if ( \array_key_exists( 'max_runtime', $options ) ) {
-			if ( ! \is_int( $options['max_runtime'] ) ) {
-				throw new \InvalidArgumentException( 'max_runtime must be an integer' );
-			}
-
-			$max_runtime = $options['max_runtime'];
-		}
-
-		$retry = null;
-		if ( \array_key_exists( 'retry', $options ) ) {
-			if ( ! \is_array( $options['retry'] ) ) {
-				throw new \InvalidArgumentException( 'retry must be an array' );
-			}
-
-			$retry = self::retry_policy( $options['retry'] );
-		}
-
-		$overlap = null;
-		if ( \array_key_exists( 'overlap', $options ) ) {
-			if ( ! \is_string( $options['overlap'] ) ) {
-				throw new \InvalidArgumentException( 'overlap must be a string' );
-			}
-
-			$overlap = OverlapPolicy::tryFrom( $options['overlap'] );
-			if ( null === $overlap ) {
-				throw new \InvalidArgumentException( 'Overlap policy accepts only allow, reject, or replace.' );
-			}
-		}
-
-		$overlap_key  = self::closure_option( $options, 'overlap_key' );
-		$on_completed = self::closure_option( $options, 'on_completed' );
-		$on_failed    = self::closure_option( $options, 'on_failed' );
-
-		return new CallableJob( $name, \Closure::fromCallable( $handler ), $max_runtime, $retry, $overlap, $overlap_key, $on_completed, $on_failed );
-	}
-
-	/**
-	 * Converts one optional callable option to a closure.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $options Callable-job options.
-	 * @param   string                  $name    Callable option name.
-	 *
-	 * @throws  \InvalidArgumentException When the declared option is not callable.
+	 * @param   callable|null $callback Optional callback.
 	 *
 	 * @return  \Closure|null
 	 */
-	private static function closure_option( array $options, string $name ): ?\Closure {
-		if ( ! \array_key_exists( $name, $options ) ) {
-			return null;
-		}
-
-		$value = $options[ $name ];
-		if ( ! \is_callable( $value ) ) {
-			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( '%s must be callable', $name ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
-
-		return \Closure::fromCallable( $value );
-	}
-
-	/**
-	 * Builds a retry policy from a validated partial declaration.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $declaration Retry declaration.
-	 *
-	 * @throws  \InvalidArgumentException When a field name, type, or invariant is invalid.
-	 *
-	 * @return  RetryPolicy
-	 */
-	private static function retry_policy( array $declaration ): RetryPolicy {
-		foreach ( $declaration as $field => $value ) {
-			if ( ! \is_string( $field ) || ! \in_array( $field, array( 'max_attempts', 'base_delay', 'multiplier', 'max_delay' ), true ) || ! \is_int( $value ) ) {
-				throw new \InvalidArgumentException( 'Retry declarations accept only integer max_attempts, base_delay, multiplier, and max_delay fields.' );
-			}
-		}
-
-		$defaults = new RetryPolicy();
-
-		return new RetryPolicy( max_attempts: $declaration['max_attempts'] ?? $defaults->max_attempts, base_delay: $declaration['base_delay'] ?? $defaults->base_delay, multiplier: $declaration['multiplier'] ?? $defaults->multiplier, max_delay: $declaration['max_delay'] ?? $defaults->max_delay );
+	private static function optional_closure( ?callable $callback ): ?\Closure {
+		return null === $callback ? null : \Closure::fromCallable( $callback );
 	}
 
 	/**

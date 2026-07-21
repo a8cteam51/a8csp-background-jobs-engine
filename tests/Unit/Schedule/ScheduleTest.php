@@ -1,11 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Internal\Schedule;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Schedule;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\AdmissionValidator;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -18,7 +17,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Schedule::class )]
 #[UsesClass( Recurrence::class )]
 #[UsesClass( CatchUpPolicy::class )]
-#[UsesClass( AdmissionValidator::class )]
 final class ScheduleTest extends TestCase {
 
 	/**
@@ -32,7 +30,7 @@ final class ScheduleTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 
-		require_once \dirname( __DIR__, 2 ) . '/Engine/Backends/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__ ) . '/Engine/Backends/wp-json-encode-stub.php';
 	}
 
 	/**

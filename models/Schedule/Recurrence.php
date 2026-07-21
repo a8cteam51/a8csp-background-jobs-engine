@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -9,8 +9,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule;
  *
  * An optional anchor is a canonical phase offset in UTC Unix seconds. Anchored occurrences retain
  * that phase modulo the interval without introducing site-local or calendar-time semantics.
- *
- * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -88,8 +86,6 @@ final readonly class Recurrence {
 
 	/**
 	 * Returns the stable recurrence representation included in schedule fingerprints.
-	 *
-	 * @internal Engine change-detection seam; the representation is not client contract.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

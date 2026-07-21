@@ -11,10 +11,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use PHPUnit\Framework\Attributes\CoversFunction;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the thin procedural aliases through the production engine graph.
+ * Exercises the procedural facade through the production engine graph.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -110,6 +111,23 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Invalid callable options remain inside the stable invalid-argument boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $options Invalid callable-job options.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_callable_options' )]
+	public function test_register_callable_rejects_invalid_options( array $options ): void {
+		$result = \a8csp_bgje_register_callable( self::OWNER, 'callable', static function ( array $args, RunContext $context ): void {}, $options );
+
+		self::assert_wp_error( $result, 'invalid_argument' );
+	}
+
+	/**
 	 * Admission aliases preserve arguments and return running run projections.
 	 *
 	 * @since   1.0.0
@@ -164,6 +182,21 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertNotSame( '', $run->run_id );
 		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );
 		self::assertSame( 41, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+	}
+
+	/**
+	 * Malformed schedule declarations remain inside the invalid-argument boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $schedules Invalid schedule specifications.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_schedules' )]
+	public function test_sync_rejects_malformed_entries( array $schedules ): void {
+		self::assert_wp_error( \a8csp_bgje_sync_schedules( self::OWNER, $schedules ), 'invalid_argument' );
 	}
 
 	/**
@@ -241,6 +274,64 @@ final class ProceduralFacadeTest extends TestCase {
 			self::assertSame( $signature, self::reflection_signature( $reflection ) );
 			self::assertCount( 1, $reflection->getAttributes( \NoDiscard::class ) );
 		}
+	}
+
+	// endregion.
+
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies invalid option names, types, and retry fields.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{options: array<array-key, mixed>}>
+	 */
+	public static function invalid_callable_options(): array {
+		return array(
+			'unknown option'      => array( 'options' => array( 'jitter' => 1 ) ),
+			'max runtime type'    => array( 'options' => array( 'max_runtime' => '42' ) ),
+			'retry type'          => array( 'options' => array( 'retry' => 'once' ) ),
+			'retry field type'    => array( 'options' => array( 'retry' => array( 'max_attempts' => '3' ) ) ),
+			'unknown retry field' => array( 'options' => array( 'retry' => array( 'jitter' => 1 ) ) ),
+			'overlap declaration' => array( 'options' => array( 'overlap' => 'parallel' ) ),
+			'overlap key type'    => array( 'options' => array( 'overlap_key' => 7 ) ),
+			'completed callback'  => array( 'options' => array( 'on_completed' => 7 ) ),
+			'failed callback'     => array( 'options' => array( 'on_failed' => 7 ) ),
+		);
+	}
+
+	/**
+	 * Supplies representative malformed schedule shapes and fields.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{schedules: array<array-key, mixed>}>
+	 */
+	public static function invalid_schedules(): array {
+		return array(
+			'non-array entry'  => array( 'schedules' => array( 'nightly' ) ),
+			'missing name'     => array(
+				'schedules' => array(
+					array(
+						'every' => 300,
+						'job'   => 'job',
+					),
+				),
+			),
+			'invalid catch up' => array(
+				'schedules' => array(
+					array(
+						'name'     => 'nightly',
+						'every'    => 300,
+						'job'      => 'job',
+						'catch_up' => 'replay_all',
+					),
+				),
+			),
+		);
 	}
 
 	// endregion.

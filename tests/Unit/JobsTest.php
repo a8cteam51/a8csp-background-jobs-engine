@@ -4,12 +4,13 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Exercises the owner-bound jobs manager through the production engine graph.
@@ -68,7 +69,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 	}
 
 	/**
-	 * Callable options control runtime credit, retries, overlap identity, and terminal notifications.
+	 * Typed callable values control runtime credit, retries, overlap identity, and terminal notifications.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -96,41 +97,47 @@ final class JobsTest extends CapabilityManagerTestCase {
 			}
 		};
 
-		$options = array(
-			'max_runtime'  => 42,
-			'retry'        => array(
-				'max_attempts' => 3,
-				'base_delay'   => 50,
-				'multiplier'   => 3,
-				'max_delay'    => 150,
-			),
-			'overlap'      => 'reject',
-			'overlap_key'  => static function ( array $args ) use ( &$overlap_args ): string {
-				$overlap_args[] = $args;
-				$site_id        = $args['site_id'] ?? null;
-				if ( ! \is_int( $site_id ) ) {
-					throw new \UnexpectedValueException( 'The test overlap key requires an integer site_id.' );
-				}
+		$overlap_key  = static function ( array $args ) use ( &$overlap_args ): string {
+			$overlap_args[] = $args;
+			$site_id        = $args['site_id'] ?? null;
+			if ( ! \is_int( $site_id ) ) {
+				throw new \UnexpectedValueException( 'The test overlap key requires an integer site_id.' );
+			}
 
-				return 'site-' . $site_id;
-			},
-			'on_completed' => static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$completed ): void {
-				$completed[] = array(
-					'run_id'   => $run_id,
-					'args'     => $args,
-					'previous' => $previous_completed_run_id,
-				);
-			},
-			'on_failed'    => static function ( string $run_id, array $args, RunFailure $failure ) use ( &$failed ): void {
-				$failed[] = array(
-					'run_id'  => $run_id,
-					'args'    => $args,
-					'failure' => $failure,
-				);
-			},
+			return 'site-' . $site_id;
+		};
+		$on_completed = static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$completed ): void {
+			$completed[] = array(
+				'run_id'   => $run_id,
+				'args'     => $args,
+				'previous' => $previous_completed_run_id,
+			);
+		};
+		$on_failed    = static function ( string $run_id, array $args, RunFailure $failure ) use ( &$failed ): void {
+			$failed[] = array(
+				'run_id'  => $run_id,
+				'args'    => $args,
+				'failure' => $failure,
+			);
+		};
+
+		self::assertTrue(
+			$jobs->register_callable(
+				name: 'callable',
+				handler: $handler,
+				max_runtime: 42,
+				retry: new RetryPolicy(
+					max_attempts: 3,
+					base_delay: 50,
+					multiplier: 3,
+					max_delay: 150,
+				),
+				overlap: OverlapPolicy::Reject,
+				overlap_key: $overlap_key,
+				on_completed: $on_completed,
+				on_failed: $on_failed,
+			)
 		);
-
-		self::assertTrue( $jobs->register_callable( 'callable', $handler, $options ) );
 		$completed_args = array( 'site_id' => 7 );
 		$completed_run  = self::assert_run( $jobs->enqueue( 'callable', $completed_args ), self::OWNER . ':callable', RunStatus::Running );
 		++$this->rig->clock()->timestamp;
@@ -184,23 +191,6 @@ final class JobsTest extends CapabilityManagerTestCase {
 	}
 
 	/**
-	 * Invalid callable options remain inside the stable invalid-argument boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $options Invalid callable-job options.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'invalid_callable_options' )]
-	public function test_register_callable_rejects_invalid_options( array $options ): void {
-		$result = \a8csp_bgje( self::OWNER )->jobs()->register_callable( 'callable', static function ( array $args, RunContext $context ): void {}, $options );
-
-		self::assert_wp_error( $result, 'invalid_argument' );
-	}
-
-	/**
 	 * Internal failures preserve code, engine-authored message, and structured context in WP_Error.
 	 *
 	 * @since   1.0.0
@@ -213,32 +203,6 @@ final class JobsTest extends CapabilityManagerTestCase {
 
 		self::assertSame( 'Job "engine-test:missing" is not registered; register it before enqueueing.', $error->get_error_message() );
 		self::assertSame( array( 'name' => self::OWNER . ':missing' ), $error->get_error_data() );
-	}
-
-	// endregion.
-
-	// region DATA PROVIDERS.
-
-	/**
-	 * Supplies invalid option names, types, and retry fields.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{options: array<array-key, mixed>}>
-	 */
-	public static function invalid_callable_options(): array {
-		return array(
-			'unknown option'      => array( 'options' => array( 'jitter' => 1 ) ),
-			'max runtime type'    => array( 'options' => array( 'max_runtime' => '42' ) ),
-			'retry type'          => array( 'options' => array( 'retry' => 'once' ) ),
-			'retry field type'    => array( 'options' => array( 'retry' => array( 'max_attempts' => '3' ) ) ),
-			'unknown retry field' => array( 'options' => array( 'retry' => array( 'jitter' => 1 ) ) ),
-			'overlap declaration' => array( 'options' => array( 'overlap' => 'parallel' ) ),
-			'overlap key type'    => array( 'options' => array( 'overlap_key' => 7 ) ),
-			'completed callback'  => array( 'options' => array( 'on_completed' => 7 ) ),
-			'failed callback'     => array( 'options' => array( 'on_failed' => 7 ) ),
-		);
 	}
 
 	// endregion.

@@ -28,9 +28,12 @@ every surviving component is initialized before any hook can fire.
   optional defaults-only base, and `src/Plugin.php` the composition root — the one file to edit
   when wiring a top-level component into `COMPONENTS`; they boot in registration order behind a
   non-retryable latch.
+- `models/` holds the public representation under `Error\`, `Job\`, `Run\`, and `Schedule\`;
+  `Schedule\Schedule`, `Schedule\Recurrence`, and `Schedule\CatchUpPolicy` form the typed schedule
+  declaration consumed by the public `Schedules` service.
 - The root services, `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound
   consumer surface: the owner-scoped `Engine` handle and capability managers plus authoring bases,
-  contexts, and returned value types.
+  contexts, and input and returned value types.
   `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph
   is likewise `@internal`.
 - `src/Engine/` is the engine capability tree: `Component.php` assembles and publishes the

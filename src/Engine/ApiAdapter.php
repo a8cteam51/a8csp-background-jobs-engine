@@ -131,7 +131,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule, job: string}> $declarations
+	 * @phpstan-param array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule, job: string}> $declarations
 	 *
 	 * @param   array $declarations Complete schedule declaration keyed by owner-qualified identity.
 	 *

@@ -44,9 +44,6 @@ final class InternalBoundaryTest extends TestCase {
 		'Result\\Success',
 		'Run\\Runs',
 		'Run\\RunsEngineInterface',
-		'Schedule\\CatchUpPolicy',
-		'Schedule\\Recurrence',
-		'Schedule\\Schedule',
 		'Schedule\\Schedules',
 		'Schedule\\SchedulesEngineInterface',
 	);
@@ -110,7 +107,7 @@ final class InternalBoundaryTest extends TestCase {
 
 		foreach ( self::INTERNAL_SPINE_TYPES as $relative_name ) {
 			$type = self::INTERNAL_NAMESPACE . $relative_name;
-			self::assertTrue( \class_exists( $type ) || \interface_exists( $type ) || \enum_exists( $type ), 'The engine spine must declare ' . $type );
+			self::assertTrue( \class_exists( $type ) || \interface_exists( $type ), 'The engine spine must declare ' . $type );
 
 			$reflection       = new \ReflectionClass( $type );
 			$declaration_file = $reflection->getFileName();
