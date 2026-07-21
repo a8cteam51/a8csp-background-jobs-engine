@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Internal;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 
 \defined( 'ABSPATH' ) || exit;
 

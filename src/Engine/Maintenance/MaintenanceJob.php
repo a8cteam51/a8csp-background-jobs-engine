@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
@@ -25,7 +25,7 @@ use Psr\Log\LoggerInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class MaintenanceJob extends Job {
+final class MaintenanceJob extends AbstractJob {
 	// region FIELDS AND CONSTANTS
 
 	/**

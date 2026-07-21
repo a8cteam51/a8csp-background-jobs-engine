@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Internal;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job;
-use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\TestCase;
@@ -224,16 +224,16 @@ final class ProceduralFacadeTest extends TestCase {
 	 */
 	public function test_public_function_signatures_and_no_discard_contracts(): void {
 		$signatures = array(
-			'a8csp_bgje_register'           => '(string $owner, A8C\SpecialProjects\BackgroundJobsEngine\Job|A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJob $job): WP_Error|true',
+			'a8csp_bgje_register'           => '(string $owner, A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface $job): WP_Error|true',
 			'a8csp_bgje_register_callable'  => '(string $owner, string $name, callable $handler, array $options = array()): WP_Error|true',
-			'a8csp_bgje_enqueue'            => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run|WP_Error',
-			'a8csp_bgje_start'              => '(string $owner, string $name, array $start_args = array(), int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run|WP_Error',
+			'a8csp_bgje_enqueue'            => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
+			'a8csp_bgje_start'              => '(string $owner, string $name, array $start_args = array(), int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
 			'a8csp_bgje_sync_schedules'     => '(string $owner, array $schedules): WP_Error|true',
-			'a8csp_bgje_dispatch_schedule'  => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run|WP_Error',
-			'a8csp_bgje_inspect_run'        => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run|WP_Error',
-			'a8csp_bgje_last_completed_run' => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run|WP_Error|null',
-			'a8csp_bgje_retry_failed_run'   => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run|WP_Error',
-			'a8csp_bgje_cancel_run'         => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run|WP_Error',
+			'a8csp_bgje_dispatch_schedule'  => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
+			'a8csp_bgje_inspect_run'        => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
+			'a8csp_bgje_last_completed_run' => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error|null',
+			'a8csp_bgje_retry_failed_run'   => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
+			'a8csp_bgje_cancel_run'         => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
 		);
 
 		foreach ( $signatures as $function => $signature ) {
@@ -258,10 +258,10 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @param   string        $name    Stable owner-local job name.
 	 * @param   \Closure|null $handler Optional invocation behavior.
 	 *
-	 * @return  Job
+	 * @return  AbstractJob
 	 */
-	private static function job( string $name, ?\Closure $handler = null ): Job {
-		return new class( $name, $handler ) extends Job {
+	private static function job( string $name, ?\Closure $handler = null ): AbstractJob {
+		return new class( $name, $handler ) extends AbstractJob {
 			/**
 			 * Constructor.
 			 *
@@ -298,10 +298,10 @@ final class ProceduralFacadeTest extends TestCase {
 	 *
 	 * @param   string $name Stable owner-local chunked job name.
 	 *
-	 * @return  ChunkedJob
+	 * @return  AbstractChunkedJob
 	 */
-	private static function chunked_job( string $name ): ChunkedJob {
-		return new class( $name ) extends ChunkedJob {
+	private static function chunked_job( string $name ): AbstractChunkedJob {
+		return new class( $name ) extends AbstractChunkedJob {
 			/**
 			 * Constructor.
 			 *

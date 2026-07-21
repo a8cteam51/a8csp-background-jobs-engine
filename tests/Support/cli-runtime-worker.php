@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;

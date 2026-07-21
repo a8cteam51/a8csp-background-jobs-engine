@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs\Stores
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;

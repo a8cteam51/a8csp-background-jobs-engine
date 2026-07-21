@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\MaintenanceFenceOutcome;

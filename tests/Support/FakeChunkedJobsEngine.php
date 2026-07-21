@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 

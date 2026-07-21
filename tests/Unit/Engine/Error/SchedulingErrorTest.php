@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Error;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;

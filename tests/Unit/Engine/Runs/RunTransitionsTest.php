@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Randomizer;
-use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;

@@ -2,16 +2,16 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 
 /**
  * Records job invocations with an optional observation callback and failure.
  */
-final class RecordingJob implements OneOffJobInterface {
+final class RecordingJob extends AbstractJob {
 	/**
 	 * Handler arguments in call order.
 	 *

@@ -2,16 +2,16 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job;
-use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -471,10 +471,10 @@ final class EngineTest extends TestCase {
 	 * @param   string        $name    Stable owner-local job name.
 	 * @param   \Closure|null $handler Optional invocation behavior.
 	 *
-	 * @return  Job
+	 * @return  AbstractJob
 	 */
-	private static function job( string $name, ?\Closure $handler = null ): Job {
-		return new class( $name, $handler ) extends Job {
+	private static function job( string $name, ?\Closure $handler = null ): AbstractJob {
+		return new class( $name, $handler ) extends AbstractJob {
 			/**
 			 * Constructor.
 			 *
@@ -508,10 +508,10 @@ final class EngineTest extends TestCase {
 	 *
 	 * @param   string $name Stable owner-local chunked job name.
 	 *
-	 * @return  ChunkedJob
+	 * @return  AbstractChunkedJob
 	 */
-	private static function chunked_job( string $name ): ChunkedJob {
-		return new class( $name ) extends ChunkedJob {
+	private static function chunked_job( string $name ): AbstractChunkedJob {
+		return new class( $name ) extends AbstractChunkedJob {
 			/**
 			 * Constructor.
 			 *

@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 
 \defined( 'ABSPATH' ) || exit;
 

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;

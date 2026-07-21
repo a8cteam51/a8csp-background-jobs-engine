@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 
 \defined( 'ABSPATH' ) || exit;
 

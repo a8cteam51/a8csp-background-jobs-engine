@@ -18,7 +18,7 @@ final class PublicSurfaceTest extends TestCase {
 	private const string INTERNAL_NAMESPACE      = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\';
 	private const string ROOT_NAMESPACE          = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\';
 	private const array PROCEDURAL_BUILTIN_TYPES = array( 'array', 'bool', 'callable', 'false', 'int', 'null', 'string', 'true', 'void' );
-	private const array PROCEDURAL_PUBLIC_TYPES  = array( 'A8C\\SpecialProjects\\BackgroundJobsEngine\\ChunkedJob', 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job', 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run', 'WP_Error' );
+	private const array PROCEDURAL_PUBLIC_TYPES  = array( 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\JobInterface', 'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run\\Run', 'WP_Error' );
 	private const array PROCEDURAL_FUNCTIONS     = array(
 		'a8csp_bgje_register',
 		'a8csp_bgje_register_callable',
@@ -34,24 +34,24 @@ final class PublicSurfaceTest extends TestCase {
 
 	private const array PUBLIC_MODEL_TYPES = array(
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Engine',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\ChunkedJob',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\RunStatus',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\RunContext',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\ChunkContext',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\RunFailure',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\RetryPolicy',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\OverlapPolicy',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\RunFailureStage',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\ErrorCode',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\NonRetryableException',
-	);
-
-	private const array PERMITTED_INTERNAL_GENUS_TYPES = array(
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\JobInterface',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Job\\OneOffJobInterface',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\ChunkedJob\\ChunkedJobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Error\\ErrorCode',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\AbstractJob',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\Batch\\AbstractBatchJob',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\Batch\\BatchJobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\CallableJob',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\Chunked\\AbstractChunkedJob',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\Chunked\\ChunkContext',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\Chunked\\ChunkedJobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\JobDefaults',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\JobInterface',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\NonRetryableException',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\OverlapPolicy',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\RetryPolicy',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Job\\RunContext',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run\\Run',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run\\RunFailure',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run\\RunFailureStage',
+		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Run\\RunStatus',
 	);
 
 	// endregion.
@@ -80,7 +80,7 @@ final class PublicSurfaceTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Every root-namespace model declaration and public signature remains inside the supported boundary.
+	 * Every public model declaration and signature remains inside the supported boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -93,7 +93,7 @@ final class PublicSurfaceTest extends TestCase {
 		\sort( $expected );
 
 		self::assertNotEmpty( $types );
-		self::assertSame( $expected, $types, 'The root-namespace declarations in models/ must be the exact public model surface.' );
+		self::assertSame( $expected, $types, 'The declarations in models/ must be the exact public model surface.' );
 
 		foreach ( $types as $type ) {
 			$reflection = new \ReflectionClass( $type );
@@ -163,7 +163,7 @@ final class PublicSurfaceTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns every root-namespace declaration physically defined by a model file.
+	 * Returns every package declaration physically defined by a model file.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -172,11 +172,16 @@ final class PublicSurfaceTest extends TestCase {
 	 */
 	private static function declared_public_model_types(): array {
 		$models_directory = \dirname( __DIR__, 2 ) . '/models';
-		$files            = \glob( $models_directory . '/*.php' );
 		$types            = array();
 
-		self::assertIsArray( $files );
-		foreach ( $files as $file ) {
+		$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $models_directory, \FilesystemIterator::SKIP_DOTS ) );
+		foreach ( $iterator as $entry ) {
+			self::assertInstanceOf( \SplFileInfo::class, $entry );
+			if ( 'php' !== $entry->getExtension() ) {
+				continue;
+			}
+			$file = $entry->getPathname();
+
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local model source is the subject of this WP-less structural test.
 			$contents = \file_get_contents( $file );
 			self::assertIsString( $contents );
@@ -185,16 +190,17 @@ final class PublicSurfaceTest extends TestCase {
 			if ( 1 !== \preg_match( '/^namespace\s+([A-Za-z_\\\\][A-Za-z0-9_\\\\]*)\s*;/m', $contents, $namespace_matches ) ) {
 				continue;
 			}
-			if ( \rtrim( self::ROOT_NAMESPACE, '\\' ) !== $namespace_matches[1] ) {
+			$namespace = $namespace_matches[1] . '\\';
+			if ( ! \str_starts_with( $namespace, self::ROOT_NAMESPACE ) ) {
 				continue;
 			}
 
 			$declaration_matches = array();
-			$result              = \preg_match_all( '/^(?:(?:abstract|final|readonly)\s+)*(?:class|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b/m', $contents, $declaration_matches );
+			$result              = \preg_match_all( '/^(?:(?:abstract|final|readonly)\s+)*(?:class|interface|enum|trait)\s+([A-Za-z_][A-Za-z0-9_]*)\b/m', $contents, $declaration_matches );
 			self::assertNotFalse( $result );
 			foreach ( $declaration_matches[1] as $short_name ) {
-				$type = self::ROOT_NAMESPACE . $short_name;
-				self::assertTrue( \class_exists( $type ) || \interface_exists( $type ) || \enum_exists( $type ), 'The model file must declare its discovered type: ' . $type );
+				$type = $namespace . $short_name;
+				self::assertTrue( \class_exists( $type ) || \interface_exists( $type ) || \enum_exists( $type ) || \trait_exists( $type ), 'The model file must declare its discovered type: ' . $type );
 
 				$reflection       = new \ReflectionClass( $type );
 				$declaration_file = $reflection->getFileName();
@@ -296,7 +302,7 @@ final class PublicSurfaceTest extends TestCase {
 	}
 
 	/**
-	 * Allows public models, three genus interfaces, PHP-native types, and PSR contracts.
+	 * Allows public models, PHP-native types, and PSR contracts.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -307,7 +313,7 @@ final class PublicSurfaceTest extends TestCase {
 	 * @return  void
 	 */
 	private static function assert_supported_type_name( string $name, string $location ): void {
-		if ( 'WP_Error' === $name || \in_array( $name, self::PUBLIC_MODEL_TYPES, true ) || \in_array( $name, self::PERMITTED_INTERNAL_GENUS_TYPES, true ) || \str_starts_with( $name, 'Psr\\' ) ) {
+		if ( 'WP_Error' === $name || \in_array( $name, self::PUBLIC_MODEL_TYPES, true ) || \str_starts_with( $name, 'Psr\\' ) ) {
 			return;
 		}
 

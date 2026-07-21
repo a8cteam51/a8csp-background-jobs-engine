@@ -3,14 +3,14 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
@@ -417,15 +417,15 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OneOffJobInterface $job      Registered job.
-	 * @param   string             $job_name Complete owner-qualified job identity.
-	 * @param   string             $run_id    Run identifier.
-	 * @param   RunState           $state     Fenced running state.
-	 * @param   RunStore           $run_store Active-run store.
+	 * @param   AbstractJob $job       Registered job.
+	 * @param   string      $job_name  Complete owner-qualified job identity.
+	 * @param   string      $run_id    Run identifier.
+	 * @param   RunState    $state     Fenced running state.
+	 * @param   RunStore    $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function handle_job_run_action( OneOffJobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
+	private function handle_job_run_action( AbstractJob $job, string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$context = new RunContext( $run_id, $state->start_args );
 		try {
 			$job->handle( $state->start_args, $context );

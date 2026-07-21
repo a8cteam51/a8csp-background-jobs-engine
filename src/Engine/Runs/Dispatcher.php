@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
@@ -16,9 +16,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
@@ -450,7 +450,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OneOffJobInterface      $job                Resolved registered Job.
+	 * @param   AbstractJob             $job                Resolved registered Job.
 	 * @param   string                  $job_name           Complete owner-qualified job identity.
 	 * @param   array<array-key, mixed> $args               Job arguments.
 	 * @param   int                     $delay              Scheduling delay in seconds.
@@ -461,7 +461,7 @@ final readonly class Dispatcher {
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	private function dispatch_resolved_job( OneOffJobInterface $job, string $job_name, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null ): AbstractResult {
+	private function dispatch_resolved_job( AbstractJob $job, string $job_name, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null ): AbstractResult {
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
 				new EngineError(

@@ -2,15 +2,23 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\CallableJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\CallableJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -43,22 +51,24 @@ final readonly class Engine {
 	// region METHODS
 
 	/**
-	 * Registers one job or chunked job under the bound owner.
+	 * Registers one supported job kind under the bound owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Job|ChunkedJob $job Job to register.
+	 * @param   JobInterface $job Job to register.
 	 *
 	 * @return  true|\WP_Error
 	 */
 	#[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
-	public function register( Job|ChunkedJob $job ): true|\WP_Error {
+	public function register( JobInterface $job ): true|\WP_Error {
 		try {
-			if ( $job instanceof ChunkedJob ) {
+			if ( $job instanceof AbstractChunkedJob ) {
 				$this->client()->chunked_jobs()->register( $job );
-			} else {
+			} elseif ( $job instanceof AbstractJob ) {
 				$this->client()->jobs()->register( $job );
+			} else {
+				return new \WP_Error( 'invalid_argument', \sprintf( 'Job kind "%s" is not supported.', $job::class ) );
 			}
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( 'invalid_argument', $exception->getMessage() );

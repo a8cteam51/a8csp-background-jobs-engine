@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
-use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;

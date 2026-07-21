@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Run\RunsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\SchedulesEngineInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\JobsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\ApiErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
@@ -56,8 +56,8 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string             $identity Complete owner-qualified job identity.
-	 * @param   OneOffJobInterface $job     Job to register.
+	 * @param   string      $identity Complete owner-qualified job identity.
+	 * @param   AbstractJob $job      Job to register.
 	 *
 	 * @throws  \InvalidArgumentException When the identity and job name disagree, or a chunked job owns the identity.
 	 * @throws  \LogicException           When the job identity is already registered.
@@ -65,7 +65,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @return  void
 	 */
 	#[\Override]
-	public function register_job( string $identity, OneOffJobInterface $job ): void {
+	public function register_job( string $identity, AbstractJob $job ): void {
 		$this->work->register_job( $identity, $job );
 	}
 

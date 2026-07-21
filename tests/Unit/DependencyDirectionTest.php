@@ -30,12 +30,6 @@ final class DependencyDirectionTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Schedule\\Schedules',
 	);
 
-	private const array PERMITTED_INTERNAL_REFERENCES = array(
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\JobInterface',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\Job\\OneOffJobInterface',
-		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Internal\\ChunkedJob\\ChunkedJobInterface',
-	);
-
 	/**
 	 * `Engine` wraps the internal `Client`/`Component` by design; every other `models/` file stays clean.
 	 */
@@ -48,7 +42,7 @@ final class DependencyDirectionTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Root-namespace model files reference no internal implementation or facade type.
+	 * Public model files reference no internal implementation or facade type.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -56,15 +50,17 @@ final class DependencyDirectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_public_models_do_not_depend_on_the_internal_engine_graph(): void {
-		$files = self::public_model_files();
+		$models_directory = \dirname( __DIR__, 2 ) . '/models';
+		$files            = self::public_model_files();
 		self::assertNotEmpty( $files );
 
 		foreach ( $files as $file ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local model source is the subject of this WP-less structural test.
 			$contents = \file_get_contents( $file );
 			self::assertIsString( $contents );
-			$location = 'models/' . \basename( $file );
-			if ( \in_array( \basename( $file ), self::PERMITTED_ENGINE_GRAPH_FILES, true ) ) {
+			$relative_path = \substr( $file, \strlen( $models_directory ) + 1 );
+			$location      = 'models/' . $relative_path;
+			if ( \in_array( $relative_path, self::PERMITTED_ENGINE_GRAPH_FILES, true ) ) {
 				continue;
 			}
 
@@ -74,13 +70,7 @@ final class DependencyDirectionTest extends TestCase {
 
 			self::assertSame( 0, \preg_match( '/\b[A-Za-z_][A-Za-z0-9_]*EngineInterface\b/', $contents ), $location . ' references an internal engine interface.' );
 
-			foreach ( self::PERMITTED_INTERNAL_REFERENCES as $permitted ) {
-				$extended_reference_pattern = '/' . \preg_quote( $permitted, '/' ) . '[A-Za-z0-9_\\\\]/';
-				self::assertSame( 0, \preg_match( $extended_reference_pattern, $contents ), $location . ' extends a permitted Internal type name into an unsupported dependency.' );
-			}
-
-			$without_permitted_references = \str_replace( self::PERMITTED_INTERNAL_REFERENCES, '', $contents );
-			self::assertStringNotContainsString( self::ROOT_NAMESPACE . 'Internal\\', $without_permitted_references, $location . ' references an Internal type other than the three permitted genus interfaces.' );
+			self::assertStringNotContainsString( self::ROOT_NAMESPACE . 'Internal\\', $contents, $location . ' references an Internal type.' );
 		}
 	}
 
@@ -89,7 +79,7 @@ final class DependencyDirectionTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns model files that declare a type directly in the public root namespace.
+	 * Returns model files that declare a type in the public package namespace.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -97,17 +87,23 @@ final class DependencyDirectionTest extends TestCase {
 	 * @return  list<string>
 	 */
 	private static function public_model_files(): array {
-		$files        = \glob( \dirname( __DIR__, 2 ) . '/models/*.php' );
-		$public_files = array();
+		$models_directory = \dirname( __DIR__, 2 ) . '/models';
+		$public_files     = array();
 
-		self::assertIsArray( $files );
-		foreach ( $files as $file ) {
+		$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $models_directory, \FilesystemIterator::SKIP_DOTS ) );
+		foreach ( $iterator as $entry ) {
+			self::assertInstanceOf( \SplFileInfo::class, $entry );
+			if ( 'php' !== $entry->getExtension() ) {
+				continue;
+			}
+			$file = $entry->getPathname();
+
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local model source is the subject of this WP-less structural test.
 			$contents = \file_get_contents( $file );
 			self::assertIsString( $contents );
 
-			$namespace_pattern   = '/^namespace\s+' . \preg_quote( \rtrim( self::ROOT_NAMESPACE, '\\' ), '/' ) . '\s*;/m';
-			$declaration_pattern = '/^(?:(?:abstract|final|readonly)\s+)*(?:class|interface|enum)\s+[A-Za-z_][A-Za-z0-9_]*\b/m';
+			$namespace_pattern   = '/^namespace\s+' . \preg_quote( \rtrim( self::ROOT_NAMESPACE, '\\' ), '/' ) . '(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*\s*;/m';
+			$declaration_pattern = '/^(?:(?:abstract|final|readonly)\s+)*(?:class|interface|enum|trait)\s+[A-Za-z_][A-Za-z0-9_]*\b/m';
 			if ( 1 === \preg_match( $namespace_pattern, $contents ) && 1 === \preg_match( $declaration_pattern, $contents ) ) {
 				$public_files[] = $file;
 			}

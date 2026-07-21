@@ -2,15 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\BackendInterface;
@@ -61,16 +61,16 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OneOffJobInterface $job      Failed job contract.
-	 * @param   string             $job_name Complete owner-qualified job identity.
-	 * @param   string             $run_id    Run identifier.
-	 * @param   RunState           $state     Fenced running state.
-	 * @param   RunStore           $run_store Active-run store.
-	 * @param   \Throwable         $throwable Failed attempt detail.
+	 * @param   AbstractJob $job       Failed job contract.
+	 * @param   string      $job_name  Complete owner-qualified job identity.
+	 * @param   string      $run_id    Run identifier.
+	 * @param   RunState    $state     Fenced running state.
+	 * @param   RunStore    $run_store Active-run store.
+	 * @param   \Throwable  $throwable Failed attempt detail.
 	 *
 	 * @return  void
 	 */
-	public function handle_job_failure( OneOffJobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable ): void {
+	public function handle_job_failure( AbstractJob $job, string $job_name, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable ): void {
 		$this->handle_failure( JobType::Job, $job, $job_name, $run_id, $state, $run_store, $throwable, RunFailureStage::Execution, 'run', ActionDeliveries::RUN_JOB_HOOK );
 	}
 

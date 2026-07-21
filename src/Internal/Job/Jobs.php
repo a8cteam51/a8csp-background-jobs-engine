@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -45,14 +46,14 @@ final readonly class Jobs {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OneOffJobInterface $job Job to register.
+	 * @param   AbstractJob $job Job to register.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or belongs to a chunked job.
 	 * @throws  \LogicException           When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
-	public function register( OneOffJobInterface $job ): void {
+	public function register( AbstractJob $job ): void {
 		$this->engine->register_job( JobIdentity::compose( $this->owner, $job->get_name() ), $job );
 	}
 

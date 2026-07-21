@@ -2,19 +2,19 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
@@ -686,10 +686,10 @@ final class FailureLifecycleTest extends TestCase {
 	 * @param   string   $name                Job name.
 	 * @param   \Closure $on_terminal_failure Records the terminal callback.
 	 *
-	 * @return  OneOffJobInterface
+	 * @return  AbstractJob
 	 */
-	private function dual_kind_job( string $name, \Closure $on_terminal_failure ): OneOffJobInterface {
-		return new class( $name, $on_terminal_failure ) implements OneOffJobInterface, ChunkedJobInterface {
+	private function dual_kind_job( string $name, \Closure $on_terminal_failure ): AbstractJob {
+		return new class( $name, $on_terminal_failure ) extends AbstractJob implements ChunkedJobInterface {
 			/**
 			 * Constructor.
 			 *

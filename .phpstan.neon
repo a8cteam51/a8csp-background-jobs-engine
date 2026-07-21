@@ -28,9 +28,6 @@ services:
     -
         class: A8C\SpecialProjects\BackgroundJobsEngine\Build\PHPStan\PublicSignatureBoundaryRule
         arguments:
-            permitted_types:
-                - A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobInterface
-                - A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface
-                - A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface
+            permitted_types: []
         tags:
             - phpstan.rules.rule

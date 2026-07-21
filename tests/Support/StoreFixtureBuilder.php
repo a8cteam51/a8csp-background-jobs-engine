@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;

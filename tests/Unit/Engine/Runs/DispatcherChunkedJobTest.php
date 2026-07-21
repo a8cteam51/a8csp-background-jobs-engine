@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;

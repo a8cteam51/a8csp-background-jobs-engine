@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -393,10 +393,10 @@ final class JobRegistryTest extends TestCase {
 	 *
 	 * @param   string $name Declared local work name.
 	 *
-	 * @return  OneOffJobInterface&ChunkedJobInterface
+	 * @return  AbstractJob&ChunkedJobInterface
 	 */
-	private function dual_work( string $name ): OneOffJobInterface&ChunkedJobInterface {
-		return new class( $name ) implements OneOffJobInterface, ChunkedJobInterface {
+	private function dual_work( string $name ): AbstractJob&ChunkedJobInterface {
+		return new class( $name ) extends AbstractJob implements ChunkedJobInterface {
 			/**
 			 * Constructor.
 			 *

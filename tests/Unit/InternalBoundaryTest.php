@@ -32,17 +32,13 @@ final class InternalBoundaryTest extends TestCase {
 		'AdmissionValidator',
 		'Client',
 		'JobIdentity',
-		'JobInterface',
 		'PortableArguments',
-		'ChunkedJob\\ChunkedJobInterface',
 		'ChunkedJob\\ChunkedJobs',
 		'ChunkedJob\\ChunkedJobsEngineInterface',
 		'Error\\ApiError',
 		'Error\\ErrorInterface',
-		'Job\\CallableJob',
 		'Job\\Jobs',
 		'Job\\JobsEngineInterface',
-		'Job\\OneOffJobInterface',
 		'Result\\AbstractResult',
 		'Result\\Failure',
 		'Result\\Success',
@@ -67,15 +63,6 @@ final class InternalBoundaryTest extends TestCase {
 		'a8csp_bgje_last_completed_run',
 		'a8csp_bgje_retry_failed_run',
 		'a8csp_bgje_cancel_run',
-	);
-
-	/**
-	 * The public job leaves link these genus contracts so registration dispatches on one seam; no other Internal type may surface.
-	 */
-	private const array PERMITTED_GENUS_CONTRACTS = array(
-		self::INTERNAL_NAMESPACE . 'JobInterface',
-		self::INTERNAL_NAMESPACE . 'Job\\OneOffJobInterface',
-		self::INTERNAL_NAMESPACE . 'ChunkedJob\\ChunkedJobInterface',
 	);
 
 	// endregion.
@@ -373,10 +360,6 @@ final class InternalBoundaryTest extends TestCase {
 	 * @return  void
 	 */
 	private static function assert_boundary_type_name( string $name, string $location ): void {
-		if ( \in_array( $name, self::PERMITTED_GENUS_CONTRACTS, true ) ) {
-			return;
-		}
-
 		foreach ( self::MACHINERY_NAMESPACES as $namespace ) {
 			self::assertFalse( \str_starts_with( $name, $namespace ), $location . ' exposes machinery type ' . $name );
 		}

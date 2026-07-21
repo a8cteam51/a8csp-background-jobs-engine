@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext as RunContextContract;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext as RunContextContract;
 
 \defined( 'ABSPATH' ) || exit;
 

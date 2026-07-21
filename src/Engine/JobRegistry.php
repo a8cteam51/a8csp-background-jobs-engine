@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
@@ -25,7 +25,7 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<string, OneOffJobInterface>
+	 * @var     array<string, AbstractJob>
 	 */
 	private array $jobs = array();
 
@@ -49,15 +49,15 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string             $identity Complete owner-qualified identity.
-	 * @param   OneOffJobInterface $job     Job to register.
+	 * @param   string      $identity Complete owner-qualified identity.
+	 * @param   AbstractJob $job      Job to register.
 	 *
 	 * @throws  \InvalidArgumentException      When the identity and job name disagree, or a chunked job owns the identity.
 	 * @throws  DuplicateRegistrationException When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
-	public function register_job( string $identity, OneOffJobInterface $job ): void {
+	public function register_job( string $identity, AbstractJob $job ): void {
 		$this->guard_registration( $identity, $job->get_name(), 'job' );
 		$this->jobs[ $identity ] = $job;
 	}
@@ -93,9 +93,9 @@ final class JobRegistry {
 	 *
 	 * @param   string $identity Complete owner-qualified job identity.
 	 *
-	 * @return  OneOffJobInterface|null
+	 * @return  AbstractJob|null
 	 */
-	public function job( string $identity ): ?OneOffJobInterface {
+	public function job( string $identity ): ?AbstractJob {
 		return $this->jobs[ $identity ] ?? null;
 	}
 

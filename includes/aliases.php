@@ -1,6 +1,7 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\{ Job, ChunkedJob, Run };
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -10,13 +11,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\{ Job, ChunkedJob, Run };
  * @since   1.0.0
  * @version 1.0.0
  *
- * @param   string         $owner Client plugin owner.
- * @param   Job|ChunkedJob $job   Job to register.
+ * @param   string       $owner Client plugin owner.
+ * @param   JobInterface $job   Job to register.
  *
  * @return  true|\WP_Error
  */
 #[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
-function a8csp_bgje_register( string $owner, Job|ChunkedJob $job ): true|\WP_Error {
+function a8csp_bgje_register( string $owner, JobInterface $job ): true|\WP_Error {
 	return a8csp_bgje( $owner )->register( $job );
 }
 

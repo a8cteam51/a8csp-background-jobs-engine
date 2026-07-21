@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job;
-use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 
 /**
  * Demonstrates a small job that stores one idempotent site-health snapshot.
@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class SiteHealthPingJob extends Job {
+final class SiteHealthPingJob extends AbstractJob {
 	// region FIELDS AND CONSTANTS.
 
 	/**

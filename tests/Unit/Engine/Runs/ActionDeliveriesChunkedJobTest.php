@@ -2,16 +2,16 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;

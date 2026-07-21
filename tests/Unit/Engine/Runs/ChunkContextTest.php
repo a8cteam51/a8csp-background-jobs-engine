@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext as ChunkContextContract;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext as ChunkContextContract;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ChunkContext;
