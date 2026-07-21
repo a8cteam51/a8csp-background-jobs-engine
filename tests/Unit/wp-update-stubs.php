@@ -95,7 +95,7 @@ if ( ! \function_exists( 'get_plugin_data' ) ) {
 			'Network'         => false,
 			'RequiresWP'      => '7.0',
 			'RequiresPHP'     => '8.5',
-			'UpdateURI'       => 'https://github.com/a8cteam51/a8csp-background-tasks-engine',
+			'UpdateURI'       => 'https://github.com/a8cteam51/a8csp-background-jobs-engine',
 			'RequiresPlugins' => '',
 			'Title'           => 'A8CSP Background Jobs Engine',
 			'AuthorName'      => 'A8C Special Projects',

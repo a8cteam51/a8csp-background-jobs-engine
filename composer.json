@@ -3,7 +3,7 @@
   "type": "wordpress-plugin",
 
   "description": "A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.",
-  "homepage": "https://github.com/a8cteam51/a8csp-background-tasks-engine",
+  "homepage": "https://github.com/a8cteam51/a8csp-background-jobs-engine",
   "license": "GPL-2.0-or-later",
   "authors": [
     {
@@ -12,7 +12,7 @@
     },
     {
       "name": "Contributors",
-      "homepage": "https://github.com/a8cteam51/a8csp-background-tasks-engine/graphs/contributors"
+      "homepage": "https://github.com/a8cteam51/a8csp-background-jobs-engine/graphs/contributors"
     }
   ],
 

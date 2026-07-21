@@ -133,7 +133,7 @@ function a8csp_bgje_check_github_release_update( $update, $plugin_data, $plugin_
 	$latest_release_info = get_transient( $transient_key );
 	if ( false === $latest_release_info ) {
 		$release_url_path    = $prerelease_channel ? 'releases?per_page=10' : 'releases/latest';
-		$response            = wp_remote_get( 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/' . $release_url_path );
+		$response            = wp_remote_get( 'https://api.github.com/repos/a8cteam51/a8csp-background-jobs-engine/' . $release_url_path );
 		$latest_release_info = is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ? array() : \json_decode( wp_remote_retrieve_body( $response ), true );
 	}
 

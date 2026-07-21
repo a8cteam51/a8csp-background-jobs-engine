@@ -10,9 +10,9 @@
   "keywords": [
     "wordpress"
   ],
-  "homepage": "https://github.com/a8cteam51/a8csp-background-tasks-engine",
-  "repository": "https://github.com/a8cteam51/a8csp-background-tasks-engine",
-  "bugs": "https://github.com/a8cteam51/a8csp-background-tasks-engine/issues",
+  "homepage": "https://github.com/a8cteam51/a8csp-background-jobs-engine",
+  "repository": "https://github.com/a8cteam51/a8csp-background-jobs-engine",
+  "bugs": "https://github.com/a8cteam51/a8csp-background-jobs-engine/issues",
   "engines": {
     "node": ">=26",
     "npm": ">=11"

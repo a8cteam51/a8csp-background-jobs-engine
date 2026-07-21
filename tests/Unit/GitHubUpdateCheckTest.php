@@ -18,8 +18,8 @@ use PHPUnit\Framework\TestCase;
 #[PreserveGlobalState( false )]
 #[CoversFunction( 'a8csp_bgje_check_github_release_update' )]
 final class GitHubUpdateCheckTest extends TestCase {
-	private const string API_URL_PRERELEASE       = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases?per_page=10';
-	private const string API_URL_STABLE           = 'https://api.github.com/repos/a8cteam51/a8csp-background-tasks-engine/releases/latest';
+	private const string API_URL_PRERELEASE       = 'https://api.github.com/repos/a8cteam51/a8csp-background-jobs-engine/releases?per_page=10';
+	private const string API_URL_STABLE           = 'https://api.github.com/repos/a8cteam51/a8csp-background-jobs-engine/releases/latest';
 	private const string PLUGIN_FILE              = 'a8csp-background-jobs-engine/a8csp-background-jobs-engine.php';
 	private const string TRANSIENT_KEY_PRERELEASE = 'a8csp_bgje_github_latest_release_prerelease';
 	private const string TRANSIENT_KEY_STABLE     = 'a8csp_bgje_github_latest_release_stable';
@@ -104,7 +104,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$release['assets']                          = array(
 			array(
 				'name'                 => 'checksums.txt',
-				'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/v1.1.0/checksums.txt',
+				'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-jobs-engine/releases/download/v1.1.0/checksums.txt',
 			),
 			$plugin_asset,
 		);
@@ -314,7 +314,7 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$release['assets']                          = array(
 			array(
 				'name'                 => 'checksums.txt',
-				'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/v1.1.0/checksums.txt',
+				'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-jobs-engine/releases/download/v1.1.0/checksums.txt',
 			),
 		);
 		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $release );
@@ -396,11 +396,11 @@ final class GitHubUpdateCheckTest extends TestCase {
 	private function release( string $tag ): array {
 		return array(
 			'tag_name' => $tag,
-			'html_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/tag/' . $tag,
+			'html_url' => 'https://github.com/a8cteam51/a8csp-background-jobs-engine/releases/tag/' . $tag,
 			'assets'   => array(
 				array(
 					'name'                 => 'a8csp-background-jobs-engine.zip',
-					'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-tasks-engine/releases/download/' . $tag . '/a8csp-background-jobs-engine.zip',
+					'browser_download_url' => 'https://github.com/a8cteam51/a8csp-background-jobs-engine/releases/download/' . $tag . '/a8csp-background-jobs-engine.zip',
 				),
 			),
 		);
