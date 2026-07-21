@@ -19,17 +19,18 @@ every surviving component is initialized before any hook can fire.
   version compatibility checks, the requirements gate, and its admin-notice reporter; both root
   bootstrap files stay parsable below the plugin's PHP floor, and CI lints them against the older
   PHP versions.
-- `functions.php` provides the construction-only composition-root accessor and the client
-  front door `a8csp_bgje( string $owner ): Client`, available from `init` or later.
+- `functions.php` provides the construction-only composition-root accessor and the owner-bound
+  front door `a8csp_bgje( string $owner ): Engine`; handle construction is lazy, while verb
+  readiness starts at `init`.
 - `src/` root holds only the bootstrapping mechanism: `src/ComponentInterface.php` is the one
   contract, `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php`
   the optional defaults-only base, and `src/Plugin.php` the composition root — the one file to
   edit when wiring a top-level component into `COMPONENTS`; they boot in registration order
   behind a non-retryable latch.
-- `src/Api/` is the entire public client surface (SemVer-bound): the owner-scoped `Client`
-  facades, the `Result` monad and error values, `JobIdentity` (owner ≤32, name ≤64, composed
-  ≤97 bytes), `PortableArguments`, the policy enums, and the Job/Chunked Job/Run/Schedule contracts.
-  Everything outside `src/Api/` is `@internal`.
+- `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound consumer surface:
+  the owner-scoped `Engine` handle, authoring bases, contexts, and returned value types.
+  `src/Api/` contains the internal capability facades and contracts; the rest of the engine graph
+  is likewise `@internal`.
 - `src/Engine/` is the engine capability tree: `Component.php` assembles and publishes the
   request-local object graph; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the
   root collaborators; `Backends/` (Action Scheduler preferred, WP-Cron fallback), `Occurrences/`
