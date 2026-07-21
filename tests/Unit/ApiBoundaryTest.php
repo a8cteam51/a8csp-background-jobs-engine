@@ -139,6 +139,25 @@ final class ApiBoundaryTest extends TestCase {
 		}
 	}
 
+	/**
+	 * The engine accessor exposes only the public Engine handle.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_accessor_returns_the_public_engine(): void {
+		$reflection = new \ReflectionFunction( 'a8csp_bgje' );
+		foreach ( $reflection->getParameters() as $parameter ) {
+			self::assert_supported_procedural_type( $parameter->getType(), 'a8csp_bgje() $' . $parameter->getName() );
+		}
+
+		$return = $reflection->getReturnType();
+		self::assertInstanceOf( \ReflectionNamedType::class, $return );
+		self::assertSame( self::ROOT_NAMESPACE . 'Engine', $return->getName(), 'a8csp_bgje() must return the public Engine handle.' );
+	}
+
 	// endregion.
 
 	// region HELPERS.
