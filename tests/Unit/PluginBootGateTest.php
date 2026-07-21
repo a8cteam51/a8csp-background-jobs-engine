@@ -78,7 +78,7 @@ final class PluginBootGateTest extends TestCase {
 	}
 
 	/**
-	 * Plugin boot publishes the client facade through the public front door.
+	 * Plugin boot publishes the owner-bound client facade.
 	 *
 	 * @return  void
 	 */
@@ -90,15 +90,15 @@ final class PluginBootGateTest extends TestCase {
 		self::assertTrue( $plugin->is_booted() );
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'init' => 1 );
 
-		self::assertInstanceOf( Client::class, \a8csp_bgje( 'plugin-boot-gate' ) );
+		self::assertInstanceOf( Client::class, Component::client( 'plugin-boot-gate' ) );
 	}
 
 	/**
-	 * A boot throw poisons the stored plugin entry and the public client seam fails loudly.
+	 * A boot throw poisons the stored plugin entry and the component client seam fails loudly.
 	 *
 	 * @return  void
 	 */
-	public function test_failed_accessor_boot_leaves_the_public_client_unavailable(): void {
+	public function test_failed_boot_leaves_the_component_client_unavailable(): void {
 		$GLOBALS['wpdb'] = new \stdClass();
 		$throwable       = null;
 		$plugin          = \a8csp_bgje_plugin();
@@ -118,6 +118,6 @@ final class PluginBootGateTest extends TestCase {
 
 		$this->expectException( \LogicException::class );
 
-		\a8csp_bgje( 'plugin-boot-gate' );
+		Component::client( 'plugin-boot-gate' );
 	}
 }

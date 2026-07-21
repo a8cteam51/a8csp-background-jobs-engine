@@ -2,10 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
-
 /**
  * Demonstrates a client plugin entry point built entirely on the public engine facade.
  *
@@ -98,18 +94,31 @@ final readonly class DemoClient {
 	 * @return  void
 	 */
 	public function register_background_work(): void {
-		$client = \a8csp_bgje( self::OWNER );
-		$client->jobs()->register( new SiteHealthPingJob() );
-		$client->chunked_jobs()->register( new CommentCountRecountChunkedJob() );
-
-		$synced = $client->schedules()->sync(
-			array(
-				new Schedule( self::SCHEDULE_NAME, Recurrence::every( $this->site_health_interval ), SiteHealthPingJob::NAME, array( 'transient' => SiteHealthPingJob::SNAPSHOT_TRANSIENT ), CatchUpPolicy::RunOnce, 10 ),
-			)
+		$engine   = \a8csp_bgje( self::OWNER );
+		$outcomes = array(
+			'register its site-health job'   => $engine->register( new SiteHealthPingJob() ),
+			'register its comment-count job' => $engine->register( new CommentCountRecountChunkedJob() ),
+			'synchronize its schedule set'   => $engine->sync_schedules(
+				array(
+					array(
+						'name'     => self::SCHEDULE_NAME,
+						'every'    => $this->site_health_interval,
+						'job'      => SiteHealthPingJob::NAME,
+						'args'     => array( 'transient' => SiteHealthPingJob::SNAPSHOT_TRANSIENT ),
+						'catch_up' => 'run_once',
+						'priority' => 10,
+					),
+				)
+			),
 		);
-		if ( $synced->is_failure() ) {
+
+		foreach ( $outcomes as $operation => $outcome ) {
+			if ( ! $outcome instanceof \WP_Error ) {
+				continue;
+			}
+
 			/**
-			 * Fires when the demo client cannot synchronize its schedule declaration.
+			 * Fires when the demo client cannot publish one background-work declaration.
 			 *
 			 * @since   1.0.0
 			 * @version 1.0.0
@@ -118,7 +127,16 @@ final readonly class DemoClient {
 			 * @param   string                  $message Client failure message.
 			 * @param   array<array-key, mixed> $context Structured failure context.
 			 */
-			\do_action( self::LOG_HOOK, 'error', 'The demo client could not synchronize its site-health schedule.', array( 'error_type' => \get_debug_type( $synced->error ) ) );
+			\do_action(
+				self::LOG_HOOK,
+				'error',
+				'The demo client could not ' . $operation . '.',
+				array(
+					'code'    => $outcome->get_error_code(),
+					'message' => $outcome->get_error_message(),
+					'data'    => $outcome->get_error_data(),
+				)
+			);
 		}
 	}
 

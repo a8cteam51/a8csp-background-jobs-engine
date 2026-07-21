@@ -162,7 +162,7 @@ final class EngineRig {
 	// region GETTERS.
 
 	/**
-	 * Returns an owner-bound client through the guarded public front door.
+	 * Returns an owner-bound client from the published component graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -172,7 +172,7 @@ final class EngineRig {
 	 * @return  Client
 	 */
 	public function client( string $owner ): Client {
-		$client                  = \a8csp_bgje( $owner );
+		$client                  = Component::client( $owner );
 		$this->clients[ $owner ] = $client;
 
 		return $client;

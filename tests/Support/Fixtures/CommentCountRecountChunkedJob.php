@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
@@ -19,7 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class CommentCountRecountChunkedJob implements ChunkedJobInterface {
+final class CommentCountRecountChunkedJob extends ChunkedJob {
 	// region FIELDS AND CONSTANTS.
 
 	/**

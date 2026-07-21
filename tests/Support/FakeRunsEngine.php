@@ -17,15 +17,18 @@ final class FakeRunsEngine implements RunsEngineInterface {
 	// region MAGIC METHODS.
 
 	/**
+	 * @phpstan-param AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError> $inspect_result
 	 * @phpstan-param AbstractResult<string|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError> $last_completed_result
 	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>      $retry_result
 	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>      $cancel_result
 	 *
+	 * @param   AbstractResult $inspect_result        Scripted run-inspection result.
 	 * @param   AbstractResult $last_completed_result Scripted inspection result.
 	 * @param   AbstractResult $retry_result          Scripted retry result.
 	 * @param   AbstractResult $cancel_result         Scripted cancellation result.
 	 */
 	public function __construct(
+		private readonly AbstractResult $inspect_result,
 		private readonly AbstractResult $last_completed_result,
 		private readonly AbstractResult $retry_result,
 		private readonly AbstractResult $cancel_result,
@@ -34,6 +37,23 @@ final class FakeRunsEngine implements RunsEngineInterface {
 	// endregion.
 
 	// region METHODS.
+
+	/**
+	 * Records one run-status inspection and returns the scripted result.
+	 *
+	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $run_id   Retained run identifier.
+	 *
+	 * @phpstan-return AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 *
+	 * @return  AbstractResult
+	 */
+	#[\Override]
+	public function inspect_run( string $identity, string $run_id ): AbstractResult {
+		$this->calls[] = array( 'inspect_run', $identity, $run_id );
+
+		return $this->inspect_result;
+	}
 
 	/**
 	 * Records one last-completed-run lookup and returns the scripted result.

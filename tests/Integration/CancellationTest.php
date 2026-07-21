@@ -72,7 +72,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 41 );
 		$job  = new RecordingJob( self::EXECUTING_NAME );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::EXECUTING_IDENTITY );
 
@@ -143,7 +143,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$job->throwable    = new \RuntimeException( 'Retry after the upstream recovers.' );
 		$job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::BACKOFF_IDENTITY );
 
@@ -213,7 +213,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$chunked_job        = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
 		$chunked_job->queue = array( $first_chunk, $next_chunk );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->chunked_jobs()->register( $chunked_job );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CHUNKED_JOB_IDENTITY );
 
@@ -289,7 +289,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$args_b = array( 'account_id' => 45 );
 		$job    = new RecordingJob( self::SIBLING_NAME );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SIBLING_IDENTITY );
 
@@ -379,7 +379,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 46 );
 		$job  = new RecordingJob( self::DEGRADED_NAME );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::DEGRADED_IDENTITY );
 

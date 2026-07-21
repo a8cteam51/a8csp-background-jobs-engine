@@ -71,7 +71,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		$store               = $this->action_scheduler_store();
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
-		$result              = \a8csp_bgje( self::OWNER )->chunked_jobs()->start( self::REJECT_NAME, $start_args );
+		$result              = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER )->chunked_jobs()->start( self::REJECT_NAME, $start_args );
 
 		self::assertInstanceOf( Failure::class, $result, 'Reject must refuse a second start under the fresh lock' );
 		self::assertInstanceOf( ApiError::class, $result->error );
@@ -322,7 +322,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function register_chunked_job( RecordingChunkedJob $chunked_job ): void {
-		\a8csp_bgje( self::OWNER )->chunked_jobs()->register( $chunked_job );
+		\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER )->chunked_jobs()->register( $chunked_job );
 	}
 
 	/**
@@ -349,7 +349,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private function start_chunked_job( string $name, array $start_args ): string {
-		$result = \a8csp_bgje( self::OWNER )->chunked_jobs()->start( $name, $start_args );
+		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER )->chunked_jobs()->start( $name, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The chunked job must start through the public API' );
 		self::assertIsString( $result->value );
 

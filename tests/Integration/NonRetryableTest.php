@@ -52,7 +52,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$job            = new RecordingJob( self::NAME );
 		$job->throwable = new NonRetryableException( 'The requested record is permanently unavailable.' );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );

@@ -953,12 +953,12 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Client-resolution timing failures remain loud instead of becoming WordPress errors.
+	 * Client-resolution graph failures remain loud instead of becoming WordPress errors.
 	 *
 	 * @return  void
 	 */
-	public function test_client_init_timing_exception_propagates(): void {
-		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'plugins_loaded' => 1 );
+	public function test_client_graph_unavailable_exception_propagates(): void {
+		$this->rig->tear_down();
 
 		$this->expectException( \LogicException::class );
 

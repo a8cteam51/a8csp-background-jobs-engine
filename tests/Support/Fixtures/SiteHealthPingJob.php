@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class SiteHealthPingJob implements OneOffJobInterface {
+final class SiteHealthPingJob extends Job {
 	// region FIELDS AND CONSTANTS.
 
 	/**

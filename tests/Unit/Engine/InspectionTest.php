@@ -5,16 +5,20 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -394,6 +398,86 @@ final class InspectionTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::run_id( 1 ), $result->value );
+	}
+
+	/**
+	 * Single-run inspection prefers a readable live state and falls back to terminal history.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_status_reads_live_and_terminal_state_without_collapsing_absence(): void {
+		$identity        = 'owner:single-run';
+		$fixtures        = StoreFixtureBuilder::for_identity( $identity );
+		$live_run_id     = self::run_id( 1 );
+		$terminal_run_id = self::run_id( 2 );
+		$this->put( $fixtures->run( $live_run_id, self::state( 'live-hash' ) ) );
+		$this->put( $fixtures->unreadable_run( $terminal_run_id ) );
+		$this->put(
+			$fixtures->history(
+				terminal: array(
+					array(
+						'run_id'    => $terminal_run_id,
+						'args_hash' => 'terminal-hash',
+						'status'    => RunStatus::Failed,
+					),
+				)
+			)
+		);
+
+		$live     = $this->rig->inspection()->run_status( $identity, $live_run_id );
+		$terminal = $this->rig->inspection()->run_status( $identity, $terminal_run_id );
+		$missing  = $this->rig->inspection()->run_status( $identity, self::run_id( 3 ) );
+
+		self::assertInstanceOf( Success::class, $live );
+		self::assertSame( RunStatus::Running, $live->value );
+		self::assertInstanceOf( Success::class, $terminal );
+		self::assertSame( RunStatus::Failed, $terminal->value );
+		self::assertInstanceOf( Success::class, $missing );
+		self::assertNull( $missing->value );
+	}
+
+	/**
+	 * Authoritative live-row and terminal-history failures remain storage failures.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_status_preserves_authoritative_read_failures(): void {
+		$identity = 'owner:read-failure';
+		$run_id   = self::run_id( 1 );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'live row read failed';
+			}
+		);
+
+		$live_failure = $this->rig->inspection()->run_status( $identity, $run_id );
+
+		self::assertInstanceOf( Failure::class, $live_failure );
+		self::assertInstanceOf( EngineError::class, $live_failure->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $live_failure->error->reason );
+		self::assertSame( array( 'option_name' => RunIdentity::option_name( $identity, $run_id ) ), $live_failure->error->context );
+
+		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'history read failed';
+			}
+		);
+
+		$history_failure = $this->rig->inspection()->run_status( $identity, $run_id );
+
+		self::assertInstanceOf( Failure::class, $history_failure );
+		self::assertInstanceOf( EngineError::class, $history_failure->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $history_failure->error->reason );
+		self::assertSame( array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), $history_failure->error->context );
 	}
 
 	/**

@@ -5,6 +5,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface as Inter
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy as InternalRetry;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext as InternalRunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
@@ -200,7 +201,7 @@ function a8csp_bgje_job_register( string $owner, string $name, callable $handler
 #[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
 function a8csp_bgje_job_register_object( string $owner, \A8CSP_Job $job ): true|\WP_Error {
 	try {
-		$client = \a8csp_bgje( $owner );
+		$client = Component::client( $owner );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -357,7 +358,7 @@ function a8csp_bgje_job_register_object( string $owner, \A8CSP_Job $job ): true|
 #[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 function a8csp_bgje_job_enqueue( string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10 ): string|\WP_Error {
 	try {
-		$result = \a8csp_bgje( $owner )->jobs()->enqueue( $name, $args, $delay_seconds, $priority );
+		$result = Component::client( $owner )->jobs()->enqueue( $name, $args, $delay_seconds, $priority );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}

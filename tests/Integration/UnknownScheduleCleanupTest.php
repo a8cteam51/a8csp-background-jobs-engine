@@ -246,7 +246,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertCount( 1, $unknown_successor_ids, 'The unknown recurrence must birth one successor' );
 		$unknown_successor_id = $unknown_successor_ids[0];
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$job    = new RecordingJob( self::REDECLARED_JOB );
 		$client->jobs()->register( $job );
 		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), CatchUpPolicy::RunOnce );

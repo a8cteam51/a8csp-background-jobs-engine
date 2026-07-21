@@ -63,7 +63,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			$context->prepend( array( 'chunk' => 'front' ) );
 		};
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->chunked_jobs()->register( $chunked_job );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
@@ -200,7 +200,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 	public function test_action_scheduler_delivers_float_chunk_from_the_authoritative_run_row(): void {
 		$chunked_job        = new RecordingChunkedJob( self::FIDELITY_NAME );
 		$chunked_job->queue = array( array( 'value' => 1.0 ) );
-		$client             = \a8csp_bgje( self::OWNER );
+		$client             = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->chunked_jobs()->register( $chunked_job );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FIDELITY_IDENTITY );
 		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );

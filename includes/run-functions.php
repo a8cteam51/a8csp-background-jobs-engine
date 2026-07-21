@@ -1,5 +1,7 @@
 <?php declare( strict_types=1 );
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -18,7 +20,7 @@
 #[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 function a8csp_bgje_run_last_completed( string $owner, string $name ): string|null|\WP_Error {
 	try {
-		$result = \a8csp_bgje( $owner )->runs()->last_completed_run_id( $name );
+		$result = Component::client( $owner )->runs()->last_completed_run_id( $name );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -52,7 +54,7 @@ function a8csp_bgje_run_last_completed( string $owner, string $name ): string|nu
 #[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 function a8csp_bgje_run_retry_failed( string $owner, string $name, string $run_id ): string|\WP_Error {
 	try {
-		$result = \a8csp_bgje( $owner )->runs()->retry_failed( $name, $run_id );
+		$result = Component::client( $owner )->runs()->retry_failed( $name, $run_id );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -81,7 +83,7 @@ function a8csp_bgje_run_retry_failed( string $owner, string $name, string $run_i
 #[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 function a8csp_bgje_run_cancel( string $owner, string $name, string $run_id ): string|\WP_Error {
 	try {
-		$result = \a8csp_bgje( $owner )->runs()->cancel( $name, $run_id );
+		$result = Component::client( $owner )->runs()->cancel( $name, $run_id );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}

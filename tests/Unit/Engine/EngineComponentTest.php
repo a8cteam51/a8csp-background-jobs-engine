@@ -307,7 +307,7 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * The composed WP-Cron graph accepts job, chunked job, and schedule operations through a8csp_bgje().
+	 * The composed WP-Cron graph accepts job, chunked job, and schedule operations through its client.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -323,7 +323,7 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$client = \a8csp_bgje( 'consumer-plugin' );
+		$client = Component::client( 'consumer-plugin' );
 		self::assertInstanceOf( Client::class, $client );
 		$client->jobs()->register( new RecordingJob( 'refresh' ) );
 		$client->chunked_jobs()->register( new RecordingChunkedJob( 'catalog-sync' ) );
@@ -356,7 +356,7 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$client = \a8csp_bgje( 'consumer-plugin' );
+		$client = Component::client( 'consumer-plugin' );
 		$client->jobs()->register( new RecordingJob( 'preferred' ) );
 		$GLOBALS['a8csp_bgje_test_as_calls']   = array();
 		$GLOBALS['a8csp_bgje_test_cron_calls'] = array();

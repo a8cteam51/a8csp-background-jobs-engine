@@ -19,6 +19,21 @@ interface RunsEngineInterface {
 	// region METHODS
 
 	/**
+	 * Returns one retained run's observable lifecycle status.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string $run_id   Retained run identifier.
+	 *
+	 * @throws  \InvalidArgumentException When the run identifier is malformed.
+	 *
+	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, ApiError>
+	 */
+	public function inspect_run( string $identity, string $run_id ): AbstractResult;
+
+	/**
 	 * Returns the most recently recorded completed run ID retained for one identity.
 	 *
 	 * @since   1.0.0

@@ -5,12 +5,13 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Api\Job;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Adapts one closure to the public job contract.
+ * Adapts closures to the public job contract.
  *
  * @internal
  *
@@ -28,13 +29,17 @@ final class CallableJob extends Job {
 	 *
 	 * @phpstan-param \Closure(array<array-key, mixed>, RunContext): mixed $handler
 	 * @phpstan-param (\Closure(array<array-key, mixed>): ?string)|null $overlap_key
+	 * @phpstan-param (\Closure(string, array<array-key, mixed>, ?string): void)|null $on_completed
+	 * @phpstan-param (\Closure(string, array<array-key, mixed>, RunFailure): void)|null $on_failed
 	 *
-	 * @param   string             $name        Stable job name.
-	 * @param   \Closure           $handler     Job handler.
-	 * @param   int|null           $max_runtime Optional callback-runtime ceiling in seconds.
-	 * @param   RetryPolicy|null   $retry       Optional retry policy.
-	 * @param   OverlapPolicy|null $overlap     Optional overlap policy.
-	 * @param   \Closure|null      $overlap_key Optional argument-aware overlap-key resolver.
+	 * @param   string             $name         Stable job name.
+	 * @param   \Closure           $handler      Job handler.
+	 * @param   int|null           $max_runtime  Optional callback-runtime ceiling in seconds.
+	 * @param   RetryPolicy|null   $retry        Optional retry policy.
+	 * @param   OverlapPolicy|null $overlap      Optional overlap policy.
+	 * @param   \Closure|null      $overlap_key  Optional argument-aware overlap-key resolver.
+	 * @param   \Closure|null      $on_completed Optional completed-run callback.
+	 * @param   \Closure|null      $on_failed    Optional failed-run callback.
 	 */
 	public function __construct(
 		private string $name,
@@ -43,6 +48,8 @@ final class CallableJob extends Job {
 		private ?RetryPolicy $retry = null,
 		private ?OverlapPolicy $overlap = null,
 		private ?\Closure $overlap_key = null,
+		private ?\Closure $on_completed = null,
+		private ?\Closure $on_failed = null,
 	) {}
 
 	// endregion
@@ -119,6 +126,44 @@ final class CallableJob extends Job {
 	#[\Override]
 	public function overlap_key( array $start_args ): ?string {
 		return null === $this->overlap_key ? parent::overlap_key( $start_args ) : ( $this->overlap_key )( $start_args );
+	}
+
+	/**
+	 * Invokes the configured completed-run callback when present.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $run_id                    Run identifier.
+	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
+	 *
+	 * @throws  \Throwable When the configured callback fails.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
+		$this->on_completed?->__invoke( $run_id, $start_args, $previous_completed_run_id );
+	}
+
+	/**
+	 * Invokes the configured failed-run callback when present.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   RunFailure              $failure    Persisted terminal-failure value.
+	 *
+	 * @throws  \Throwable When the configured callback fails.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
+		$this->on_failed?->__invoke( $run_id, $start_args, $failure );
 	}
 
 	/**

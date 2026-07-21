@@ -55,7 +55,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$job            = new RecordingJob( self::NAME );
 		$job->throwable = new \RuntimeException( 'The upstream service remains unavailable.' );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );

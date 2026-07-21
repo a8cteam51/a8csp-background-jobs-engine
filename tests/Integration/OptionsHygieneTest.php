@@ -52,7 +52,7 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		$chunked_job        = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 		$client->chunked_jobs()->register( $chunked_job );
 

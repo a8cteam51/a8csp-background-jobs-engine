@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedules;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeChunkedJobsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeRunsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeSchedulesEngine;
@@ -62,7 +63,7 @@ final class ClientTest extends TestCase {
 		$jobs         = new Jobs( 'consumer-plugin', new FakeJobsEngine( new Success( 'job-run' ) ) );
 		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', new FakeChunkedJobsEngine( new Success( 'chunked-job-run' ) ) );
 		$schedules    = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) ) );
-		$runs         = new Runs( 'consumer-plugin', new FakeRunsEngine( new Success( null ), new Success( 'retry-run' ), new Success( 'cancelled-run' ) ) );
+		$runs         = new Runs( 'consumer-plugin', new FakeRunsEngine( new Success( null ), new Success( null ), new Success( 'retry-run' ), new Success( 'cancelled-run' ) ) );
 		$client       = new Client( 'consumer-plugin', $jobs, $chunked_jobs, $schedules, $runs );
 
 		self::assertSame( $jobs, $client->jobs() );
@@ -223,14 +224,19 @@ final class ClientTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_runs_inspect_retry_and_cancel_owner_qualified_work(): void {
-		$failed_run_id = '00000000001700000000-0000000000000000042';
-		$live_run_id   = '00000000001700000001-0000000000000000043';
-		$engine        = new FakeRunsEngine( new Success( 'completed-run' ), new Success( 'replacement-run' ), new Success( 'live-run' ) );
-		$runs          = new Runs( 'consumer-plugin', $engine );
+		$failed_run_id    = '00000000001700000000-0000000000000000042';
+		$live_run_id      = '00000000001700000001-0000000000000000043';
+		$inspected_run_id = '00000000001700000002-0000000000000000044';
+		$engine           = new FakeRunsEngine( new Success( RunStatus::Running ), new Success( 'completed-run' ), new Success( 'replacement-run' ), new Success( 'live-run' ) );
+		$runs             = new Runs( 'consumer-plugin', $engine );
 
+		$inspected = $runs->inspect( 'sync', $inspected_run_id );
 		$completed = $runs->last_completed_run_id( 'sync' );
 		$retry     = $runs->retry_failed( 'sync', $failed_run_id );
 		$cancel    = $runs->cancel( 'sync', $live_run_id );
+		if ( $inspected->is_failure() ) {
+			self::fail( 'The run-inspection facade returned an unexpected failure.' );
+		}
 		if ( $completed->is_failure() ) {
 			self::fail( 'The completed-run facade returned an unexpected failure.' );
 		}
@@ -241,11 +247,13 @@ final class ClientTest extends TestCase {
 			self::fail( 'The cancel facade returned an unexpected failure.' );
 		}
 
+		self::assertSame( RunStatus::Running, $inspected->value );
 		self::assertSame( 'completed-run', $completed->value );
 		self::assertSame( 'replacement-run', $retry->value );
 		self::assertSame( 'live-run', $cancel->value );
 		self::assertSame(
 			array(
+				array( 'inspect_run', 'consumer-plugin:sync', $inspected_run_id ),
 				array( 'last_completed_run_id', 'consumer-plugin:sync' ),
 				array( 'retry_failed', 'consumer-plugin:sync', $failed_run_id ),
 				array( 'cancel', 'consumer-plugin:sync', $live_run_id ),
@@ -259,6 +267,7 @@ final class ClientTest extends TestCase {
 			}
 			self::assertNotContains( 'owner', \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), $method->getParameters() ) );
 		}
+		self::assertSame( array( 'name', 'run_id' ), self::parameter_names( Runs::class, 'inspect' ) );
 		self::assertSame( array( 'name' ), self::parameter_names( Runs::class, 'last_completed_run_id' ) );
 	}
 
@@ -273,12 +282,13 @@ final class ClientTest extends TestCase {
 		$jobs         = new Jobs( 'consumer-plugin', new FakeJobsEngine( $failure ) );
 		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', new FakeChunkedJobsEngine( $failure ) );
 		$schedules    = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( $failure, $failure ) );
-		$runs         = new Runs( 'consumer-plugin', new FakeRunsEngine( $failure, $failure, $failure ) );
+		$runs         = new Runs( 'consumer-plugin', new FakeRunsEngine( $failure, $failure, $failure, $failure ) );
 
 		self::assertSame( $failure, $jobs->enqueue( 'sync' ) );
 		self::assertSame( $failure, $chunked_jobs->start( 'sync' ) );
 		self::assertSame( $failure, $schedules->sync( array() ) );
 		self::assertSame( $failure, $schedules->dispatch_now( 'nightly' ) );
+		self::assertSame( $failure, $runs->inspect( 'sync', $run_id ) );
 		self::assertSame( $failure, $runs->last_completed_run_id( 'sync' ) );
 		self::assertSame( $failure, $runs->retry_failed( 'sync', $run_id ) );
 		self::assertSame( $failure, $runs->cancel( 'sync', $run_id ) );
@@ -429,6 +439,7 @@ final class ClientTest extends TestCase {
 			array( ChunkedJobs::class, 'start' ),
 			array( Schedules::class, 'sync' ),
 			array( Schedules::class, 'dispatch_now' ),
+			array( Runs::class, 'inspect' ),
 			array( Runs::class, 'last_completed_run_id' ),
 			array( Runs::class, 'retry_failed' ),
 			array( Runs::class, 'cancel' ),

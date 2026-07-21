@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
  * Guards the public models against dependencies on the internal engine graph.
  *
  * @load-bearing structural-guard
- * @pin-rationale The public `models/` surface must not depend on the internal engine graph; the only bridge (added in a later unit) is `Engine` wrapping `Client`.
+ * @pin-rationale `Engine` is the sole sanctioned bridge; every other public model stays independent of the internal engine graph.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -36,6 +36,13 @@ final class DependencyDirectionTest extends TestCase {
 		'A8C\\SpecialProjects\\BackgroundJobsEngine\\Api\\ChunkedJob\\ChunkedJobInterface',
 	);
 
+	/**
+	 * `Engine` wraps the internal `Client`/`Component` by design; every other `models/` file stays clean.
+	 */
+	private const array PERMITTED_ENGINE_GRAPH_FILES = array(
+		'Engine.php',
+	);
+
 	// endregion.
 
 	// region TESTS.
@@ -57,6 +64,9 @@ final class DependencyDirectionTest extends TestCase {
 			$contents = \file_get_contents( $file );
 			self::assertIsString( $contents );
 			$location = 'models/' . \basename( $file );
+			if ( \in_array( \basename( $file ), self::PERMITTED_ENGINE_GRAPH_FILES, true ) ) {
+				continue;
+			}
 
 			foreach ( self::FORBIDDEN_REFERENCES as $reference ) {
 				self::assertStringNotContainsString( $reference, $contents, $location . ' references forbidden internal dependency ' . $reference );

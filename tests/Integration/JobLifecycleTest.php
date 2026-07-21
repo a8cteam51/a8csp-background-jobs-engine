@@ -55,7 +55,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		);
 		$job  = new RecordingJob( self::SUCCESS_NAME );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SUCCESS_IDENTITY );
@@ -144,7 +144,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$job            = new RecordingJob( self::FAILURE_NAME );
 		$job->throwable = new NonRetryableException( 'The remote record no longer exists.' );
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->jobs()->register( $job );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FAILURE_IDENTITY );

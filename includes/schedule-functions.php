@@ -3,6 +3,7 @@
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -76,7 +77,7 @@ function a8csp_bgje_schedule_sync( string $owner, array $schedules ): true|\WP_E
 			$declarations[] = new Schedule( $name, $recurrence, $job, $args, $catch_up, $priority );
 		}
 
-		$result = \a8csp_bgje( $owner )->schedules()->sync( $declarations );
+		$result = Component::client( $owner )->schedules()->sync( $declarations );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -105,7 +106,7 @@ function a8csp_bgje_schedule_sync( string $owner, array $schedules ): true|\WP_E
 #[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 function a8csp_bgje_schedule_dispatch( string $owner, string $name ): string|\WP_Error {
 	try {
-		$result = \a8csp_bgje( $owner )->schedules()->dispatch_now( $name );
+		$result = Component::client( $owner )->schedules()->dispatch_now( $name );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}

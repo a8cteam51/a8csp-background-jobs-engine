@@ -160,6 +160,25 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	}
 
 	/**
+	 * Returns one retained run's observable lifecycle status.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string $run_id   Retained run identifier.
+	 *
+	 * @throws  \InvalidArgumentException When the run identifier is malformed.
+	 *
+	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 */
+	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
+	#[\Override]
+	public function inspect_run( string $identity, string $run_id ): AbstractResult {
+		return ApiErrorMapper::map( $this->inspection->run_status( $identity, $run_id ) );
+	}
+
+	/**
 	 * Returns the most recently recorded completed run ID retained for one identity.
 	 *
 	 * @since   1.0.0

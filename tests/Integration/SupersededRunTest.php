@@ -54,7 +54,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		);
 		$chunked_job->overlap_policy = OverlapPolicy::Replace;
 
-		$client = \a8csp_bgje( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
 		$client->chunked_jobs()->register( $chunked_job );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );

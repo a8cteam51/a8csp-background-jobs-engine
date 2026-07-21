@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
@@ -42,6 +43,7 @@ final class ApiTest extends TestCase {
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
+		require_once __DIR__ . '/wp-cron-stubs.php';
 		EngineRig::bootstrap();
 	}
 
@@ -82,38 +84,34 @@ final class ApiTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Access before init fails with the earliest safe lifecycle contract.
+	 * Access before init returns a lazy owner-bound handle.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_front_door_is_unavailable_before_init(): void {
+	public function test_front_door_is_available_before_init(): void {
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array();
 
-		$this->expectException( \LogicException::class );
-		$this->expectExceptionMessageIs( 'The background jobs client is available from the init hook; call a8csp_bgje() from an init callback or later.' );
-
-		\a8csp_bgje( 'consumer-plugin' );
+		self::assertInstanceOf( Engine::class, \a8csp_bgje( 'consumer-plugin' ) );
 	}
 
 	/**
-	 * Access during and after init returns a working owner-bound facade.
+	 * Access during and after init returns lazy owner-bound handles.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_front_door_flows_during_and_after_init(): void {
+	public function test_front_door_is_independent_of_init_progress(): void {
 		$GLOBALS['a8csp_bgje_test_doing_actions'] = array( 'init' );
 		$during                                   = \a8csp_bgje( 'during-init' );
-		$during->jobs()->register( new RecordingJob( 'sync' ) );
-		self::assertInstanceOf( Success::class, $during->jobs()->enqueue( 'sync' ) );
+		self::assertInstanceOf( Engine::class, $during );
 
 		$GLOBALS['a8csp_bgje_test_doing_actions'] = array();
-		self::assertInstanceOf( Client::class, \a8csp_bgje( 'after-init' ) );
+		self::assertInstanceOf( Engine::class, \a8csp_bgje( 'after-init' ) );
 	}
 
 	/**
@@ -144,7 +142,7 @@ final class ApiTest extends TestCase {
 	}
 
 	/**
-	 * Every invalid or reserved owner is rejected at the single public front door.
+	 * Every invalid or reserved owner is rejected by the first handle operation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -155,9 +153,10 @@ final class ApiTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_owners' )]
 	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner ): void {
-		$this->expectException( \InvalidArgumentException::class );
+		$result = \a8csp_bgje( $owner )->enqueue( 'sync' );
 
-		\a8csp_bgje( $owner );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( 'invalid_argument', $result->get_error_code() );
 	}
 
 	/**

@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure as InternalFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy as InternalRetry;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext as InternalRunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\DuplicateRegistrationException;
 
 use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\failure_to_array;
@@ -30,7 +31,7 @@ use function A8C\SpecialProjects\BackgroundJobsEngine\Bridge\retry_policy;
 #[\NoDiscard( 'a chunked-job-registration failure must be handled, not dropped' )]
 function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job ): true|\WP_Error {
 	try {
-		$client = \a8csp_bgje( $owner );
+		$client = Component::client( $owner );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}
@@ -203,7 +204,7 @@ function a8csp_bgje_chunked_job_register( string $owner, \A8CSP_ChunkedJob $job 
 #[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
 function a8csp_bgje_chunked_job_start( string $owner, string $name, array $start_args = array(), int $priority = 10 ): string|\WP_Error {
 	try {
-		$result = \a8csp_bgje( $owner )->chunked_jobs()->start( $name, $start_args, $priority );
+		$result = Component::client( $owner )->chunked_jobs()->start( $name, $start_args, $priority );
 	} catch ( \InvalidArgumentException $exception ) {
 		return new \WP_Error( 'invalid_argument', $exception->getMessage() );
 	}

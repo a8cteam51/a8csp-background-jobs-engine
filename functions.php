@@ -1,7 +1,6 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
 
 \defined( 'ABSPATH' ) || exit;
@@ -32,32 +31,22 @@ function a8csp_bgje_plugin(): Plugin {
 }
 
 /**
- * Returns the owner-bound background-work client.
+ * Returns the owner-bound background-work engine handle.
  *
- * Available from `init` or later. By `init`, the engine's `plugins_loaded` priority-zero boot has
- * run in every standard load path; the request that activates the engine is the one exception —
- * it stays dormant there until the next request. Use the calling plugin's lowercase slug as the
- * owner; owner exclusivity is a client convention, while the `a8csp-jobs-engine` prefix is enforced as
- * the engine's reserved namespace.
- * Call the engine on the target blog; a storage operation after `switch_to_blog()` throws instead of
- * writing through a client graph bound to another site.
+ * Construction is lazy and infallible. Owner validation and engine readiness surface as `WP_Error`
+ * from the first verb call. Use the calling plugin's lowercase slug as the owner; owner exclusivity
+ * is a client convention, while the `a8csp-jobs-engine` prefix is enforced as the engine's reserved
+ * namespace. Call the engine on the target blog so storage uses a client graph bound to that site.
  *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @param   string $owner Stable client-plugin owner.
  *
- * @throws  \InvalidArgumentException When the owner violates the canonical client grammar.
- * @throws  \LogicException           When called before the earliest safe hook or engine wiring fails.
- *
- * @return  Client
+ * @return  Engine
  */
-function a8csp_bgje( string $owner ): Client {
-	if ( 0 === did_action( 'init' ) && ! doing_action( 'init' ) ) {
-		throw new \LogicException( 'The background jobs client is available from the init hook; call a8csp_bgje() from an init callback or later.' );
-	}
-
-	return Component::client( $owner );
+function a8csp_bgje( string $owner ): Engine {
+	return new Engine( $owner );
 }
 
 // endregion

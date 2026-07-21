@@ -951,7 +951,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$client         = \a8csp_bgje( self::INSPECTION_OWNER );
+		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::INSPECTION_OWNER );
 		$job            = new RecordingJob( self::INSPECTION_JOB );
 		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
 		$client->jobs()->register( $job );

@@ -110,6 +110,49 @@ final readonly class Inspection {
 	// region METHODS
 
 	/**
+	 * Returns one retained run's observable lifecycle status.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string $run_id   Retained run identifier.
+	 *
+	 * @throws  \InvalidArgumentException When the run identifier is malformed.
+	 *
+	 * @return  AbstractResult<RunStatus|null, EngineError>
+	 */
+	#[\NoDiscard( 'a run-status inspection result must be handled, not dropped' )]
+	public function run_status( string $identity, string $run_id ): AbstractResult {
+		if ( null === RunIdentity::parse( $run_id ) ) {
+			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
+		}
+
+		$inspected = $this->stores->run_store( $identity )->inspect( $run_id );
+		if ( $inspected->is_failure() ) {
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunIdentity::option_name( $identity, $run_id ) ), ) );
+		}
+
+		$snapshot = $inspected->value;
+		if ( null !== $snapshot && null !== $snapshot['state'] ) {
+			return new Success( $snapshot['state']->status );
+		}
+
+		$entries = $this->stores->run_history( $identity )->terminal_entries();
+		if ( null === $entries ) {
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
+		}
+
+		foreach ( \array_reverse( $entries ) as $entry ) {
+			if ( $run_id === $entry['run_id'] ) {
+				return new Success( RunStatus::from( $entry['status'] ) );
+			}
+		}
+
+		return new Success( null );
+	}
+
+	/**
 	 * Returns the last completed run ID in the retained terminal recording order.
 	 *
 	 * @since   1.0.0

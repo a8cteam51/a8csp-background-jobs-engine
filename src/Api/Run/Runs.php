@@ -38,6 +38,24 @@ final readonly class Runs {
 	// region METHODS
 
 	/**
+	 * Returns one retained run's observable lifecycle status.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Owner-local job or chunked job name.
+	 * @param   string $run_id Retained run identifier.
+	 *
+	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
+	 *
+	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, ApiError>
+	 */
+	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
+	public function inspect( string $name, string $run_id ): AbstractResult {
+		return $this->engine->inspect_run( JobIdentity::compose( $this->owner, $name ), $run_id );
+	}
+
+	/**
 	 * Returns the most recently recorded completed run ID retained for one background-work name.
 	 *
 	 * The lookup covers only the retained history window. Each history buffer retains at most the
