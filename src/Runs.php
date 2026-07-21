@@ -65,7 +65,7 @@ final readonly class Runs {
 			// The public projection covers every internal run status, so from() always resolves here.
 			return $this->run( $name, $run_id, RunStatus::from( $result->value->value ) );
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
@@ -94,7 +94,7 @@ final readonly class Runs {
 
 			return $this->run( $name, $result->value, RunStatus::Completed );
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
@@ -121,7 +121,7 @@ final readonly class Runs {
 
 			return $this->run( $name, $result->value, RunStatus::Running );
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
@@ -148,7 +148,7 @@ final readonly class Runs {
 
 			return $this->run( $name, $run_id, RunStatus::Cancelled );
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}

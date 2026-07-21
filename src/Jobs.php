@@ -65,12 +65,12 @@ final readonly class Jobs {
 			} elseif ( $job instanceof AbstractJob ) {
 				$this->client()->jobs()->register( $job );
 			} else {
-				return new \WP_Error( 'invalid_argument', \sprintf( 'Job kind "%s" is not supported.', $job::class ) );
+				return new \WP_Error( ErrorCode::InvalidArgument->value, \sprintf( 'Job kind "%s" is not supported.', $job::class ) );
 			}
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( DuplicateRegistrationException $exception ) {
-			return new \WP_Error( 'already_registered', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::AlreadyRegistered->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
@@ -110,9 +110,9 @@ final readonly class Jobs {
 			$callable_job = new CallableJob( $name, \Closure::fromCallable( $handler ), $max_runtime, $retry, $overlap, self::optional_closure( $overlap_key ), self::optional_closure( $on_completed ), self::optional_closure( $on_failed ) );
 			$this->client()->jobs()->register( $callable_job );
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( DuplicateRegistrationException $exception ) {
-			return new \WP_Error( 'already_registered', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::AlreadyRegistered->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
@@ -143,7 +143,7 @@ final readonly class Jobs {
 
 			return $this->run( $name, $result->value, RunStatus::Running );
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
@@ -171,7 +171,7 @@ final readonly class Jobs {
 
 			return $this->run( $name, $result->value, RunStatus::Running );
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}

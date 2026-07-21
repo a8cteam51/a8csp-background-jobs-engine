@@ -61,7 +61,7 @@ final readonly class Schedules {
 
 			return true;
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
@@ -87,7 +87,7 @@ final readonly class Schedules {
 
 			return $this->run( $name, $result->value, RunStatus::Running );
 		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( 'invalid_argument', $exception->getMessage() );
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}

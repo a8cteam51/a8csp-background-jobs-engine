@@ -421,6 +421,8 @@ The engine retains up to 20 failed runs per owner-qualified identity for manual 
 
 `a8csp_bgje( string $owner ): Engine` returns the lazy owner-bound handle. Each alias below takes `$owner` first, converts its import-free arguments to the corresponding public values where needed, invokes the matching capability-manager verb, and returns the same shape.
 
+The procedural facade is grouped by concept: `includes/job-functions.php` provides job registration and enqueueing, `includes/chunked-job-functions.php` provides chunked-job starts, `includes/schedule-functions.php` provides schedule synchronization and dispatch, and `includes/run-functions.php` provides run inspection, retry, and cancellation.
+
 | Capability-manager verb | Procedural alias | Returns |
 | --- | --- | --- |
 | `jobs()->register( Job\JobInterface $job )` | `a8csp_bgje_register( string $owner, Job\JobInterface $job )` | `true \| WP_Error` |
@@ -443,7 +445,7 @@ The callable handler receives `(array $args, Job\RunContext $context)`. The proc
 - `on_completed`: `callable(string $run_id, array $args, ?string $previous_completed_run_id): void`.
 - `on_failed`: `callable(string $run_id, array $args, Run\RunFailure $failure): void`.
 
-A procedural schedule entry requires `name`, `every`, and `job`. Optional fields default to `'anchor' => null`, `'args' => []`, `'catch_up' => 'run_once'`, and `'priority' => 10`; catch-up also accepts `'skip'`. `every` is a positive integer number of seconds. `anchor` is a non-negative UTC phase offset reduced modulo `every`; it is not site-local or calendar time.
+A procedural schedule entry accepts exactly the keys `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; any other key returns `WP_Error` with the `invalid_argument` code. The `name`, `every`, and `job` fields are required. Optional fields default to `'args' => []`, `'anchor' => null`, `'catch_up' => 'run_once'`, and `'priority' => 10`; catch-up also accepts `'skip'`. `every` is a positive integer number of seconds. `anchor` is a non-negative UTC phase offset reduced modulo `every`; it is not site-local or calendar time.
 
 ## Public values and contexts
 
@@ -472,9 +474,7 @@ The backed enums are:
 | `Job\OverlapPolicy` | `Allow = 'allow'`, `Reject = 'reject'`, `Replace = 'replace'` |
 | `Schedule\CatchUpPolicy` | `RunOnce = 'run_once'`, `Skip = 'skip'` |
 | `Run\RunFailureStage` | `Execution = 'execution'`, `QueueGeneration = 'queue_generation'`, `CrashReclaim = 'crash_reclaim'`, `Scheduling = 'scheduling'` |
-| `Error\ErrorCode` | `EngineUnavailable = 'engine_unavailable'`, `UnknownWork = 'unknown_work'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailure = 'storage_failure'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
-
-`invalid_argument` and `already_registered` are additional `WP_Error` codes at the facade boundary; they are not `Error\ErrorCode` cases.
+| `Error\ErrorCode` | `InvalidArgument = 'invalid_argument'`, `AlreadyRegistered = 'already_registered'`, `EngineUnavailable = 'engine_unavailable'`, `MissingAutoloader = 'missing_autoloader'`, `UnknownWork = 'unknown_work'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailure = 'storage_failure'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
 
 ## The work contracts
 
@@ -509,9 +509,9 @@ Queue mutations commit only after a normal `process_chunk()` return and are disc
 
 The procedural `a8csp_bgje_sync_schedules()` facade accepts a complete array declaration. Each entry has this configuration shape:
 
-`[ 'name' => string, 'every' => int, 'job' => string, 'anchor' => ?int, 'args' => array, 'catch_up' => 'run_once'|'skip', 'priority' => int ]`
+`[ 'name' => string, 'every' => int, 'job' => string, 'args' => array, 'anchor' => ?int, 'catch_up' => 'run_once'|'skip', 'priority' => int ]`
 
-Only `name`, `every`, and `job` are required. The facade converts each entry to the corresponding public schedule values before synchronization.
+The accepted keys are exactly `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; an unknown key returns `WP_Error` with the `invalid_argument` code. Only `name`, `every`, and `job` are required. The facade converts each entry to the corresponding public schedule values before synchronization.
 
 ## Migrating from Action Scheduler
 

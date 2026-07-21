@@ -313,6 +313,16 @@ final class ProceduralFacadeTest extends TestCase {
 	public static function invalid_schedules(): array {
 		return array(
 			'non-array entry'  => array( 'schedules' => array( 'nightly' ) ),
+			'unknown key'      => array(
+				'schedules' => array(
+					array(
+						'name'      => 'nightly',
+						'every'     => 300,
+						'job'       => 'job',
+						'prioritry' => 5,
+					),
+				),
+			),
 			'missing name'     => array(
 				'schedules' => array(
 					array(

@@ -41,7 +41,10 @@ final class ErrorCodeTest extends TestCase {
 	public function test_error_code_backing_values_are_stable(): void {
 		self::assertEqualsCanonicalizing(
 			array(
+				'invalid_argument',
+				'already_registered',
 				'engine_unavailable',
+				'missing_autoloader',
 				'unknown_work',
 				'unknown_schedule',
 				'overlap_held',

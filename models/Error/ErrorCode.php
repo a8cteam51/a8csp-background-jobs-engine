@@ -15,8 +15,17 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Error;
 enum ErrorCode: string {
 	// region FIELDS AND CONSTANTS
 
+	/** The supplied public argument violates the operation contract. */
+	case InvalidArgument = 'invalid_argument';
+
+	/** The requested job identity is already registered for this request. */
+	case AlreadyRegistered = 'already_registered';
+
 	/** The engine cannot prepare or continue the requested operation. */
 	case EngineUnavailable = 'engine_unavailable';
+
+	/** The required Composer autoloader is absent during bootstrap. */
+	case MissingAutoloader = 'missing_autoloader';
 
 	/** The requested job or chunked job is not registered. */
 	case UnknownWork = 'unknown_work';
