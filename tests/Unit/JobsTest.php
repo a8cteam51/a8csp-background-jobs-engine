@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Batch\AbstractBatchJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
@@ -203,6 +204,25 @@ final class JobsTest extends CapabilityManagerTestCase {
 
 		self::assertSame( 'Job "engine-test:missing" is not registered; register it before enqueueing.', $error->get_error_message() );
 		self::assertSame( array( 'name' => self::OWNER . ':missing' ), $error->get_error_data() );
+	}
+
+	/**
+	 * The batch kind registers nowhere: rejection happens before any engine call.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_register_rejects_the_batch_kind(): void {
+		$batch = new class() extends AbstractBatchJob {
+			public function get_name(): string {
+				return 'batch-probe';
+			}
+		};
+
+		$result = \a8csp_bgje( self::OWNER )->jobs()->register( $batch );
+		self::assertSame( 'Batch jobs are not supported.', self::assert_wp_error( $result, ErrorCode::InvalidArgument->value )->get_error_message() );
 	}
 
 	// endregion.

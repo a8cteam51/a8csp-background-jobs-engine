@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Batch\AbstractBatchJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\CallableJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
@@ -64,6 +65,8 @@ final readonly class Jobs {
 				$this->client()->chunked_jobs()->register( $job );
 			} elseif ( $job instanceof AbstractJob ) {
 				$this->client()->jobs()->register( $job );
+			} elseif ( $job instanceof AbstractBatchJob ) {
+				return new \WP_Error( ErrorCode::InvalidArgument->value, 'Batch jobs are not supported.' );
 			} else {
 				return new \WP_Error( ErrorCode::InvalidArgument->value, \sprintf( 'Job kind "%s" is not supported.', $job::class ) );
 			}
