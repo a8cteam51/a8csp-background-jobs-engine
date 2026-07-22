@@ -5,7 +5,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
@@ -85,7 +84,7 @@ final readonly class Schedules {
 				return self::wp_error( $result->error );
 			}
 
-			return $this->run( $name, $result->value, RunStatus::Running );
+			return $this->run( $result->value['identity'], $result->value['run_id'], RunStatus::Running );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
@@ -113,21 +112,19 @@ final readonly class Schedules {
 	}
 
 	/**
-	 * Projects one internal run identifier into the public value.
+	 * Projects one internal run result into the public value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string    $name   Owner-local job or chunked job name.
-	 * @param   string    $run_id Run identifier.
-	 * @param   RunStatus $status Public lifecycle state.
-	 *
-	 * @throws  \InvalidArgumentException When the owner or name violates the identity contract.
+	 * @param   string    $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string    $run_id   Run identifier.
+	 * @param   RunStatus $status   Public lifecycle state.
 	 *
 	 * @return  Run
 	 */
-	private function run( string $name, string $run_id, RunStatus $status ): Run {
-		return new Run( JobIdentity::compose( $this->owner, $name ), $run_id, $status );
+	private function run( string $identity, string $run_id, RunStatus $status ): Run {
+		return new Run( $identity, $run_id, $status );
 	}
 
 	/**

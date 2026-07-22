@@ -177,7 +177,7 @@ final class ProceduralFacadeTest extends TestCase {
 		);
 
 		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, $schedules ) );
-		$run = self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':nightly', RunStatus::Running );
+		$run = self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
 
 		self::assertNotSame( '', $run->run_id );
 		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );

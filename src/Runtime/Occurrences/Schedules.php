@@ -270,7 +270,7 @@ final readonly class Schedules {
 	 *
 	 * @throws  \InvalidArgumentException When the schedule identity is not canonical.
 	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 * @return  AbstractResult<array{identity: string, run_id: string}, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now( string $registration_key ): AbstractResult {

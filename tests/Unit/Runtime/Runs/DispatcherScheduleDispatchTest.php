@@ -101,7 +101,13 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+			),
+			$result->value
+		);
 		$calls = $this->run_delivery_calls();
 		self::assertCount( 1, $calls );
 		self::assertSame( 23, $calls[0]['args']['priority'] ?? null );
@@ -124,7 +130,13 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$result = $this->client->schedules()->dispatch_now( self::CHUNKED_SCHEDULE );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame(
+			array(
+				'identity' => self::CHUNKED_IDENTITY,
+				'run_id'   => self::RUN_ID,
+			),
+			$result->value
+		);
 		$calls = $this->chunked_start_calls();
 		self::assertCount( 1, $calls );
 		self::assertSame( 23, $calls[0]['args']['priority'] ?? null );
@@ -222,7 +234,13 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+			),
+			$result->value
+		);
 		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
 		$run = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
@@ -336,7 +354,13 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$result = $this->client->schedules()->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+			),
+			$result->value
+		);
 		self::assertSame( self::RUN_ID, $this->lock_owner( $this->args_hash() ) );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}

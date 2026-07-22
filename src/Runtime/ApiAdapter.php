@@ -151,7 +151,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 *
 	 * @param   string $identity Complete owner-qualified schedule identity.
 	 *
-	 * @return  AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
+	 * @return  AbstractResult<array{identity: string, run_id: string}, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	#[\Override]

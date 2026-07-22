@@ -140,7 +140,7 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @param   string $registration_key Complete owner-qualified schedule identity.
 	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 * @return  AbstractResult<array{identity: string, run_id: string}, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now_under_lease( string $registration_key ): AbstractResult {
@@ -536,7 +536,7 @@ final readonly class OccurrenceDelivery {
 	 * @param   string       $name             Stable schedule name.
 	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
 	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 * @return  AbstractResult<array{identity: string, run_id: string}, EngineError|SchedulingError>
 	 */
 	private function dispatch_now( string $registration_key, string $owner, string $name, ClaimedLease $lease_handle ): AbstractResult {
 		$registration_read = $this->registry->registration( $registration_key );
@@ -609,7 +609,12 @@ final readonly class OccurrenceDelivery {
 			return new Failure( $dispatched->value->error );
 		}
 
-		return new Success( $dispatched->value );
+		return new Success(
+			array(
+				'identity' => $declaration['job'],
+				'run_id'   => $dispatched->value,
+			)
+		);
 	}
 
 	// endregion

@@ -62,7 +62,18 @@ final class ClientTest extends TestCase {
 	public function test_accessors_return_the_bound_facades(): void {
 		$jobs         = new Jobs( 'consumer-plugin', new FakeJobsEngine( new Success( 'job-run' ) ) );
 		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', new FakeChunkedJobsEngine( new Success( 'chunked-job-run' ) ) );
-		$schedules    = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) ) );
+		$schedules    = new Schedules(
+			'consumer-plugin',
+			new FakeSchedulesEngine(
+				new Success( true ),
+				new Success(
+					array(
+						'identity' => 'consumer-plugin:scheduled-job',
+						'run_id'   => 'schedule-run',
+					)
+				)
+			)
+		);
 		$runs         = new Runs( 'consumer-plugin', new FakeRunsEngine( new Success( null ), new Success( null ), new Success( 'retry-run' ), new Success( 'cancelled-run' ) ) );
 		$client       = new Client( 'consumer-plugin', $jobs, $chunked_jobs, $schedules, $runs );
 
@@ -184,7 +195,15 @@ final class ClientTest extends TestCase {
 	 */
 	public function test_schedules_sync_and_dispatch_now_with_the_bound_owner_only(): void {
 		$schedule  = new Schedule( 'nightly', Recurrence::every( 300 ), 'sync' );
-		$engine    = new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) );
+		$engine    = new FakeSchedulesEngine(
+			new Success( true ),
+			new Success(
+				array(
+					'identity' => 'consumer-plugin:sync',
+					'run_id'   => 'schedule-run',
+				)
+			)
+		);
 		$schedules = new Schedules( 'consumer-plugin', $engine );
 
 		$sync_result = $schedules->sync( array( $schedule ) );

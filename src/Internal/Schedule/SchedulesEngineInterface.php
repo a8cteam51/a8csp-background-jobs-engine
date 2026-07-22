@@ -41,7 +41,7 @@ interface SchedulesEngineInterface {
 	 *
 	 * @param   string $identity Complete owner-qualified schedule identity.
 	 *
-	 * @return  AbstractResult<string, ApiError>
+	 * @return  AbstractResult<array{identity: string, run_id: string}, ApiError>
 	 */
 	public function dispatch_now( string $identity ): AbstractResult;
 

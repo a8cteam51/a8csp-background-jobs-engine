@@ -82,7 +82,7 @@ final readonly class Schedules {
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
 	 *
-	 * @return  AbstractResult<string, ApiError>
+	 * @return  AbstractResult<array{identity: string, run_id: string}, ApiError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now( string $name ): AbstractResult {
