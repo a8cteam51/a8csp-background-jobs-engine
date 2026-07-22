@@ -55,8 +55,7 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "A8C\\SpecialProjects\\BackgroundJobsEngine\\Tests\\": "tests/",
-      "A8C\\SpecialProjects\\BackgroundJobsEngine\\Build\\PHPStan\\": "build/phpstan/"
+      "A8C\\SpecialProjects\\BackgroundJobsEngine\\Tests\\": "tests/"
     }
   },
 

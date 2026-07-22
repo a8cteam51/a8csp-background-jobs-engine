@@ -23,11 +23,3 @@ parameters:
         # by coincidence when a repo's directory name matches its entry file; declared
         # explicitly so it doesn't depend on that coincidence.
         pluginFile: %currentWorkingDirectory%/a8csp-background-jobs-engine.php
-
-services:
-    -
-        class: A8C\SpecialProjects\BackgroundJobsEngine\Build\PHPStan\PublicSignatureBoundaryRule
-        arguments:
-            permitted_types: []
-        tags:
-            - phpstan.rules.rule
