@@ -39,6 +39,7 @@ function a8csp_bgje( string $owner ): Engine {
  * @return  Plugin
  */
 function a8csp_bgje_plugin(): Plugin {
+	/** @var Plugin|null $plugin */
 	static $plugin   = null;
 	return $plugin ??= new Plugin();
 }

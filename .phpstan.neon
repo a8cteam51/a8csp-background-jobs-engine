@@ -3,13 +3,6 @@ includes:
 
 parameters:
     level: max
-    ignoreErrors:
-        # The accessor body stays byte-identical to the template, whose untyped function-local
-        # static reads as mixed at level max; an inline annotation would break that parity.
-        -
-            identifier: return.type
-            path: functions.php
-            count: 1
     # The entry file's define()s are invisible to cross-file analysis (symbol discovery does not
     # read define() calls), so level max needs the constants valued here; the template's bare
     # \constant() style only survives at the shared config's lower level.
