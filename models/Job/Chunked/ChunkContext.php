@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 /**
  * Gives a chunked job chunk controlled access to its own run.
  *
- * Queue mutations are transactional within an `AbstractChunkedJob::process_chunk()` attempt: they take
+ * Queue mutations are transactional within a `ChunkedJobExecution::process_chunk()` attempt: they take
  * effect only when the attempt returns normally and are discarded when it throws, so retrying a
  * failed chunk cannot duplicate queued work.
  *

@@ -69,7 +69,7 @@ final class SchedulerFacadeTest extends TestCase {
 
 		$this->rig    = EngineRig::set_up( self::NOW, 2 );
 		$this->client = $this->rig->client( self::OWNER );
-		$this->client->jobs()->register( new RecordingJob( self::JOB_NAME ) );
+		$this->client->jobs()->register( ( new RecordingJob( self::JOB_NAME ) )->definition() );
 		$this->reset_backend_observations();
 	}
 

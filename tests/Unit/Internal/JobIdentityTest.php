@@ -92,7 +92,7 @@ final class JobIdentityTest extends TestCase {
 		$job_name      = \str_repeat( 't', 64 );
 		$schedule_name = \str_repeat( 's', 64 );
 		$client        = $this->rig->client( $owner );
-		$client->jobs()->register( new RecordingJob( $job_name ) );
+		$client->jobs()->register( ( new RecordingJob( $job_name ) )->definition() );
 
 		$enqueued = $client->jobs()->enqueue( $job_name, array( 'site_id' => 7 ) );
 		$synced   = $client->schedules()->sync( array( new Schedule( $schedule_name, Recurrence::every( 300 ), $job_name ) ) );

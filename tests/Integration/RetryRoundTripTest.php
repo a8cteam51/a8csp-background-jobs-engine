@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -49,15 +50,16 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 	 */
 	public function test_retry_exhaustion_round_trips_through_the_failed_store(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$args           = array(
+		$args                    = array(
 			'account_id' => 91,
 			'operation'  => 'synchronize',
 		);
-		$job            = new RecordingJob( self::NAME );
-		$job->throwable = new \RuntimeException( 'The upstream service remains unavailable.' );
+		$job                     = new RecordingJob( self::NAME );
+		$job->throwable          = new \RuntimeException( 'The upstream service remains unavailable.' );
+		$definition_retry_policy = new RetryPolicy();
 
 		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition( new JobOptions( retry: $definition_retry_policy ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY );
@@ -144,7 +146,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( array( $args ), $job->calls, 'The first runner drive must execute one job attempt' );
 		self::assertCount( 1, $retry_policy_calls, 'The first failure must resolve the filtered retry policy once' );
 		self::assertSame( 1, $retry_policy_calls[0]['arity'] );
-		self::assertSame( $job->retry_policy, $retry_policy_calls[0]['policy'] );
+		self::assertSame( $definition_retry_policy, $retry_policy_calls[0]['policy'] );
 		self::assertCount( 1, $named_retry_scheduled, 'The first failure must fire the identity-specific retry-scheduled hook once' );
 		self::assertCount( 1, $generic_retry_scheduled, 'The first failure must fire the generic retry-scheduled hook once' );
 		self::assertSame( array(), $failed, 'The first failure must remain non-terminal below the retry cap' );
@@ -182,15 +184,15 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			array(
 				array(
 					'arity'  => 1,
-					'policy' => $job->retry_policy,
+					'policy' => $definition_retry_policy,
 				),
 				array(
 					'arity'  => 1,
-					'policy' => $job->retry_policy,
+					'policy' => $definition_retry_policy,
 				),
 			),
 			$retry_policy_calls,
-			'The retry-policy filter must receive only the contract policy on both attempts'
+			'The retry-policy filter must receive only the definition policy on both attempts'
 		);
 		self::assertCount( 1, $named_retry_scheduled, 'Retry exhaustion must not announce a nonexistent third attempt' );
 		self::assertCount( 1, $generic_retry_scheduled, 'Retry exhaustion must not fire the generic retry-scheduled hook again' );

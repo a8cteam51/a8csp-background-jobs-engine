@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
@@ -418,7 +419,10 @@ final class EngineRig {
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
 
 		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $this->maintenance_job );
+		$dispatcher->register(
+			JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
+			JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job )
+		);
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $work, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
@@ -508,7 +512,7 @@ final class EngineRig {
 	 * @param   EngineFacade    $engine     Engine facade.
 	 * @param   Inspection      $inspection Inspection facade.
 	 * @param   SchedulerFacade $scheduler  Scheduler facade.
-	 * @param   JobRegistry    $work       Registered job and chunked job instances.
+	 * @param   JobRegistry     $work       Registered job and chunked job instances.
 	 * @param   Schedules       $schedules  Schedule engine operations.
 	 * @param   Dispatcher      $dispatcher Background-work admission coordinator.
 	 *

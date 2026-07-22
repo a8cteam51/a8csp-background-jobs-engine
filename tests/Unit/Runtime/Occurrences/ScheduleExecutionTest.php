@@ -4,8 +4,9 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Occurrence
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
@@ -104,7 +105,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * Boots one declared job against deterministic production boundaries.
+	 * Boots job execution fixtures against deterministic production boundaries.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -115,12 +116,10 @@ final class ScheduleExecutionTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->client( self::OWNER );
-		$this->job         = new RecordingJob( self::JOB );
-		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_JOB );
-		$this->client->jobs()->register( $this->job );
-		$this->client->chunked_jobs()->register( $this->chunked_job );
+		$this->rig              = EngineRig::set_up( self::NOW );
+		$this->client           = $this->rig->client( self::OWNER );
+		$this->job              = new RecordingJob( self::JOB );
+		$this->chunked_job      = new RecordingChunkedJob( self::CHUNKED_JOB );
 		$this->fixtures         = StoreFixtureBuilder::for_identity( self::JOB_IDENTITY );
 		$this->chunked_fixtures = StoreFixtureBuilder::for_identity( self::CHUNKED_IDENTITY );
 		$this->reset_observations();
@@ -529,8 +528,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_occurrence_state_cannot_overwrite_a_concurrently_synchronized_generation(): void {
-		$this->job->overlap_policy = OverlapPolicy::Allow;
-		$this->sync_schedule( self::schedule() );
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
 		$replacement     = self::schedule( interval: 600 );
 		$replacement_raw = null;
 		$this->rig->wpdb()->before_next(
@@ -634,8 +632,10 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunked_reject_target_records_a_soft_overlap_skip(): void {
-		$this->chunked_job->overlap_policy = OverlapPolicy::Reject;
-		$this->sync_schedule( new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::CHUNKED_JOB, self::ARGS, CatchUpPolicy::RunOnce, 23 ) );
+		$this->sync_schedule(
+			new Schedule( self::NAME, Recurrence::every( self::INTERVAL ), self::CHUNKED_JOB, self::ARGS, CatchUpPolicy::RunOnce, 23 ),
+			new JobOptions( overlap: OverlapPolicy::Reject )
+		);
 		$args_hash = $this->chunked_fixtures->args_hash( self::ARGS );
 		$this->put_fixture( $this->chunked_fixtures->lock( $args_hash, 'run-incumbent', self::NOW, self::NOW ) );
 		$this->put_fixture(
@@ -713,11 +713,19 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Schedule $schedule Schedule declaration.
+	 * @param   Schedule       $schedule Schedule declaration.
+	 * @param   JobOptions|null $options  Optional target policy declaration.
 	 *
 	 * @return  void
 	 */
-	private function sync_schedule( Schedule $schedule ): void {
+	private function sync_schedule( Schedule $schedule, ?JobOptions $options = null ): void {
+		$execution = match ( $schedule->job ) {
+			self::JOB => $this->job,
+			self::CHUNKED_JOB => $this->chunked_job,
+			default => throw new \LogicException( 'Schedule target has no execution fixture.' ),
+		};
+		$this->client->jobs()->register( $execution->definition( $options ) );
+
 		self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $schedule ) ) );
 		$this->reset_observations();
 	}

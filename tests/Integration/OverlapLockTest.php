@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -61,6 +62,24 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$this->register_chunked_job( $chunked_job );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::REJECT_IDENTITY );
 		$this->filter_continue_delay_to_zero();
+
+		$completion_observations = array();
+		\add_action(
+			'a8csp_jobs_engine/completed/' . self::REJECT_IDENTITY,
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$completion_observations ): void {
+				$completion_observations[] = array( 'named', (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
+			},
+			10,
+			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed',
+			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$completion_observations ): void {
+				$completion_observations[] = array( 'generic', $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
+			},
+			10,
+			4
+		);
 
 		$run_a     = $this->start( self::REJECT_NAME, $start_args );
 		$group_a   = self::REJECT_IDENTITY . '|' . $run_a;
@@ -117,14 +136,11 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame( array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ), \array_column( $chunked_job->process_calls, 'chunk_args' ), 'The accepted incumbent must process both chunks after the rejected start' );
 		self::assertSame(
 			array(
-				array(
-					'run_id'                    => $run_a,
-					'start_args'                => $start_args,
-					'previous_completed_run_id' => null,
-				),
+				array( 'named', $run_a, $start_args, null ),
+				array( 'generic', self::REJECT_IDENTITY, $run_a, $start_args, null ),
 			),
-			$chunked_job->completed_calls,
-			'The accepted incumbent must complete normally after the rejected start'
+			$completion_observations,
+			'The accepted incumbent must publish its identity-specific and generic completion payloads in order'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Incumbent completion must release the overlap lock' );
 		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::REJECT_IDENTITY . '_' . $run_a, false ) );
@@ -163,6 +179,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		$named_superseded   = array();
 		$generic_superseded = array();
+		$terminal_hooks     = array();
 		$log_records        = array();
 		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
@@ -180,6 +197,34 @@ final class OverlapLockTest extends IntegrationTestCase {
 			},
 			10,
 			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed/' . self::RECLAIM_IDENTITY,
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$terminal_hooks ): void {
+				$terminal_hooks[] = array( 'completed-named', (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
+			},
+			10,
+			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed',
+			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$terminal_hooks ): void {
+				if ( self::RECLAIM_IDENTITY === $name ) {
+					$terminal_hooks[] = array( 'completed-generic', $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
+				}
+			},
+			10,
+			4
+		);
+		\add_action(
+			'a8csp_jobs_engine/failed',
+			static function ( RunFailure $failure ) use ( &$terminal_hooks ): void {
+				if ( self::RECLAIM_IDENTITY === $failure->identity ) {
+					$terminal_hooks[] = array( 'failed', $failure );
+				}
+			},
+			10,
+			1
 		);
 		\add_action(
 			'a8csp_jobs_engine/log',
@@ -240,16 +285,12 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame( array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ), \array_column( $chunked_job->process_calls, 'chunk_args' ), 'Only the reclaimed run must process the chunked job chunks' );
 		self::assertSame(
 			array(
-				array(
-					'run_id'                    => $run_b,
-					'start_args'                => $start_args,
-					'previous_completed_run_id' => null,
-				),
+				array( 'completed-named', $run_b, $start_args, null ),
+				array( 'completed-generic', self::RECLAIM_IDENTITY, $run_b, $start_args, null ),
 			),
-			$chunked_job->completed_calls,
-			'The reclaimed run must complete normally'
+			$terminal_hooks,
+			'The reclaimed run must publish only its identity-specific and generic completion payloads in order'
 		);
-		self::assertSame( array(), $chunked_job->failed_calls, 'Stale reclaim must not invoke the chunked job on_failed() callback' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'Reclaimed-run completion must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'Reclaimed-run completion must not repeat the generic superseded hook' );
 		self::assertCount( 2, $log_records );
@@ -323,7 +364,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function register_chunked_job( RecordingChunkedJob $chunked_job ): void {
-		\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER )->chunked_jobs()->register( $chunked_job );
+		\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER )->jobs()->register( $chunked_job->definition() );
 	}
 
 	/**

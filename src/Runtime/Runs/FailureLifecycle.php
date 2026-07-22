@@ -5,8 +5,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
@@ -63,7 +63,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface         $handler        Handler selected by the persisted kind.
-	 * @param   JobInterface                 $contract       Failed work contract.
+	 * @param   JobOptions                   $options        Registered policy declaration.
 	 * @param   string                       $identity       Complete owner-qualified work identity.
 	 * @param   string                       $run_id         Run identifier.
 	 * @param   RunState                     $state          Fenced running state.
@@ -75,7 +75,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	public function handle_failure( KindHandlerInterface $handler, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, ?array $details = null ): void {
+	public function handle_failure( KindHandlerInterface $handler, JobOptions $options, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, ?array $details = null ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -88,19 +88,19 @@ final readonly class FailureLifecycle {
 		$attempts_used = $state->failed_attempts + 1;
 		$error         = $handler->failure_error( $throwable );
 		if ( $throwable instanceof NonRetryableException ) {
-			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
+			$this->fail_terminally( $handler, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
 
 			return;
 		}
 
 		try {
-			$policy = $this->retry_policy( $identity, $contract->get_retry_policy() );
+			$policy = $this->retry_policy( $identity, $options->retry ?? new RetryPolicy() );
 		} catch ( \Throwable $retry_policy_failure ) {
 			if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
 				return;
 			}
 
-			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $handler->key(), $identity, $retry_policy_failure ), $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
+			$this->fail_terminally( $handler, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $handler->key(), $identity, $retry_policy_failure ), $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
 
 			return;
 		}
@@ -110,7 +110,7 @@ final readonly class FailureLifecycle {
 		}
 
 		if ( $attempts_used >= $policy->max_attempts ) {
-			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
+			$this->fail_terminally( $handler, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
 
 			return;
 		}
@@ -122,7 +122,7 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$this->fail_terminally( $handler, $contract, $identity, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $details );
+			$this->fail_terminally( $handler, $identity, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $details );
 		}
 	}
 
@@ -133,7 +133,6 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface         $handler       Handler selected by the persisted kind.
-	 * @param   JobInterface                 $contract      Failed work contract.
 	 * @param   string                       $identity      Complete owner-qualified work identity.
 	 * @param   string                       $run_id        Run identifier.
 	 * @param   RunState                     $state         Fenced running state.
@@ -146,22 +145,22 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( KindHandlerInterface $handler, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $details ): void {
-		$this->terminal_transitions->fail_run( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $details );
+	private function fail_terminally( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $details ): void {
+		$this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $details );
 	}
 
 	/**
-	 * Resolves a valid identity-specific policy from the contract policy.
+	 * Resolves a valid identity-specific policy from the registered or default policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $identity        Complete owner-qualified job or chunked job identity.
-	 * @param   RetryPolicy $contract_policy Policy supplied by the work contract.
+	 * @param   string      $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   RetryPolicy $base_policy Registered or engine-default policy.
 	 *
 	 * @return  RetryPolicy
 	 */
-	private function retry_policy( string $identity, RetryPolicy $contract_policy ): RetryPolicy {
+	private function retry_policy( string $identity, RetryPolicy $base_policy ): RetryPolicy {
 		/**
 		 * Filters the retry policy for one work identity.
 		 *
@@ -170,22 +169,22 @@ final readonly class FailureLifecycle {
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
-		 * @param   RetryPolicy $contract_policy Retry policy supplied by the work contract.
+		 * @param   RetryPolicy $base_policy Registered or engine-default retry policy.
 		 */
-		$filtered_policy = \apply_filters( 'a8csp_jobs_engine/retry_policy/' . $identity, $contract_policy );
+		$filtered_policy = \apply_filters( 'a8csp_jobs_engine/retry_policy/' . $identity, $base_policy );
 		if ( $filtered_policy instanceof RetryPolicy ) {
 			return $filtered_policy;
 		}
 
 		$this->logger->warning(
-			'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the contract policy.',
+			'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the registered policy.',
 			array(
 				'name'          => $identity,
 				'returned_type' => \get_debug_type( $filtered_policy ),
 			)
 		);
 
-		return $contract_policy;
+		return $base_policy;
 	}
 
 	/**

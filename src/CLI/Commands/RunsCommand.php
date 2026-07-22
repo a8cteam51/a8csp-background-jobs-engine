@@ -56,7 +56,7 @@ final readonly class RunsCommand {
 	 *     $ wp background-jobs runs cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 	 *
 	 * A waiting live run has a backend delivery or retry pending. An executing run has an admitted
-	 * lifecycle action in progress, whether engine orchestration or a client callback, and a stale
+	 * lifecycle action in progress, whether engine orchestration or client execution, and a stale
 	 * heartbeat means maintenance can reclaim the abandoned execution. The `recent history` section
 	 * is bounded; `failed store` identifies failures still available to
 	 * `wp background-jobs failed-runs retry`.

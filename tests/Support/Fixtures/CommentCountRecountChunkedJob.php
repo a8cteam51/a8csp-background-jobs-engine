@@ -3,13 +3,10 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 
 /**
  * Demonstrates a chunked job that recounts comments one post per independently retried chunk.
@@ -20,7 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class CommentCountRecountChunkedJob extends AbstractChunkedJob {
+final class CommentCountRecountChunkedJob implements ChunkedJobExecution {
 	// region FIELDS AND CONSTANTS.
 
 	/**
@@ -66,60 +63,6 @@ final class CommentCountRecountChunkedJob extends AbstractChunkedJob {
 	// endregion.
 
 	// region INHERITED METHODS.
-
-	/**
-	 * Returns the stable chunked job identity registered with the engine.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	#[\Override]
-	public function get_name(): string {
-		return self::NAME;
-	}
-
-	/**
-	 * Returns the shared ceiling for one queue generation or recount invocation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  int
-	 */
-	#[\Override]
-	public function max_callback_runtime(): int {
-		return self::DEFAULT_MAX_CALLBACK_RUNTIME;
-	}
-
-	/**
-	 * Refuses a matching live comment-count recount.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  OverlapPolicy
-	 */
-	#[\Override]
-	public function overlap_policy(): OverlapPolicy {
-		return OverlapPolicy::Reject;
-	}
-
-	/**
-	 * Uses the canonical recount arguments as the overlap identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 *
-	 * @return  string|null
-	 */
-	#[\Override]
-	public function overlap_key( array $start_args ): ?string {
-		return null;
-	}
 
 	/**
 	 * Loads post IDs by the small `post_type` key carried on the start action.
@@ -214,72 +157,6 @@ final class CommentCountRecountChunkedJob extends AbstractChunkedJob {
 		 * @param   RunId $run_id  Engine-assigned chunked job run identifier.
 		 */
 		\do_action( self::RECOUNTED_HOOK, $post_id, $context->get_run_id() );
-	}
-
-	/**
-	 * Publishes the successful run identifier and original start arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $run_id                    Run identifier.
-	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
-	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
-		/**
-		 * Fires after every comment-count chunk succeeds.
-		 *
-		 * @since   1.0.0
-		 * @version 1.0.0
-		 *
-		 * @param   string                  $run_id     Engine-assigned chunked job run identifier.
-		 * @param   array<array-key, mixed> $start_args Original chunked job start arguments.
-		 */
-		\do_action( self::SUCCEEDED_HOOK, $run_id, $start_args );
-	}
-
-	/**
-	 * Publishes terminal failure detail for the client's alerting code.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   RunFailure              $failure    Persisted terminal-failure value.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
-		/**
-		 * Fires after the demo chunked job reaches terminal failure.
-		 *
-		 * @since   1.0.0
-		 * @version 1.0.0
-		 *
-		 * @param   string                  $run_id     Engine-assigned chunked job run identifier.
-		 * @param   array<array-key, mixed> $start_args Original chunked job start arguments.
-		 * @param   RunFailure              $failure    Persisted terminal-failure value.
-		 */
-		\do_action( self::FAILED_HOOK, $run_id, $start_args, $failure );
-	}
-
-	/**
-	 * Returns the bounded retry policy applied independently to each failed chunk.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  RetryPolicy
-	 */
-	#[\Override]
-	public function get_retry_policy(): RetryPolicy {
-		return new RetryPolicy( max_attempts: 3, base_delay: 5, multiplier: 2, max_delay: \MINUTE_IN_SECONDS );
 	}
 
 	// endregion.

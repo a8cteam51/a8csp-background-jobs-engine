@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -61,6 +62,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( Randomizer::class )]
+#[UsesClass( JobOptions::class )]
 #[UsesClass( RetryPolicy::class )]
 #[UsesClass( RunHistory::class )]
 #[UsesClass( RunState::class )]
@@ -92,6 +94,9 @@ final class RunTransitionsTest extends TestCase {
 	private RecordingRandomizer $randomizer;
 	private OptionRows $rows;
 	private RecordingJob $job;
+	private JobOptions $options;
+	private bool $registered;
+	private JobRegistry $work;
 	private JobKindHandler $handler;
 	/** @var array<string, KindHandlerInterface> */
 	private array $handlers;
@@ -122,7 +127,7 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * Resets every observable boundary and constructs one registered job lifecycle.
+	 * Resets every observable boundary and constructs one job lifecycle graph.
 	 *
 	 * @return  void
 	 */
@@ -145,13 +150,14 @@ final class RunTransitionsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_lifecycle_events']     = array();
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
-		$this->clock      = new FixedClock( self::NOW );
-		$this->backend    = new RecordingBackend();
-		$this->logger     = new RecordingLogger();
-		$this->randomizer = new RecordingRandomizer( 42 );
-		$this->job        = new RecordingJob( self::NAME );
-		$work             = new JobRegistry();
-		$work->register_job( self::IDENTITY, $this->job );
+		$this->clock                = new FixedClock( self::NOW );
+		$this->backend              = new RecordingBackend();
+		$this->logger               = new RecordingLogger();
+		$this->randomizer           = new RecordingRandomizer( 42 );
+		$this->job                  = new RecordingJob( self::NAME );
+		$this->options              = new JobOptions();
+		$this->registered           = false;
+		$this->work                 = new JobRegistry();
 		$this->wpdb                 = new WpdbLockSpy();
 		$this->rows                 = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
@@ -160,10 +166,10 @@ final class RunTransitionsTest extends TestCase {
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
 		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
-		$this->handler              = new JobKindHandler( $work, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
+		$this->handler              = new JobKindHandler( $this->work, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
 		$this->handlers             = array( $this->handler->key() => $this->handler );
 
-		$this->dispatcher = new Dispatcher( $work, $this->handlers, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
+		$this->dispatcher = new Dispatcher( $this->work, $this->handlers, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
 	}
 
 	// endregion.
@@ -199,7 +205,7 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A stale job delivery exits after its authoritative read and before heartbeats, callbacks, or writes.
+	 * A stale job delivery exits after its authoritative read and before heartbeats, execution, or writes.
 	 *
 	 * @return  void
 	 */
@@ -214,7 +220,6 @@ final class RunTransitionsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 		$this->wpdb->recorded_queries                = array();
-		$this->job->max_callback_runtime_throwable   = new \RuntimeException( 'Stale delivery must not resolve callback liveness.' );
 
 		$this->handle_job_run_action( self::RUN_ID, 1 );
 
@@ -249,7 +254,6 @@ final class RunTransitionsTest extends TestCase {
 		$this->wpdb->recorded_queries                = array();
 		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
-		$this->job->max_callback_runtime_throwable   = new \RuntimeException( 'Duplicate delivery must not resolve callback liveness.' );
 
 		$duplicate = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 
@@ -451,8 +455,8 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_resets_the_counter_after_a_successful_retry(): void {
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->job->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->options        = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) );
+		$this->job->throwable = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
@@ -472,8 +476,8 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_a_scheduled_retry_executes(): void {
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->job->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->options        = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) );
+		$this->job->throwable = new \RuntimeException( 'Transient failure.' );
 		$this->prepare_run_action();
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
@@ -598,6 +602,7 @@ final class RunTransitionsTest extends TestCase {
 
 	/** A latest-pointer write failure is logged without rejecting an otherwise accepted run. */
 	public function test_enqueue_logs_a_latest_pointer_write_failure_and_continues(): void {
+		$this->register_job();
 		$this->wpdb->before_next( 'insert', static function (): void {} );
 		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
 			$this->wpdb->before_next(
@@ -625,6 +630,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_does_not_supersede_an_owned_run_after_pointer_eviction(): void {
+		$this->register_job();
 		$run_ids = array();
 		for ( $index = 0; 21 > $index; ++$index ) {
 			$this->randomizer->value = 100 + $index;
@@ -775,8 +781,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
 
-		$this->terminal_transitions->fail_run( $this->handler, $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
-		$this->terminal_transitions->fail_run( $this->handler, $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_run( $this->handler, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_run( $this->handler, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );
@@ -907,6 +913,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	private function prepare_run_action(): void {
+		$this->register_job();
 		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
@@ -929,6 +936,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	private function handle_job_run_action( string $run_id, int $action_sequence ): void {
+		$this->register_job();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $this->claim_delivery_ownership( $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
@@ -936,6 +944,20 @@ final class RunTransitionsTest extends TestCase {
 		}
 
 		$this->handler->deliver( self::IDENTITY, $run_id, $state, $run_store );
+	}
+
+	/**
+	 * Registers the definition after each test has declared its immutable policy.
+	 *
+	 * @return  void
+	 */
+	private function register_job(): void {
+		if ( $this->registered ) {
+			return;
+		}
+
+		$this->work->register( self::IDENTITY, $this->job->definition( $this->options ) );
+		$this->registered = true;
 	}
 
 	/**

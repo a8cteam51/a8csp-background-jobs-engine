@@ -3,6 +3,10 @@ includes:
 
 parameters:
     level: max
+    # The locked representation inventory uses one category-complete runtime declaration probe;
+    # its current entries do not narrow the probe's accepted declaration categories.
+    dynamicConstantNames:
+        'A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\PublicModelShapeTest::PUBLIC_MODEL_TYPES': list<string>
     # The entry file's define()s are invisible to cross-file analysis (symbol discovery does not
     # read define() calls), so level max needs the constants valued here; the template's bare
     # \constant() style only survives at the shared config's lower level.

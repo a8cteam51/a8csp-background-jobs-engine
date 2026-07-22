@@ -84,8 +84,8 @@ final class DispatcherCancelTest extends TestCase {
 		$this->client      = $this->rig->client( self::OWNER );
 		$this->job         = new RecordingJob( self::JOB_NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
-		$this->client->jobs()->register( $this->job );
-		$this->client->chunked_jobs()->register( $this->chunked_job );
+		$this->client->jobs()->register( $this->job->definition() );
+		$this->client->jobs()->register( $this->chunked_job->definition() );
 		$this->job_fixtures = StoreFixtureBuilder::for_identity( self::JOB_IDENTITY );
 		$this->reset_backend_observations();
 	}

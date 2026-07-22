@@ -101,7 +101,7 @@ final class EngineFacadeTest extends TestCase {
 	public function test_job_facade_round_trips_one_public_run(): void {
 		$client = $this->rig->client( 'facade-tests' );
 		$job    = new RecordingJob( 'email-digest' );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 
 		$result = $client->jobs()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
 
@@ -123,7 +123,7 @@ final class EngineFacadeTest extends TestCase {
 	public function test_chunked_job_facade_round_trips_one_public_run(): void {
 		$client      = $this->rig->client( 'facade-tests' );
 		$chunked_job = new RecordingChunkedJob( 'catalog-sync' );
-		$client->chunked_jobs()->register( $chunked_job );
+		$client->jobs()->register( $chunked_job->definition() );
 
 		$result = $client->chunked_jobs()->start( 'catalog-sync', array( 'site_id' => 7 ), priority: 23 );
 
@@ -132,7 +132,6 @@ final class EngineFacadeTest extends TestCase {
 		$this->rig->run_due();
 		$this->rig->run_due();
 		self::assertSame( array( array( 'site_id' => 7 ) ), $chunked_job->generate_calls );
-		self::assertCount( 1, $chunked_job->completed_calls );
 		$this->rig->assert_completed();
 	}
 
@@ -155,10 +154,10 @@ final class EngineFacadeTest extends TestCase {
 		self::assertSame( ErrorCode::UnknownWork, $unknown->error->code );
 		self::assertSame( array(), $this->rig->backend()->calls );
 
-		$client->jobs()->register( new RecordingJob( 'shared' ) );
+		$client->jobs()->register( ( new RecordingJob( 'shared' ) )->definition() );
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work identity "facade-tests:shared" is already registered as a job; it cannot also be registered as a chunked_job.' );
-		$client->chunked_jobs()->register( new RecordingChunkedJob( 'shared' ) );
+		$client->jobs()->register( ( new RecordingChunkedJob( 'shared' ) )->definition() );
 	}
 
 	/**
@@ -176,7 +175,7 @@ final class EngineFacadeTest extends TestCase {
 	public function test_retry_failed_consumes_authoritative_storage_without_option_function_writes(): void {
 		$identity = 'facade-tests:email-digest';
 		$client   = $this->rig->client( 'facade-tests' );
-		$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+		$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		$failure               = new RunFailure( identity: $identity, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
 		$this->rig->wpdb()->put( $option_name, $raw );
@@ -202,7 +201,7 @@ final class EngineFacadeTest extends TestCase {
 	 */
 	public function test_cancel_terminalizes_a_waiting_public_run(): void {
 		$client = $this->rig->client( 'facade-tests' );
-		$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+		$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		$enqueued = $client->jobs()->enqueue( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
 		if ( ! \is_string( $enqueued->value ) ) {

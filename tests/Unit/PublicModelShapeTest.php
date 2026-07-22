@@ -6,10 +6,11 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the representation layer to singular concept namespaces with by-kind job sub-namespaces.
+ * Pins the representation layer to the composition authoring surface: definitions describe jobs,
+ * execution roles carry behavior, and no public job base class or authoring interface exists.
  *
  * @load-bearing structural-guard
- * @pin-rationale The default job is the unqualified `Job\AbstractJob`; only special kinds carry a sub-namespace, and the plural namespace grain is reserved for capability managers.
+ * @pin-rationale Authoring composes a JobDefinition over a plain execution object; the engine owns kinds and lifecycle, so there is nothing to inherit and no class-method lifecycle callback surface.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -24,19 +25,16 @@ final class PublicModelShapeTest extends TestCase {
 	 * Every public representation type, by its root-relative concept name.
 	 */
 	private const array PUBLIC_MODEL_TYPES = array(
-		'Job\\JobInterface',
-		'Job\\JobDefaults',
-		'Job\\AbstractJob',
-		'Job\\CallableJob',
+		'Job\\JobDefinition',
+		'Job\\JobKind',
+		'Job\\JobOptions',
+		'Job\\JobExecution',
 		'Job\\RetryPolicy',
 		'Job\\OverlapPolicy',
 		'Job\\RunContext',
 		'Job\\NonRetryableException',
-		'Job\\Chunked\\ChunkedJobInterface',
-		'Job\\Chunked\\AbstractChunkedJob',
+		'Job\\Chunked\\ChunkedJobExecution',
 		'Job\\Chunked\\ChunkContext',
-		'Job\\Batch\\BatchJobInterface',
-		'Job\\Batch\\AbstractBatchJob',
 		'Run\\Run',
 		'Run\\RunId',
 		'Run\\RunStatus',
@@ -61,6 +59,20 @@ final class PublicModelShapeTest extends TestCase {
 		'OverlapPolicy',
 		'ErrorCode',
 		'NonRetryableException',
+	);
+
+	/**
+	 * Retired authoring-surface names: base classes, authoring interfaces, and callable wrappers.
+	 */
+	private const array RETIRED_AUTHORING_TYPES = array(
+		'Job\\JobInterface',
+		'Job\\JobDefaults',
+		'Job\\AbstractJob',
+		'Job\\CallableJob',
+		'Job\\Chunked\\ChunkedJobInterface',
+		'Job\\Chunked\\AbstractChunkedJob',
+		'Job\\Batch\\BatchJobInterface',
+		'Job\\Batch\\AbstractBatchJob',
 	);
 
 	/**
@@ -112,99 +124,78 @@ final class PublicModelShapeTest extends TestCase {
 	}
 
 	/**
-	 * The default job base is complete for one-off work: extend it, name it, implement handle().
+	 * The execution roles are plain interfaces carrying exactly their execution methods.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_the_default_job_base_is_the_unqualified_abstract_job(): void {
-		$reflection = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\AbstractJob' );
+	public function test_the_execution_roles_carry_exactly_their_execution_methods(): void {
+		$job = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\JobExecution' );
+		self::assertTrue( $job->isInterface() );
+		self::assertSame( array( 'handle' ), self::method_names( $job ), 'JobExecution must require exactly handle().' );
 
-		self::assertTrue( $reflection->isAbstract() );
-		self::assertTrue( $reflection->implementsInterface( self::ROOT_NAMESPACE . 'Job\\JobInterface' ) );
-		$used_traits = \class_uses( $reflection->getName() );
-		self::assertIsArray( $used_traits );
-		self::assertContains( self::ROOT_NAMESPACE . 'Job\\JobDefaults', $used_traits, 'AbstractJob must share cross-kind defaults through the JobDefaults trait.' );
+		$handle = $job->getMethod( 'handle' );
+		self::assertCount( 2, $handle->getParameters() );
+		$context = $handle->getParameters()[1]->getType();
+		self::assertInstanceOf( \ReflectionNamedType::class, $context );
+		self::assertSame( self::ROOT_NAMESPACE . 'Job\\RunContext', $context->getName() );
 
-		$handle = $reflection->getMethod( 'handle' );
-		self::assertTrue( $handle->isAbstract(), 'AbstractJob must leave handle() to the extending job.' );
-		self::assertSame( $reflection->getName(), $handle->getDeclaringClass()->getName(), 'handle() must be declared by AbstractJob itself.' );
+		$chunked = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\Chunked\\ChunkedJobExecution' );
+		self::assertTrue( $chunked->isInterface() );
+		self::assertSame( array( 'generate_queue', 'process_chunk' ), self::method_names( $chunked ), 'ChunkedJobExecution must require exactly queue generation and chunk processing.' );
 
-		$parameters = $handle->getParameters();
-		self::assertCount( 2, $parameters );
-		$context_type = $parameters[1]->getType();
-		self::assertInstanceOf( \ReflectionNamedType::class, $context_type );
-		self::assertSame( self::ROOT_NAMESPACE . 'Job\\RunContext', $context_type->getName() );
+		$generate = $chunked->getMethod( 'generate_queue' );
+		$return   = $generate->getReturnType();
+		self::assertInstanceOf( \ReflectionNamedType::class, $return );
+		self::assertSame( 'iterable', $return->getName(), 'generate_queue() must return an iterable queue.' );
 
-		self::assertSame( array( 'get_name', 'handle' ), self::abstract_method_names( $reflection ), 'Extending AbstractJob must require exactly a name and a handler.' );
+		$process = $chunked->getMethod( 'process_chunk' );
+		self::assertCount( 2, $process->getParameters() );
+		$chunk_context = $process->getParameters()[1]->getType();
+		self::assertInstanceOf( \ReflectionNamedType::class, $chunk_context );
+		self::assertSame( self::ROOT_NAMESPACE . 'Job\\Chunked\\ChunkContext', $chunk_context->getName() );
 	}
 
 	/**
-	 * The chunked kind is a sub-namespace base that shares the cross-kind defaults without handle().
+	 * The definition and kind values compose through named constructors, never `new`.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_the_chunked_kind_extends_the_shared_defaults_without_a_handler(): void {
-		$reflection = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\Chunked\\AbstractChunkedJob' );
+	public function test_the_definition_and_kind_compose_through_named_constructors(): void {
+		$definition = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\JobDefinition' );
+		self::assertTrue( $definition->isFinal() && $definition->isReadOnly() );
+		$constructor = $definition->getConstructor();
+		self::assertNotNull( $constructor );
+		self::assertFalse( $constructor->isPublic(), 'JobDefinition must compose through its named constructors.' );
+		foreach ( array( 'job', 'chunked_job', 'closure', 'for_kind' ) as $named ) {
+			self::assertTrue( $definition->hasMethod( $named ), 'JobDefinition must offer ' . $named . '().' );
+			$method = $definition->getMethod( $named );
+			self::assertTrue( $method->isStatic() && $method->isPublic(), 'JobDefinition::' . $named . '() must be a public named constructor.' );
+		}
 
-		self::assertTrue( $reflection->isAbstract() );
-		self::assertTrue( $reflection->implementsInterface( self::ROOT_NAMESPACE . 'Job\\Chunked\\ChunkedJobInterface' ) );
-		$used_traits = \class_uses( $reflection->getName() );
-		self::assertIsArray( $used_traits );
-		self::assertContains( self::ROOT_NAMESPACE . 'Job\\JobDefaults', $used_traits, 'AbstractChunkedJob must share cross-kind defaults through the JobDefaults trait.' );
+		$kind = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\JobKind' );
+		self::assertTrue( $kind->isFinal() && $kind->isReadOnly() );
+		foreach ( array( 'job', 'chunked_job', 'from' ) as $named ) {
+			self::assertTrue( $kind->hasMethod( $named ), 'JobKind must offer ' . $named . '().' );
+			$method = $kind->getMethod( $named );
+			self::assertTrue( $method->isStatic() && $method->isPublic(), 'JobKind::' . $named . '() must be a public named constructor.' );
+		}
+		self::assertFalse( $kind->hasProperty( 'execution_contract' ), 'JobKind carries no execution contract; compatibility checks belong to the resolved handler.' );
 
-		self::assertFalse( $reflection->hasMethod( 'handle' ), 'The chunked kind must not inherit the one-off handler.' );
-		self::assertSame( array( 'generate_queue', 'get_name', 'process_chunk' ), self::abstract_method_names( $reflection ), 'Extending AbstractChunkedJob must require exactly a name, queue generation, and chunk processing.' );
-
-		$contract = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\Chunked\\ChunkedJobInterface' );
-		self::assertTrue( $contract->implementsInterface( self::ROOT_NAMESPACE . 'Job\\JobInterface' ) );
+		$options = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\JobOptions' );
+		self::assertTrue( $options->isFinal() && $options->isReadOnly() );
+		foreach ( array( 'max_runtime', 'retry', 'overlap', 'overlap_key' ) as $policy ) {
+			self::assertTrue( $options->hasProperty( $policy ), 'JobOptions must carry the ' . $policy . ' policy.' );
+		}
 	}
 
 	/**
-	 * The batch kind scaffold declares the sub-namespace contract pair on the shared defaults.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_the_batch_kind_scaffold_declares_the_contract_pair(): void {
-		$reflection = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\Batch\\AbstractBatchJob' );
-
-		self::assertTrue( $reflection->isAbstract() );
-		self::assertTrue( $reflection->implementsInterface( self::ROOT_NAMESPACE . 'Job\\Batch\\BatchJobInterface' ) );
-		$used_traits = \class_uses( $reflection->getName() );
-		self::assertIsArray( $used_traits );
-		self::assertContains( self::ROOT_NAMESPACE . 'Job\\JobDefaults', $used_traits, 'AbstractBatchJob must share cross-kind defaults through the JobDefaults trait.' );
-
-		$contract = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\Batch\\BatchJobInterface' );
-		self::assertTrue( $contract->implementsInterface( self::ROOT_NAMESPACE . 'Job\\JobInterface' ) );
-	}
-
-	/**
-	 * The callable-backed job is a final leaf of the default base.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_the_callable_job_is_a_final_leaf_of_the_default_base(): void {
-		$reflection = new \ReflectionClass( self::ROOT_NAMESPACE . 'Job\\CallableJob' );
-
-		self::assertTrue( $reflection->isFinal() );
-		$parent = $reflection->getParentClass();
-		self::assertNotFalse( $parent );
-		self::assertSame( self::ROOT_NAMESPACE . 'Job\\AbstractJob', $parent->getName() );
-	}
-
-	/**
-	 * No retired root-namespace, machinery-contract, or OneOff name survives.
+	 * No retired root-namespace, authoring-surface, machinery-contract, or OneOff name survives.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -214,6 +205,10 @@ final class PublicModelShapeTest extends TestCase {
 	public function test_no_retired_name_survives(): void {
 		foreach ( self::RETIRED_ROOT_TYPES as $short_name ) {
 			self::assert_type_absent( self::ROOT_NAMESPACE . $short_name );
+		}
+
+		foreach ( self::RETIRED_AUTHORING_TYPES as $relative_name ) {
+			self::assert_type_absent( self::ROOT_NAMESPACE . $relative_name );
 		}
 
 		foreach ( self::RETIRED_INTERNAL_TYPES as $relative_name ) {
@@ -269,7 +264,7 @@ final class PublicModelShapeTest extends TestCase {
 	}
 
 	/**
-	 * Returns the sorted abstract-method names extending code must implement.
+	 * Returns the sorted public-method names an interface requires.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -277,13 +272,13 @@ final class PublicModelShapeTest extends TestCase {
 	 * @template T of object
 	 * @phpstan-param \ReflectionClass<T> $reflection
 	 *
-	 * @param   \ReflectionClass $reflection Reflected abstract base.
+	 * @param   \ReflectionClass $reflection Reflected interface.
 	 *
 	 * @return  list<string>
 	 */
-	private static function abstract_method_names( \ReflectionClass $reflection ): array {
+	private static function method_names( \ReflectionClass $reflection ): array {
 		$names = array();
-		foreach ( $reflection->getMethods( \ReflectionMethod::IS_ABSTRACT ) as $method ) {
+		foreach ( $reflection->getMethods() as $method ) {
 			$names[] = $method->getName();
 		}
 		\sort( $names );

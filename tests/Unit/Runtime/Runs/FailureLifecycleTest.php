@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -11,11 +11,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
@@ -71,7 +72,7 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * Boots one registered job against deterministic interface fakes.
+	 * Boots one job execution fixture against deterministic interface fakes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -82,10 +83,9 @@ final class FailureLifecycleTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
-		$this->job    = new RecordingJob( self::NAME );
-		$this->client->jobs()->register( $this->job );
+		$this->rig                      = EngineRig::set_up( self::NOW );
+		$this->client                   = $this->rig->client( self::OWNER );
+		$this->job                      = new RecordingJob( self::NAME );
 		$this->fixtures                 = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls    = array();
 		$this->rig->randomizer()->calls = array();
@@ -116,7 +116,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * A throwing job that loses ownership supersedes before retry adjudication.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Fixture-built foreign lock and pointer generations replace authority inside the real throwing callback before failure fencing.
+	 * @pin-rationale Fixture-built foreign lock and pointer generations replace authority inside the real throwing execution before failure fencing.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -150,8 +150,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_retry_policy_cap_failure_after_ownership_loss(): void {
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
-		$this->job->throwable    = new \RuntimeException( 'Transient failure.' );
+		$this->job->throwable = new \RuntimeException( 'Transient failure.' );
 		$this->set_filter_value(
 			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
 			function (): RetryPolicy {
@@ -160,7 +159,7 @@ final class FailureLifecycleTest extends TestCase {
 				return new RetryPolicy( max_attempts: 1 );
 			}
 		);
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 
@@ -181,7 +180,6 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_before_retry_schedule_after_retry_scheduled_listener_ownership_loss(): void {
-		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
 		$this->observe_action(
@@ -190,7 +188,7 @@ final class FailureLifecycleTest extends TestCase {
 				$this->install_foreign_generation();
 			}
 		);
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 
@@ -207,10 +205,9 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_reschedules_an_ordinary_failure_below_the_cap(): void {
-		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = 17;
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 
@@ -244,24 +241,20 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * A dual-interface contract registered as a job retains job retry routing.
+	 * A dual-role execution registered as a job retains job retry routing.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The work registry records job while the object satisfies both interfaces; the persisted lowercase kind and run-stage retry prove the job handler owns the generic delivery.
+	 * @pin-rationale The definition records job while the execution object satisfies both roles; the persisted lowercase kind and run-stage retry prove the job handler owns the generic delivery.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_retry_uses_the_registered_job_kind_for_a_dual_interface_contract(): void {
-		$name                = 'dual-kind-job';
-		$identity            = self::OWNER . ':' . $name;
-		$terminal_failures   = 0;
-		$on_terminal_failure = static function () use ( &$terminal_failures ): void {
-			++$terminal_failures;
-		};
-		$this->client->jobs()->register( $this->dual_kind_job( $name, $on_terminal_failure ) );
+	public function test_retry_uses_the_registered_job_kind_for_a_dual_role_execution(): void {
+		$name     = 'dual-kind-job';
+		$identity = self::OWNER . ':' . $name;
+		$this->client->jobs()->register( $this->dual_kind_job( $name ) );
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->jobs()->enqueue( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
@@ -296,7 +289,13 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertSame( 1, $terminal_failures );
+		$failed = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
+		self::assertCount( 1, $failed );
+		self::assertCount( 1, $failed[0] );
+		$failure = $failed[0][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( $identity, $failure->identity );
+		self::assertSame( $result->value, (string) $failure->run_id );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
@@ -312,10 +311,9 @@ final class FailureLifecycleTest extends TestCase {
 	 */
 	#[DataProvider( 'recorded_jitter_delay' )]
 	public function test_retry_call_site_requests_full_jitter_bounds_and_passes_recorded_delay_to_retry_hook_and_schedule( int $recorded_delay ): void {
-		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = $recorded_delay;
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 
@@ -357,10 +355,9 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_stops_exactly_at_the_max_attempts_boundary(): void {
-		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = 5;
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 		$this->rig->run_due();
@@ -380,10 +377,9 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_honors_the_name_specific_retry_policy_filter(): void {
-		$contract                = new RetryPolicy( max_attempts: 3 );
-		$observed                = null;
-		$this->job->retry_policy = $contract;
-		$this->job->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$definition_policy    = new RetryPolicy( max_attempts: 3 );
+		$observed             = null;
+		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
 			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
 			static function ( RetryPolicy $policy ) use ( &$observed ): RetryPolicy {
@@ -392,32 +388,30 @@ final class FailureLifecycleTest extends TestCase {
 				return new RetryPolicy( max_attempts: 1 );
 			}
 		);
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: $definition_policy ) );
 
 		$this->rig->run_due();
 
-		self::assertSame( $contract, $observed );
+		self::assertSame( $definition_policy, $observed );
 		self::assertSame( 1, $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() )->attempts );
 		$this->rig->assert_no_retry();
 	}
 
 	/**
-	 * Failure adjudication resets callback credit before policy resolution.
+	 * Failure adjudication resets execution lease credit before policy resolution.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Callback-time production lock and run bytes are the only evidence that long-runtime credit is removed before user-controlled policy code runs.
+	 * @pin-rationale Execution-time production lock and run bytes are the only evidence that long-runtime credit is removed before user-controlled policy code runs.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_run_action_resets_callback_credit_before_retry_policy_resolution(): void {
-		$lock                            = null;
-		$run                             = null;
-		$this->job->max_callback_runtime = 1_200;
-		$this->job->retry_policy         = new RetryPolicy( max_attempts: 1 );
-		$this->job->throwable            = new \RuntimeException( 'Database unavailable.' );
+	public function test_handle_run_action_resets_execution_lease_credit_before_retry_policy_resolution(): void {
+		$lock                 = null;
+		$run                  = null;
+		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
 			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
 			function ( RetryPolicy $policy ) use ( &$lock, &$run ): RetryPolicy {
@@ -427,7 +421,7 @@ final class FailureLifecycleTest extends TestCase {
 				return $policy;
 			}
 		);
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( max_runtime: 1_200, retry: new RetryPolicy( max_attempts: 1 ) ) );
 		$this->rig->clock()->timestamp = self::NOW + 90;
 
 		$this->rig->run_due();
@@ -438,7 +432,7 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * A foreign policy value falls back to the contract and records its warning.
+	 * A foreign policy value falls back to the definition policy and records its warning.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -446,11 +440,10 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_falls_back_and_warns_for_a_foreign_retry_policy(): void {
-		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = 7;
 		$this->set_filter_value( 'a8csp_jobs_engine/retry_policy/' . self::IDENTITY, 'invalid-policy' );
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 
@@ -470,15 +463,14 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_throwing_retry_policy_filter(): void {
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 2 );
-		$this->job->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
 			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
 			static function (): never {
 				throw new \DomainException( 'Retry policy filter exploded.' );
 			}
 		);
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2 ) ) );
 
 		$this->rig->run_due();
 
@@ -500,8 +492,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_when_throwing_retry_policy_filter_loses_ownership(): void {
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 2 );
-		$this->job->throwable    = new \RuntimeException( 'Database unavailable.' );
+		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		$this->set_filter_value(
 			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
 			function (): never {
@@ -510,7 +501,7 @@ final class FailureLifecycleTest extends TestCase {
 				throw new \DomainException( 'Retry policy filter exploded.' );
 			}
 		);
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2 ) ) );
 
 		$this->rig->run_due();
 
@@ -527,11 +518,10 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_throwing_retry_scheduled_listener(): void {
-		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = 7;
 		$this->set_action_throwable( 'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY, new \RuntimeException( 'Retry-scheduled listener exploded.' ) );
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 
@@ -552,7 +542,6 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_after_retry_preparation_error_loses_ownership(): void {
-		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = 7;
 		$this->observe_action(
@@ -562,7 +551,7 @@ final class FailureLifecycleTest extends TestCase {
 			}
 		);
 		$this->set_action_throwable( 'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY, new \RuntimeException( 'Retry-scheduled listener exploded.' ) );
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 
@@ -581,11 +570,10 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_terminalizes_a_retry_reschedule_failure(): void {
-		$this->job->retry_policy                          = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 		$this->job->throwable                             = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value                   = 7;
 		$this->rig->backend()->results['schedule_single'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore the scheduler before retrying the job.' ) );
-		$this->enqueue_job();
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
 
 		$this->rig->run_due();
 
@@ -603,9 +591,10 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_handle_run_action_fails_terminally_when_the_policy_has_no_retry(): void {
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 1 );
-
-		$this->assert_terminal_job_failure( new \RuntimeException( 'Database unavailable.' ) );
+		$this->assert_terminal_job_failure(
+			new \RuntimeException( 'Database unavailable.' ),
+			new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) )
+		);
 	}
 
 	/**
@@ -629,9 +618,10 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunked_job_validation_exception_is_not_reclassified_on_the_job_path(): void {
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 1 );
-
-		$this->assert_terminal_job_failure( InvalidChunkException::nonPortable() );
+		$this->assert_terminal_job_failure(
+			InvalidChunkException::nonPortable(),
+			new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) )
+		);
 	}
 
 	/**
@@ -645,9 +635,8 @@ final class FailureLifecycleTest extends TestCase {
 	public function test_chunked_job_validation_exception_retains_its_engine_authored_diagnostic(): void {
 		$chunked_job                    = new RecordingChunkedJob( 'bounded-chunked-job' );
 		$chunked_job->queue             = array( array( 'chunk' => 'current' ) );
-		$chunked_job->retry_policy      = new RetryPolicy( max_attempts: 1 );
 		$chunked_job->process_throwable = InvalidChunkException::chunkTooLarge( 8_193, 8_192 );
-		$this->client->chunked_jobs()->register( $chunked_job );
+		$this->client->jobs()->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
 		$result = $this->client->chunked_jobs()->start( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
@@ -669,9 +658,12 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   JobOptions|null $options Optional policy declaration.
+	 *
 	 * @return  string
 	 */
-	private function enqueue_job(): string {
+	private function enqueue_job( ?JobOptions $options = null ): string {
+		$this->client->jobs()->register( $this->job->definition( $options ) );
 		$retry_value                    = $this->rig->randomizer()->value;
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
@@ -689,13 +681,14 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Throwable $throwable Job failure.
+	 * @param   \Throwable     $throwable Job failure.
+	 * @param   JobOptions|null $options   Optional policy declaration.
 	 *
 	 * @return  void
 	 */
-	private function assert_terminal_job_failure( \Throwable $throwable ): void {
+	private function assert_terminal_job_failure( \Throwable $throwable, ?JobOptions $options = null ): void {
 		$this->job->throwable = $throwable;
-		$this->enqueue_job();
+		$this->enqueue_job( $options );
 
 		$this->rig->run_due();
 
@@ -705,53 +698,17 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * Creates one throwing contract that satisfies both work-kind interfaces.
+	 * Creates one throwing job definition whose execution satisfies both installed roles.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $name                Job name.
-	 * @param   \Closure $on_terminal_failure Records the terminal callback.
+	 * @param   string $name Job name.
 	 *
-	 * @return  AbstractJob
+	 * @return  JobDefinition
 	 */
-	private function dual_kind_job( string $name, \Closure $on_terminal_failure ): AbstractJob {
-		return new class( $name, $on_terminal_failure ) extends AbstractJob implements ChunkedJobInterface {
-			/**
-			 * Constructor.
-			 *
-			 * @param   string   $name                Job name.
-			 * @param   \Closure $on_terminal_failure Records the terminal callback.
-			 */
-			public function __construct(
-				private readonly string $name,
-				private readonly \Closure $on_terminal_failure,
-			) {}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function get_name(): string {
-				return $this->name;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function max_callback_runtime(): int {
-				return self::DEFAULT_MAX_CALLBACK_RUNTIME;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function overlap_policy(): OverlapPolicy {
-				return OverlapPolicy::Reject;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function overlap_key( array $start_args ): ?string {
-				return null;
-			}
-
+	private function dual_kind_job( string $name ): JobDefinition {
+		$execution = new class() implements JobExecution, ChunkedJobExecution {
 			/**
 			 * Fails every attempt with a retryable throwable.
 			 *
@@ -763,12 +720,6 @@ final class FailureLifecycleTest extends TestCase {
 			#[\Override]
 			public function handle( array $args, RunContext $context ): void {
 				throw new \RuntimeException( 'Database unavailable.' );
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function get_retry_policy(): RetryPolicy {
-				return new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 );
 			}
 
 			/**
@@ -795,32 +746,13 @@ final class FailureLifecycleTest extends TestCase {
 			#[\Override]
 			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
 
-			/**
-			 * Observes nothing.
-			 *
-			 * @param   string                  $run_id                    Run identifier.
-			 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
-			 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
-			 *
-			 * @return  void
-			 */
-			#[\Override]
-			public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {}
-
-			/**
-			 * Records the terminal callback.
-			 *
-			 * @param   string                  $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-			 * @param   RunFailure              $failure    Persisted terminal-failure value.
-			 *
-			 * @return  void
-			 */
-			#[\Override]
-			public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
-				( $this->on_terminal_failure )();
-			}
 		};
+
+		return JobDefinition::job(
+			$name,
+			$execution,
+			new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) )
+		);
 	}
 
 	/**
@@ -1028,7 +960,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   string $hook_name Filter hook name.
-	 * @param   mixed  $value     Filter return or callback.
+	 * @param   mixed  $value     Filter return or callable.
 	 *
 	 * @return  void
 	 */
@@ -1064,7 +996,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   string   $hook_name Exact action hook.
-	 * @param   \Closure $observe   Observation callback.
+	 * @param   \Closure $observe   Observation callable.
 	 *
 	 * @return  void
 	 */

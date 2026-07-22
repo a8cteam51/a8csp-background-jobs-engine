@@ -101,7 +101,7 @@ final readonly class EngineError implements ErrorInterface {
 	}
 
 	/**
-	 * Converts one callback throwable into engine failure detail.
+	 * Converts one execution throwable into engine failure detail.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

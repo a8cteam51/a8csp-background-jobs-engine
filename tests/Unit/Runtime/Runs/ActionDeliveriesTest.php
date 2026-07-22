@@ -7,10 +7,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -48,6 +50,9 @@ final class ActionDeliveriesTest extends TestCase {
 	private EngineRig $rig;
 	private RecordingJob $job;
 
+	/** @var (\Closure(array<array-key, mixed>): ?string)|null */
+	private ?\Closure $overlap_key_resolver = null;
+
 	// endregion.
 
 	// region LIFECYCLE.
@@ -77,11 +82,7 @@ final class ActionDeliveriesTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
-		$this->job    = new RecordingJob( self::NAME );
-		$this->client->jobs()->register( $this->job );
-		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->boot();
 	}
 
 	/**
@@ -116,8 +117,8 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_registered_delivery_hooks_drive_every_chunked_job_stage(): void {
 		$chunked_job        = new RecordingChunkedJob( 'hook-registration-probe' );
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
-		$this->client->chunked_jobs()->register( $chunked_job );
-		$result = $this->client->chunked_jobs()->start( $chunked_job->get_name(), self::ARGS );
+		$this->client->jobs()->register( $chunked_job->definition() );
+		$result = $this->client->chunked_jobs()->start( 'hook-registration-probe', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
@@ -131,7 +132,6 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( self::ARGS, $chunked_job->generate_contexts[0]->get_start_args() );
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] );
-		self::assertCount( 1, $chunked_job->completed_calls );
 		$this->rig->assert_completed();
 	}
 
@@ -144,7 +144,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_overlap_key_collapses_different_arguments_until_completion_then_allows_reuse(): void {
-		$this->job->overlap_key_resolver = static fn ( array $args ): string => 'site-7-digest';
+		$this->overlap_key_resolver = static fn ( array $args ): string => 'site-7-digest';
 
 		$successor_args = array(
 			'site_id' => 8,
@@ -184,16 +184,6 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertCount( 1, $this->job->contexts );
 		self::assertSame( $run_id, (string) $this->job->contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $this->job->contexts[0]->get_start_args() );
-		self::assertSame(
-			array(
-				array(
-					'run_id'                    => $run_id,
-					'start_args'                => self::ARGS,
-					'previous_completed_run_id' => null,
-				),
-			),
-			$this->job->completed_calls
-		);
 		$named_completed = $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY );
 		$public_run_id   = $named_completed[0][0] ?? null;
 		self::assertInstanceOf( RunId::class, $public_run_id );
@@ -214,31 +204,34 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * A terminal one-off failure invokes the registered job callback once through the engine effect.
+	 * A terminal one-off failure emits one public failed hook payload.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_terminal_failure_invokes_the_one_off_job_callback_once(): void {
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 1 );
-		$this->job->throwable    = new \RuntimeException( 'Terminal job failure.' );
-		$run_id                  = $this->enqueue_job();
+	public function test_terminal_failure_emits_the_failed_hook_once(): void {
+		$this->restart_with_options( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) );
+		$this->job->throwable = new \RuntimeException( 'Terminal job failure.' );
+		$run_id               = $this->enqueue_job();
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->job->failed_calls );
-		self::assertSame( $run_id, $this->job->failed_calls[0]['run_id'] );
-		self::assertSame( self::ARGS, $this->job->failed_calls[0]['start_args'] );
+		$failed = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
+		self::assertCount( 1, $failed );
+		$failure = $failed[0][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( $run_id, (string) $failure->run_id );
+		self::assertSame( self::IDENTITY, $failure->identity );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
 	/**
-	 * A job without an override receives the shared callback liveness credit.
+	 * A job without an override receives the shared execution liveness credit.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The callback observes the credited lock generation while production delivery owns it; no public result exposes an in-flight lease.
+	 * @pin-rationale The execution observes the credited lock generation while production delivery owns it; no public result exposes an in-flight lease.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -246,50 +239,27 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_delivery_credits_the_default_runtime_before_job_execution(): void {
-		$this->assert_callback_lease( JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
+		$this->assert_execution_lease( LockWindows::DEFAULT_EXECUTION_LEASE );
 	}
 
 	/**
-	 * Delivery clamps invalid and runaway declarations before crediting callback liveness.
+	 * Delivery clamps invalid and runaway declarations before crediting execution liveness.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The callback-time lock generation is the concurrency contract that prevents a long-running owner from being reclaimed early.
+	 * @pin-rationale The execution-time lock generation is the concurrency contract that prevents a long-running owner from being reclaimed early.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $declared       Declared callback runtime.
+	 * @param   int $declared       Declared execution runtime.
 	 * @param   int $expected_lease Expected credited runtime.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'bounded_runtime_values' )]
 	public function test_run_delivery_bounds_the_declared_runtime( int $declared, int $expected_lease ): void {
-		$this->job->max_callback_runtime = $declared;
-		$this->assert_callback_lease( $expected_lease );
-	}
-
-	/**
-	 * A throwing runtime declaration falls back to the default lease.
-	 *
-	 * @load-bearing concurrency
-	 * @pin-rationale The declaration failure occurs before the callback lease exists, so the in-flight lock bytes are the only evidence that fallback liveness was credited.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_run_delivery_defaults_the_lease_when_the_runtime_declaration_throws(): void {
-		$this->job->max_callback_runtime_throwable = new \RuntimeException( 'Runtime ceiling lookup exploded.' );
-		$this->assert_callback_lease( JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME );
-
-		self::assertCount( 1, $this->rig->logger()->records );
-		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
-		self::assertSame( self::RUN_ID, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
-		self::assertSame( \RuntimeException::class, $this->rig->logger()->records[0]['context']['exception_class'] ?? null );
-		self::assertSame( JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME, $this->rig->logger()->records[0]['context']['default_runtime'] ?? null );
+		$this->restart_with_options( new JobOptions( max_runtime: $declared ) );
+		$this->assert_execution_lease( $expected_lease );
 	}
 
 	/**
@@ -391,7 +361,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * An expired delivery cannot shorten the execution lease credited to its replacement.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Fixture-built run and lock generations stage the replacement between callback entry and incumbent completion, the race production generation fences must preserve.
+	 * @pin-rationale Fixture-built run and lock generations stage the replacement between execution entry and incumbent completion, the race production generation fences must preserve.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -474,7 +444,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * Ownership loss during job work supersedes only the incumbent.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Production-built latest-pointer and foreign-lock bytes stage ownership loss inside user code so post-callback fencing can be observed without replacing production logic.
+	 * @pin-rationale Production-built latest-pointer and foreign-lock bytes stage ownership loss inside user code so post-execution fencing can be observed without replacing production logic.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -538,6 +508,51 @@ final class ActionDeliveriesTest extends TestCase {
 	// region HELPERS.
 
 	/**
+	 * Boots the deterministic graph with one job definition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   JobOptions|null $options Optional policy declaration.
+	 *
+	 * @return  void
+	 */
+	private function boot( ?JobOptions $options = null ): void {
+		$this->overlap_key_resolver = null;
+		$this->rig                  = EngineRig::set_up( self::NOW );
+		$this->client               = $this->rig->client( self::OWNER );
+		$this->job                  = new RecordingJob( self::NAME );
+		if ( null === $options ) {
+			$options = new JobOptions(
+				overlap_key: function ( array $args ): ?string {
+					if ( null === $this->overlap_key_resolver ) {
+						return null;
+					}
+
+					return ( $this->overlap_key_resolver )( $args );
+				}
+			);
+		}
+		$this->client->jobs()->register( $this->job->definition( $options ) );
+		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+	}
+
+	/**
+	 * Rebuilds the graph with one explicit policy declaration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   JobOptions $options Policy declaration.
+	 *
+	 * @return  void
+	 */
+	private function restart_with_options( JobOptions $options ): void {
+		$this->rig->tear_down();
+		$this->boot( $options );
+	}
+
+	/**
 	 * Enqueues the deterministic job through the owner-bound facade.
 	 *
 	 * @since   1.0.0
@@ -554,7 +569,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Asserts the job callback observes one exact credited lease.
+	 * Asserts the job execution observes one exact credited lease.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -563,7 +578,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	private function assert_callback_lease( int $lease ): void {
+	private function assert_execution_lease( int $lease ): void {
 		$observed             = null;
 		$this->job->on_handle = function () use ( &$observed ): void {
 			$observed = $this->lock();
@@ -579,7 +594,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Runs one incumbent outcome after staging a replacement in its callback.
+	 * Runs one incumbent outcome after staging a replacement during execution.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -609,7 +624,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function install_replacement_generation(): void {
-		$credit = self::NOW + 90 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
+		$credit = self::NOW + 90 + LockWindows::DEFAULT_EXECUTION_LEASE + 901 + LockWindows::DEFAULT_EXECUTION_LEASE;
 		$state  = new RunState( status: RunStatus::Running, kind: 'job', executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $credit );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, $credit ) );
@@ -624,7 +639,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_replacement_generation_is_retained(): void {
-		$credit = self::NOW + 90 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
+		$credit = self::NOW + 90 + LockWindows::DEFAULT_EXECUTION_LEASE + 901 + LockWindows::DEFAULT_EXECUTION_LEASE;
 		$lock   = $this->lock();
 		self::assertIsArray( $lock );
 		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );

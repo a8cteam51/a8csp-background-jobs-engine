@@ -254,7 +254,7 @@ final class ResetCommandTest extends TestCase {
 	 */
 	private function seed_engine_state(): void {
 		$client = $this->rig->client( 'reset-tests' );
-		$client->jobs()->register( new RecordingJob( 'refresh' ) );
+		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}

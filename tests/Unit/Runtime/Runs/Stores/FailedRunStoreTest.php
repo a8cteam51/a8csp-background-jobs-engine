@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
@@ -85,12 +86,11 @@ final class FailedRunStoreTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig               = EngineRig::set_up( self::NOW );
-		$this->client            = $this->rig->client( self::OWNER );
-		$this->job               = new RecordingJob( self::NAME );
-		$this->job->retry_policy = new RetryPolicy( max_attempts: 1 );
-		$this->job->throwable    = new \RuntimeException( 'Database unavailable.' );
-		$this->client->jobs()->register( $this->job );
+		$this->rig            = EngineRig::set_up( self::NOW );
+		$this->client         = $this->rig->client( self::OWNER );
+		$this->job            = new RecordingJob( self::NAME );
+		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
+		$this->client->jobs()->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}

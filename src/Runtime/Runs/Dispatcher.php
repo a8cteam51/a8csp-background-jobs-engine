@@ -6,7 +6,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
@@ -50,6 +51,16 @@ final readonly class Dispatcher {
 	 */
 	private const int MAX_PRIORITY = 255;
 
+	/**
+	 * Maximum bytes accepted from a custom overlap-key resolver.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int MAX_OVERLAP_KEY_BYTES = 64;
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -62,7 +73,7 @@ final readonly class Dispatcher {
 	 *
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
-	 * @param   JobRegistry         $work                 Registered work contracts.
+	 * @param   JobRegistry         $work                 Registered work definitions.
 	 * @param   array               $handlers             Kind handlers keyed by their persisted keys.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
@@ -91,6 +102,29 @@ final readonly class Dispatcher {
 	// region METHODS
 
 	/**
+	 * Registers one definition through its installed kind handler.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string        $identity   Complete owner-qualified work identity.
+	 * @param   JobDefinition $definition Definition to register.
+	 *
+	 * @throws  \InvalidArgumentException When the kind is not installed or its execution role is incompatible.
+	 *
+	 * @return  void
+	 */
+	public function register( string $identity, JobDefinition $definition ): void {
+		$kind    = $definition->kind->value;
+		$handler = $this->handlers[ $kind ] ?? null;
+		if ( null === $handler ) {
+			throw new \InvalidArgumentException( \sprintf( 'Job kind "%s" is not installed in this engine.', $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+		}
+
+		$handler->register( $identity, $definition );
+	}
+
+	/**
 	 * Creates and schedules one run for a registered job.
 	 *
 	 * @since   1.0.0
@@ -105,13 +139,13 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	public function enqueue( string $job_name, array $args = array(), int $delay = 0, int $priority = 10 ): AbstractResult {
-		$handler  = $this->handler( JobKindHandler::KIND );
-		$contract = $handler->contract( $job_name );
-		if ( null === $contract ) {
+		$handler = $this->handler( JobKindHandler::KIND );
+		$options = $handler->options( $job_name );
+		if ( null === $handler->execution( $job_name ) || null === $options ) {
 			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" is not registered; register it before enqueueing.', $handler->key(), $job_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $job_name ), ) );
 		}
 
-		return $this->imperative_result( $this->dispatch_resolved( $handler, $contract, $job_name, $args, $delay, $priority, $contract->overlap_policy() ) );
+		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $job_name, $args, $delay, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
 	}
 
 	/**
@@ -129,14 +163,14 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
 	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
-		$kind     = $this->work->kind( $identity ) ?? JobKindHandler::KIND;
-		$handler  = $this->handler( $kind );
-		$contract = $handler->contract( $identity );
-		if ( null === $contract ) {
+		$kind    = $this->work->kind( $identity ) ?? JobKindHandler::KIND;
+		$handler = $this->handler( $kind );
+		$options = $handler->options( $identity );
+		if ( null === $handler->execution( $identity ) || null === $options ) {
 			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" is not registered; register it before dispatching.', $handler->key(), $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
 		}
 
-		return $this->dispatch_resolved( $handler, $contract, $identity, $args, 0, $priority, $contract->overlap_policy(), $on_accepted );
+		return $this->dispatch_resolved( $handler, $options, $identity, $args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted );
 	}
 
 	/**
@@ -153,13 +187,13 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
 	public function start( string $chunked_job_name, array $start_args = array(), int $priority = 10 ): AbstractResult {
-		$handler  = $this->handler( ChunkedJobKindHandler::KIND );
-		$contract = $handler->contract( $chunked_job_name );
-		if ( null === $contract ) {
+		$handler = $this->handler( ChunkedJobKindHandler::KIND );
+		$options = $handler->options( $chunked_job_name );
+		if ( null === $handler->execution( $chunked_job_name ) || null === $options ) {
 			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" is not registered; register it before starting it.', $handler->key(), $chunked_job_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $chunked_job_name ), ) );
 		}
 
-		return $this->imperative_result( $this->dispatch_resolved( $handler, $contract, $chunked_job_name, $start_args, 0, $priority, $contract->overlap_policy() ) );
+		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $chunked_job_name, $start_args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
 	}
 
 	/**
@@ -181,12 +215,15 @@ final readonly class Dispatcher {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
 
-		$kind     = $this->work->kind( $identity );
-		$contract = $this->work->contract( $identity );
-		if ( null === $kind || null === $contract ) {
+		$kind = $this->work->kind( $identity );
+		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
+		$options = $handler->options( $identity );
+		if ( null === $handler->execution( $identity ) || null === $options ) {
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+		}
 
 		$failed_store = $this->stores->failed_run_store( $identity );
 		$read         = $failed_store->all();
@@ -213,12 +250,12 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$args_hash = $this->overlap_args_hash( $handler->key(), $identity, $entry['start_args'], $contract->overlap_key( $entry['start_args'] ) );
+		$args_hash = $this->overlap_args_hash( $handler->key(), $identity, $entry['start_args'], $this->custom_overlap_key( $options, $entry['start_args'] ) );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
-		$retry_overlap = OverlapPolicy::Allow === $contract->overlap_policy() ? OverlapPolicy::Allow : OverlapPolicy::Reject;
-		$result        = $this->imperative_result( $this->dispatch_resolved( $handler, $contract, $identity, $entry['start_args'], 0, 10, $retry_overlap, resolved_args_hash: $args_hash ) );
+		$retry_overlap = OverlapPolicy::Allow === ( $options->overlap ?? OverlapPolicy::Reject ) ? OverlapPolicy::Allow : OverlapPolicy::Reject;
+		$result        = $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $entry['start_args'], 0, 10, $retry_overlap, resolved_args_hash: $args_hash ) );
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
 				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
@@ -252,10 +289,13 @@ final readonly class Dispatcher {
 		}
 
 		$kind = $this->work->kind( $identity );
-		if ( null === $kind || null === $this->work->contract( $identity ) ) {
+		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
+		if ( null === $handler->execution( $identity ) ) {
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+		}
 
 		$run_store = $this->stores->run_store( $identity );
 		$inspected = $run_store->inspect( $run_id );
@@ -316,13 +356,13 @@ final readonly class Dispatcher {
 	// region HELPERS
 
 	/**
-	 * Creates and schedules one resolved contract run under an explicit overlap policy.
+	 * Creates and schedules one resolved definition run under an explicit overlap policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface    $handler            Resolved kind handler.
-	 * @param   JobInterface            $contract           Registered work contract.
+	 * @param   JobOptions              $options            Registered policy declaration.
 	 * @param   string                  $identity           Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args               Start arguments.
 	 * @param   int                     $delay              Scheduling delay in seconds.
@@ -333,7 +373,7 @@ final readonly class Dispatcher {
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	private function dispatch_resolved( KindHandlerInterface $handler, JobInterface $contract, string $identity, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null ): AbstractResult {
+	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, string $identity, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null ): AbstractResult {
 		$kind = $handler->key();
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
@@ -348,7 +388,7 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$args_hash = $resolved_args_hash ?? $this->overlap_args_hash( $kind, $identity, $args, $contract->overlap_key( $args ) );
+		$args_hash = $resolved_args_hash ?? $this->overlap_args_hash( $kind, $identity, $args, $this->custom_overlap_key( $options, $args ) );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
@@ -462,7 +502,7 @@ final readonly class Dispatcher {
 				)
 			);
 		}
-		$after_dispatch_error = $handler->after_dispatch( $contract, $identity, $run_id, $state, $run_store );
+		$after_dispatch_error = $handler->after_dispatch( $identity, $run_id, $state, $run_store );
 		if ( null !== $after_dispatch_error ) {
 			return new Failure( $after_dispatch_error );
 		}
@@ -712,6 +752,21 @@ final readonly class Dispatcher {
 	}
 
 	/**
+	 * Resolves an optional custom overlap identity from registered policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   JobOptions              $options Registered policy declaration.
+	 * @param   array<array-key, mixed> $args    Work arguments.
+	 *
+	 * @return  string|null
+	 */
+	private function custom_overlap_key( JobOptions $options, array $args ): ?string {
+		return null === $options->overlap_key ? null : ( $options->overlap_key )( $args );
+	}
+
+	/**
 	 * Returns the canonical argument hash or the tagged hash of an opaque overlap key.
 	 *
 	 * @since   1.0.0
@@ -720,7 +775,7 @@ final readonly class Dispatcher {
 	 * @param   string                  $kind        Persisted kind key.
 	 * @param   string                  $identity    Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args        Work arguments.
-	 * @param   string|null             $overlap_key Contract-provided overlap identity, or null.
+	 * @param   string|null             $overlap_key Custom overlap identity, or null.
 	 *
 	 * @return  string|Failure<EngineError>
 	 */
@@ -729,8 +784,8 @@ final readonly class Dispatcher {
 		if ( $args_hash instanceof Failure || null === $overlap_key ) {
 			return $args_hash;
 		}
-		if ( '' === $overlap_key || JobInterface::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $kind, $identity, JobInterface::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'name' => $identity ), ) );
+		if ( '' === $overlap_key || self::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
+			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $kind, $identity, self::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'name' => $identity ), ) );
 		}
 
 		return \hash( 'sha256', 'dedup:' . $overlap_key );

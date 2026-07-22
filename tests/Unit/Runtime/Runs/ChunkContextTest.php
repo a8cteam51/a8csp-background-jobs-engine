@@ -298,8 +298,9 @@ final class ChunkContextTest extends TestCase {
 	 * @return  string
 	 */
 	private function start_and_deliver_first_chunk( RecordingChunkedJob $chunked_job, array $start_args ): string {
-		$this->client->chunked_jobs()->register( $chunked_job );
-		$result = $this->client->chunked_jobs()->start( $chunked_job->get_name(), $start_args );
+		$definition = $chunked_job->definition();
+		$this->client->jobs()->register( $definition );
+		$result = $this->client->chunked_jobs()->start( $definition->name, $start_args );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );

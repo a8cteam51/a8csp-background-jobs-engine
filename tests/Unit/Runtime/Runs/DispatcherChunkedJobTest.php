@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
@@ -67,7 +68,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Boots one registered chunked job against deterministic interface fakes.
+	 * Boots one chunked job execution fixture against deterministic interface fakes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -78,10 +79,9 @@ final class DispatcherChunkedJobTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->client( self::OWNER );
-		$this->chunked_job = new RecordingChunkedJob( self::NAME );
-		$this->client->chunked_jobs()->register( $this->chunked_job );
+		$this->rig                   = EngineRig::set_up( self::NOW );
+		$this->client                = $this->rig->client( self::OWNER );
+		$this->chunked_job           = new RecordingChunkedJob( self::NAME );
 		$this->fixtures              = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls = array();
 	}
@@ -116,6 +116,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_creates_a_run_and_schedules_the_internal_start_action(): void {
+		$this->register_chunked_job();
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
@@ -148,6 +149,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_priorities' )]
 	public function test_start_chunked_job_rejects_priority_outside_the_engine_range( int $priority ): void {
+		$this->register_chunked_job();
 		$before = $this->boundary_snapshot();
 
 		try {
@@ -182,6 +184,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_restarts_a_chunked_job_and_removes_the_failed_entry(): void {
+		$this->register_chunked_job();
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', details: array( 'failed_chunk' => array( 'chunk' => 1 ) ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
@@ -196,7 +199,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Manual retry refuses to replace a live matching chunked job even when the Job declares Replace.
+	 * Manual retry refuses to replace a live matching chunked job even when its definition declares Replace.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -204,10 +207,10 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_refuses_to_replace_a_live_chunked_job(): void {
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Replace ) );
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', details: array( 'failed_chunk' => array( 'chunk' => 1 ) ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
-		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
-		$incumbent                         = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
+		$incumbent = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
 		self::assertIsString( $incumbent->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
@@ -233,7 +236,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_admits_an_allow_chunked_job(): void {
-		$this->chunked_job->overlap_policy = OverlapPolicy::Allow;
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Allow ) );
 
 		$incumbent = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
@@ -250,7 +253,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A declared Allow invariant admits concurrent matching starts without a caller policy.
+	 * A JobOptions Allow declaration admits concurrent matching starts without a caller policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -258,8 +261,8 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_honors_its_declared_allow_policy(): void {
-		$this->chunked_job->overlap_policy = OverlapPolicy::Allow;
-		$first                             = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$first = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 		self::assertIsString( $first->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
@@ -273,7 +276,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A Chunked Job overlap key groups differing start arguments under one Reject lane.
+	 * A definition overlap key groups differing start arguments under one Reject lane.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -281,8 +284,8 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_uses_its_argument_aware_overlap_key(): void {
-		$this->chunked_job->overlap_key_resolver = static fn ( array $start_args ): string => 'catalog';
-		$first                                   = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
+		$this->register_chunked_job( new JobOptions( overlap_key: static fn ( array $start_args ): string => 'catalog' ) );
+		$first = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 		self::assertIsString( $first->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
@@ -301,7 +304,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A Chunked Job overlap key outside the byte boundary produces a contained payload rejection.
+	 * A definition overlap key outside the byte boundary produces a contained payload rejection.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -312,7 +315,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_overlap_keys' )]
 	public function test_start_chunked_job_rejects_an_invalid_overlap_key( string $overlap_key ): void {
-		$this->chunked_job->overlap_key_resolver = static fn ( array $start_args ): string => $overlap_key;
+		$this->register_chunked_job( new JobOptions( overlap_key: static fn ( array $start_args ): string => $overlap_key ) );
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 
@@ -347,6 +350,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_surfaces_scheduling_failure_and_removes_active_state(): void {
+		$this->register_chunked_job();
 		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
 		$failed = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -358,7 +362,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$readmitted = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $readmitted );
 		self::assertSame( array(), $this->chunked_job->generate_calls );
-		self::assertSame( array(), $this->chunked_job->failed_calls );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
 	}
 
 	/**
@@ -373,6 +377,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 */
 	#[DataProvider( 'incomplete_scheduling_rollback_failures' )]
 	public function test_start_chunked_job_warns_when_scheduling_rollback_cannot_be_confirmed( string $failure ): void {
+		$this->register_chunked_job();
 		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 		$this->script_scheduling_rollback_failure( $failure );
 
@@ -415,6 +420,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_rejects_a_held_overlap_without_stopping_the_previous_run(): void {
+		$this->register_chunked_job();
 		$this->seed_running_lock();
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -438,6 +444,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_rejects_when_the_lock_owner_read_fails(): void {
+		$this->register_chunked_job();
 		$this->seed_running_lock();
 		$before = $this->rig->wpdb()->rows;
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
@@ -467,6 +474,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_rejects_when_the_held_lock_no_longer_names_an_owner(): void {
+		$this->register_chunked_job();
 		$this->rig->wpdb()->script_result( 'insert', false );
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -488,6 +496,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_names_the_lock_owner_when_a_rejected_held_overlap_has_no_latest_pointer(): void {
+		$this->register_chunked_job();
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-running', self::NOW, self::NOW ) );
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -510,6 +519,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_names_the_lock_owner_when_a_rejected_held_overlap_has_a_stale_latest_pointer(): void {
+		$this->register_chunked_job();
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-running', self::NOW, self::NOW ) );
 		$this->put_fixture(
 			$this->fixtures->latest(
@@ -542,7 +552,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_replaces_a_held_incumbent(): void {
-		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Replace ) );
 		$this->seed_running_lock();
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -567,7 +577,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_replaces_a_held_incumbent_after_its_latest_pointer_is_evicted(): void {
-		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Replace ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-running', self::NOW, self::NOW ) );
 
 		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -590,7 +600,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_does_not_restore_the_incumbent_after_replacement_scheduling_fails(): void {
-		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Replace ) );
 		$this->seed_running_lock();
 		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
@@ -614,7 +624,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_persists_replacement_state_before_taking_the_incumbent_lock(): void {
-		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Replace ) );
 		$this->seed_running_lock();
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
 		self::assertIsArray( $options );
@@ -641,7 +651,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_start_chunked_job_removes_provisional_state_when_replacement_ownership_changes(): void {
-		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Replace ) );
 		$this->seed_running_lock();
 		$concurrent = $this->fixtures->lock( $this->args_hash(), 'run-concurrent-owner', self::NOW, self::NOW );
 		$this->rig->wpdb()->before_next(
@@ -661,6 +671,20 @@ final class DispatcherChunkedJobTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Registers the chunked execution fixture with its declared policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   JobOptions|null $options Optional policy declaration.
+	 *
+	 * @return  void
+	 */
+	private function register_chunked_job( ?JobOptions $options = null ): void {
+		$this->client->jobs()->register( $this->chunked_job->definition( $options ) );
+	}
 
 	/**
 	 * Returns a deterministic scheduling failure for one lifecycle action.

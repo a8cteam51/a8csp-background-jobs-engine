@@ -25,10 +25,9 @@ final class CapabilityManagerShapeTest extends TestCase {
 	 */
 	private const array MANAGER_VERBS = array(
 		'Jobs'      => array(
-			'register'          => array( array( self::ROOT_NAMESPACE . 'Job\\JobInterface' ), 'WP_Error|true' ),
-			'register_callable' => array( array( 'string', 'callable', 'int', self::ROOT_NAMESPACE . 'Job\\RetryPolicy', self::ROOT_NAMESPACE . 'Job\\OverlapPolicy', 'callable', 'callable', 'callable' ), 'WP_Error|true' ),
-			'enqueue'           => array( array( 'string', 'array', 'int', 'int' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
-			'start'             => array( array( 'string', 'array', 'int' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
+			'register' => array( array( self::ROOT_NAMESPACE . 'Job\\JobDefinition' ), 'WP_Error|true' ),
+			'enqueue'  => array( array( 'string', 'array', 'int', 'int' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
+			'start'    => array( array( 'string', 'array', 'int' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
 		),
 		'Schedules' => array(
 			'sync'     => array( array( self::ROOT_NAMESPACE . 'Schedule\\Schedule' ), 'WP_Error|true' ),

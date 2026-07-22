@@ -957,7 +957,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::INSPECTION_OWNER );
 		$job            = new RecordingJob( self::INSPECTION_JOB );
 		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_JOB, array( 'source' => 'schedule' ) );
 		$synced   = $client->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );

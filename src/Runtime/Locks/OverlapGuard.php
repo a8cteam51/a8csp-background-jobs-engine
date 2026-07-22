@@ -22,7 +22,7 @@ use Psr\Log\LoggerInterface;
  * exceeds the caller-resolved staleness window. The stale row is deleted only while its exact raw
  * value still matches, so a losing claimant cannot clobber the winner. Reclaim can double-fire when
  * a crashed process revives after its lock has been reclaimed. Replace takeover has the same residual
- * while an incumbent is inside a callback: PHP cannot abort it, so it finishes that callback and then
+ * while an incumbent is inside an execution invocation: PHP cannot abort it, so that invocation finishes and then
  * fences. Clients' idempotency contract covers both windows. A leaked lock carrying a pre-credited
  * execution lease reclaims only after the credited runtime plus the staleness window elapses.
  * Malformed rows are not held and follow the same value-conditioned reclaim path.
@@ -204,7 +204,7 @@ final readonly class OverlapGuard {
 	 * @param   string   $args_hash             Stable single-flight identity.
 	 * @param   string   $run_id                Owning run identifier.
 	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time. A future value marks
-	 *                                          expected callback work or retry fire as the run's legitimate sign of life.
+	 *                                          expected execution work or retry fire as the run's legitimate sign of life.
 	 * @param   int|null $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
 	 * @return  HeartbeatOutcome Ownership classification after the heartbeat attempt.

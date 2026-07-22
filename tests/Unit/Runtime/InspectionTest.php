@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
@@ -106,8 +107,8 @@ final class InspectionTest extends TestCase {
 		$client = $this->rig->client( 'owner-a' );
 		$job    = new RecordingJob( 'refresh-index' );
 
-		$job->overlap_key_resolver = static fn ( array $args ): ?string => 'all' === ( $args['scope'] ?? null ) ? 'scope:all' : null;
-		$client->jobs()->register( $job );
+		$options = new JobOptions( overlap_key: static fn ( array $args ): ?string => 'all' === ( $args['scope'] ?? null ) ? 'scope:all' : null );
+		$client->jobs()->register( $job->definition( $options ) );
 
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( $schedule ) ) );
@@ -176,11 +177,9 @@ final class InspectionTest extends TestCase {
 		$declarations  = array();
 		$registrations = array( 'owner:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
-			$job = new RecordingJob( $schedule->job );
-			if ( 'allow' === $name ) {
-				$job->overlap_policy = OverlapPolicy::Allow;
-			}
-			$client->jobs()->register( $job );
+			$job     = new RecordingJob( $schedule->job );
+			$options = 'allow' === $name ? new JobOptions( overlap: OverlapPolicy::Allow ) : null;
+			$client->jobs()->register( $job->definition( $options ) );
 			$declarations[ 'owner:' . $name ]  = array(
 				'schedule' => $schedule,
 				'job'      => 'owner:' . $schedule->job,
@@ -258,7 +257,7 @@ final class InspectionTest extends TestCase {
 		$job->on_handle = function () use ( $identity, &$during ): void {
 			$during = $this->rig->inspection()->runs( $identity )['live'][0] ?? null;
 		};
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'email-digest' ) );
 
 		$waiting = $this->rig->inspection()->runs( $identity )['live'][0];
@@ -289,7 +288,7 @@ final class InspectionTest extends TestCase {
 		$identity     = 'owner:catalog-sync';
 		$completed_id = self::run_id( 2 );
 		$failed_id    = self::run_id( 3 );
-		$this->rig->client( 'owner' )->chunked_jobs()->register( new RecordingChunkedJob( 'catalog-sync' ) );
+		$this->rig->client( 'owner' )->jobs()->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$live_id  = self::run_id( 1 );
 		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'chunked_job' ) ) );
@@ -346,8 +345,8 @@ final class InspectionTest extends TestCase {
 		$orphaned_identity    = 'owner:orphaned';
 		$job_identity         = 'owner-a:shared';
 		$chunked_job_identity = 'owner-b:shared';
-		$this->rig->client( 'owner-a' )->jobs()->register( new RecordingJob( 'shared' ) );
-		$this->rig->client( 'owner-b' )->chunked_jobs()->register( new RecordingChunkedJob( 'shared' ) );
+		$this->rig->client( 'owner-a' )->jobs()->register( ( new RecordingJob( 'shared' ) )->definition() );
+		$this->rig->client( 'owner-b' )->jobs()->register( ( new RecordingChunkedJob( 'shared' ) )->definition() );
 		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'chunked_job' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $job_identity )->run( self::run_id( 2 ), self::state( 'job-hash', array( array( 'page' => 1 ) ), 'chunked_job' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $chunked_job_identity )->run( self::run_id( 3 ), self::state( 'chunked-job-hash', array( array( 'page' => 1 ) ) ) ) );

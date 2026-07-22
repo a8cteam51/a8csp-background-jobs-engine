@@ -2,15 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Internal;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -22,7 +21,6 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversFunction( 'a8csp_bgje_register' )]
-#[CoversFunction( 'a8csp_bgje_register_callable' )]
 #[CoversFunction( 'a8csp_bgje_enqueue' )]
 #[CoversFunction( 'a8csp_bgje_start' )]
 #[CoversFunction( 'a8csp_bgje_sync_schedules' )]
@@ -107,25 +105,7 @@ final class ProceduralFacadeTest extends TestCase {
 
 		self::assertTrue( \a8csp_bgje_register( self::OWNER, $job ) );
 		self::assertTrue( \a8csp_bgje_register( self::OWNER, $chunked_job ) );
-		self::assertTrue( \a8csp_bgje_register_callable( self::OWNER, 'callable', static function ( array $args, RunContext $context ): void {} ) );
 		self::assert_wp_error( \a8csp_bgje_register( self::OWNER, $job ), 'already_registered' );
-	}
-
-	/**
-	 * Invalid callable options remain inside the stable invalid-argument boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $options Invalid callable-job options.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'invalid_callable_options' )]
-	public function test_register_callable_rejects_invalid_options( array $options ): void {
-		$result = \a8csp_bgje_register_callable( self::OWNER, 'callable', static function ( array $args, RunContext $context ): void {}, $options );
-
-		self::assert_wp_error( $result, 'invalid_argument' );
 	}
 
 	/**
@@ -272,8 +252,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 */
 	public function test_public_function_signatures_and_no_discard_contracts(): void {
 		$signatures = array(
-			'a8csp_bgje_register'           => '(string $owner, A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface $job): WP_Error|true',
-			'a8csp_bgje_register_callable'  => '(string $owner, string $name, callable $handler, array $options = array()): WP_Error|true',
+			'a8csp_bgje_register'           => '(string $owner, A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition $definition): WP_Error|true',
 			'a8csp_bgje_enqueue'            => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
 			'a8csp_bgje_start'              => '(string $owner, string $name, array $start_args = array(), int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
 			'a8csp_bgje_sync_schedules'     => '(string $owner, array $schedules): WP_Error|true',
@@ -294,28 +273,6 @@ final class ProceduralFacadeTest extends TestCase {
 	// endregion.
 
 	// region DATA PROVIDERS.
-
-	/**
-	 * Supplies invalid option names, types, and retry fields.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{options: array<array-key, mixed>}>
-	 */
-	public static function invalid_callable_options(): array {
-		return array(
-			'unknown option'      => array( 'options' => array( 'jitter' => 1 ) ),
-			'max runtime type'    => array( 'options' => array( 'max_runtime' => '42' ) ),
-			'retry type'          => array( 'options' => array( 'retry' => 'once' ) ),
-			'retry field type'    => array( 'options' => array( 'retry' => array( 'max_attempts' => '3' ) ) ),
-			'unknown retry field' => array( 'options' => array( 'retry' => array( 'jitter' => 1 ) ) ),
-			'overlap declaration' => array( 'options' => array( 'overlap' => 'parallel' ) ),
-			'overlap key type'    => array( 'options' => array( 'overlap_key' => 7 ) ),
-			'completed callback'  => array( 'options' => array( 'on_completed' => 7 ) ),
-			'failed callback'     => array( 'options' => array( 'on_failed' => 7 ) ),
-		);
-	}
 
 	/**
 	 * Supplies representative malformed schedule shapes and fields.
@@ -374,36 +331,10 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @param   string        $name    Stable owner-local job name.
 	 * @param   \Closure|null $handler Optional invocation behavior.
 	 *
-	 * @return  AbstractJob
+	 * @return  JobDefinition
 	 */
-	private static function job( string $name, ?\Closure $handler = null ): AbstractJob {
-		return new class( $name, $handler ) extends AbstractJob {
-			/**
-			 * Constructor.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string        $name    Stable owner-local job name.
-			 * @param   \Closure|null $handler Optional invocation behavior.
-			 */
-			public function __construct(
-				private string $name,
-				private ?\Closure $handler,
-			) {}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function get_name(): string {
-				return $this->name;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function handle( array $args, RunContext $context ): void {
-				$this->handler?->__invoke( $args, $context );
-			}
-		};
+	private static function job( string $name, ?\Closure $handler = null ): JobDefinition {
+		return JobDefinition::closure( $name, $handler ?? static function ( array $args, RunContext $context ): void {} );
 	}
 
 	/**
@@ -414,38 +345,10 @@ final class ProceduralFacadeTest extends TestCase {
 	 *
 	 * @param   string $name Stable owner-local chunked job name.
 	 *
-	 * @return  AbstractChunkedJob
+	 * @return  JobDefinition
 	 */
-	private static function chunked_job( string $name ): AbstractChunkedJob {
-		return new class( $name ) extends AbstractChunkedJob {
-			/**
-			 * Constructor.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string $name Stable owner-local chunked job name.
-			 */
-			public function __construct(
-				private string $name,
-			) {}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function get_name(): string {
-				return $this->name;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function generate_queue( array $start_args, RunContext $context ): iterable {
-				return array();
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
-		};
+	private static function chunked_job( string $name ): JobDefinition {
+		return ( new RecordingChunkedJob( $name ) )->definition();
 	}
 
 	/**

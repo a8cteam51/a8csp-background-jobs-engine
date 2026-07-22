@@ -73,8 +73,8 @@ final class SchedulesTest extends TestCase {
 		$this->rig      = EngineRig::set_up( self::NOW );
 		$this->client_a = $this->rig->client( 'owner-a' );
 		$this->client_b = $this->rig->client( 'owner-b' );
-		$this->client_a->jobs()->register( new RecordingJob( 'refresh-index' ) );
-		$this->client_b->jobs()->register( new RecordingJob( 'refresh-index' ) );
+		$this->client_a->jobs()->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		$this->client_b->jobs()->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		$this->fixtures = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
 		$this->reset_backend_observations();
 	}

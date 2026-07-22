@@ -34,7 +34,7 @@ try {
 		case 'schedules-dormant':
 			foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
 				$client = $rig->client( $owner );
-				$client->jobs()->register( new RecordingJob( 'refresh' ) );
+				$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
 				$result = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 				if ( ! $result instanceof Success ) {
 					throw new \LogicException( 'The CLI worker could not register its schedule fixture.' );
@@ -48,7 +48,7 @@ try {
 
 		case 'runs':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+			$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 			$enqueued = $client->jobs()->enqueue( 'email-digest' );
 			if ( ! $enqueued instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not register its run fixture.' );
@@ -58,7 +58,7 @@ try {
 
 		case 'schedules-remove-declined':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->jobs()->register( new RecordingJob( 'refresh' ) );
+			$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			$synced = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 			if ( ! $synced instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not seed schedule-removal fixtures.' );
@@ -99,7 +99,7 @@ try {
 
 		case 'failed-runs':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+			$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 			foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
 				$failure        = new RunFailure( identity: $identity, run_id: RunId::from( '00000000000000086400-0000000000000000001' ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null );
 				[ $name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( $now - 60, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.', \RuntimeException::class ) );
@@ -110,7 +110,7 @@ try {
 
 		case 'reset-declined':
 			$client = $rig->client( 'reset-tests' );
-			$client->jobs()->register( new RecordingJob( 'refresh' ) );
+			$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			$enqueued = $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) );
 			$synced   = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 			if ( ! $enqueued instanceof Success || ! $synced instanceof Success ) {

@@ -3,7 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
@@ -44,19 +46,18 @@ final class SupersededRunTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_replacement_supersedes_incumbent_before_stale_chunk_execution(): void {
-		$start_args                  = array(
+		$start_args         = array(
 			'site_id' => 73,
 			'mode'    => 'replace',
 		);
-		$chunked_job                 = new RecordingChunkedJob( self::NAME );
-		$chunked_job->queue          = array(
+		$chunked_job        = new RecordingChunkedJob( self::NAME );
+		$chunked_job->queue = array(
 			array( 'chunk' => 'one' ),
 			array( 'chunk' => 'two' ),
 		);
-		$chunked_job->overlap_policy = OverlapPolicy::Replace;
 
 		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->chunked_jobs()->register( $chunked_job );
+		$client->jobs()->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
@@ -69,6 +70,8 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$named_completed = array();
 		/** @var list<array{string, string, array<array-key, mixed>, string|null}> $generic_completed */
 		$generic_completed = array();
+		/** @var list<RunFailure> $failed */
+		$failed = array();
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
 		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
@@ -103,6 +106,16 @@ final class SupersededRunTest extends IntegrationTestCase {
 			},
 			10,
 			4
+		);
+		\add_action(
+			'a8csp_jobs_engine/failed',
+			static function ( RunFailure $failure ) use ( &$failed ): void {
+				if ( self::IDENTITY === $failure->identity ) {
+					$failed[] = $failure;
+				}
+			},
+			10,
+			1
 		);
 		\add_action(
 			'a8csp_jobs_engine/log',
@@ -211,20 +224,9 @@ final class SupersededRunTest extends IntegrationTestCase {
 		foreach ( $run_b_action_ids as $action_id ) {
 			self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $action_id ), 'Action Scheduler must complete every replacement chunk action' );
 		}
-		self::assertSame(
-			array(
-				array(
-					'run_id'                    => $run_b,
-					'start_args'                => $start_args,
-					'previous_completed_run_id' => null,
-				),
-			),
-			$chunked_job->completed_calls,
-			'Only the replacement chunked job must receive on_completed()'
-		);
-		self::assertSame( array(), $chunked_job->failed_calls, 'Supersession must not invoke the chunked job on_failed() callback' );
 		self::assertSame( array( array( $run_b, $start_args, null ) ), $named_completed, 'The identity-specific completed hook must receive only the replacement payload' );
 		self::assertSame( array( array( self::IDENTITY, $run_b, $start_args, null ) ), $generic_completed, 'The generic completed hook must prepend the chunked job name to the replacement payload' );
+		self::assertSame( array(), $failed, 'Supersession and replacement completion must not publish a failed hook' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The replacement lifecycle must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The replacement lifecycle must not repeat the generic superseded hook' );
 		self::assertSame( $supersession_log_records, $log_records, 'Superseded stale deliveries must not emit additional logs' );

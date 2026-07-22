@@ -586,7 +586,7 @@ final class CleanupIntentsTest extends TestCase {
 	 */
 	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
 		$work = new JobRegistry();
-		$work->register_job( self::JOB_IDENTITY, new RecordingJob( self::JOB ) );
+		$work->register( self::JOB_IDENTITY, ( new RecordingJob( self::JOB ) )->definition() );
 		$guard                 = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores                = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
 		$randomizer            = new RecordingRandomizer( 42 );

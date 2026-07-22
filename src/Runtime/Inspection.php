@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
@@ -21,6 +20,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use Psr\Clock\ClockInterface;
 
@@ -75,6 +75,16 @@ final readonly class Inspection {
 	 * @var     int
 	 */
 	private const int LIVE_RUN_LIMIT = 20;
+
+	/**
+	 * Maximum bytes accepted from a custom overlap-key resolver.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int MAX_OVERLAP_KEY_BYTES = 64;
 
 	// endregion
 
@@ -387,17 +397,17 @@ final readonly class Inspection {
 		}
 
 		$schedule = $declaration['schedule'];
-		$job      = $this->work->job( $declaration['job'] );
-		if ( null === $job ) {
+		$options  = $this->work->options( $declaration['job'] );
+		if ( JobKindHandler::KIND !== $this->work->kind( $declaration['job'] ) || null === $this->work->execution( $declaration['job'] ) || null === $options ) {
 			return array( 'state' => 'invalid' );
 		}
-		if ( OverlapPolicy::Allow === $job->overlap_policy() ) {
+		if ( OverlapPolicy::Allow === ( $options->overlap ?? OverlapPolicy::Reject ) ) {
 			return array( 'state' => 'overlap_allowed' );
 		}
 
-		$overlap_key = $job->overlap_key( $schedule->args );
+		$overlap_key = null === $options->overlap_key ? null : ( $options->overlap_key )( $schedule->args );
 		if ( null !== $overlap_key ) {
-			if ( '' === $overlap_key || JobInterface::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
+			if ( '' === $overlap_key || self::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
 				return array( 'state' => 'invalid' );
 			}
 

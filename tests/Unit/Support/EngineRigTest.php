@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
@@ -56,7 +57,7 @@ final class EngineRigTest extends TestCase {
 		try {
 			$client = $rig->client( 'rig-tests' );
 			$job    = new RecordingJob( 'job' );
-			$client->jobs()->register( $job );
+			$client->jobs()->register( $job->definition() );
 			$result = $client->jobs()->enqueue( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
@@ -84,7 +85,7 @@ final class EngineRigTest extends TestCase {
 			$job    = new RecordingJob( 'job' );
 
 			$job->throwable = new NonRetryableException( 'Permanent failure.' );
-			$client->jobs()->register( $job );
+			$client->jobs()->register( $job->definition() );
 			$result = $client->jobs()->enqueue( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
@@ -105,7 +106,7 @@ final class EngineRigTest extends TestCase {
 			$job    = new RecordingJob( 'job' );
 
 			$job->throwable = new \RuntimeException( 'Transient failure.' );
-			$client->jobs()->register( $job );
+			$client->jobs()->register( $job->definition() );
 			$result = $client->jobs()->enqueue( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
@@ -122,7 +123,7 @@ final class EngineRigTest extends TestCase {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
 			$client = $rig->client( 'rig-tests' );
-			$client->jobs()->register( new RecordingJob( 'job' ) );
+			$client->jobs()->register( ( new RecordingJob( 'job' ) )->definition() );
 			$enqueued = $client->jobs()->enqueue( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $enqueued );
 			self::assertIsString( $enqueued->value );
@@ -139,10 +140,9 @@ final class EngineRigTest extends TestCase {
 	public function test_superseded_helper_observes_real_chunked_job_replacement(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$client                      = $rig->client( 'rig-tests' );
-			$chunked_job                 = new RecordingChunkedJob( 'chunked_job' );
-			$chunked_job->overlap_policy = OverlapPolicy::Replace;
-			$client->chunked_jobs()->register( $chunked_job );
+			$client      = $rig->client( 'rig-tests' );
+			$chunked_job = new RecordingChunkedJob( 'chunked_job' );
+			$client->jobs()->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
 			$first = $client->chunked_jobs()->start( 'chunked_job', self::ARGS );
 			self::assertInstanceOf( Success::class, $first );
 			++$rig->clock()->timestamp;

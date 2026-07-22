@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -21,6 +20,16 @@ final readonly class LockWindows {
 	// region FIELDS AND CONSTANTS
 
 	/**
+	 * Default maximum runtime credited to one execution invocation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	public const int DEFAULT_EXECUTION_LEASE = 300;
+
+	/**
 	 * Default inter-chunk delay whose doubled value floors every run's lock staleness.
 	 *
 	 * @since   1.0.0
@@ -31,7 +40,7 @@ final readonly class LockWindows {
 	private const int CONTINUE_DELAY = 60;
 
 	/**
-	 * Maximum credited callback window before crash reclamation can resume.
+	 * Maximum credited execution window before crash reclamation can resume.
 	 *
 	 * A bounded ceiling prevents an accidental declaration from deferring recovery indefinitely.
 	 *
@@ -159,18 +168,18 @@ final readonly class LockWindows {
 	}
 
 	/**
-	 * Resolves the bounded liveness credit for one client callback invocation.
+	 * Resolves the bounded liveness credit for one execution invocation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int|null $declared Declared callback ceiling in seconds, or null when no usable declaration exists.
+	 * @param   int|null $declared Declared execution ceiling in seconds, or null for the engine default.
 	 *
 	 * @return  int
 	 */
 	public function execution_lease( ?int $declared ): int {
 		if ( null === $declared || 1 > $declared ) {
-			return JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
+			return self::DEFAULT_EXECUTION_LEASE;
 		}
 
 		return \min( $declared, self::MAX_EXECUTION_LEASE );

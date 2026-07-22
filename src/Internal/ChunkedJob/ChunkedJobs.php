@@ -7,12 +7,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Owner-bound facade for registering and starting chunked jobs.
+ * Owner-bound facade for starting chunked jobs.
  *
  * @internal
  *
@@ -41,26 +40,9 @@ final readonly class ChunkedJobs {
 	// region METHODS
 
 	/**
-	 * Registers one chunked job under the bound owner and its declared local name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   ChunkedJobInterface $chunked_job Chunked Job to register.
-	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or belongs to a job.
-	 * @throws  \LogicException           When the chunked job identity is already registered.
-	 *
-	 * @return  void
-	 */
-	public function register( ChunkedJobInterface $chunked_job ): void {
-		$this->engine->register_chunked_job( JobIdentity::compose( $this->owner, $chunked_job->get_name() ), $chunked_job );
-	}
-
-	/**
 	 * Creates and schedules one run for a registered chunked job.
 	 *
-	 * The registered Job supplies its overlap policy and argument-aware collision identity.
+	 * The registered definition supplies its overlap policy and argument-aware collision identity.
 	 *
 	 * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
 	 * caller handles the returned failure by starting the chunked job again.

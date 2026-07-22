@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
@@ -90,7 +91,7 @@ final class RunStoreTest extends TestCase {
 		$this->rig    = EngineRig::set_up( self::NOW );
 		$this->client = $this->rig->client( self::OWNER );
 		$this->job    = new RecordingJob( self::NAME );
-		$this->client->jobs()->register( $this->job );
+		$this->client->jobs()->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 ) ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -117,7 +118,7 @@ final class RunStoreTest extends TestCase {
 	// region BEHAVIOR.
 
 	/**
-	 * Enqueue, callback admission, and completion expose the real live-state lifecycle.
+	 * Enqueue, execution admission, and completion expose the real live-state lifecycle.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -125,9 +126,9 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_live_state_is_visible_while_running_and_disappears_after_completion(): void {
-		$during_callback      = null;
-		$this->job->on_handle = function () use ( &$during_callback ): void {
-			$during_callback = $this->single_live_run();
+		$during_execution     = null;
+		$this->job->on_handle = function () use ( &$during_execution ): void {
+			$during_execution = $this->single_live_run();
 		};
 		$result               = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
@@ -140,9 +141,9 @@ final class RunStoreTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertIsArray( $during_callback );
-		self::assertTrue( $during_callback['executing'] );
-		self::assertGreaterThanOrEqual( self::NOW, $during_callback['heartbeat_at'] );
+		self::assertIsArray( $during_execution );
+		self::assertTrue( $during_execution['executing'] );
+		self::assertGreaterThanOrEqual( self::NOW, $during_execution['heartbeat_at'] );
 		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertSame( 'completed', $snapshot['history'][0]['outcome'] ?? null );
@@ -150,7 +151,7 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * A retry transition exposes the consumed attempt and clears callback ownership between deliveries.
+	 * A retry transition exposes the consumed attempt and clears execution ownership between deliveries.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -158,7 +159,6 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_transition_is_visible_through_live_run_inspection(): void {
-		$this->job->retry_policy        = new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 );
 		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
 		$result                         = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
@@ -394,20 +394,20 @@ final class RunStoreTest extends TestCase {
 	public function test_interleaved_terminal_effects_converge_on_one_exact_snapshot(): void {
 		$terminal = $this->state()->with_status( RunStatus::Completed );
 		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
-		$expected = $this->fixtures->run( self::RUN_ID, $terminal->with_effects( array( 'callbacks', 'hooks' ) ) );
+		$expected = $this->fixtures->run( self::RUN_ID, $terminal->with_effects( array( 'hooks', 'history' ) ) );
 		$this->put_fixture( $fixture );
 		$store = $this->store();
 		$this->rig->wpdb()->before_next(
 			'update',
 			static function () use ( $fixture, $store, $terminal ): void {
-				self::assertNotNull( $store->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], 'callbacks' ) );
+				self::assertNotNull( $store->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], 'hooks' ) );
 			}
 		);
 
-		$appended = $store->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], 'hooks' );
+		$appended = $store->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], 'history' );
 
 		self::assertIsArray( $appended );
-		self::assertSame( array( 'callbacks', 'hooks' ), $appended['state']->effects );
+		self::assertSame( array( 'hooks', 'history' ), $appended['state']->effects );
 		self::assertSame( $expected[1], $appended['raw'] );
 		self::assertSame( $expected[1], $this->raw_row() );
 	}
@@ -475,7 +475,7 @@ final class RunStoreTest extends TestCase {
 	 * A completed run round-trips its frozen predecessor through production serialization.
 	 *
 	 * @load-bearing durability
-	 * @pin-rationale The predecessor must survive the raw terminal row because callback replay occurs after the completion claim that freezes it.
+	 * @pin-rationale The predecessor must survive the raw terminal row because terminal-effect replay occurs after the completion claim that freezes it.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0

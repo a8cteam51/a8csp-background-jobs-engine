@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Persisted terminal-failure value delivered to client callbacks and lifecycle hooks.
+ * Persisted terminal-failure value delivered to lifecycle hooks.
  *
  * The terminalization stage is a `RunFailureStage` value. The summary is engine-authored and
  * redacted; it never contains a raw client exception message. Details carry an optional generic

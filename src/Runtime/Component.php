@@ -36,6 +36,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -81,7 +82,7 @@ final class Component extends AbstractComponent {
 	private static ?Inspection $inspection = null;
 
 	/**
-	 * Registered job and chunked job instances published by the initialized component.
+	 * Registered background-work definitions published by the initialized component.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -209,7 +210,10 @@ final class Component extends AbstractComponent {
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
-			$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) );
+			$dispatcher->register(
+				JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
+				JobDefinition::job( MaintenanceJob::NAME, new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) )
+			);
 			$schedule_api         = new Schedules( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
 			$inspection           = new Inspection( $schedules, $work, $handlers, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
@@ -285,7 +289,7 @@ final class Component extends AbstractComponent {
 			throw new \LogicException( 'The background jobs engine graph is unavailable after engine boot.' );
 		}
 
-		$adapter = new ApiAdapter( $owner, $work, $schedules, $dispatcher, $inspection );
+		$adapter = new ApiAdapter( $owner, $schedules, $dispatcher, $inspection );
 
 		return new Client(
 			$owner,

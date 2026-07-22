@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 
@@ -29,19 +28,6 @@ final class FakeChunkedJobsEngine implements ChunkedJobsEngineInterface {
 	// endregion.
 
 	// region METHODS.
-
-	/**
-	 * Records one chunked job registration.
-	 *
-	 * @param   string         $identity Complete owner-qualified chunked job identity.
-	 * @param   ChunkedJobInterface $chunked_job    Chunked Job to register.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public function register_chunked_job( string $identity, ChunkedJobInterface $chunked_job ): void {
-		$this->calls[] = array( 'register_chunked_job', $identity, $chunked_job );
-	}
 
 	/**
 	 * Records one chunked job admission and returns the scripted result.

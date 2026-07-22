@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
@@ -226,7 +225,6 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler   Handler selected by the persisted kind.
-	 * @param   JobInterface         $contract  Completed work contract.
 	 * @param   string               $identity  Complete owner-qualified work identity.
 	 * @param   string               $run_id    Run identifier.
 	 * @param   RunState             $state     Running state.
@@ -234,11 +232,11 @@ final readonly class RunTransitions {
 	 *
 	 * @return  void
 	 */
-	public function complete_run( KindHandlerInterface $handler, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+	public function complete_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
 		$previous_completed_run_id = $this->last_completed_run_id( $identity );
 		$terminal_state            = $handler->completion_state( $state )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( $previous_completed_run_id );
 
-		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler, $contract );
+		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler );
 	}
 
 	/**
@@ -293,7 +291,7 @@ final readonly class RunTransitions {
 	}
 
 	/**
-	 * Fails a run whose matching work contract no longer resolves.
+	 * Fails a run whose matching execution definition no longer resolves.
 	 *
 	 * @internal Engine product service.
 	 *
@@ -317,7 +315,7 @@ final readonly class RunTransitions {
 	}
 
 	/**
-	 * Persists failure detail before callbacks, hooks, and active-state cleanup.
+	 * Persists failure detail before hooks and active-state cleanup.
 	 *
 	 * @internal Engine product service.
 	 *
@@ -326,25 +324,24 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $details
 	 *
-	 * @param   KindHandlerInterface $handler        Handler selected by the persisted kind.
-	 * @param   JobInterface|null    $callback_target Failed work contract, or null when unavailable.
-	 * @param   string               $identity       Complete owner-qualified work identity.
-	 * @param   string               $run_id         Run identifier.
-	 * @param   RunState             $state          Running state.
-	 * @param   RunStore             $run_store      Active-run store.
-	 * @param   EngineError          $error          Failure detail.
-	 * @param   int                  $attempts       Attempts consumed before failure.
-	 * @param   RunFailureStage      $stage          Terminalization stage.
-	 * @param   ErrorCode            $code           Machine-readable cause classification.
-	 * @param   array|null           $details        Generic diagnostic payload, or null when no details are available.
-	 * @param   string|null          $expected_raw   Exact maintenance snapshot, or null for a live transition.
+	 * @param   KindHandlerInterface $handler      Handler selected by the persisted kind.
+	 * @param   string               $identity     Complete owner-qualified work identity.
+	 * @param   string               $run_id       Run identifier.
+	 * @param   RunState             $state        Running state.
+	 * @param   RunStore             $run_store    Active-run store.
+	 * @param   EngineError          $error        Failure detail.
+	 * @param   int                  $attempts     Attempts consumed before failure.
+	 * @param   RunFailureStage      $stage        Terminalization stage.
+	 * @param   ErrorCode            $code         Machine-readable cause classification.
+	 * @param   array|null           $details      Generic diagnostic payload, or null when no details are available.
+	 * @param   string|null          $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_run( KindHandlerInterface $handler, ?JobInterface $callback_target, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): void {
+	public function fail_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): void {
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $details ) );
 
-		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler, $callback_target, $expected_raw );
+		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler, $expected_raw );
 	}
 
 	/**
@@ -445,18 +442,17 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity        Complete owner-qualified work identity.
-	 * @param   string               $run_id          Run identifier.
-	 * @param   RunState             $expected        Complete running state observed by the terminalizing path.
-	 * @param   RunState             $replacement     Terminal replacement state.
-	 * @param   RunStore             $run_store       Active-run store.
-	 * @param   KindHandlerInterface $handler         Handler selected by the persisted kind.
-	 * @param   JobInterface|null    $callback_target Resolved callback target, or null when unavailable.
-	 * @param   string|null          $expected_raw    Exact maintenance snapshot, or null for a live transition.
+	 * @param   string               $identity     Complete owner-qualified work identity.
+	 * @param   string               $run_id       Run identifier.
+	 * @param   RunState             $expected     Complete running state observed by the terminalizing path.
+	 * @param   RunState             $replacement  Terminal replacement state.
+	 * @param   RunStore             $run_store    Active-run store.
+	 * @param   KindHandlerInterface $handler      Handler selected by the persisted kind.
+	 * @param   string|null          $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, KindHandlerInterface $handler, ?JobInterface $callback_target = null, ?string $expected_raw = null ): bool {
+	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, KindHandlerInterface $handler, ?string $expected_raw = null ): bool {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
 			return false;
@@ -474,7 +470,7 @@ final readonly class RunTransitions {
 			);
 		}
 
-		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $handler, $callback_target );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $handler );
 
 		return true;
 	}
@@ -515,7 +511,7 @@ final readonly class RunTransitions {
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
 			$this->logger->warning(
-				'Previous completed run could not be read while freezing completion callback state.',
+				'Previous completed run could not be read while freezing completion hook state.',
 				array( 'name' => $identity )
 			);
 

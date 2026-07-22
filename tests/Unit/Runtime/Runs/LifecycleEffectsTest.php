@@ -20,7 +20,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -166,16 +165,13 @@ final class LifecycleEffectsTest extends TestCase {
 		);
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
-		$job      = new RecordingJob( self::NAME );
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $this->handler, $job );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $this->handler );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $remaining );
 		self::assertSame( RunStatus::Failed, $remaining->status );
-		self::assertSame( array( 'callbacks', 'hooks', 'history' ), $remaining->effects );
-		self::assertCount( 1, $job->failed_calls );
-		self::assertSame( self::RUN_ID, $job->failed_calls[0]['run_id'] );
+		self::assertSame( array( 'hooks', 'history' ), $remaining->effects );
 		self::assertNull( $this->lock() );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		$actions = $this->fired_actions();
@@ -183,7 +179,10 @@ final class LifecycleEffectsTest extends TestCase {
 			array( 'a8csp_jobs_engine/failed' ),
 			\array_column( $actions, 'hook_name' )
 		);
-		self::assertSame( array( $job->failed_calls[0]['error'] ), $actions[0]['args'] ?? null );
+		$failure = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( self::RUN_ID, (string) $failure->run_id );
+		self::assertSame( self::IDENTITY, $failure->identity );
 		$this->assert_terminal_history( 'failed' );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
@@ -199,38 +198,26 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertNotNull( $state );
 		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next( 'update', static function (): void {} );
-		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next(
 			'update',
 			function ( WpdbLockSpy $wpdb ): void {
 				$terminal = $this->option( $this->run_option_name() );
 				self::assertIsArray( $terminal );
 				self::assertSame( 'completed', $terminal['status'] ?? null );
-				self::assertSame( array( 'callbacks', 'hooks' ), $terminal['effects'] ?? null );
+				self::assertSame( array( 'hooks' ), $terminal['effects'] ?? null );
 				$wpdb->script_result( 'update', false );
 			}
 		);
 		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( self::PREVIOUS_RUN_ID );
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
-		$job      = new RecordingJob( self::NAME );
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $this->handler, $job );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $this->handler );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $remaining );
 		self::assertSame( RunStatus::Completed, $remaining->status );
-		self::assertSame( array( 'callbacks', 'hooks' ), $remaining->effects );
-		self::assertSame(
-			array(
-				array(
-					'run_id'                    => self::RUN_ID,
-					'start_args'                => self::ARGS,
-					'previous_completed_run_id' => self::PREVIOUS_RUN_ID,
-				),
-			),
-			$job->completed_calls
-		);
+		self::assertSame( array( 'hooks' ), $remaining->effects );
 		self::assertNull( $this->lock() );
 		$actions = $this->fired_actions();
 		self::assertSame(
@@ -268,11 +255,7 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
 		self::assertNull( $this->lock() );
 
-		$callbacks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'callbacks' );
-		self::assertIsArray( $callbacks );
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $callbacks['state'], $callbacks['raw'], $run_store ) );
-
-		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $callbacks['state'], $callbacks['raw'], 'hooks' );
+		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'hooks' );
 		self::assertIsArray( $hooks );
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store ) );
 
@@ -295,6 +278,75 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( $effects, LifecycleEffects::expected_effects( RunStatus::from( $status ) ) );
 	}
 
+	/** The four terminal outcomes retain their public hook names, ordering, and payloads. */
+	#[DataProvider( 'terminal_hook_statuses' )]
+	public function test_terminal_states_fire_unchanged_hook_payloads( string $status ): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal = $running
+			->with_status( RunStatus::from( $status ) )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
+		if ( 'completed' === $status ) {
+			$terminal = $terminal->with_previous_completed_run_id( self::PREVIOUS_RUN_ID );
+		} elseif ( 'failed' === $status ) {
+			$terminal = $terminal->with_failed_attempts( 1 )->with_error(
+				array(
+					'class'   => \RuntimeException::class,
+					'message' => 'Terminal failure.',
+					'stage'   => RunFailureStage::execution()->value,
+					'code'    => ErrorCode::ExecutionFailed->value,
+				)
+			);
+		}
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+
+		self::assertTrue( $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $this->handler ) );
+
+		$actions = $this->fired_actions();
+		if ( 'failed' === $status ) {
+			self::assertSame( array( 'a8csp_jobs_engine/failed' ), \array_column( $actions, 'hook_name' ) );
+			$failure = $actions[0]['args'][0] ?? null;
+			self::assertInstanceOf( RunFailure::class, $failure );
+			self::assertSame( self::IDENTITY, $failure->identity );
+			self::assertSame( self::RUN_ID, (string) $failure->run_id );
+			self::assertSame( 1, $failure->attempts );
+			return;
+		}
+
+		$hook = 'a8csp_jobs_engine/' . $status;
+		self::assertSame( array( $hook . '/' . self::IDENTITY, $hook ), \array_column( $actions, 'hook_name' ) );
+		$run_id = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunId::class, $run_id );
+		self::assertSame( self::RUN_ID, (string) $run_id );
+		self::assertSame( self::ARGS, $actions[0]['args'][1] ?? null );
+		self::assertSame( self::IDENTITY, $actions[1]['args'][0] ?? null );
+		self::assertSame( $run_id, $actions[1]['args'][1] ?? null );
+		self::assertSame( self::ARGS, $actions[1]['args'][2] ?? null );
+		if ( 'completed' === $status ) {
+			$previous_run_id = $actions[0]['args'][2] ?? null;
+			self::assertInstanceOf( RunId::class, $previous_run_id );
+			self::assertSame( self::PREVIOUS_RUN_ID, (string) $previous_run_id );
+			self::assertSame( $previous_run_id, $actions[1]['args'][3] ?? null );
+		}
+	}
+
+	/**
+	 * Supplies all terminal statuses whose hook contracts are public.
+	 *
+	 * @return  array<string, array{status: string}>
+	 */
+	public static function terminal_hook_statuses(): array {
+		return array(
+			'completed'  => array( 'status' => 'completed' ),
+			'failed'     => array( 'status' => 'failed' ),
+			'cancelled'  => array( 'status' => 'cancelled' ),
+			'superseded' => array( 'status' => 'superseded' ),
+		);
+	}
+
 	/**
 	 * Supplies every terminal outcome.
 	 *
@@ -304,11 +356,11 @@ final class LifecycleEffectsTest extends TestCase {
 		return array(
 			'failed'     => array(
 				'status'  => 'failed',
-				'effects' => array( 'retention', 'callbacks', 'hooks', 'history' ),
+				'effects' => array( 'retention', 'hooks', 'history' ),
 			),
 			'completed'  => array(
 				'status'  => 'completed',
-				'effects' => array( 'callbacks', 'hooks', 'history' ),
+				'effects' => array( 'hooks', 'history' ),
 			),
 			'cancelled'  => array(
 				'status'  => 'cancelled',

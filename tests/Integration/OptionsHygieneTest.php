@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -53,12 +54,22 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
 
 		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
-		$client->chunked_jobs()->register( $chunked_job );
+		$client->jobs()->register( $job->definition() );
+		$client->jobs()->register( $chunked_job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::JOB_IDENTITY );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CHUNKED_JOB_IDENTITY );
 		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
+
+		$chunked_completed = array();
+		\add_action(
+			'a8csp_jobs_engine/completed/' . self::CHUNKED_JOB_IDENTITY,
+			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$chunked_completed ): void {
+				$chunked_completed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
+			},
+			10,
+			3
+		);
 
 		$job_result = $client->jobs()->enqueue( self::JOB_NAME, $job_args );
 		self::assertInstanceOf( Success::class, $job_result, 'The census job must enqueue through the public API' );
@@ -80,14 +91,10 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] ?? null );
 		self::assertSame(
 			array(
-				array(
-					'run_id'                    => $chunked_job_run_id,
-					'start_args'                => $chunked_job_args,
-					'previous_completed_run_id' => null,
-				),
+				array( $chunked_job_run_id, $chunked_job_args, null ),
 			),
-			$chunked_job->completed_calls,
-			'The census chunked job must invoke its on_completed() callback'
+			$chunked_completed,
+			'The census chunked job must publish its completed lifecycle payload'
 		);
 
 		$rows = $this->engine_option_rows();

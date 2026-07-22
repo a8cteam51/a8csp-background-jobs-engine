@@ -248,7 +248,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
 		$job    = new RecordingJob( self::REDECLARED_JOB );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), CatchUpPolicy::RunOnce );
 		$synced   = $client->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );

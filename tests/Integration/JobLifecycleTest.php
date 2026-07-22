@@ -13,7 +13,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Verifies job persistence, scheduler dispatch, callbacks, hooks, and terminal cleanup.
+ * Verifies job persistence, scheduler dispatch, lifecycle hooks, and terminal cleanup.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -57,7 +57,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$job  = new RecordingJob( self::SUCCESS_NAME );
 
 		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SUCCESS_IDENTITY );
 
@@ -97,17 +97,6 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		self::assertSame( array( $args ), $job->calls, 'The job must receive its original argument array exactly once' );
 		self::assertSame( array( array( $run_id, $args, null ) ), $named_completed, 'The identity-specific completed hook must receive run ID, start arguments, and the previous completion' );
 		self::assertSame( array( array( self::SUCCESS_IDENTITY, $run_id, $args, null ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same payload' );
-		self::assertSame(
-			array(
-				array(
-					'run_id'                    => $run_id,
-					'start_args'                => $args,
-					'previous_completed_run_id' => null,
-				),
-			),
-			$job->completed_calls,
-			'The one-off job callback must fire exactly once through the terminal lifecycle effect'
-		);
 		$last_completed = $client->runs()->last_completed_run_id( self::SUCCESS_NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );
@@ -146,7 +135,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$job->throwable = new NonRetryableException( 'The remote record no longer exists.' );
 
 		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FAILURE_IDENTITY );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::FAILURE_IDENTITY );

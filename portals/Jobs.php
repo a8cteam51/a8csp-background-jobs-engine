@@ -6,13 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Batch\AbstractBatchJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\CallableJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
@@ -50,69 +44,19 @@ final readonly class Jobs {
 	// region METHODS
 
 	/**
-	 * Registers one supported job kind under the bound owner.
+	 * Registers one job definition under the bound owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobInterface $job Job to register.
+	 * @param   JobDefinition $definition Job definition to register.
 	 *
 	 * @return  true|\WP_Error
 	 */
 	#[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
-	public function register( JobInterface $job ): true|\WP_Error {
+	public function register( JobDefinition $definition ): true|\WP_Error {
 		try {
-			if ( $job instanceof AbstractChunkedJob ) {
-				$this->client()->chunked_jobs()->register( $job );
-			} elseif ( $job instanceof AbstractJob ) {
-				$this->client()->jobs()->register( $job );
-			} elseif ( $job instanceof AbstractBatchJob ) {
-				return new \WP_Error( ErrorCode::InvalidArgument->value, 'Batch jobs are not supported.' );
-			} else {
-				return new \WP_Error( ErrorCode::InvalidArgument->value, \sprintf( 'Job kind "%s" is not supported.', $job::class ) );
-			}
-		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( DuplicateRegistrationException $exception ) {
-			return new \WP_Error( ErrorCode::AlreadyRegistered->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
-			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
-		}
-
-		return true;
-	}
-
-	/**
-	 * Registers one callable-backed job under the bound owner.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string             $name         Stable owner-local job name.
-	 * @param   callable           $handler      Job handler.
-	 * @param   int|null           $max_runtime  Optional callback-runtime ceiling in seconds.
-	 * @param   RetryPolicy|null   $retry        Optional retry policy.
-	 * @param   OverlapPolicy|null $overlap      Optional overlap policy.
-	 * @param   callable|null      $overlap_key  Optional argument-aware overlap-key resolver.
-	 * @param   callable|null      $on_completed Optional completed-run callback.
-	 * @param   callable|null      $on_failed    Optional failed-run callback.
-	 *
-	 * @return  true|\WP_Error
-	 */
-	#[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
-	public function register_callable(
-		string $name,
-		callable $handler,
-		?int $max_runtime = null,
-		?RetryPolicy $retry = null,
-		?OverlapPolicy $overlap = null,
-		?callable $overlap_key = null,
-		?callable $on_completed = null,
-		?callable $on_failed = null,
-	): true|\WP_Error {
-		try {
-			$callable_job = new CallableJob( $name, \Closure::fromCallable( $handler ), $max_runtime, $retry, $overlap, self::optional_closure( $overlap_key ), self::optional_closure( $on_completed ), self::optional_closure( $on_failed ) );
-			$this->client()->jobs()->register( $callable_job );
+			$this->client()->jobs()->register( $definition );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( DuplicateRegistrationException $exception ) {
@@ -184,20 +128,6 @@ final readonly class Jobs {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Converts one optional callable to the closure required by the callable-job representation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   callable|null $callback Optional callback.
-	 *
-	 * @return  \Closure|null
-	 */
-	private static function optional_closure( ?callable $callback ): ?\Closure {
-		return null === $callback ? null : \Closure::fromCallable( $callback );
-	}
 
 	/**
 	 * Resolves the internal client for the bound owner.

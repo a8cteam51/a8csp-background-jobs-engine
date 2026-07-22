@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -92,33 +92,10 @@ abstract class CapabilityManagerTestCase extends TestCase {
 	 * @param   string        $name    Stable owner-local job name.
 	 * @param   \Closure|null $handler Optional invocation behavior.
 	 *
-	 * @return  AbstractJob
+	 * @return  JobDefinition
 	 */
-	protected static function job( string $name, ?\Closure $handler = null ): AbstractJob {
-		return new class( $name, $handler ) extends AbstractJob {
-			/**
-			 * Constructor.
-			 *
-			 * @param   string        $name    Stable owner-local job name.
-			 * @param   \Closure|null $handler Optional invocation behavior.
-			 */
-			public function __construct(
-				private string $name,
-				private ?\Closure $handler,
-			) {}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function get_name(): string {
-				return $this->name;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function handle( array $args, RunContext $context ): void {
-				$this->handler?->__invoke( $args, $context );
-			}
-		};
+	protected static function job( string $name, ?\Closure $handler = null ): JobDefinition {
+		return JobDefinition::closure( $name, $handler ?? static function (): void {} );
 	}
 
 	/**
@@ -129,25 +106,10 @@ abstract class CapabilityManagerTestCase extends TestCase {
 	 *
 	 * @param   string $name Stable owner-local chunked job name.
 	 *
-	 * @return  AbstractChunkedJob
+	 * @return  JobDefinition
 	 */
-	protected static function chunked_job( string $name ): AbstractChunkedJob {
-		return new class( $name ) extends AbstractChunkedJob {
-			/**
-			 * Constructor.
-			 *
-			 * @param   string $name Stable owner-local chunked job name.
-			 */
-			public function __construct(
-				private string $name,
-			) {}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function get_name(): string {
-				return $this->name;
-			}
-
+	protected static function chunked_job( string $name ): JobDefinition {
+		$execution = new class() implements ChunkedJobExecution {
 			/** {@inheritDoc} */
 			#[\Override]
 			public function generate_queue( array $start_args, RunContext $context ): iterable {
@@ -158,6 +120,8 @@ abstract class CapabilityManagerTestCase extends TestCase {
 			#[\Override]
 			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
 		};
+
+		return JobDefinition::chunked_job( $name, $execution );
 	}
 
 	/**

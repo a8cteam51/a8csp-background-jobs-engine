@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -25,7 +25,7 @@ use Psr\Log\LoggerInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class MaintenanceJob extends AbstractJob {
+final class MaintenanceJob implements JobExecution {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -114,20 +114,7 @@ final class MaintenanceJob extends AbstractJob {
 
 	// endregion
 
-	// region INHERITED METHODS
-
-	/**
-	 * Returns the engine-reserved maintenance local name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	#[\Override]
-	public function get_name(): string {
-		return self::NAME;
-	}
+	// region METHODS
 
 	/**
 	 * Performs one option-prefix reconciliation sweep.

@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ErrorInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
@@ -418,8 +419,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @param   int           $priority Delivery priority.
 	 */
 	private function sync_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
-		$this->job->overlap_policy = $policy;
-		$this->client->jobs()->register( $this->job );
+		$this->client->jobs()->register( $this->job->definition( new JobOptions( overlap: $policy ) ) );
 		$result = $this->client->schedules()->sync( array( new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::NAME, self::ARGS, priority: $priority ) ) );
 		self::assertInstanceOf( Success::class, $result );
 	}
@@ -436,8 +436,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @return  void
 	 */
 	private function sync_chunked_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
-		$this->chunked_job->overlap_policy = $policy;
-		$this->client->chunked_jobs()->register( $this->chunked_job );
+		$this->client->jobs()->register( $this->chunked_job->definition( new JobOptions( overlap: $policy ) ) );
 		$result = $this->client->schedules()->sync( array( new Schedule( self::CHUNKED_SCHEDULE, Recurrence::every( 300 ), self::CHUNKED_NAME, self::ARGS, priority: $priority ) ) );
 		self::assertInstanceOf( Success::class, $result );
 	}

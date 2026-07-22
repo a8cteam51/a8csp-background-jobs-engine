@@ -34,17 +34,24 @@ every surviving component is initialized before any hook can fire.
   edit when wiring a top-level component into `COMPONENTS`. The main bootstrap registers the
   request-local `Plugin` instance's `boot()` method; components boot in registration order behind a
   non-retryable latch.
-- `models/` holds the public representation under `Error\`, `Job\`, `Run\`, and `Schedule\`;
-  `Schedule\Schedule`, `Schedule\Recurrence`, and `Schedule\CatchUpPolicy` form the typed schedule
-  declaration consumed by the public `Schedules` service.
+- `models/` holds the public representation under `Error\`, `Job\`, `Run\`, and `Schedule\`.
+  `Job\JobDefinition` composes a name, `Job\JobKind`, execution object, and `Job\JobOptions`;
+  standard and chunked behavior implement `Job\JobExecution` and the standalone
+  `Job\Chunked\ChunkedJobExecution` role. `Schedule\Schedule`, `Schedule\Recurrence`, and
+  `Schedule\CatchUpPolicy` form the typed schedule declaration consumed by the public `Schedules`
+  service.
 - The root services, `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound
-  consumer surface: the owner-scoped `Engine` handle and capability managers plus authoring bases,
-  contexts, and input and returned value types.
+  consumer surface: the owner-scoped `Engine` handle and capability managers plus job definitions,
+  execution roles, policy, contexts, and input and returned value types.
   `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph
   is likewise `@internal`.
 - `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the
   request-local object graph; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the
-  root collaborators; `Backends/` (Action Scheduler preferred, WP-Cron fallback), `Occurrences/`
+  root collaborators. `JobRegistry.php` retains each definition's kind key, name, execution object,
+  and options. The single kind-handler registry resolves a definition's kind; the resolved
+  internal handler validates its execution role and owns invocation. Only engine-installed kinds are
+  accepted, and the handler SPI is internal. `Backends/` (Action Scheduler preferred, WP-Cron
+  fallback), `Occurrences/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
   `Locks/`, `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
   on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.

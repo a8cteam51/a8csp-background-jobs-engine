@@ -128,8 +128,8 @@ final class ApiTest extends TestCase {
 		$right     = $this->rig->client( 'owner-right' );
 		$left_job  = new RecordingJob( 'sync' );
 		$right_job = new RecordingJob( 'sync' );
-		$left->jobs()->register( $left_job );
-		$right->jobs()->register( $right_job );
+		$left->jobs()->register( $left_job->definition() );
+		$right->jobs()->register( $right_job->definition() );
 
 		self::assertInstanceOf( Success::class, $left->jobs()->enqueue( 'sync', array( 'owner' => 'left' ) ) );
 		self::assertInstanceOf( Success::class, $right->jobs()->enqueue( 'sync', array( 'owner' => 'right' ) ) );
@@ -187,7 +187,7 @@ final class ApiTest extends TestCase {
 	public function test_last_completed_run_id_retains_the_latest_successful_terminal(): void {
 		$client = $this->rig->client( 'consumer-plugin' );
 		$job    = new RecordingJob( 'sync' );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 		$first = $this->enqueue_and_run( $client, array( 'sequence' => 1 ) );
 		$last  = $this->enqueue_and_run( $client, array( 'sequence' => 2 ) );
 		self::assertNotSame( $first, $last );
@@ -210,7 +210,7 @@ final class ApiTest extends TestCase {
 	 */
 	public function test_last_completed_run_id_inside_a_completed_hook_returns_the_previous_completion(): void {
 		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( new RecordingJob( 'sync' ) );
+		$client->jobs()->register( ( new RecordingJob( 'sync' ) )->definition() );
 		$observed  = array();
 		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
@@ -232,32 +232,39 @@ final class ApiTest extends TestCase {
 	}
 
 	/**
-	 * Callback replay retains the predecessor frozen before a later same-identity completion.
+	 * Completed-hook replay retains the predecessor frozen before a later same-identity completion.
 	 *
 	 * @load-bearing durability
-	 * @pin-rationale Five scripted marker-CAS losses leave a production terminal row for real maintenance replay; no public result exposes the callback marker or frozen terminal snapshot.
+	 * @pin-rationale Five scripted marker-CAS losses leave a production terminal row for real maintenance replay; no public result exposes the hook marker or frozen terminal snapshot.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_completed_callback_replay_uses_the_frozen_previous_completion(): void {
+	public function test_completed_hook_replay_uses_the_frozen_previous_completion(): void {
 		$identity = 'consumer-plugin:sync';
 		$client   = $this->rig->client( 'consumer-plugin' );
 		$job      = new RecordingJob( 'sync' );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 		$seed_run_id = $this->enqueue_and_run( $client, array( 'sequence' => 'seed' ) );
 
 		++$this->rig->clock()->timestamp;
 		$target = $client->jobs()->enqueue( 'sync', array( 'sequence' => 'target' ) );
 		self::assertInstanceOf( Success::class, $target );
 		self::assertIsString( $target->value );
-		$target_run_id        = $target->value;
-		$intervening_run_id   = null;
-		$target_callback_runs = 0;
-		$job->on_completed    = function ( string $run_id ) use ( $client, $target_run_id, &$intervening_run_id, &$target_callback_runs ): void {
-			if ( $target_run_id !== $run_id || 1 !== ++$target_callback_runs ) {
+		$target_run_id      = $target->value;
+		$intervening_run_id = null;
+		$target_hook_runs   = 0;
+		$completed_calls    = array();
+		$callbacks          = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_jobs_engine/completed/' . $identity ] = function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $client, $target_run_id, &$intervening_run_id, &$target_hook_runs, &$completed_calls ): void {
+			$completed_calls[] = array(
+				'run_id'                    => (string) $run_id,
+				'previous_completed_run_id' => null === $previous_completed_run_id ? null : (string) $previous_completed_run_id,
+			);
+			if ( $target_run_id !== (string) $run_id || 1 !== ++$target_hook_runs ) {
 				return;
 			}
 
@@ -277,6 +284,7 @@ final class ApiTest extends TestCase {
 				);
 			}
 		};
+		$GLOBALS['a8csp_bgje_test_action_callbacks']             = $callbacks;
 
 		$this->rig->run_due();
 
@@ -293,12 +301,12 @@ final class ApiTest extends TestCase {
 		$this->rig->run_maintenance();
 
 		self::assertIsString( $intervening_run_id );
-		$target_callbacks = \array_values( \array_filter( $job->completed_calls, static fn ( array $call ): bool => $target_run_id === $call['run_id'] ) );
-		self::assertCount( 2, $target_callbacks );
-		self::assertSame( array( $seed_run_id, $seed_run_id ), \array_column( $target_callbacks, 'previous_completed_run_id' ) );
-		$intervening_callbacks = \array_values( \array_filter( $job->completed_calls, static fn ( array $call ): bool => $intervening_run_id === $call['run_id'] ) );
-		self::assertCount( 1, $intervening_callbacks );
-		self::assertSame( $seed_run_id, $intervening_callbacks[0]['previous_completed_run_id'] );
+		$target_hooks = \array_values( \array_filter( $completed_calls, static fn ( array $call ): bool => $target_run_id === $call['run_id'] ) );
+		self::assertCount( 2, $target_hooks );
+		self::assertSame( array( $seed_run_id, $seed_run_id ), \array_column( $target_hooks, 'previous_completed_run_id' ) );
+		$intervening_hooks = \array_values( \array_filter( $completed_calls, static fn ( array $call ): bool => $intervening_run_id === $call['run_id'] ) );
+		self::assertCount( 1, $intervening_hooks );
+		self::assertSame( $seed_run_id, $intervening_hooks[0]['previous_completed_run_id'] );
 		self::assertNull( $run_store->get( $target_run_id ) );
 	}
 
@@ -315,7 +323,7 @@ final class ApiTest extends TestCase {
 	 */
 	public function test_retry_storage_failure_redacts_database_detail(): void {
 		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( new RecordingJob( 'sync' ) );
+		$client->jobs()->register( ( new RecordingJob( 'sync' ) )->definition() );
 		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $database ): void {

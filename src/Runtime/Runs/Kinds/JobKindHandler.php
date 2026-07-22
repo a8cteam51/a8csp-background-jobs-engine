@@ -3,8 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
@@ -53,7 +54,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobRegistry      $work                 Registered work contracts.
+	 * @param   JobRegistry      $work                 Registered work definitions.
 	 * @param   LoggerInterface  $logger               Log event sink.
 	 * @param   ClockInterface   $clock                Timestamp source.
 	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
@@ -91,18 +92,57 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Returns the registered one-off job for an identity.
+	 * Validates and registers a standard-job definition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string        $identity   Complete owner-qualified job identity.
+	 * @param   JobDefinition $definition Definition resolved to this handler.
+	 *
+	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecution.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public function register( string $identity, JobDefinition $definition ): void {
+		if ( ! $definition->execution instanceof JobExecution ) {
+			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, JobExecution::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+		}
+
+		$this->work->register( $identity, $definition );
+	}
+
+	/**
+	 * Returns the registered standard-job execution for an identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $identity Complete owner-qualified job identity.
 	 *
-	 * @return  AbstractJob|null
+	 * @return  JobExecution|null
 	 */
 	#[\Override]
-	public function contract( string $identity ): ?AbstractJob {
-		return $this->work->job( $identity );
+	public function execution( string $identity ): ?JobExecution {
+		$execution = $this->work->execution( $identity );
+
+		return self::KIND === $this->work->kind( $identity ) && $execution instanceof JobExecution ? $execution : null;
+	}
+
+	/**
+	 * Returns the registered standard-job policy declaration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified job identity.
+	 *
+	 * @return  JobOptions|null
+	 */
+	#[\Override]
+	public function options( string $identity ): ?JobOptions {
+		return self::KIND === $this->work->kind( $identity ) ? $this->work->options( $identity ) : null;
 	}
 
 	/**
@@ -173,16 +213,15 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobInterface $contract  Registered job contract.
-	 * @param   string       $identity  Complete owner-qualified job identity.
-	 * @param   string       $run_id    Run identifier.
-	 * @param   RunState     $state     Persisted running state.
-	 * @param   RunStore     $run_store Active-run store.
+	 * @param   string   $identity  Complete owner-qualified job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Persisted running state.
+	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @return  EngineError|null Failure returned to the admission caller, or null.
 	 */
 	#[\Override]
-	public function after_dispatch( JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError {
+	public function after_dispatch( string $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError {
 		try {
 			$this->terminal_effects->fire_started( $identity, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
@@ -196,7 +235,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 					'run_id' => $run_id,
 				),
 			);
-			$this->terminal_transitions->fail_run( $this, $contract, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
 
 			return $error;
 		}
@@ -221,7 +260,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Returns the bounded callback lease for a registered job.
+	 * Returns the bounded execution lease for a registered job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -230,16 +269,16 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Persisted run-stage state.
 	 *
-	 * @return  int|null Null when no registered contract can declare a callback lease.
+	 * @return  int|null Null when no registered definition can declare an execution lease.
 	 */
 	#[\Override]
 	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int {
-		$contract = $this->contract( $identity );
-		if ( null === $contract ) {
+		$options = $this->options( $identity );
+		if ( null === $options ) {
 			return null;
 		}
 
-		return $this->execution_lease_at( $contract, $identity, $run_id );
+		return $this->execution_lease_at( $options );
 	}
 
 	/**
@@ -272,10 +311,11 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function deliver( string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
-		$job = $this->contract( $identity );
-		if ( null === $job ) {
+		$execution = $this->execution( $identity );
+		$options   = $this->options( $identity );
+		if ( null === $execution || null === $options ) {
 			$this->logger->warning(
-				'job delivery references an unregistered contract; register the job before dispatching its run action.',
+				'job delivery references an unregistered execution; register the job before dispatching its run action.',
 				array(
 					'job_name' => $identity,
 					'run_id'   => $run_id,
@@ -288,9 +328,9 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 
 		$context = new RunContext( $run_id, $state->start_args );
 		try {
-			$job->handle( $state->start_args, $context );
+			$execution->handle( $state->start_args, $context );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failure( $this, $job, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::execution(), 'run' );
+			$this->failure_lifecycle->handle_failure( $this, $options, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::execution(), 'run' );
 
 			return;
 		}
@@ -299,16 +339,16 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$this->terminal_transitions->complete_run( $this, $job, $identity, $run_id, $state, $run_store );
+		$this->terminal_transitions->complete_run( $this, $identity, $run_id, $state, $run_store );
 	}
 
 	/**
-	 * Converts a job callback throwable to durable failure detail.
+	 * Converts a job execution throwable to durable failure detail.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Throwable $throwable Callback failure.
+	 * @param   \Throwable $throwable Execution failure.
 	 *
 	 * @return  EngineError
 	 */

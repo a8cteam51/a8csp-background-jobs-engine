@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -41,26 +41,26 @@ final readonly class Jobs {
 	// region METHODS
 
 	/**
-	 * Registers one job under the bound owner and its declared local name.
+	 * Registers one definition under the bound owner and its declared local name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   AbstractJob $job Job to register.
+	 * @param   JobDefinition $definition Job definition to register.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or belongs to a chunked job.
+	 * @throws  \InvalidArgumentException When the identity, kind, or execution role is invalid.
 	 * @throws  \LogicException           When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
-	public function register( AbstractJob $job ): void {
-		$this->engine->register_job( JobIdentity::compose( $this->owner, $job->get_name() ), $job );
+	public function register( JobDefinition $definition ): void {
+		$this->engine->register( JobIdentity::compose( $this->owner, $definition->name ), $definition );
 	}
 
 	/**
 	 * Creates and schedules one run for a registered job.
 	 *
-	 * The registered Job supplies its overlap policy and argument-aware collision identity.
+	 * The registered definition supplies its overlap policy and argument-aware collision identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

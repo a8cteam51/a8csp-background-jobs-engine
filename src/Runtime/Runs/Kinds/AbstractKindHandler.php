@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -14,7 +14,7 @@ use Psr\Log\LoggerInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Shares bounded callback leases and orphan terminalization across persisted run kinds.
+ * Shares bounded execution leases and orphan terminalization across persisted run kinds.
  *
  * @internal
  *
@@ -47,7 +47,7 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	// region HELPERS
 
 	/**
-	 * Fails a live run whose required work contract is no longer registered.
+	 * Fails a live run whose required execution definition is no longer registered.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -67,35 +67,17 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	}
 
 	/**
-	 * Returns the bounded future liveness timestamp for one contract callback.
+	 * Returns the bounded future liveness timestamp for one execution invocation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobInterface $contract Registered work contract.
-	 * @param   string       $identity Complete owner-qualified work identity.
-	 * @param   string       $run_id   Run identifier.
+	 * @param   JobOptions $options Registered policy declaration.
 	 *
 	 * @return  int
 	 */
-	final protected function execution_lease_at( JobInterface $contract, string $identity, string $run_id ): int {
-		try {
-			$declared = $contract->max_callback_runtime();
-		} catch ( \Throwable $throwable ) {
-			// An unusable declaration falls back to the default lease instead of escaping the delivery unfenced.
-			$this->logger->warning(
-				'The work contract threw while declaring its maximum callback runtime; the default runtime was applied. Fix max_callback_runtime() before the next delivery.',
-				array(
-					'name'            => $identity,
-					'run_id'          => $run_id,
-					'exception_class' => \get_debug_type( $throwable ),
-					'default_runtime' => JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME,
-				)
-			);
-			$declared = null;
-		}
-
-		$lease = $this->lock_windows->execution_lease( $declared );
+	final protected function execution_lease_at( JobOptions $options ): int {
+		$lease = $this->lock_windows->execution_lease( $options->max_runtime );
 		$now   = $this->clock->now()->getTimestamp();
 
 		return $now > \PHP_INT_MAX - $lease ? \PHP_INT_MAX : $now + $lease;

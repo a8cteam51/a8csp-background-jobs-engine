@@ -201,7 +201,7 @@ final class MultisiteTest extends IntegrationTestCase {
 		\switch_to_blog( $other_site_id );
 		try {
 			$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( 'multisite-contract' );
-			$client->jobs()->register( new RecordingJob( 'site-bound-job' ) );
+			$client->jobs()->register( ( new RecordingJob( 'site-bound-job' ) )->definition() );
 
 			$this->expectException( \LogicException::class );
 

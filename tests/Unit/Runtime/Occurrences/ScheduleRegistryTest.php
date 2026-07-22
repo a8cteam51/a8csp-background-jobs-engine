@@ -86,8 +86,8 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig      = EngineRig::set_up( self::NOW );
 		$this->client_a = $this->rig->client( 'owner-a' );
 		$this->client_b = $this->rig->client( 'owner-b' );
-		$this->client_a->jobs()->register( new RecordingJob( 'refresh-index' ) );
-		$this->client_b->jobs()->register( new RecordingJob( 'refresh-index' ) );
+		$this->client_a->jobs()->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		$this->client_b->jobs()->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		$this->fixtures = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -293,7 +293,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_numeric_owner_and_schedule_components_remain_canonical_strings(): void {
 		$client = $this->rig->client( '123' );
-		$client->jobs()->register( new RecordingJob( 'refresh-index' ) );
+		$client->jobs()->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( self::schedule( '456', 300 ) ) ) );
 
 		self::assertSame( array( '123:456' ), \array_column( $this->owner_entries( '123' ), 'name' ) );

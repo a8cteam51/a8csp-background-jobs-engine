@@ -2,7 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -46,16 +47,43 @@ interface KindHandlerInterface {
 	public function key(): string;
 
 	/**
-	 * Returns the registered contract owned by this kind.
+	 * Validates and registers one definition owned by this kind.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string        $identity   Complete owner-qualified work identity.
+	 * @param   JobDefinition $definition Definition resolved to this handler.
+	 *
+	 * @throws  \InvalidArgumentException When the execution object does not implement this kind's execution role.
+	 *
+	 * @return  void
+	 */
+	public function register( string $identity, JobDefinition $definition ): void;
+
+	/**
+	 * Returns the registered execution object owned by this kind.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $identity Complete owner-qualified work identity.
 	 *
-	 * @return  JobInterface|null
+	 * @return  object|null
 	 */
-	public function contract( string $identity ): ?JobInterface;
+	public function execution( string $identity ): ?object;
+
+	/**
+	 * Returns the registered policy declaration owned by this kind.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified work identity.
+	 *
+	 * @return  JobOptions|null
+	 */
+	public function options( string $identity ): ?JobOptions;
 
 	/**
 	 * Returns whether this handler owns one persisted lifecycle stage.
@@ -111,15 +139,14 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobInterface $contract Registered work contract.
-	 * @param   string       $identity Complete owner-qualified work identity.
-	 * @param   string       $run_id   Run identifier.
-	 * @param   RunState     $state    Persisted running state.
-	 * @param   RunStore     $run_store Active-run store.
+	 * @param   string   $identity Complete owner-qualified work identity.
+	 * @param   string   $run_id   Run identifier.
+	 * @param   RunState $state    Persisted running state.
+	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @return  EngineError|null Failure returned to the admission caller, or null.
 	 */
-	public function after_dispatch( JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError;
+	public function after_dispatch( string $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError;
 
 	/**
 	 * Returns a kind-specific cancellation refusal for the current state.
@@ -135,7 +162,7 @@ interface KindHandlerInterface {
 	public function cancellation_error( string $run_id, RunState $state ): ?EngineError;
 
 	/**
-	 * Returns a bounded future liveness timestamp when a registered callback is available.
+	 * Returns a bounded future liveness timestamp when registered execution is available.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -144,7 +171,7 @@ interface KindHandlerInterface {
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Persisted state admitted for delivery.
 	 *
-	 * @return  int|null Null when no registered contract can declare a callback lease.
+	 * @return  int|null Null when no registered definition can declare an execution lease.
 	 */
 	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int;
 
@@ -176,12 +203,12 @@ interface KindHandlerInterface {
 	public function deliver( string $identity, string $run_id, RunState $state, RunStore $run_store ): void;
 
 	/**
-	 * Converts a callback throwable to kind-owned failure detail.
+	 * Converts an execution throwable to kind-owned failure detail.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Throwable $throwable Callback failure.
+	 * @param   \Throwable $throwable Execution failure.
 	 *
 	 * @return  EngineError
 	 */

@@ -107,48 +107,7 @@ final class TypedScheduleShapeTest extends TestCase {
 	}
 
 	/**
-	 * The callable-job registration speaks typed values instead of an options bag.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_register_callable_speaks_typed_values(): void {
-		$method     = new \ReflectionMethod( self::ROOT_NAMESPACE . 'Jobs', 'register_callable' );
-		$parameters = $method->getParameters();
-
-		$expected = array(
-			'name'         => 'string',
-			'handler'      => 'callable',
-			'max_runtime'  => 'int',
-			'retry'        => self::ROOT_NAMESPACE . 'Job\\RetryPolicy',
-			'overlap'      => self::ROOT_NAMESPACE . 'Job\\OverlapPolicy',
-			'overlap_key'  => 'callable',
-			'on_completed' => 'callable',
-			'on_failed'    => 'callable',
-		);
-
-		self::assertCount( \count( $expected ), $parameters );
-
-		$position = 0;
-		foreach ( $expected as $name => $type_name ) {
-			$parameter = $parameters[ $position ];
-			self::assertSame( $name, $parameter->getName(), 'register_callable() parameter #' . ( $position + 1 ) . ' name.' );
-
-			$type = $parameter->getType();
-			self::assertInstanceOf( \ReflectionNamedType::class, $type );
-			self::assertSame( $type_name, $type->getName(), 'register_callable() $' . $name . ' type.' );
-
-			if ( $position >= 2 ) {
-				self::assertTrue( $type->allowsNull() && $parameter->isDefaultValueAvailable(), 'register_callable() $' . $name . ' must be an optional typed value.' );
-			}
-			++$position;
-		}
-	}
-
-	/**
-	 * The import-free array dialect stays exclusively on the procedural facade.
+	 * The import-free array dialect stays on the procedural schedule facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -161,12 +120,6 @@ final class TypedScheduleShapeTest extends TestCase {
 		$specifications = $sync->getParameters()[1]->getType();
 		self::assertInstanceOf( \ReflectionNamedType::class, $specifications );
 		self::assertSame( 'array', $specifications->getName(), 'a8csp_bgje_sync_schedules() must keep array specifications.' );
-
-		$register_callable = new \ReflectionFunction( 'a8csp_bgje_register_callable' );
-		$last_parameter    = $register_callable->getParameters()[ $register_callable->getNumberOfParameters() - 1 ];
-		$options           = $last_parameter->getType();
-		self::assertInstanceOf( \ReflectionNamedType::class, $options );
-		self::assertSame( 'array', $options->getName(), 'a8csp_bgje_register_callable() must keep the array options bag.' );
 	}
 
 	/**

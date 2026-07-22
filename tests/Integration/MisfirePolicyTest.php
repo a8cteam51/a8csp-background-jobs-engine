@@ -282,7 +282,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	private function register_deterministic_job( string $identity, RecordingJob $job ): void {
 		$work = $this->deterministic_work;
 		self::assertNotNull( $work );
-		$work->register_job( $identity, $job );
+		$work->register( $identity, $job->definition() );
 	}
 
 	/**

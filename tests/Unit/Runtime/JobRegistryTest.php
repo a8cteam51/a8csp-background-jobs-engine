@@ -3,32 +3,39 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobKind;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins registration channels, typed lookup, and the shared work-identity namespace.
+ * Pins definition storage and the shared background-work identity namespace.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
 #[CoversClass( JobRegistry::class )]
+#[UsesClass( JobDefinition::class )]
+#[UsesClass( JobKind::class )]
+#[UsesClass( JobOptions::class )]
+#[UsesClass( RetryPolicy::class )]
 final class JobRegistryTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Satisfies production boot guards before work contracts are autoloaded.
+	 * Satisfies production boot guards and loads WordPress time constants.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -49,216 +56,181 @@ final class JobRegistryTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Generic and typed lookups return exact registered instances while typed channels reject mismatches.
+	 * Registration retains each definition's execution, options, and kind by exact identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_generic_and_typed_lookups_return_registered_instances_and_preserve_channels(): void {
-		$job         = new RecordingJob( 'refresh_index-2' );
-		$chunked_job = new RecordingChunkedJob( 'rebuild-index' );
-		$work        = new JobRegistry();
+	public function test_registration_retains_definition_data_and_unknown_lookups_return_null(): void {
+		$job_options     = new JobOptions(
+			max_runtime: 42,
+			retry: new RetryPolicy( max_attempts: 1, base_delay: 5, multiplier: 1, max_delay: 5 ),
+			overlap: OverlapPolicy::Allow,
+		);
+		$chunked_options = new JobOptions( max_runtime: 84, overlap: OverlapPolicy::Replace );
+		$job             = new RecordingJob( 'refresh_index-2' );
+		$chunked_job     = new RecordingChunkedJob( 'rebuild-index' );
+		$registry        = new JobRegistry();
 
-		$work->register_job( 'consumer:refresh_index-2', $job );
-		$work->register_chunked_job( 'consumer:rebuild-index', $chunked_job );
+		$registry->register( 'consumer:refresh_index-2', $job->definition( $job_options ) );
+		$registry->register( 'consumer:rebuild-index', $chunked_job->definition( $chunked_options ) );
 
-		self::assertSame( $job, $work->job( 'consumer:refresh_index-2' ) );
-		self::assertNull( $work->chunked_job( 'consumer:refresh_index-2' ) );
-		self::assertSame( $chunked_job, $work->chunked_job( 'consumer:rebuild-index' ) );
-		self::assertNull( $work->job( 'consumer:rebuild-index' ) );
-		self::assertSame( $job, $work->contract( 'consumer:refresh_index-2' ) );
-		self::assertSame( $chunked_job, $work->contract( 'consumer:rebuild-index' ) );
-		self::assertNull( $work->job( 'consumer:unknown' ) );
-		self::assertNull( $work->chunked_job( 'consumer:unknown' ) );
-		self::assertNull( $work->contract( 'consumer:unknown' ) );
+		self::assertSame( $job, $registry->execution( 'consumer:refresh_index-2' ) );
+		self::assertSame( $job_options, $registry->options( 'consumer:refresh_index-2' ) );
+		self::assertSame( 'job', $registry->kind( 'consumer:refresh_index-2' ) );
+		self::assertSame( $chunked_job, $registry->execution( 'consumer:rebuild-index' ) );
+		self::assertSame( $chunked_options, $registry->options( 'consumer:rebuild-index' ) );
+		self::assertSame( 'chunked_job', $registry->kind( 'consumer:rebuild-index' ) );
+		self::assertNull( $registry->execution( 'consumer:unknown' ) );
+		self::assertNull( $registry->options( 'consumer:unknown' ) );
+		self::assertNull( $registry->kind( 'consumer:unknown' ) );
 	}
 
 	/**
-	 * Kind lookup returns the registration-channel tag and null for an unknown identity.
+	 * The registry trusts the resolved handler's execution-compatibility decision.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_kind_returns_the_registration_channel_tag_and_null_for_unknown_identity(): void {
-		$work = new JobRegistry();
+	public function test_registration_does_not_revalidate_execution_compatibility(): void {
+		$execution  = new \stdClass();
+		$definition = JobDefinition::for_kind( 'sync', JobKind::job(), $execution );
+		$registry   = new JobRegistry();
 
-		$work->register_job( 'consumer:sync-job', new RecordingJob( 'sync-job' ) );
-		$work->register_chunked_job( 'consumer:sync-chunked-job', new RecordingChunkedJob( 'sync-chunked-job' ) );
+		$registry->register( 'consumer:sync', $definition );
 
-		self::assertSame( 'job', $work->kind( 'consumer:sync-job' ) );
-		self::assertSame( 'chunked_job', $work->kind( 'consumer:sync-chunked-job' ) );
-		self::assertNull( $work->kind( 'consumer:unknown' ) );
+		self::assertSame( $execution, $registry->execution( 'consumer:sync' ) );
+		self::assertSame( 'job', $registry->kind( 'consumer:sync' ) );
 	}
 
 	/**
-	 * Job registration accepts the 64-byte local-name boundary and rejects 65 bytes.
+	 * Both installed kinds accept the 64-byte local-name boundary and reject 65 bytes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   'chunked_job'|'job' $kind Definition kind.
+	 *
 	 * @return  void
 	 */
-	public function test_register_job_accepts_64_name_bytes_and_rejects_65(): void {
-		$name     = \str_repeat( 'a', 64 );
-		$accepted = new RecordingJob( $name );
-		$work     = new JobRegistry();
+	#[DataProvider( 'work_kinds' )]
+	public function test_registration_accepts_64_name_bytes_and_rejects_65( string $kind ): void {
+		$name         = \str_repeat( 'a', 64 );
+		$accepted     = self::registration( $kind, $name );
+		$too_long     = self::registration( $kind, \str_repeat( 'a', 65 ) );
+		$registry     = new JobRegistry();
+		$accepted_key = 'consumer:' . $name;
 
-		$work->register_job( 'consumer:' . $name, $accepted );
-		self::assertSame( $accepted, $work->job( 'consumer:' . $name ) );
+		$registry->register( $accepted_key, $accepted['definition'] );
+		self::assertSame( $accepted['execution'], $registry->execution( $accepted_key ) );
 
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
-		$work->register_job( 'consumer:valid', new RecordingJob( \str_repeat( 'a', 65 ) ) );
+		$registry->register( 'consumer:valid', $too_long['definition'] );
 	}
 
 	/**
-	 * Chunked Job registration accepts the 64-byte local-name boundary and rejects 65 bytes.
+	 * Definition names outside the canonical local-name grammar are rejected uniformly.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  void
-	 */
-	public function test_register_chunked_job_accepts_64_name_bytes_and_rejects_65(): void {
-		$name     = \str_repeat( 'a', 64 );
-		$accepted = new RecordingChunkedJob( $name );
-		$work     = new JobRegistry();
-
-		$work->register_chunked_job( 'consumer:' . $name, $accepted );
-		self::assertSame( $accepted, $work->chunked_job( 'consumer:' . $name ) );
-
-		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
-
-		$work->register_chunked_job( 'consumer:valid', new RecordingChunkedJob( \str_repeat( 'a', 65 ) ) );
-	}
-
-	/**
-	 * Both registration channels reject declarations outside the local-name grammar.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   'chunked_job'|'job' $channel Registration channel under test.
-	 * @param   string         $name    Invalid declared local name.
+	 * @param   'chunked_job'|'job' $kind Definition kind.
+	 * @param   string              $name Invalid local name.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'invalid_names' )]
-	public function test_registration_rejects_invalid_declared_names( string $channel, string $name ): void {
+	public function test_registration_rejects_invalid_definition_names( string $kind, string $name ): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
-		$work = new JobRegistry();
-		if ( 'job' === $channel ) {
-			$work->register_job( 'consumer:valid', new RecordingJob( $name ) );
-			return;
-		}
-
-		$work->register_chunked_job( 'consumer:valid', new RecordingChunkedJob( $name ) );
+		$registry = new JobRegistry();
+		$registry->register( 'consumer:valid', self::registration( $kind, $name )['definition'] );
 	}
 
 	/**
-	 * Both channels reject non-canonical or name-mismatched identities with their exact diagnostics.
+	 * Non-canonical and name-mismatched identities share one definition-centric diagnostic.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'chunked_job'|'job' $channel  Registration channel under test.
-	 * @param   string         $identity Invalid or mismatched identity.
-	 * @param   string         $message  Expected channel-specific diagnostic.
+	 * @param   'chunked_job'|'job' $kind     Definition kind.
+	 * @param   string              $identity Invalid or mismatched identity.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'invalid_identities' )]
-	public function test_registration_rejects_invalid_or_mismatched_identities( string $channel, string $identity, string $message ): void {
+	public function test_registration_rejects_invalid_or_mismatched_identities( string $kind, string $identity ): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( $message );
+		$this->expectExceptionMessageIs( 'Background-work identity must be canonical and end with the definition\'s declared local name.' );
 
-		$work = new JobRegistry();
-		if ( 'job' === $channel ) {
-			$work->register_job( $identity, new RecordingJob( 'valid' ) );
-			return;
+		$registry = new JobRegistry();
+		$registry->register( $identity, self::registration( $kind, 'valid' )['definition'] );
+	}
+
+	/**
+	 * A same-kind duplicate is rejected without replacing the first definition data.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'chunked_job'|'job' $kind Definition kind.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'work_kinds' )]
+	public function test_registration_rejects_a_same_kind_duplicate_without_replacement( string $kind ): void {
+		$first    = self::registration( $kind, 'sync', new JobOptions( max_runtime: 42 ) );
+		$second   = self::registration( $kind, 'sync', new JobOptions( max_runtime: 84 ) );
+		$registry = new JobRegistry();
+		$registry->register( 'consumer:sync', $first['definition'] );
+
+		try {
+			$registry->register( 'consumer:sync', $second['definition'] );
+			self::fail( 'A same-kind duplicate must be rejected.' );
+		} catch ( DuplicateRegistrationException $exception ) {
+			self::assertSame( $kind . ' name is already registered; register each background-work name exactly once.', $exception->getMessage() );
 		}
 
-		$work->register_chunked_job( $identity, new RecordingChunkedJob( 'valid' ) );
+		self::assertSame( $first['execution'], $registry->execution( 'consumer:sync' ) );
+		self::assertSame( $first['definition']->options, $registry->options( 'consumer:sync' ) );
+		self::assertSame( $kind, $registry->kind( 'consumer:sync' ) );
 	}
 
 	/**
-	 * A job identity rejects a second job registration without replacing the first.
+	 * Cross-kind registration is rejected without replacing the first definition data.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  void
-	 */
-	public function test_register_job_rejects_a_same_kind_duplicate(): void {
-		$work = new JobRegistry();
-		$work->register_job( 'consumer:sync', new RecordingJob( 'sync' ) );
-
-		$this->expectException( DuplicateRegistrationException::class );
-		$this->expectExceptionMessageIs( 'Job name is already registered; register each job name exactly once.' );
-
-		$work->register_job( 'consumer:sync', new RecordingJob( 'sync' ) );
-	}
-
-	/**
-	 * A chunked job identity rejects a second chunked job registration without replacing the first.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * @param   'chunked_job'|'job' $existing_kind Existing definition kind.
+	 * @param   'chunked_job'|'job' $incoming_kind Incoming definition kind.
 	 *
 	 * @return  void
 	 */
-	public function test_register_chunked_job_rejects_a_same_kind_duplicate(): void {
-		$work = new JobRegistry();
-		$work->register_chunked_job( 'consumer:sync', new RecordingChunkedJob( 'sync' ) );
+	#[DataProvider( 'cross_kind_orders' )]
+	public function test_registration_rejects_a_cross_kind_collision_without_replacement( string $existing_kind, string $incoming_kind ): void {
+		$first    = self::registration( $existing_kind, 'sync', new JobOptions( max_runtime: 42 ) );
+		$second   = self::registration( $incoming_kind, 'sync', new JobOptions( max_runtime: 84 ) );
+		$registry = new JobRegistry();
+		$registry->register( 'consumer:sync', $first['definition'] );
 
-		$this->expectException( DuplicateRegistrationException::class );
-		$this->expectExceptionMessageIs( 'Chunked Job name is already registered; register each chunked job name exactly once.' );
+		try {
+			$registry->register( 'consumer:sync', $second['definition'] );
+			self::fail( 'A cross-kind collision must be rejected.' );
+		} catch ( \InvalidArgumentException $exception ) {
+			self::assertSame( \sprintf( 'Background-work identity "consumer:sync" is already registered as a %1$s; it cannot also be registered as a %2$s.', $existing_kind, $incoming_kind ), $exception->getMessage() );
+		}
 
-		$work->register_chunked_job( 'consumer:sync', new RecordingChunkedJob( 'sync' ) );
-	}
-
-	/**
-	 * A job-owned identity cannot also be registered through the chunked job channel.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_job_then_chunked_job_cross_kind_collision_uses_the_existing_diagnostic(): void {
-		$work = new JobRegistry();
-		$work->register_job( 'consumer:sync', new RecordingJob( 'sync' ) );
-
-		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work identity "consumer:sync" is already registered as a job; it cannot also be registered as a chunked_job.' );
-
-		$work->register_chunked_job( 'consumer:sync', new RecordingChunkedJob( 'sync' ) );
-	}
-
-	/**
-	 * A chunked-job-owned identity cannot also be registered through the job channel.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_chunked_job_then_job_cross_kind_collision_uses_the_existing_diagnostic(): void {
-		$work = new JobRegistry();
-		$work->register_chunked_job( 'consumer:sync', new RecordingChunkedJob( 'sync' ) );
-
-		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work identity "consumer:sync" is already registered as a chunked_job; it cannot also be registered as a job.' );
-
-		$work->register_job( 'consumer:sync', new RecordingJob( 'sync' ) );
+		self::assertSame( $first['execution'], $registry->execution( 'consumer:sync' ) );
+		self::assertSame( $first['definition']->options, $registry->options( 'consumer:sync' ) );
+		self::assertSame( $existing_kind, $registry->kind( 'consumer:sync' ) );
 	}
 
 	/**
@@ -270,55 +242,43 @@ final class JobRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_different_owners_can_register_the_same_local_name(): void {
-		$job         = new RecordingJob( 'sync' );
-		$chunked_job = new RecordingChunkedJob( 'sync' );
-		$work        = new JobRegistry();
+		$job         = self::registration( 'job', 'sync' );
+		$chunked_job = self::registration( 'chunked_job', 'sync' );
+		$registry    = new JobRegistry();
 
-		$work->register_job( 'owner-a:sync', $job );
-		$work->register_chunked_job( 'owner-b:sync', $chunked_job );
+		$registry->register( 'owner-a:sync', $job['definition'] );
+		$registry->register( 'owner-b:sync', $chunked_job['definition'] );
 
-		self::assertSame( $job, $work->job( 'owner-a:sync' ) );
-		self::assertSame( $chunked_job, $work->chunked_job( 'owner-b:sync' ) );
-		self::assertSame( 'job', $work->kind( 'owner-a:sync' ) );
-		self::assertSame( 'chunked_job', $work->kind( 'owner-b:sync' ) );
+		self::assertSame( $job['execution'], $registry->execution( 'owner-a:sync' ) );
+		self::assertSame( 'job', $registry->kind( 'owner-a:sync' ) );
+		self::assertSame( $chunked_job['execution'], $registry->execution( 'owner-b:sync' ) );
+		self::assertSame( 'chunked_job', $registry->kind( 'owner-b:sync' ) );
 	}
 
 	/**
-	 * A dual-interface contract registered as a job is visible only through the job channel.
+	 * A dual-role execution retains the kind selected by its typed definition.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  void
-	 */
-	public function test_dual_interface_contract_registered_as_job_uses_the_job_channel(): void {
-		$dual = $this->dual_work( 'sync' );
-		$work = new JobRegistry();
-
-		$work->register_job( 'consumer:sync', $dual );
-
-		self::assertSame( $dual, $work->job( 'consumer:sync' ) );
-		self::assertNull( $work->chunked_job( 'consumer:sync' ) );
-		self::assertSame( 'job', $work->kind( 'consumer:sync' ) );
-	}
-
-	/**
-	 * A dual-interface contract registered as a chunked job is visible only through the chunked job channel.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * @param   'chunked_job'|'job' $kind Definition kind.
 	 *
 	 * @return  void
 	 */
-	public function test_dual_interface_contract_registered_as_chunked_job_uses_the_chunked_job_channel(): void {
-		$dual = $this->dual_work( 'sync' );
-		$work = new JobRegistry();
+	#[DataProvider( 'work_kinds' )]
+	public function test_dual_role_execution_uses_the_definition_kind( string $kind ): void {
+		$execution  = self::dual_execution();
+		$options    = new JobOptions( max_runtime: 42 );
+		$definition = 'job' === $kind
+			? JobDefinition::job( 'sync', $execution, $options )
+			: JobDefinition::chunked_job( 'sync', $execution, $options );
+		$registry   = new JobRegistry();
 
-		$work->register_chunked_job( 'consumer:sync', $dual );
+		$registry->register( 'consumer:sync', $definition );
 
-		self::assertSame( $dual, $work->chunked_job( 'consumer:sync' ) );
-		self::assertNull( $work->job( 'consumer:sync' ) );
-		self::assertSame( 'chunked_job', $work->kind( 'consumer:sync' ) );
+		self::assertSame( $execution, $registry->execution( 'consumer:sync' ) );
+		self::assertSame( $options, $registry->options( 'consumer:sync' ) );
+		self::assertSame( $kind, $registry->kind( 'consumer:sync' ) );
 	}
 
 	// endregion.
@@ -326,60 +286,78 @@ final class JobRegistryTest extends TestCase {
 	// region DATA PROVIDERS.
 
 	/**
-	 * Supplies invalid names for both registration channels.
+	 * Supplies the installed definition kinds.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * @return  array<string, array{kind: 'chunked_job'|'job'}>
+	 */
+	public static function work_kinds(): array {
+		return array(
+			'job'         => array( 'kind' => 'job' ),
+			'chunked job' => array( 'kind' => 'chunked_job' ),
+		);
+	}
+
+	/**
+	 * Supplies invalid names for both installed definition kinds.
 	 *
-	 * @return  array<string, array{channel: 'chunked_job'|'job', name: string}>
+	 * @return  array<string, array{kind: 'chunked_job'|'job', name: string}>
 	 */
 	public static function invalid_names(): array {
 		$cases = array();
-		foreach ( array( '', 'RefreshIndex', 'refresh index', 'refresh.index', 'réindex' ) as $name ) {
-			$key = '' === $name ? 'empty' : $name;
+		foreach ( self::work_kinds() as $kind_label => $kind_row ) {
+			foreach ( array( '', 'RefreshIndex', 'refresh index', 'refresh.index', 'réindex' ) as $name ) {
+				$name_label = '' === $name ? 'empty' : $name;
 
-			$cases[ 'job-' . $key ]         = array(
-				'channel' => 'job',
-				'name'    => $name,
-			);
-			$cases[ 'chunked-job-' . $key ] = array(
-				'channel' => 'chunked_job',
-				'name'    => $name,
-			);
+				$cases[ $kind_label . ': ' . $name_label ] = array(
+					'kind' => $kind_row['kind'],
+					'name' => $name,
+				);
+			}
 		}
 
 		return $cases;
 	}
 
 	/**
-	 * Supplies non-canonical and declared-name-mismatched identities for both channels.
+	 * Supplies non-canonical and declared-name-mismatched identities for both kinds.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{channel: 'chunked_job'|'job', identity: string, message: string}>
+	 * @return  array<string, array{kind: 'chunked_job'|'job', identity: string}>
 	 */
 	public static function invalid_identities(): array {
 		return array(
-			'job-non-canonical'         => array(
-				'channel'  => 'job',
+			'job: non-canonical'         => array(
+				'kind'     => 'job',
 				'identity' => 'not-canonical',
-				'message'  => 'Job identity must be canonical and end with the job\'s declared local name.',
 			),
-			'job-name-mismatch'         => array(
-				'channel'  => 'job',
+			'job: name mismatch'         => array(
+				'kind'     => 'job',
 				'identity' => 'consumer:other',
-				'message'  => 'Job identity must be canonical and end with the job\'s declared local name.',
 			),
-			'chunked-job-non-canonical' => array(
-				'channel'  => 'chunked_job',
+			'chunked job: non-canonical' => array(
+				'kind'     => 'chunked_job',
 				'identity' => 'not-canonical',
-				'message'  => 'Chunked Job identity must be canonical and end with the chunked job\'s declared local name.',
 			),
-			'chunked-job-name-mismatch' => array(
-				'channel'  => 'chunked_job',
+			'chunked job: name mismatch' => array(
+				'kind'     => 'chunked_job',
 				'identity' => 'consumer:other',
-				'message'  => 'Chunked Job identity must be canonical and end with the chunked job\'s declared local name.',
+			),
+		);
+	}
+
+	/**
+	 * Supplies both cross-kind registration orders.
+	 *
+	 * @return  array<string, array{existing_kind: 'chunked_job'|'job', incoming_kind: 'chunked_job'|'job'}>
+	 */
+	public static function cross_kind_orders(): array {
+		return array(
+			'job then chunked job' => array(
+				'existing_kind' => 'job',
+				'incoming_kind' => 'chunked_job',
+			),
+			'chunked job then job' => array(
+				'existing_kind' => 'chunked_job',
+				'incoming_kind' => 'job',
 			),
 		);
 	}
@@ -389,132 +367,52 @@ final class JobRegistryTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Creates one contract implementing both work interfaces.
+	 * Composes one installed-kind definition and returns its exact execution object.
 	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * @param   'chunked_job'|'job' $kind    Definition kind.
+	 * @param   string              $name    Declared local name.
+	 * @param   JobOptions|null     $options Optional policy declaration.
 	 *
-	 * @param   string $name Declared local work name.
-	 *
-	 * @return  AbstractJob&ChunkedJobInterface
+	 * @return  array{definition: JobDefinition, execution: JobExecution|ChunkedJobExecution}
 	 */
-	private function dual_work( string $name ): AbstractJob&ChunkedJobInterface {
-		return new class( $name ) extends AbstractJob implements ChunkedJobInterface {
-			/**
-			 * Constructor.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string $name Declared local work name.
-			 */
-			public function __construct(
-				private readonly string $name,
-			) {}
+	private static function registration( string $kind, string $name, ?JobOptions $options = null ): array {
+		if ( 'job' === $kind ) {
+			$execution = new RecordingJob( $name );
 
+			return array(
+				'definition' => $execution->definition( $options ),
+				'execution'  => $execution,
+			);
+		}
+
+		$execution = new RecordingChunkedJob( $name );
+
+		return array(
+			'definition' => $execution->definition( $options ),
+			'execution'  => $execution,
+		);
+	}
+
+	/**
+	 * Creates one execution object implementing both installed roles.
+	 *
+	 * @return  JobExecution&ChunkedJobExecution
+	 */
+	private static function dual_execution(): JobExecution&ChunkedJobExecution {
+		return new class() implements JobExecution, ChunkedJobExecution {
 			/** {@inheritDoc} */
-			#[\Override]
-			public function get_name(): string {
-				return $this->name;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function max_callback_runtime(): int {
-				return self::DEFAULT_MAX_CALLBACK_RUNTIME;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function overlap_policy(): OverlapPolicy {
-				return OverlapPolicy::Reject;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function overlap_key( array $start_args ): ?string {
-				return null;
-			}
-
-			/**
-			 * Accepts an unused job invocation.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   array<array-key, mixed> $args    Unused job arguments.
-			 * @param   RunContext     $context Unused run context.
-			 *
-			 * @return  void
-			 */
 			#[\Override]
 			public function handle( array $args, RunContext $context ): void {}
 
-			/**
-			 * Returns an empty queue for the registry-only contract.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   array<array-key, mixed> $start_args Unused start arguments.
-			 * @param   RunContext     $context    Unused run context.
-			 *
-			 * @return  iterable<array<array-key, mixed>>
-			 */
+			/** {@inheritDoc} */
 			#[\Override]
 			public function generate_queue( array $start_args, RunContext $context ): iterable {
 				return array();
 			}
 
-			/**
-			 * Accepts an unused chunked job chunk.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   array<array-key, mixed> $chunk_args Unused chunk arguments.
-			 * @param   ChunkContext   $context    Unused chunked job context.
-			 *
-			 * @return  void
-			 */
-			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
-
-			/**
-			 * Accepts an unused chunked job completion.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string                  $run_id                    Unused run identifier.
-			 * @param   array<array-key, mixed> $start_args                Unused start arguments.
-			 * @param   string|null             $previous_completed_run_id Unused previous completed run identifier.
-			 *
-			 * @return  void
-			 */
-			#[\Override]
-			public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {}
-
-			/**
-			 * Accepts an unused failed chunked job outcome.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string                  $run_id     Unused run identifier.
-			 * @param   array<array-key, mixed> $start_args Unused start arguments.
-			 * @param   RunFailure              $failure    Unused terminal failure.
-			 *
-			 * @return  void
-			 */
-			#[\Override]
-			public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {}
-
 			/** {@inheritDoc} */
 			#[\Override]
-			public function get_retry_policy(): RetryPolicy {
-				return new RetryPolicy();
-			}
+			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
 		};
 	}
 

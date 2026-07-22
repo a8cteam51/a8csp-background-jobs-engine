@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceFenceOutcome;
@@ -182,9 +181,8 @@ final readonly class RunReconciliation {
 				? $this->overlap_guard->fence_abandoned_run( $identity, $state->args_hash, $run_id, $staleness )
 				: $this->overlap_guard->classify_run_fence( $identity, $state->args_hash, $run_id );
 
-			$contract = $handler->contract( $identity );
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
-				// A transferred lock can appear while the displaced incumbent is still inside its callback; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
+				// A transferred lock can appear during displaced execution; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
 				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
 					return new Success( $state->args_hash );
 				}
@@ -193,10 +191,10 @@ final readonly class RunReconciliation {
 			}
 
 			if ( $state->executing ) {
-				return $this->reconcile_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $fence, $contract, $handler );
+				return $this->reconcile_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $fence, $handler );
 			}
 
-			return $this->reconcile_non_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $staleness, $contract, $handler );
+			return $this->reconcile_non_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $staleness, $handler );
 		}
 
 		return $this->reconcile_terminal_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $terminal_grace, $handler );
@@ -207,7 +205,7 @@ final readonly class RunReconciliation {
 	// region HELPERS
 
 	/**
-	 * Reconciles a running row whose callback owns the execution attempt.
+	 * Reconciles a running row whose execution owns the current attempt.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -218,12 +216,11 @@ final readonly class RunReconciliation {
 	 * @param   RunStore                $run_store    Name-bound run store.
 	 * @param   string                  $expected_raw Exact observed state.
 	 * @param   MaintenanceFenceOutcome $fence        Executing-run fence outcome.
-	 * @param   JobInterface|null       $contract     Registered work contract, or null when unavailable.
 	 * @param   KindHandlerInterface    $handler      Resolved kind handler.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, ?JobInterface $contract, KindHandlerInterface $handler ): AbstractResult {
+	private function reconcile_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, KindHandlerInterface $handler ): AbstractResult {
 		if (
 			MaintenanceFenceOutcome::Owned === $fence
 			|| MaintenanceFenceOutcome::Indeterminate === $fence
@@ -240,7 +237,7 @@ final readonly class RunReconciliation {
 			)
 		);
 
-		return $this->fail_crashed_run( $identity, $run_id, $state, $run_store, $error, $contract, $handler, $expected_raw );
+		return $this->fail_crashed_run( $identity, $run_id, $state, $run_store, $error, $handler, $expected_raw );
 	}
 
 	/**
@@ -255,12 +252,11 @@ final readonly class RunReconciliation {
 	 * @param   RunStore             $run_store    Name-bound run store.
 	 * @param   string               $expected_raw Exact observed state.
 	 * @param   int                  $staleness    Lock-staleness window in seconds.
-	 * @param   JobInterface|null    $contract     Registered work contract, or null when unavailable.
 	 * @param   KindHandlerInterface $handler      Resolved kind handler.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_non_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, ?JobInterface $contract, KindHandlerInterface $handler ): AbstractResult {
+	private function reconcile_non_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, KindHandlerInterface $handler ): AbstractResult {
 		if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
 			return new Success( null );
 		}
@@ -314,7 +310,7 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		return $this->fail_crashed_run( $identity, $run_id, $state, $run_store, $error, $contract, $handler, $expected_raw );
+		return $this->fail_crashed_run( $identity, $run_id, $state, $run_store, $error, $handler, $expected_raw );
 	}
 
 	/**
@@ -342,9 +338,7 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		$callback_target = $handler->contract( $identity );
-
-		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $handler, $callback_target ) ) {
+		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $handler ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(
@@ -369,15 +363,14 @@ final readonly class RunReconciliation {
 	 * @param   RunState             $state        Running state observed by maintenance.
 	 * @param   RunStore             $run_store    Name-bound run store.
 	 * @param   EngineError          $error        Crash-reclaim terminal failure detail.
-	 * @param   JobInterface|null    $contract     Registered work contract, or null when unavailable.
 	 * @param   KindHandlerInterface $handler      Resolved kind handler.
 	 * @param   string               $expected_raw Exact observed state.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?JobInterface $contract, KindHandlerInterface $handler, string $expected_raw ): AbstractResult {
+	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, KindHandlerInterface $handler, string $expected_raw ): AbstractResult {
 		$attempts = RunState::increment_attempts_safely( $state->failed_attempts );
-		$this->terminal_transitions->fail_run( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::crash_reclaim(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ), $expected_raw );
+		$this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::crash_reclaim(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ), $expected_raw );
 
 		return new Success( null );
 	}

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -65,7 +66,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		};
 
 		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->chunked_jobs()->register( $chunked_job );
+		$client->jobs()->register( $chunked_job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		$continue_delay_calls = array();
@@ -83,11 +84,10 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		$completion_observations = array();
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
-			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( $chunked_job, &$completion_observations ): void {
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$completion_observations ): void {
 				$completion_observations[] = array(
-					'hook'            => 'named',
-					'payload'         => array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id ),
-					'completed_calls' => \count( $chunked_job->completed_calls ),
+					'hook'    => 'named',
+					'payload' => array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id ),
 				);
 			},
 			10,
@@ -95,11 +95,10 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed',
-			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( $chunked_job, &$completion_observations ): void {
+			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$completion_observations ): void {
 				$completion_observations[] = array(
-					'hook'            => 'generic',
-					'payload'         => array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id ),
-					'completed_calls' => \count( $chunked_job->completed_calls ),
+					'hook'    => 'generic',
+					'payload' => array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id ),
 				);
 			},
 			10,
@@ -147,29 +146,16 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id'                    => $run_id,
-					'start_args'                => $start_args,
-					'previous_completed_run_id' => null,
-				),
-			),
-			$chunked_job->completed_calls,
-			'Chunked Job on_completed() must run exactly once with run ID and original start arguments'
-		);
-		self::assertSame(
-			array(
-				array(
-					'hook'            => 'named',
-					'payload'         => array( $run_id, $start_args, null ),
-					'completed_calls' => 1,
+					'hook'    => 'named',
+					'payload' => array( $run_id, $start_args, null ),
 				),
 				array(
-					'hook'            => 'generic',
-					'payload'         => array( self::IDENTITY, $run_id, $start_args, null ),
-					'completed_calls' => 1,
+					'hook'    => 'generic',
+					'payload' => array( self::IDENTITY, $run_id, $start_args, null ),
 				),
 			),
 			$completion_observations,
-			'Completed hooks must follow on_completed() and preserve identity-specific then generic payload order'
+			'Completed hooks must preserve identity-specific then generic payload order'
 		);
 
 		$last_completed = $client->runs()->last_completed_run_id( self::NAME );
@@ -202,9 +188,29 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		$chunked_job        = new RecordingChunkedJob( self::FIDELITY_NAME );
 		$chunked_job->queue = array( array( 'value' => 1.0 ) );
 		$client             = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->chunked_jobs()->register( $chunked_job );
+		$client->jobs()->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FIDELITY_IDENTITY );
 		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
+
+		$terminal_hooks = array();
+		\add_action(
+			'a8csp_jobs_engine/completed/' . self::FIDELITY_IDENTITY,
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$terminal_hooks ): void {
+				$terminal_hooks[] = array( 'completed', (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
+			},
+			10,
+			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/failed',
+			static function ( RunFailure $failure ) use ( &$terminal_hooks ): void {
+				if ( self::FIDELITY_IDENTITY === $failure->identity ) {
+					$terminal_hooks[] = array( 'failed', $failure );
+				}
+			},
+			10,
+			1
+		);
 
 		$result = $client->chunked_jobs()->start( self::FIDELITY_NAME, array() );
 		self::assertInstanceOf( Success::class, $result );
@@ -233,17 +239,12 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained queue' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete the chunked job cleanup' );
-		self::assertSame( array(), $chunked_job->failed_calls, 'The fidelity run must not terminalize as a failure' );
 		self::assertSame(
 			array(
-				array(
-					'run_id'                    => $run_id,
-					'start_args'                => array(),
-					'previous_completed_run_id' => null,
-				),
+				array( 'completed', $run_id, array(), null ),
 			),
-			$chunked_job->completed_calls,
-			'The fidelity run must complete exactly once'
+			$terminal_hooks,
+			'The fidelity run must publish exactly one completed hook payload'
 		);
 	}
 

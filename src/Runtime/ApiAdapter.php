@@ -2,12 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Run\RunsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\SchedulesEngineInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\JobsEngineInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\ApiErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
@@ -32,15 +31,13 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $owner      Client plugin owner.
-	 * @param   JobRegistry $work       Registered job and chunked job instances.
-	 * @param   Schedules   $schedules  Schedule engine operations.
-	 * @param   Dispatcher  $dispatcher Background-work admission coordinator.
-	 * @param   Inspection  $inspection Read-only run inspection.
+	 * @param   string     $owner      Client plugin owner.
+	 * @param   Schedules  $schedules  Schedule engine operations.
+	 * @param   Dispatcher $dispatcher Background-work admission coordinator.
+	 * @param   Inspection $inspection Read-only run inspection.
 	 */
 	public function __construct(
 		private string $owner,
-		private JobRegistry $work,
 		private Schedules $schedules,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
@@ -51,41 +48,22 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	// region METHODS
 
 	/**
-	 * Registers one job under its complete owner-qualified identity.
+	 * Registers one job definition under its complete owner-qualified identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $identity Complete owner-qualified job identity.
-	 * @param   AbstractJob $job      Job to register.
+	 * @param   string        $identity   Complete owner-qualified job identity.
+	 * @param   JobDefinition $definition Job definition to register.
 	 *
-	 * @throws  \InvalidArgumentException When the identity and job name disagree, or a chunked job owns the identity.
+	 * @throws  \InvalidArgumentException When the identity, kind, or execution role is invalid.
 	 * @throws  \LogicException           When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function register_job( string $identity, AbstractJob $job ): void {
-		$this->work->register_job( $identity, $job );
-	}
-
-	/**
-	 * Registers one chunked job under its complete owner-qualified identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string              $identity Complete owner-qualified chunked job identity.
-	 * @param   ChunkedJobInterface $chunked_job    Chunked Job to register.
-	 *
-	 * @throws  \InvalidArgumentException When the identity and chunked job name disagree, or a job owns the identity.
-	 * @throws  \LogicException           When the chunked job identity is already registered.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public function register_chunked_job( string $identity, ChunkedJobInterface $chunked_job ): void {
-		$this->work->register_chunked_job( $identity, $chunked_job );
+	public function register( string $identity, JobDefinition $definition ): void {
+		$this->dispatcher->register( $identity, $definition );
 	}
 
 	/**
