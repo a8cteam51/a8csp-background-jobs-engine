@@ -228,8 +228,8 @@ final readonly class Dispatcher {
 		}
 
 		$registered_job = $job ?? $chunked_job;
-		$work_type      = null !== $job ? JobType::Job : JobType::ChunkedJob;
-		$args_hash      = $this->overlap_args_hash( $identity, $entry['start_args'], $registered_job->overlap_key( $entry['start_args'] ), $work_type );
+		$kind           = null !== $job ? JobType::Job : JobType::ChunkedJob;
+		$args_hash      = $this->overlap_args_hash( $identity, $entry['start_args'], $registered_job->overlap_key( $entry['start_args'] ), $kind );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
@@ -615,7 +615,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType                       $work_type Work contract type.
+	 * @param   JobType                       $kind      Kind.
 	 * @param   string                        $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string                        $run_id    Replacement run identifier.
 	 * @param   array<array-key, mixed>       $args      Start arguments.
@@ -627,8 +627,8 @@ final readonly class Dispatcher {
 	 *
 	 * @return  RunState|Failure<EngineError>
 	 */
-	private function create_run_state_and_replace_if_held( JobType $work_type, string $identity, string $run_id, array $args, string $args_hash, array $queue, LockClaimOutcome $claim, RunStore $run_store, PendingAction $pending ): RunState|Failure {
-		$state = $run_store->create( $run_id, $work_type, $args, $args_hash, $queue, $pending );
+	private function create_run_state_and_replace_if_held( JobType $kind, string $identity, string $run_id, array $args, string $args_hash, array $queue, LockClaimOutcome $claim, RunStore $run_store, PendingAction $pending ): RunState|Failure {
+		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $queue, $pending );
 		if ( null === $state ) {
 			if ( LockClaimOutcome::Held !== $claim ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );
@@ -636,12 +636,12 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $work_type->label(), $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind->label(), $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'name'      => $identity,
-						'run_id'    => $run_id,
-						'work_type' => $work_type->machine_key(),
+						'name'   => $identity,
+						'run_id' => $run_id,
+						'kind'   => $kind->machine_key(),
 					),
 				)
 			);
@@ -659,11 +659,11 @@ final readonly class Dispatcher {
 
 		return new Failure(
 			new EngineError(
-				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the %3$s against the current owner.', $work_type->value, $identity, JobType::Job === $work_type ? 'dispatch' : 'start' ),
+				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the %3$s against the current owner.', $kind->value, $identity, JobType::Job === $kind ? 'dispatch' : 'start' ),
 				reason: EngineErrorReason::OverlapHeld,
 				context: array(
-					'name'      => $identity,
-					'work_type' => $work_type->machine_key(),
+					'name' => $identity,
+					'kind' => $kind->machine_key(),
 				),
 			)
 		);
@@ -721,12 +721,12 @@ final readonly class Dispatcher {
 	 *
 	 * @param   string                  $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   array<array-key, mixed> $args      Start arguments.
-	 * @param   JobType                 $work_type Work contract type.
+	 * @param   JobType                 $kind      Kind.
 	 *
 	 * @return  string|Failure<EngineError>
 	 */
 	#[\NoDiscard( 'an argument-hash failure must be handled, not dropped' )]
-	private function args_hash( string $identity, array $args, JobType $work_type = JobType::Job ): string|Failure {
+	private function args_hash( string $identity, array $args, JobType $kind = JobType::Job ): string|Failure {
 		$exception_class = null;
 		try {
 			$hash = PortableArguments::hash( $args );
@@ -737,12 +737,12 @@ final readonly class Dispatcher {
 		if ( null === $hash ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $work_type->value, $identity ),
+					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $kind->value, $identity ),
 					$exception_class,
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
-						'name'      => $identity,
-						'work_type' => $work_type->machine_key(),
+						'name' => $identity,
+						'kind' => $kind->machine_key(),
 					),
 				)
 			);
@@ -760,19 +760,19 @@ final readonly class Dispatcher {
 	 * @param   string                  $identity    Complete owner-qualified Job identity.
 	 * @param   array<array-key, mixed> $args        Start arguments.
 	 * @param   string|null             $overlap_key Opaque argument-aware collision identity.
-	 * @param   JobType                 $work_type   Work contract type.
+	 * @param   JobType                 $kind        Kind.
 	 *
 	 * @return  string|Failure<EngineError>
 	 */
 	#[\NoDiscard( 'an overlap-identity failure must be handled, not dropped' )]
-	private function overlap_args_hash( string $identity, array $args, ?string $overlap_key, JobType $work_type ): string|Failure {
-		$args_hash = $this->args_hash( $identity, $args, $work_type );
+	private function overlap_args_hash( string $identity, array $args, ?string $overlap_key, JobType $kind ): string|Failure {
+		$args_hash = $this->args_hash( $identity, $args, $kind );
 		if ( $args_hash instanceof Failure || null === $overlap_key ) {
 			return $args_hash;
 		}
 
 		if ( '' === $overlap_key || JobInterface::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
-			$label = JobType::Job === $work_type ? 'Job' : 'Chunked Job';
+			$label = JobType::Job === $kind ? 'Job' : 'Chunked Job';
 
 			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $label, $identity, JobInterface::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'name' => $identity ), ) );
 		}

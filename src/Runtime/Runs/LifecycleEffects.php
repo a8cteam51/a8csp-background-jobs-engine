@@ -102,16 +102,16 @@ final readonly class LifecycleEffects {
 	 * @version 1.0.0
 	 *
 	 * @param   RunStatus $status    Terminal run status.
-	 * @param   JobType   $work_type Work contract type.
+	 * @param   JobType   $kind      Kind.
 	 *
-	 * @throws  \InvalidArgumentException When the status is not terminal or the work type is invalid.
+	 * @throws  \InvalidArgumentException When the status is not terminal or the kind is invalid.
 	 *
 	 * @return  list<string>
 	 */
-	public static function expected_effects( RunStatus $status, JobType $work_type ): array {
-		$effects = self::TERMINAL_EFFECTS[ $status->value ][ $work_type->value ] ?? null;
+	public static function expected_effects( RunStatus $status, JobType $kind ): array {
+		$effects = self::TERMINAL_EFFECTS[ $status->value ][ $kind->value ] ?? null;
 		if ( null === $effects ) {
-			throw new \InvalidArgumentException( 'Terminal effects require a terminal status and a Job or Chunked Job work type.' );
+			throw new \InvalidArgumentException( 'Terminal effects require a terminal status and a Job or Chunked Job kind.' );
 		}
 
 		return $effects;
@@ -146,12 +146,12 @@ final readonly class LifecycleEffects {
 	 * @param   RunState $state        Terminalizing run state.
 	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
 	 * @param   RunStore $run_store    Active-run store.
-	 * @param   JobType  $work_type    Work contract type.
+	 * @param   JobType  $kind         Kind.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function finish_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, JobType $work_type ): bool {
-		return $this->finish_terminal_run( $identity, $run_id, $state, $terminal_raw, $run_store, $work_type );
+	public function finish_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, JobType $kind ): bool {
+		return $this->finish_terminal_run( $identity, $run_id, $state, $terminal_raw, $run_store, $kind );
 	}
 
 	/**
@@ -167,13 +167,13 @@ final readonly class LifecycleEffects {
 	 * @param   RunState          $state           Terminal run state.
 	 * @param   string            $terminal_raw    Exact terminal snapshot bytes.
 	 * @param   RunStore          $run_store       Active-run store.
-	 * @param   JobType           $work_type       Resolved work contract type.
+	 * @param   JobType           $kind            Resolved kind.
 	 * @param   JobInterface|null $callback_target Resolved callback target, or null when unavailable.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function replay_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, JobType $work_type, ?JobInterface $callback_target = null ): bool {
-		return $this->execute_claimed_transition( $identity, $run_id, $state, $terminal_raw, $run_store, $work_type, $callback_target );
+	public function replay_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, JobType $kind, ?JobInterface $callback_target = null ): bool {
+		return $this->execute_claimed_transition( $identity, $run_id, $state, $terminal_raw, $run_store, $kind, $callback_target );
 	}
 
 	/**
@@ -187,18 +187,18 @@ final readonly class LifecycleEffects {
 	 * @param   RunState          $state           Terminal run state.
 	 * @param   string            $terminal_raw    Exact terminal snapshot bytes.
 	 * @param   RunStore          $run_store       Active-run store.
-	 * @param   JobType           $work_type       Work contract type.
+	 * @param   JobType           $kind            Kind.
 	 * @param   JobInterface|null $callback_target Resolved callback target, or null when unavailable.
 	 *
 	 * @throws  \Throwable When an effect fails; a trustworthy refreshed snapshot permits the remaining effects and gated finish before rethrow, while a failed refresh causes an immediate rethrow.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, JobType $work_type, ?JobInterface $callback_target = null ): bool {
-		$expected       = self::expected_effects( $state->status, $work_type );
+	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, JobType $kind, ?JobInterface $callback_target = null ): bool {
+		$expected       = self::expected_effects( $state->status, $kind );
 		$missing        = \array_values( \array_diff( $expected, $state->effects ) );
 		$failure_detail = RunStatus::Failed === $state->status && array() !== \array_intersect( array( 'retention', 'callbacks', 'hooks' ), $missing )
-			? $this->failure_detail( $identity, $run_id, $state, $work_type )
+			? $this->failure_detail( $identity, $run_id, $state, $kind )
 			: null;
 		$snapshot       = array(
 			'raw'   => $terminal_raw,
@@ -213,7 +213,7 @@ final readonly class LifecycleEffects {
 			}
 
 			try {
-				$landed = $this->execute_terminal_effect( $effect, $identity, $run_id, $current, $work_type, $callback_target, $failure_detail );
+				$landed = $this->execute_terminal_effect( $effect, $identity, $run_id, $current, $kind, $callback_target, $failure_detail );
 			} catch ( \Throwable $throwable ) {
 				$effect_failure ??= $throwable;
 				$refreshed        = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
@@ -258,7 +258,7 @@ final readonly class LifecycleEffects {
 			$snapshot = $updated;
 		}
 
-		$finished = $this->finish_terminal_run( $identity, $run_id, $snapshot['state'], $snapshot['raw'], $run_store, $work_type );
+		$finished = $this->finish_terminal_run( $identity, $run_id, $snapshot['state'], $snapshot['raw'], $run_store, $kind );
 		if ( null !== $effect_failure ) {
 			throw $effect_failure;
 		}
@@ -316,7 +316,7 @@ final readonly class LifecycleEffects {
 	 * @param   string            $identity        Complete owner-qualified job or chunked job identity.
 	 * @param   string            $run_id          Run identifier.
 	 * @param   RunState          $state           Current terminal state.
-	 * @param   JobType           $work_type       Work contract type.
+	 * @param   JobType           $kind            Kind.
 	 * @param   JobInterface|null $callback_target Resolved callback target, or null when unavailable.
 	 * @param   array|null        $failure_detail  Reconstructed internal and client failure detail.
 	 *
@@ -325,9 +325,9 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  bool Whether the effect landed and may be marked complete.
 	 */
-	private function execute_terminal_effect( string $effect, string $identity, string $run_id, RunState $state, JobType $work_type, ?JobInterface $callback_target, ?array $failure_detail ): bool {
+	private function execute_terminal_effect( string $effect, string $identity, string $run_id, RunState $state, JobType $kind, ?JobInterface $callback_target, ?array $failure_detail ): bool {
 		return match ( $effect ) {
-			'retention' => $this->record_failed_run( $identity, $run_id, $state, $work_type, $failure_detail ),
+			'retention' => $this->record_failed_run( $identity, $run_id, $state, $kind, $failure_detail ),
 			'callbacks' => $this->fire_terminal_callback( $identity, $run_id, $state, $callback_target, $failure_detail['failure'] ?? null ),
 			'hooks'     => $this->fire_terminal_hooks( $identity, $run_id, $state, $failure_detail['failure'] ?? null ),
 			'history'   => $this->record_terminal_history( $identity, $run_id, $state ),
@@ -346,14 +346,14 @@ final readonly class LifecycleEffects {
 	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Failed terminal state.
-	 * @param   JobType    $work_type      Work contract type.
+	 * @param   JobType    $kind           Kind.
 	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @throws  \LogicException When failure detail is absent.
 	 *
 	 * @return  bool Whether the failed-run entry is confirmed persisted.
 	 */
-	private function record_failed_run( string $identity, string $run_id, RunState $state, JobType $work_type, ?array $failure_detail ): bool {
+	private function record_failed_run( string $identity, string $run_id, RunState $state, JobType $kind, ?array $failure_detail ): bool {
 		if ( null === $failure_detail ) {
 			throw new \LogicException( 'Failed-run retention requires persisted terminal failure detail.' );
 		}
@@ -363,7 +363,7 @@ final readonly class LifecycleEffects {
 			return true;
 		}
 
-		$context_name = $work_type->machine_key() . '_name';
+		$context_name = $kind->machine_key() . '_name';
 		$this->logger->warning(
 			\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
 			array(
@@ -499,11 +499,11 @@ final readonly class LifecycleEffects {
 	 * @param   string   $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Failed terminal state.
-	 * @param   JobType  $work_type Work contract type.
+	 * @param   JobType  $kind      Kind.
 	 *
 	 * @return  array{error: EngineError, failure: RunFailure}
 	 */
-	private function failure_detail( string $identity, string $run_id, RunState $state, JobType $work_type ): array {
+	private function failure_detail( string $identity, string $run_id, RunState $state, JobType $kind ): array {
 		if ( null !== $state->error ) {
 			$error = new EngineError( $state->error['message'], $state->error['class'] );
 
@@ -526,7 +526,7 @@ final readonly class LifecycleEffects {
 
 		return array(
 			'error'   => $error,
-			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::CrashReclaim, code: ErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $work_type, $state ), ),
+			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::CrashReclaim, code: ErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $kind, $state ), ),
 		);
 	}
 
@@ -536,13 +536,13 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType  $work_type Work contract type.
+	 * @param   JobType  $kind      Kind.
 	 * @param   RunState $state     Run state at terminalization.
 	 *
 	 * @return  array<array-key, mixed>|null
 	 */
-	private static function failed_chunk_for_state( JobType $work_type, RunState $state ): ?array {
-		if ( JobType::ChunkedJob !== $work_type || 'continue' !== $state->pending?->stage ) {
+	private static function failed_chunk_for_state( JobType $kind, RunState $state ): ?array {
+		if ( JobType::ChunkedJob !== $kind || 'continue' !== $state->pending?->stage ) {
 			return null;
 		}
 
@@ -562,13 +562,13 @@ final readonly class LifecycleEffects {
 	 * @param   RunState $state        Terminal run state.
 	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
 	 * @param   RunStore $run_store    Active-run store.
-	 * @param   JobType  $work_type    Work contract type.
+	 * @param   JobType  $kind         Kind.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	private function finish_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, JobType $work_type ): bool {
+	private function finish_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, JobType $kind ): bool {
 		$this->overlap_guard->release( $identity, $state->args_hash, $run_id );
-		if ( array() !== \array_values( \array_diff( self::expected_effects( $state->status, $work_type ), $state->effects ) ) ) {
+		if ( array() !== \array_values( \array_diff( self::expected_effects( $state->status, $kind ), $state->effects ) ) ) {
 			return false;
 		}
 

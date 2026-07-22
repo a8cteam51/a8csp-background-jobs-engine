@@ -2278,7 +2278,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @param   array              $effects                   Completed terminal effect keys.
 	 * @param   array|null         $error                     Persisted terminal failure detail.
 	 * @param   int                $failed_attempts           Attempts consumed by a failed run.
-	 * @param   JobType            $kind                      Persisted work contract type.
+	 * @param   JobType            $kind                      Persisted kind.
 	 * @param   array              $queue                     Persisted chunk queue.
 	 * @param   PendingAction|null $pending                   Durable successor descriptor.
 	 * @param   string|null        $previous_completed_run_id Frozen previous completed run identifier.

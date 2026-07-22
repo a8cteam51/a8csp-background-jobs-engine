@@ -40,7 +40,7 @@ final readonly class RunState {
 	 * @phpstan-param JobType $kind
 	 *
 	 * @param   RunStatus                     $status                    Lifecycle state.
-	 * @param   JobType                       $kind                      Admitted work contract type.
+	 * @param   JobType                       $kind                      Admitted kind.
 	 * @param   bool                          $executing                 Whether one lifecycle action is executing.
 	 * @param   array<array-key, mixed>       $start_args                Arguments supplied when the run started.
 	 * @param   string                        $args_hash                 Stable single-flight identity derived from arguments or a Job overlap key.

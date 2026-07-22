@@ -90,7 +90,7 @@ final readonly class RunStore {
 	 * @phpstan-param JobType $kind
 	 *
 	 * @param   string                        $run_id     Run identifier.
-	 * @param   JobType                       $kind       Admitted work contract type.
+	 * @param   JobType                       $kind       Admitted kind.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
 	 * @param   string                        $args_hash  Stable single-flight identity.
 	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.

@@ -659,7 +659,7 @@ final class RunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType $kind Admitted work contract type.
+	 * @param   JobType $kind Admitted kind.
 	 *
 	 * @return  RunState
 	 */

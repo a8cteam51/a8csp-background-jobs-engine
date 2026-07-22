@@ -38,6 +38,7 @@ final class ApiErrorMapper {
 		'group'                            => true,
 		'hook'                             => true,
 		'interval'                         => true,
+		'kind'                             => true,
 		'maximum_depth'                    => true,
 		'maximum_json_length'              => true,
 		'missing_function'                 => true,
@@ -49,7 +50,6 @@ final class ApiErrorMapper {
 		'schedule'                         => true,
 		'status'                           => true,
 		'timestamp'                        => true,
-		'work_type'                        => true,
 		'wp_init_fired'                    => true,
 	);
 

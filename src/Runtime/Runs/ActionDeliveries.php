@@ -615,7 +615,7 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType  $work_type Work contract type.
+	 * @param   JobType  $kind      Kind.
 	 * @param   string   $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced running state.
@@ -623,10 +623,10 @@ final readonly class ActionDeliveries {
 	 *
 	 * @return  void
 	 */
-	private function fail_orphaned_run( JobType $work_type, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
-		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $work_type->value, $identity, $run_id, $work_type->label() ) );
+	private function fail_orphaned_run( JobType $kind, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %4$s implementation for run "%3$s"; register that %4$s or purge the run.', $kind->value, $identity, $run_id, $kind->label() ) );
 
-		$this->terminal_transitions->fail_unregistered_run( $work_type, $identity, $run_id, $state, $run_store, $error );
+		$this->terminal_transitions->fail_unregistered_run( $kind, $identity, $run_id, $state, $run_store, $error );
 	}
 
 	/**

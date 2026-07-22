@@ -285,14 +285,14 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @phpstan-param list<string> $effects
 	 */
 	#[DataProvider( 'terminal_effect_rows' )]
-	public function test_expected_terminal_effects( string $status, JobType $work_type, array $effects ): void {
-		self::assertSame( $effects, LifecycleEffects::expected_effects( RunStatus::from( $status ), $work_type ) );
+	public function test_expected_terminal_effects( string $status, JobType $kind, array $effects ): void {
+		self::assertSame( $effects, LifecycleEffects::expected_effects( RunStatus::from( $status ), $kind ) );
 	}
 
 	/**
 	 * Supplies every terminal outcome and work-kind combination.
 	 *
-	 * @return  array<string, array{status: string, work_type: JobType, effects: list<string>}>
+	 * @return  array<string, array{status: string, kind: JobType, effects: list<string>}>
 	 */
 	public static function terminal_effect_rows(): array {
 		// Data providers run before setUpBeforeClass, while guarded source enums require the WordPress bootstrap constant.
@@ -302,44 +302,44 @@ final class LifecycleEffectsTest extends TestCase {
 
 		return array(
 			'failed chunked job'     => array(
-				'status'    => 'failed',
-				'work_type' => JobType::ChunkedJob,
-				'effects'   => array( 'retention', 'callbacks', 'hooks', 'history' ),
+				'status'  => 'failed',
+				'kind'    => JobType::ChunkedJob,
+				'effects' => array( 'retention', 'callbacks', 'hooks', 'history' ),
 			),
 			'failed job'             => array(
-				'status'    => 'failed',
-				'work_type' => JobType::Job,
-				'effects'   => array( 'retention', 'callbacks', 'hooks', 'history' ),
+				'status'  => 'failed',
+				'kind'    => JobType::Job,
+				'effects' => array( 'retention', 'callbacks', 'hooks', 'history' ),
 			),
 			'completed chunked job'  => array(
-				'status'    => 'completed',
-				'work_type' => JobType::ChunkedJob,
-				'effects'   => array( 'callbacks', 'hooks', 'history' ),
+				'status'  => 'completed',
+				'kind'    => JobType::ChunkedJob,
+				'effects' => array( 'callbacks', 'hooks', 'history' ),
 			),
 			'completed job'          => array(
-				'status'    => 'completed',
-				'work_type' => JobType::Job,
-				'effects'   => array( 'callbacks', 'hooks', 'history' ),
+				'status'  => 'completed',
+				'kind'    => JobType::Job,
+				'effects' => array( 'callbacks', 'hooks', 'history' ),
 			),
 			'cancelled chunked job'  => array(
-				'status'    => 'cancelled',
-				'work_type' => JobType::ChunkedJob,
-				'effects'   => array( 'hooks', 'history' ),
+				'status'  => 'cancelled',
+				'kind'    => JobType::ChunkedJob,
+				'effects' => array( 'hooks', 'history' ),
 			),
 			'cancelled job'          => array(
-				'status'    => 'cancelled',
-				'work_type' => JobType::Job,
-				'effects'   => array( 'hooks', 'history' ),
+				'status'  => 'cancelled',
+				'kind'    => JobType::Job,
+				'effects' => array( 'hooks', 'history' ),
 			),
 			'superseded chunked job' => array(
-				'status'    => 'superseded',
-				'work_type' => JobType::ChunkedJob,
-				'effects'   => array( 'hooks', 'history' ),
+				'status'  => 'superseded',
+				'kind'    => JobType::ChunkedJob,
+				'effects' => array( 'hooks', 'history' ),
 			),
 			'superseded job'         => array(
-				'status'    => 'superseded',
-				'work_type' => JobType::Job,
-				'effects'   => array( 'hooks', 'history' ),
+				'status'  => 'superseded',
+				'kind'    => JobType::Job,
+				'effects' => array( 'hooks', 'history' ),
 			),
 		);
 	}
