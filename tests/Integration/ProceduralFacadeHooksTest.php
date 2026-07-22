@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job;
-use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\CoversFunction;
 
@@ -151,7 +151,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		$name     = 'object-failed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 10 );
-		$job      = new class( $name ) extends Job {
+		$job      = new class( $name ) extends AbstractJob {
 			/** @var list<array{string, array<array-key, mixed>, RunFailure}> */
 			public array $failures = array();
 

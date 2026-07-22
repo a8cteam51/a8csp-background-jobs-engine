@@ -30,7 +30,7 @@ final class RequirementsCheckTest extends IntegrationTestCase {
 
 		if ( \version_compare( $wp_version, '7.0', '<' ) ) {
 			self::assertInstanceOf( \WP_Error::class, $requirements );
-			self::assertFalse( \function_exists( 'a8csp_bgje_plugin' ) );
+			self::assertFalse( \function_exists( 'a8csp_bgje' ) );
 		} else {
 			self::assertTrue( $requirements );
 		}

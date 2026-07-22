@@ -19,17 +19,27 @@ every surviving component is initialized before any hook can fire.
   version compatibility checks, the requirements gate, and its admin-notice reporter; both root
   bootstrap files stay parsable below the plugin's PHP floor, and CI lints them against the older
   PHP versions.
-- `functions.php` provides the construction-only composition-root accessor and the owner-bound
-  front door `a8csp_bgje( string $owner ): Engine`; handle construction is lazy, while verb
-  readiness starts at `init`.
-- `src/` root holds only the bootstrapping mechanism: `src/ComponentInterface.php` is the one
-  contract, `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php`
-  the optional defaults-only base, and `src/Plugin.php` the composition root — the one file to
-  edit when wiring a top-level component into `COMPONENTS`; they boot in registration order
-  behind a non-retryable latch.
-- `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound consumer surface:
-  the owner-scoped `Engine` handle, authoring bases, contexts, and returned value types.
-  `src/Api/` contains the internal capability facades and contracts; the rest of the engine graph
+- `functions.php` provides only the owner-bound front door `a8csp_bgje( string $owner ): Engine`
+  and a deterministic loader for the procedural facade files; handle and manager construction is
+  lazy, while capability readiness starts at `init`.
+- `includes/` groups the procedural facade by concept: `job-functions.php` provides registration
+  and enqueueing, `chunked-job-functions.php` provides chunked-job starts,
+  `schedule-functions.php` provides schedule synchronization and dispatch, and
+  `run-functions.php` provides run inspection, retry, and cancellation.
+- `src/` root holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services alongside the
+  bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
+  `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the
+  optional defaults-only base, and `src/Plugin.php` the internal composition root — the one file to
+  edit when wiring a top-level component into `COMPONENTS`. The main bootstrap registers the
+  request-local `Plugin` instance's `boot()` method; components boot in registration order behind a
+  non-retryable latch.
+- `models/` holds the public representation under `Error\`, `Job\`, `Run\`, and `Schedule\`;
+  `Schedule\Schedule`, `Schedule\Recurrence`, and `Schedule\CatchUpPolicy` form the typed schedule
+  declaration consumed by the public `Schedules` service.
+- The root services, `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound
+  consumer surface: the owner-scoped `Engine` handle and capability managers plus authoring bases,
+  contexts, and input and returned value types.
+  `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph
   is likewise `@internal`.
 - `src/Engine/` is the engine capability tree: `Component.php` assembles and publishes the
   request-local object graph; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the

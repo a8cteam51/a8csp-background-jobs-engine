@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobsEngineInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 
 /** Records calls made through the typed chunked-job-engine client-testing seam. */
 final class FakeChunkedJobsEngine implements ChunkedJobsEngineInterface {
@@ -18,7 +18,7 @@ final class FakeChunkedJobsEngine implements ChunkedJobsEngineInterface {
 	// region MAGIC METHODS.
 
 	/**
-	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError> $start_result
+	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError> $start_result
 	 *
 	 * @param   AbstractResult $start_result Scripted start result.
 	 */
@@ -50,7 +50,7 @@ final class FakeChunkedJobsEngine implements ChunkedJobsEngineInterface {
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   int                     $priority   Advisory priority.
 	 *
-	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 

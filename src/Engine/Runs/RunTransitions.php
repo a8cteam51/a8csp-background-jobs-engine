@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\ChunkedJob\ChunkedJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
@@ -214,15 +214,15 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OneOffJobInterface $job       Completed job.
-	 * @param   string             $job_name  Complete owner-qualified job identity.
-	 * @param   string             $run_id    Run identifier.
-	 * @param   RunState           $state     Running state.
-	 * @param   RunStore           $run_store Active-run store.
+	 * @param   AbstractJob $job       Completed job.
+	 * @param   string      $job_name  Complete owner-qualified job identity.
+	 * @param   string      $run_id    Run identifier.
+	 * @param   RunState    $state     Running state.
+	 * @param   RunStore    $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	public function complete_job( OneOffJobInterface $job, string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
+	public function complete_job( AbstractJob $job, string $job_name, string $run_id, RunState $state, RunStore $run_store ): void {
 		$previous_completed_run_id = $this->last_completed_run_id( $job_name );
 		$terminal_state            = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( $previous_completed_run_id );
 

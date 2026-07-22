@@ -19,4 +19,5 @@ if ( \file_exists( $a8csp_bgje_wp_load ) ) {
 	}
 
 	\class_alias( \A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbRuntimeStub::class, 'wpdb' );
+	\class_alias( \A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WPErrorStub::class, 'WP_Error' );
 }

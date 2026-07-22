@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\OneOffJobInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Job\JobsEngineInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\JobsEngineInterface;
 
 /** Records calls made through the typed job-engine client-testing seam. */
 final class FakeJobsEngine implements JobsEngineInterface {
@@ -18,7 +18,7 @@ final class FakeJobsEngine implements JobsEngineInterface {
 	// region MAGIC METHODS.
 
 	/**
-	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError> $enqueue_result
+	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError> $enqueue_result
 	 *
 	 * @param   AbstractResult $enqueue_result Scripted enqueue result.
 	 */
@@ -34,12 +34,12 @@ final class FakeJobsEngine implements JobsEngineInterface {
 	 * Records one job registration.
 	 *
 	 * @param   string        $identity Complete owner-qualified job identity.
-	 * @param   OneOffJobInterface $job     Job to register.
+	 * @param   AbstractJob $job     Job to register.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function register_job( string $identity, OneOffJobInterface $job ): void {
+	public function register_job( string $identity, AbstractJob $job ): void {
 		$this->calls[] = array( 'register_job', $identity, $job );
 	}
 
@@ -51,7 +51,7 @@ final class FakeJobsEngine implements JobsEngineInterface {
 	 * @param   int                     $delay     Scheduling delay in seconds.
 	 * @param   int                     $priority  Advisory priority.
 	 *
-	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Api\Error\ApiError>
+	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */

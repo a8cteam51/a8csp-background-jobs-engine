@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

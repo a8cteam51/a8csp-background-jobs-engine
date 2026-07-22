@@ -1,34 +1,10 @@
 <?php declare( strict_types=1 );
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
-use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
 
 \defined( 'ABSPATH' ) || exit;
 
 // region META
-
-/**
- * Returns the plugin's composition root.
- *
- * Construction only; it never boots the plugin.
- *
- * @internal Engine boot wiring; clients enter through `a8csp_bgje()`.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @return  Plugin
- */
-function a8csp_bgje_plugin(): Plugin {
-	/**
-	 * Shared composition-root instance.
-	 *
-	 * @var Plugin|null $plugin
-	 */
-	static $plugin = null;
-
-	return $plugin ??= new Plugin();
-}
 
 /**
  * Returns the owner-bound background-work engine handle.

@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
-use A8C\SpecialProjects\BackgroundJobsEngine\Api\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\ComponentCollection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
@@ -94,14 +94,14 @@ final class PluginBootGateTest extends TestCase {
 	}
 
 	/**
-	 * A boot throw poisons the stored plugin entry and the component client seam fails loudly.
+	 * A boot throw poisons the retained plugin instance and the component client seam fails loudly.
 	 *
 	 * @return  void
 	 */
 	public function test_failed_boot_leaves_the_component_client_unavailable(): void {
 		$GLOBALS['wpdb'] = new \stdClass();
 		$throwable       = null;
-		$plugin          = \a8csp_bgje_plugin();
+		$plugin          = Plugin::instance();
 		try {
 			$plugin->boot();
 		} catch ( \TypeError $caught ) {
