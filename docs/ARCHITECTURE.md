@@ -13,15 +13,16 @@ every surviving component is initialized before any hook can fire.
 
 - `a8csp-background-jobs-engine.php` defines the plugin header and constants, requires
   `functions-bootstrap.php`, and wires the self-updater, the requirements gate, and the
-  `plugins_loaded` priority-zero boot. A request that activates the engine stays dormant until
+  `plugins_loaded` boot. A request that activates the engine stays dormant until
   the next request.
 - `functions-bootstrap.php` provides the GitHub release updater, plugin metadata,
   version compatibility checks, the requirements gate, and its admin-notice reporter; both root
   bootstrap files stay parsable below the plugin's PHP floor, and CI lints them against the older
   PHP versions.
-- `functions.php` provides only the owner-bound front door `a8csp_bgje( string $owner ): Engine`
-  and a deterministic loader for the procedural facade files; handle and manager construction is
-  lazy, while capability readiness starts at `init`.
+- `functions.php` provides the owner-bound front door `a8csp_bgje( string $owner ): Engine`, the
+  composition-root accessor `a8csp_bgje_plugin(): Plugin`, and a deterministic loader for the
+  procedural facade files; handle and manager construction is lazy, while capability readiness
+  starts at `init`.
 - `includes/` groups the procedural facade by concept: `job-functions.php` provides registration
   and enqueueing, `chunked-job-functions.php` provides chunked-job starts,
   `schedule-functions.php` provides schedule synchronization and dispatch, and

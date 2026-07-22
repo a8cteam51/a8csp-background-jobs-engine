@@ -7,10 +7,10 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins the baseline public-surface guarantees: exhaustive error codes, strict schedule
- * specifications, a single global door, and the procedural facade verbs.
+ * specifications, the two global doors, and the procedural facade verbs.
  *
  * @load-bearing structural-guard
- * @pin-rationale Every emitted error code is an ErrorCode case, unknown specification keys fail loudly instead of silently applying defaults, and the sole global door is a8csp_bgje().
+ * @pin-rationale Every emitted error code is an ErrorCode case, unknown specification keys fail loudly instead of silently applying defaults, and the global doors are a8csp_bgje() for the engine handle and a8csp_bgje_plugin() for the composition root.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -118,22 +118,24 @@ final class BaselineSurfaceTest extends TestCase {
 	}
 
 	/**
-	 * The sole global door is a8csp_bgje(); no plugin accessor is declared or referenced.
+	 * The global doors are a8csp_bgje() for the engine handle and a8csp_bgje_plugin() for the
+	 * composition root; the Plugin class offers no static accessor of its own.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_the_sole_global_door_is_the_engine_accessor(): void {
-		self::assertFalse( \function_exists( 'a8csp_bgje_plugin' ), 'The plugin accessor must not be declared.' );
+	public function test_the_global_doors_are_the_engine_and_plugin_accessors(): void {
+		self::assertTrue( \function_exists( 'a8csp_bgje' ), 'The engine accessor must be declared.' );
+		self::assertTrue( \function_exists( 'a8csp_bgje_plugin' ), 'The plugin accessor must be declared.' );
 
-		foreach ( self::shipped_php_files() as $file ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local plugin source is the subject of this WP-less structural test.
-			$contents = \file_get_contents( $file );
-			self::assertIsString( $contents );
-			self::assertStringNotContainsString( 'a8csp_bgje_plugin', $contents, \basename( $file ) . ' references the removed plugin accessor.' );
-		}
+		$return = ( new \ReflectionFunction( 'a8csp_bgje_plugin' ) )->getReturnType();
+		self::assertInstanceOf( \ReflectionNamedType::class, $return );
+		self::assertSame( self::ROOT_NAMESPACE . 'Plugin', $return->getName(), 'a8csp_bgje_plugin() must return the composition root.' );
+
+		// @phpstan-ignore function.impossibleType (The guard exists to fail when a singleton accessor reappears, which static analysis of the current code cannot see.)
+		self::assertFalse( \method_exists( self::ROOT_NAMESPACE . 'Plugin', 'instance' ), 'The Plugin singleton accessor must not be declared.' );
 	}
 
 	/**

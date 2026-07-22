@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Verifies the plugin boots on a supported runtime inside wp-env: the requirements gate passes,
- * the plugin boot callback is wired, and the internal seam retains the booted plugin instance.
+ * the plugin boot callback is wired, and the accessor retains the booted plugin instance.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -19,7 +19,7 @@ final class PluginBootTest extends IntegrationTestCase {
 
 	/**
 	 * On an at-floor runtime the requirements gate passes and `plugins_loaded` is wired to the
-	 * plugin's boot callback at priority zero.
+	 * plugin's boot callback at the default priority.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -28,14 +28,14 @@ final class PluginBootTest extends IntegrationTestCase {
 	 */
 	public function test_plugin_boots_on_supported_runtime(): void {
 		self::assertTrue( \constant( 'A8CSP_BGJE_REQUIREMENTS_RESULT' ) );
-		self::assertFalse( \function_exists( 'a8csp_bgje_plugin' ) );
-		self::assertSame( 0, has_action( 'plugins_loaded', array( Plugin::instance(), 'boot' ) ) );
-		self::assertTrue( Plugin::instance()->is_booted() );
+		self::assertTrue( \function_exists( 'a8csp_bgje_plugin' ) );
+		self::assertSame( 10, has_action( 'plugins_loaded', array( \a8csp_bgje_plugin(), 'boot' ) ) );
+		self::assertTrue( \a8csp_bgje_plugin()->is_booted() );
 	}
 
 	/**
 	 * `Plugin::boot()` is idempotent: the `plugins_loaded` boot has already run, and a second call
-	 * leaves the retained internal instance unchanged.
+	 * leaves the accessor's retained instance unchanged.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -43,12 +43,12 @@ final class PluginBootTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_second_boot_does_not_replace_cached_plugin(): void {
-		$plugin = Plugin::instance();
+		$plugin = \a8csp_bgje_plugin();
 		self::assertInstanceOf( Plugin::class, $plugin );
 
 		$plugin->boot();
 
-		self::assertSame( $plugin, Plugin::instance() );
+		self::assertSame( $plugin, \a8csp_bgje_plugin() );
 	}
 
 	// endregion.

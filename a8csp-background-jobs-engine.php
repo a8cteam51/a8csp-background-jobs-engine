@@ -62,5 +62,5 @@ if ( is_wp_error( A8CSP_BGJE_REQUIREMENTS_RESULT ) ) {
 	a8csp_bgje_output_requirements_error( A8CSP_BGJE_REQUIREMENTS_RESULT );
 } else {
 	require_once A8CSP_BGJE_DIR_PATH . 'functions.php';
-	add_action( 'plugins_loaded', array( \A8C\SpecialProjects\BackgroundJobsEngine\Plugin::instance(), 'boot' ), 0 );
+	add_action( 'plugins_loaded', array( a8csp_bgje_plugin(), 'boot' ) );
 }

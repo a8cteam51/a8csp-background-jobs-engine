@@ -101,7 +101,7 @@ final class PluginBootGateTest extends TestCase {
 	public function test_failed_boot_leaves_the_component_client_unavailable(): void {
 		$GLOBALS['wpdb'] = new \stdClass();
 		$throwable       = null;
-		$plugin          = Plugin::instance();
+		$plugin          = \a8csp_bgje_plugin();
 		try {
 			$plugin->boot();
 		} catch ( \TypeError $caught ) {
