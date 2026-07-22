@@ -445,7 +445,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 */
 	private function fallback_backend(): BackendInterface {
 		// The last backend is the WP-Cron baseline whose corrective diagnostics a facade failure would hide.
-		return $this->backends[ \count( $this->backends ) - 1 ];
+		return \array_last( $this->backends );
 	}
 
 	/**

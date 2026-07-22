@@ -549,22 +549,13 @@ final class ScheduleRegistry {
 	 * @return  bool
 	 */
 	public static function has_registration_without_undeclared_markers( string $owner, array $rows ): bool {
-		foreach ( $rows as $registration_key => $row ) {
-			if ( ! \is_string( $registration_key ) || ! \is_array( $row ) ) {
-				continue;
-			}
-
-			$parts = JobIdentity::parts( $registration_key );
-			if ( null === $parts || $owner !== $parts[0] ) {
-				continue;
-			}
-
-			if ( ! \array_key_exists( 'undeclared_occurrences', $row ) || ! \array_key_exists( 'undeclared_escalated', $row ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return \array_any(
+			$rows,
+			static fn ( mixed $row, int|string $registration_key ): bool => \is_string( $registration_key )
+				&& \is_array( $row )
+				&& ( JobIdentity::parts( $registration_key )[0] ?? null ) === $owner
+				&& ( ! \array_key_exists( 'undeclared_occurrences', $row ) || ! \array_key_exists( 'undeclared_escalated', $row ) )
+		);
 	}
 
 	/**

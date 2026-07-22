@@ -810,15 +810,11 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return new EngineError( 'chunked_job kind_state must be an oldest-first list of portable argument arrays.', \UnexpectedValueException::class, EngineErrorReason::PayloadRejected );
 		}
 
-		$queue = array();
-		foreach ( $state->kind_state as $chunk ) {
-			if ( ! \is_array( $chunk ) ) {
-				return new EngineError( 'chunked_job kind_state must be an oldest-first list of portable argument arrays.', \UnexpectedValueException::class, EngineErrorReason::PayloadRejected );
-			}
-			$queue[] = $chunk;
+		if ( \array_any( $state->kind_state, static fn ( mixed $chunk ): bool => ! \is_array( $chunk ) ) ) {
+			return new EngineError( 'chunked_job kind_state must be an oldest-first list of portable argument arrays.', \UnexpectedValueException::class, EngineErrorReason::PayloadRejected );
 		}
 
-		return $queue;
+		return \array_map( static fn ( mixed $chunk ): array => \is_array( $chunk ) ? $chunk : array(), $state->kind_state );
 	}
 
 	/**

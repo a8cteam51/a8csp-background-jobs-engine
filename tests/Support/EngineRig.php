@@ -613,10 +613,10 @@ final class EngineRig {
 	 * @return list<mixed>
 	 */
 	private function latest_event( string $event ): array {
-		$events = $this->hooks->fired( 'a8csp_jobs_engine/' . $event );
-		Assert::assertNotEmpty( $events, \sprintf( 'Expected the generic %s lifecycle hook to fire.', $event ) );
+		$latest = \array_last( $this->hooks->fired( 'a8csp_jobs_engine/' . $event ) );
+		Assert::assertNotNull( $latest, \sprintf( 'Expected the generic %s lifecycle hook to fire.', $event ) );
 
-		return $events[ \count( $events ) - 1 ];
+		return $latest;
 	}
 
 	/**
