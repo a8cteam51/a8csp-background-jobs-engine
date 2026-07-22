@@ -250,7 +250,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$run = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
-		self::assertSame( array( self::ARGS ), $run['queue'] ?? null );
+		self::assertSame( array(), $run['kind_state'] ?? null );
 		$salted_hash = $run['args_hash'] ?? null;
 		self::assertIsString( $salted_hash );
 		self::assertNotSame( $this->args_hash(), $salted_hash );

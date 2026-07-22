@@ -953,7 +953,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  RunState
 	 */
 	private static function state( string $args_hash, int $heartbeat_at = self::NOW ): RunState {
-		return new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: $args_hash, queue: array( array() ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $heartbeat_at );
+		return new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: $args_hash, kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $heartbeat_at );
 	}
 
 	/**

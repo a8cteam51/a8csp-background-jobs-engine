@@ -610,7 +610,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 */
 	private function install_replacement_generation(): void {
 		$credit = self::NOW + 90 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
-		$state  = new RunState( status: RunStatus::Running, kind: 'job', executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $credit );
+		$state  = new RunState( status: RunStatus::Running, kind: 'job', executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $credit );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, $credit ) );
 	}
@@ -644,7 +644,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_pending_run(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
 		$this->put_fixture(

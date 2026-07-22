@@ -131,7 +131,7 @@ final class RunStateTest extends TestCase {
 	 * @return  RunState
 	 */
 	private function state( string $kind ): RunState {
-		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: array(), args_hash: 'hash', queue: array(), failed_attempts: 0, action_sequence: 1, created_at: 1, heartbeat_at: 1 );
+		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: array(), args_hash: 'hash', kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: 1, heartbeat_at: 1 );
 	}
 
 	// endregion.

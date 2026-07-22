@@ -408,8 +408,14 @@ final readonly class Dispatcher {
 				return new Failure( $heartbeat_error );
 			}
 
-			$replacement = $state->with_heartbeat_at( $scheduled_at );
-			if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
+			$replacement  = $state->with_heartbeat_at( $scheduled_at );
+			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
+			if ( $transitioned instanceof Failure ) {
+				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
+
+				return $transitioned;
+			}
+			if ( null === $transitioned ) {
 				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
 
 				return new Failure(
@@ -485,7 +491,14 @@ final readonly class Dispatcher {
 	 */
 	private function create_run_state_and_replace_if_held( KindHandlerInterface $handler, string $identity, string $run_id, array $args, string $args_hash, LockClaimOutcome $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): RunState|Failure {
 		$kind  = $handler->key();
-		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_queue( $args ), $handler->initial_pending( $scheduled_at, $delay, $priority ) );
+		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $scheduled_at, $delay, $priority ) );
+		if ( $state instanceof Failure ) {
+			if ( LockClaimOutcome::Held !== $claim ) {
+				$this->overlap_guard->release( $identity, $args_hash, $run_id );
+			}
+
+			return $state;
+		}
 		if ( null === $state ) {
 			if ( LockClaimOutcome::Held !== $claim ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );

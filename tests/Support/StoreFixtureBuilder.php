@@ -181,15 +181,15 @@ final readonly class StoreFixtureBuilder {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
 				$store   = new RunStore( $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
-				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->queue, $state->pending );
-				if ( null === $created ) {
+				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending );
+				if ( ! $created instanceof RunState ) {
 					throw new \LogicException( 'Production RunStore rejected an isolated active-run fixture.' );
 				}
 
 				$raw = self::same_state( $created, $state )
 					? $this->raw_option( RunIdentity::option_name( $this->identity, $run_id ) )
 					: $store->replace_if_state_matches( $run_id, $created, $state );
-				if ( null === $raw ) {
+				if ( ! \is_string( $raw ) ) {
 					throw new \LogicException( 'Production RunStore could not serialize the requested active-run fixture.' );
 				}
 
@@ -800,7 +800,7 @@ final readonly class StoreFixtureBuilder {
 			&& $left->executing === $right->executing
 			&& $left->start_args === $right->start_args
 			&& $left->args_hash === $right->args_hash
-			&& $left->queue === $right->queue
+			&& $left->kind_state === $right->kind_state
 			&& $left->failed_attempts === $right->failed_attempts
 			&& $left->action_sequence === $right->action_sequence
 			&& $left->created_at === $right->created_at

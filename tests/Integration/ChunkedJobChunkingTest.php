@@ -215,7 +215,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the float chunk' );
 		$run_state = \get_option( 'a8csp_bgje_run_' . self::FIDELITY_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
-		$queue = $run_state['queue'] ?? null;
+		$queue = $run_state['kind_state'] ?? null;
 		self::assertIsArray( $queue );
 		$persisted_chunk = $queue[0] ?? null;
 		self::assertIsArray( $persisted_chunk );

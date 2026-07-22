@@ -70,16 +70,16 @@ interface KindHandlerInterface {
 	public function owns_stage( ?string $stage ): bool;
 
 	/**
-	 * Returns the initial processing queue for an admitted run.
+	 * Returns the initial opaque state for an admitted run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
-	 * @return  list<array<array-key, mixed>>
+	 * @return  array<array-key, mixed>
 	 */
-	public function initial_queue( array $start_args ): array;
+	public function initial_kind_state( array $start_args ): array;
 
 	/**
 	 * Returns the first durable lifecycle action for an admitted run.

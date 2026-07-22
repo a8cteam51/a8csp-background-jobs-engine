@@ -781,7 +781,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$args_hash = $builder->args_hash( array() );
 		$now       = \time();
-		$state     = new RunState( RunStatus::Running, 'job', true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
+		$state     = new RunState( RunStatus::Running, 'job', true, array(), $args_hash, array(), 0, 1, $now, $now );
 		$fixtures  = array(
 			$builder->run( self::CANONICAL_RUN_ID, $state ),
 			$builder->history(

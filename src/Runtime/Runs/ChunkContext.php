@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext as ChunkContextContract;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -40,7 +41,7 @@ final class ChunkContext implements ChunkContextContract {
 	 *
 	 * @var     int
 	 */
-	private const int MAX_QUEUE_BYTES = 1_048_576;
+	private const int MAX_QUEUE_BYTES = RunStore::MAX_KIND_STATE_BYTES;
 
 	/**
 	 * Arguments supplied when the run started.

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
@@ -234,7 +235,7 @@ final readonly class LifecycleEffects {
 			}
 
 			$updated = $run_store->append_terminal_effect( $run_id, $current, $snapshot['raw'], $effect );
-			if ( null === $updated ) {
+			if ( $updated instanceof Failure || null === $updated ) {
 				if ( null !== $effect_failure ) {
 					throw $effect_failure;
 				}

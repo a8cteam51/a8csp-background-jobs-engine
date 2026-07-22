@@ -214,7 +214,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_leaves_a_grammar_valid_unknown_run_kind_untouched(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->run( self::RUN_ID, $state );
 		$this->wpdb->put( $option_name, $raw );
@@ -876,7 +876,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_pending_chunked_job_redelivery_ignores_a_current_job_with_the_same_identity(): void {
 		$chunk = array( 'page' => 1 );
-		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'continue', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'continue', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
 		$current_job = $this->work->job( self::IDENTITY );
@@ -921,7 +921,7 @@ final class RunReconciliationTest extends TestCase {
 		$name                = self::identity( 'reused-as-chunked-job' );
 		$current_chunked_job = new RecordingChunkedJob( 'reused-as-chunked-job' );
 		$this->work->register_chunked_job( $name, $current_chunked_job );
-		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
 		$this->store_running_state( $name, $state );
 		$this->put_lock( 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH, self::RUN_ID, self::NOW - 901 );
 
@@ -1150,7 +1150,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_supersedes_a_stale_persisted_chunked_job_whose_lock_has_transferred(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'continue', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'continue', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->clock->timestamp = self::NOW + 901;
 		$replacement_run_id     = '00000000001700000001-0000000000000000043';
@@ -1377,7 +1377,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_routes_a_running_row_by_its_persisted_chunked_job_kind(): void {
-		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'continue', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'continue', 10 ) );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->run( self::RUN_ID, $state );
 
@@ -1586,7 +1586,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_leaves_a_running_unknown_kind_untouched(): void {
 		$name  = self::identity( 'unknown-running-kind' );
-		$state = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'export', 19 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: PendingAction::async( 'export', 19 ) );
 		$this->store_running_state( $name, $state );
 		$before = $this->run_state( $name );
 
@@ -2364,22 +2364,22 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @phpstan-param list<string> $effects
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
-	 * @phpstan-param list<array<array-key, mixed>> $queue
+	 * @phpstan-param array<array-key, mixed> $kind_state
 	 *
-	 * @param   string             $name                      Stable job or chunked job name.
-	 * @param   string             $status                    Terminal status value.
-	 * @param   array              $effects                   Completed terminal effect keys.
-	 * @param   array|null         $error                     Persisted terminal failure detail.
-	 * @param   int                $failed_attempts           Attempts consumed by a failed run.
-	 * @param   string             $kind                      Persisted kind.
-	 * @param   array              $queue                     Persisted chunk queue.
-	 * @param   PendingAction|null $pending                   Durable successor descriptor.
-	 * @param   string|null        $previous_completed_run_id Frozen previous completed run identifier.
+	 * @param   string                  $name                      Stable job or chunked job name.
+	 * @param   string                  $status                    Terminal status value.
+	 * @param   array                   $effects                   Completed terminal effect keys.
+	 * @param   array|null              $error                     Persisted terminal failure detail.
+	 * @param   int                     $failed_attempts           Attempts consumed by a failed run.
+	 * @param   string                  $kind                      Persisted kind.
+	 * @param   array<array-key, mixed> $kind_state                Opaque kind-owned payload.
+	 * @param   PendingAction|null      $pending                   Durable successor descriptor.
+	 * @param   string|null             $previous_completed_run_id Frozen previous completed run identifier.
 	 *
 	 * @return  void
 	 */
-	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, string $kind = 'job', array $queue = array(), ?PendingAction $pending = null, ?string $previous_completed_run_id = null ): void {
-		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, queue: $queue, failed_attempts: $failed_attempts, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects );
+	private function store_terminal_run( string $name, string $status, array $effects = array(), ?array $error = null, int $failed_attempts = 0, string $kind = 'job', array $kind_state = array(), ?PendingAction $pending = null, ?string $previous_completed_run_id = null ): void {
+		$state = new RunState( status: RunStatus::from( $status ), kind: $kind, executing: true, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: $kind_state, failed_attempts: $failed_attempts, action_sequence: 1, created_at: self::NOW - 7_201, heartbeat_at: self::NOW - 3_601, pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects );
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $name )->run( self::RUN_ID, $state );
 

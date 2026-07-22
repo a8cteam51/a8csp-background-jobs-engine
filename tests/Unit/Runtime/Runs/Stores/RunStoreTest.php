@@ -4,8 +4,11 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Store
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
@@ -266,6 +269,52 @@ final class RunStoreTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Kind-owned state above the generic persistence ceiling is rejected before any row is written.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_oversized_kind_state_is_rejected_before_persistence(): void {
+		self::assertSame( 1_048_576, RunStore::MAX_KIND_STATE_BYTES );
+		$kind_state = array( 'payload' => \str_repeat( 'x', RunStore::MAX_KIND_STATE_BYTES ) );
+		$serialized = \maybe_serialize( $kind_state );
+		self::assertIsString( $serialized );
+		self::assertGreaterThan( RunStore::MAX_KIND_STATE_BYTES, \strlen( $serialized ) );
+
+		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), $kind_state );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::PayloadRejected, $result->error->reason );
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->rig->wpdb()->rows );
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
+		self::assertIsArray( $options );
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+	}
+
+	/**
+	 * Kind-owned state that cannot survive guarded hydration is rejected before persistence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_nonportable_kind_state_is_rejected_before_persistence(): void {
+		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), array( 'payload' => new \stdClass() ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::PayloadRejected, $result->error->reason );
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->rig->wpdb()->rows );
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
+		self::assertIsArray( $options );
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+	}
+
 	// endregion.
 
 	// region KEEP CAS MICRO-SUITE.
@@ -357,7 +406,7 @@ final class RunStoreTest extends TestCase {
 
 		$appended = $store->append_terminal_effect( self::RUN_ID, $terminal, $fixture[1], 'hooks' );
 
-		self::assertNotNull( $appended );
+		self::assertIsArray( $appended );
 		self::assertSame( array( 'callbacks', 'hooks' ), $appended['state']->effects );
 		self::assertSame( $expected[1], $appended['raw'] );
 		self::assertSame( $expected[1], $this->raw_row() );
@@ -468,7 +517,7 @@ final class RunStoreTest extends TestCase {
 				'executing'       => false,
 				'start_args'      => array(),
 				'args_hash'       => 'hash-a',
-				'queue'           => array( array( 'payload' => new RunStoreWakeupProbe() ) ),
+				'kind_state'      => array( 'payload' => new RunStoreWakeupProbe() ),
 				'failed_attempts' => 0,
 				'action_sequence' => 1,
 				'created_at'      => self::NOW,
@@ -743,7 +792,7 @@ final class RunStoreTest extends TestCase {
 	private function state( string $kind = 'job' ): RunState {
 		$pending_stage = 'job' === $kind ? 'run' : 'start';
 
-		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( $pending_stage, 10 ) );
+		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( $pending_stage, 10 ) );
 	}
 
 	/**
@@ -789,7 +838,7 @@ final class RunStoreTest extends TestCase {
 			'executing'       => false,
 			'start_args'      => array(),
 			'args_hash'       => 'hash-a',
-			'queue'           => array(),
+			'kind_state'      => array(),
 			'failed_attempts' => 0,
 			'action_sequence' => 1,
 			'created_at'      => self::NOW,

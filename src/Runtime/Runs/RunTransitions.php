@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
@@ -195,7 +196,7 @@ final readonly class RunTransitions {
 		}
 
 		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $at );
-		if ( null === $state ) {
+		if ( $state instanceof Failure || null === $state ) {
 			return null;
 		}
 
@@ -493,9 +494,11 @@ final readonly class RunTransitions {
 	 * @return  string|null Exact terminal snapshot bytes for cleanup, or null after a lost fence.
 	 */
 	private function claim_terminal_transition( string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?string $expected_raw = null ): ?string {
-		return null === $expected_raw
+		$claimed = null === $expected_raw
 			? $run_store->replace_if_state_matches( $run_id, $expected, $replacement )
 			: $run_store->replace_if_raw_matches( $run_id, $expected_raw, $replacement );
+
+		return $claimed instanceof Failure ? null : $claimed;
 	}
 
 	/**

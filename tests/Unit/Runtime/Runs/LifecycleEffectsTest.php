@@ -269,15 +269,15 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertNull( $this->lock() );
 
 		$callbacks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'callbacks' );
-		self::assertNotNull( $callbacks );
+		self::assertIsArray( $callbacks );
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $callbacks['state'], $callbacks['raw'], $run_store ) );
 
 		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $callbacks['state'], $callbacks['raw'], 'hooks' );
-		self::assertNotNull( $hooks );
+		self::assertIsArray( $hooks );
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store ) );
 
 		$complete = $run_store->append_terminal_effect( self::RUN_ID, $hooks['state'], $hooks['raw'], 'history' );
-		self::assertNotNull( $complete );
+		self::assertIsArray( $complete );
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store ) );
 		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
 		self::assertTrue( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $complete['raw'], $run_store ) );
@@ -363,7 +363,7 @@ final class LifecycleEffectsTest extends TestCase {
 	 */
 	private function claim_terminal_state( RunStore $run_store, RunState $running, RunState $terminal ): string {
 		$terminal_raw = $run_store->replace_if_state_matches( self::RUN_ID, $running, $terminal );
-		if ( null === $terminal_raw ) {
+		if ( ! \is_string( $terminal_raw ) ) {
 			throw new \RuntimeException( 'The terminal-effect fixture lost its terminal claim.' );
 		}
 

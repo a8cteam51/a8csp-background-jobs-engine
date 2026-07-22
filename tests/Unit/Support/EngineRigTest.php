@@ -162,7 +162,7 @@ final class EngineRigTest extends TestCase {
 
 		$args_hash = $fixtures->args_hash( self::ARGS );
 
-		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $args_hash, queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $args_hash, kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 
 		[ $run_name, $run_raw ] = $fixtures->run( self::RUN_ID, $state );
 		self::assertSame( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID, $run_name );

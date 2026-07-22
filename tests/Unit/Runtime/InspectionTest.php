@@ -609,14 +609,14 @@ final class InspectionTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string             $args_hash Persisted arguments hash.
-	 * @param   list<array<mixed>> $queue     Persisted pending queue.
-	 * @param   string             $kind      Persisted work kind key.
+	 * @param   string                  $args_hash  Persisted arguments hash.
+	 * @param   array<array-key, mixed> $kind_state Opaque kind-owned payload.
+	 * @param   string                  $kind       Persisted work kind key.
 	 *
 	 * @return  RunState
 	 */
-	private static function state( string $args_hash, array $queue = array( array() ), string $kind = 'job' ): RunState {
-		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: array(), args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
+	private static function state( string $args_hash, array $kind_state = array(), string $kind = 'job' ): RunState {
+		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: array(), args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
 	}
 
 	/**

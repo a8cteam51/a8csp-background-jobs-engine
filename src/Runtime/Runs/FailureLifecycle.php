@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
@@ -80,7 +81,7 @@ final readonly class FailureLifecycle {
 			return;
 		}
 		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
-		if ( null === $state ) {
+		if ( $state instanceof Failure || null === $state ) {
 			return;
 		}
 
@@ -259,7 +260,7 @@ final readonly class FailureLifecycle {
 
 			return null;
 		}
-		if ( null === $transitioned ) {
+		if ( $transitioned instanceof Failure || null === $transitioned ) {
 			return null;
 		}
 		$state = $replacement;

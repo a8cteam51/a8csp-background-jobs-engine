@@ -552,7 +552,7 @@ final class MaintenanceJobTest extends TestCase {
 		$this->wpdb->put( $this->cursor_option, $cursor_raw );
 		[ $run_name, $run_raw ] = StoreFixtureBuilder::for_identity( 'sweep-tests:read-failure' )->run(
 			self::RUN_ID,
-			new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: self::ARGS_HASH, queue: array(), failed_attempts: 0, action_sequence: 0, created_at: self::NOW, heartbeat_at: self::NOW )
+			new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: self::ARGS_HASH, kind_state: array(), failed_attempts: 0, action_sequence: 0, created_at: self::NOW, heartbeat_at: self::NOW )
 		);
 		$this->wpdb->put( $run_name, $run_raw );
 		$this->wpdb->before_next( 'select', static function ( WpdbLockSpy $database ): void {} );

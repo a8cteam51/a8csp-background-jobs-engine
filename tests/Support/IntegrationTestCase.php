@@ -261,7 +261,7 @@ abstract class IntegrationTestCase extends TestCase {
 	protected function assert_pending_chunk_continuation( string $name, string $run_id, string $group, array $expected_chunk ): string {
 		$run_state = \get_option( 'a8csp_bgje_run_' . $name . '_' . $run_id, null );
 		self::assertIsArray( $run_state, 'A pending chunked job continuation must retain its authoritative run row' );
-		$queue = $run_state['queue'] ?? null;
+		$queue = $run_state['kind_state'] ?? null;
 		self::assertIsArray( $queue, 'A pending chunked job continuation must retain its authoritative queue' );
 		self::assertSame( $expected_chunk, $queue[0] ?? null, 'The expected chunk must be the authoritative queue head' );
 		$action_sequence = $run_state['action_sequence'] ?? null;

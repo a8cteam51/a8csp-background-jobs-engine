@@ -121,18 +121,18 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Seeds a one-off job queue with its original arguments.
+	 * Seeds no kind-owned state because one-off jobs execute from the shared start arguments.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
-	 * @return  list<array<array-key, mixed>>
+	 * @return  array<array-key, mixed>
 	 */
 	#[\Override]
-	public function initial_queue( array $start_args ): array {
-		return array( $start_args );
+	public function initial_kind_state( array $start_args ): array {
+		return array();
 	}
 
 	/**

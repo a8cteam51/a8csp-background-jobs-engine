@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
@@ -67,7 +68,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 *
 	 * @var     int
 	 */
-	private const int MAX_QUEUE_BYTES = 1_048_576;
+	private const int MAX_QUEUE_BYTES = RunStore::MAX_KIND_STATE_BYTES;
 
 	// endregion
 
@@ -149,7 +150,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Seeds an empty queue until the start delivery generates chunks.
+	 * Seeds the handler-owned bare-list queue payload empty until the start delivery generates chunks.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -159,7 +160,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @return  list<array<array-key, mixed>>
 	 */
 	#[\Override]
-	public function initial_queue( array $start_args ): array {
+	public function initial_kind_state( array $start_args ): array {
 		return array();
 	}
 
@@ -225,7 +226,11 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function cancellation_error( string $run_id, RunState $state ): ?EngineError {
-		if ( array() !== $state->queue || 1 >= $state->action_sequence || 'start' === $state->pending?->stage ) {
+		$queue = $this->queue_for_state( $state );
+		if ( $queue instanceof EngineError ) {
+			return $queue;
+		}
+		if ( array() !== $queue || 1 >= $state->action_sequence || 'start' === $state->pending?->stage ) {
 			return null;
 		}
 
@@ -329,7 +334,12 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return null;
 		}
 
-		$chunk = $state->queue[0] ?? null;
+		$queue = $this->queue_for_state( $state );
+		if ( $queue instanceof EngineError ) {
+			return null;
+		}
+
+		$chunk = $queue[0] ?? null;
 
 		return \is_array( $chunk ) ? $chunk : null;
 	}
@@ -342,11 +352,13 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 *
 	 * @param   RunState $state Live run state.
 	 *
-	 * @return  int
+	 * @return  int|null Null when the handler-owned payload is malformed.
 	 */
 	#[\Override]
-	public function queue_depth( RunState $state ): int {
-		return \count( $state->queue );
+	public function queue_depth( RunState $state ): ?int {
+		$queue = $this->queue_for_state( $state );
+
+		return $queue instanceof EngineError ? null : \count( $queue );
 	}
 
 	// endregion
@@ -370,6 +382,12 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		$chunked_job = $this->chunked_job_for_action( $identity, $run_id, 'start' );
 		if ( null === $chunked_job ) {
 			$this->fail_orphaned_run( $identity, $run_id, $state, $run_store );
+
+			return;
+		}
+		$stored_queue = $this->queue_for_state( $state );
+		if ( $stored_queue instanceof EngineError ) {
+			$this->fail_malformed_kind_state( $chunked_job, $identity, $run_id, $state, $run_store, $stored_queue );
 
 			return;
 		}
@@ -418,8 +436,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
-		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
+		$replacement  = $state->with_kind_state( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
+		$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
+		if ( $transitioned instanceof Failure || null === $transitioned ) {
 			return;
 		}
 		$state = $replacement;
@@ -462,10 +481,17 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 			return;
 		}
+		$queue = $this->queue_for_state( $state );
+		if ( $queue instanceof EngineError ) {
+			$this->fail_malformed_kind_state( $chunked_job, $identity, $run_id, $state, $run_store, $queue );
 
-		if ( array() === $state->queue ) {
-			$replacement = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'cleanup', 10 ) );
-			if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
+			return;
+		}
+
+		if ( array() === $queue ) {
+			$replacement  = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'cleanup', 10 ) );
+			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
+			if ( $transitioned instanceof Failure || null === $transitioned ) {
 				return;
 			}
 
@@ -474,7 +500,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$this->process_chunk( $chunked_job, $identity, $run_id, $state, $run_store );
+		$this->process_chunk( $chunked_job, $identity, $run_id, $state, $run_store, $queue );
 	}
 
 	/**
@@ -497,8 +523,14 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 			return;
 		}
+		$queue = $this->queue_for_state( $state );
+		if ( $queue instanceof EngineError ) {
+			$this->fail_malformed_kind_state( $chunked_job, $identity, $run_id, $state, $run_store, $queue );
 
-		if ( array() !== $state->queue ) {
+			return;
+		}
+
+		if ( array() !== $queue ) {
 			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', self::KIND, $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::Execution, ErrorCode::UnsupportedOperation );
 
 			return;
@@ -513,16 +545,17 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ChunkedJobInterface $chunked_job Registered chunked-job contract.
-	 * @param   string              $identity    Complete owner-qualified chunked-job identity.
-	 * @param   string              $run_id      Run identifier.
-	 * @param   RunState            $state       Fenced executing state.
-	 * @param   RunStore            $run_store   Active-run store.
+	 * @param   ChunkedJobInterface           $chunked_job Registered chunked-job contract.
+	 * @param   string                        $identity    Complete owner-qualified chunked-job identity.
+	 * @param   string                        $run_id      Run identifier.
+	 * @param   RunState                      $state       Fenced executing state.
+	 * @param   RunStore                      $run_store   Active-run store.
+	 * @param   list<array<array-key, mixed>> $queue       Validated queue in processing order.
 	 *
 	 * @return  void
 	 */
-	private function process_chunk( ChunkedJobInterface $chunked_job, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
-		$chunk_args = $state->queue[0] ?? null;
+	private function process_chunk( ChunkedJobInterface $chunked_job, string $identity, string $run_id, RunState $state, RunStore $run_store, array $queue ): void {
+		$chunk_args = $queue[0] ?? null;
 		if ( ! \is_array( $chunk_args ) ) {
 			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached chunk execution without a queued chunk; schedule continue only while the authoritative queue has a head.', self::KIND, $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::Execution, ErrorCode::UnsupportedOperation );
 
@@ -530,7 +563,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		}
 		$chunk_args = PortableArguments::without_references( $chunk_args );
 
-		$context = new ChunkContext( $run_id, $state->start_args, \array_slice( $state->queue, 1 ) );
+		$context = new ChunkContext( $run_id, $state->start_args, \array_slice( $queue, 1 ) );
 		try {
 			$chunked_job->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
@@ -566,9 +599,10 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 			return;
 		}
-		$fire_at     = $now + $delay;
-		$replacement = $state->with_queue( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( 'continue', $fire_at, 10 ) );
-		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
+		$fire_at      = $now + $delay;
+		$replacement  = $state->with_kind_state( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( 'continue', $fire_at, 10 ) );
+		$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
+		if ( $transitioned instanceof Failure || null === $transitioned ) {
 			return;
 		}
 
@@ -626,11 +660,30 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
-		if ( null === $state ) {
+		if ( $state instanceof Failure || null === $state ) {
 			return;
 		}
 
 		$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, $error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::QueueGeneration, $code );
+	}
+
+	/**
+	 * Fails a delivery whose handler-owned persisted payload is malformed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   ChunkedJobInterface $chunked_job Registered chunked-job contract.
+	 * @param   string              $identity    Complete owner-qualified chunked-job identity.
+	 * @param   string              $run_id      Run identifier.
+	 * @param   RunState            $state       Fenced running state.
+	 * @param   RunStore            $run_store   Active-run store.
+	 * @param   EngineError         $error       Handler-owned payload failure.
+	 *
+	 * @return  void
+	 */
+	private function fail_malformed_kind_state( ChunkedJobInterface $chunked_job, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
+		$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, $error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::Execution, ErrorCode::PayloadRejected );
 	}
 
 	/**
@@ -653,8 +706,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @return  void
 	 */
 	private function fail_processed_chunk( ChunkedJobInterface $chunked_job, string $identity, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, RunFailureStage $stage, ErrorCode $code ): void {
-		$replacement = $state->with_queue( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( null );
-		if ( null === $run_store->replace_if_state_matches( $run_id, $state, $replacement ) ) {
+		$replacement  = $state->with_kind_state( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( null );
+		$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
+		if ( $transitioned instanceof Failure || null === $transitioned ) {
 			return;
 		}
 
@@ -687,6 +741,35 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		}
 
 		return $chunked_job;
+	}
+
+	/**
+	 * Returns the validated oldest-first queue stored as this handler's bare-list payload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   RunState $state Persisted chunked-job state.
+	 *
+	 * @return  list<array<array-key, mixed>>|EngineError
+	 */
+	private function queue_for_state( RunState $state ): array|EngineError {
+		// Hydration already guarantees a portable payload within the persistence ceilings, so the
+		// read path checks only the list-of-arrays shape this handler owns; full materialization
+		// (per-chunk encoding and byte ceilings) belongs to the write path.
+		if ( ! \array_is_list( $state->kind_state ) ) {
+			return new EngineError( 'chunked_job kind_state must be an oldest-first list of portable argument arrays.', \UnexpectedValueException::class, EngineErrorReason::PayloadRejected );
+		}
+
+		$queue = array();
+		foreach ( $state->kind_state as $chunk ) {
+			if ( ! \is_array( $chunk ) ) {
+				return new EngineError( 'chunked_job kind_state must be an oldest-first list of portable argument arrays.', \UnexpectedValueException::class, EngineErrorReason::PayloadRejected );
+			}
+			$queue[] = $chunk;
+		}
+
+		return $queue;
 	}
 
 	/**

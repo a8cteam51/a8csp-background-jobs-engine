@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
@@ -16,6 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use Psr\Clock\ClockInterface;
 
@@ -46,6 +48,16 @@ final readonly class RunStore {
 	 * @var     string
 	 */
 	public const string OPTION_PREFIX = 'a8csp_bgje_run_';
+
+	/**
+	 * Maximum persisted serialization bytes accepted for one kind-owned state payload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	public const int MAX_KIND_STATE_BYTES = 1_048_576;
 
 	/**
 	 * Maximum exact-row attempts before a contended terminal effect append fails safely.
@@ -87,21 +99,27 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                        $run_id     Run identifier.
-	 * @param   string                        $kind       Opaque admitted kind key.
-	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
-	 * @param   string                        $args_hash  Stable single-flight identity.
-	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.
-	 * @param   PendingAction|null            $pending    Durable successor delivery, or null when none exists.
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   string                  $kind       Opaque admitted kind key.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   string                  $args_hash  Stable single-flight identity.
+	 * @param   array<array-key, mixed> $kind_state Initial opaque kind-owned state payload.
+	 * @param   PendingAction|null      $pending    Durable successor delivery, or null when none exists.
 	 *
 	 * @throws  \InvalidArgumentException When the kind key is lexically malformed.
+	 * @throws  \LogicException           When WordPress does not serialize the kind-owned state to a string.
 	 *
-	 * @return  RunState|null Null when the run option cannot be added.
+	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned state cannot cross the persistence boundary, or null when the run option cannot be added.
 	 */
-	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
+	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null ): RunState|Failure|null {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
-		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
+		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
+
+		$rejected = self::kind_state_failure( $state->kind_state );
+		if ( null !== $rejected ) {
+			return $rejected;
+		}
 
 		if ( ! \add_option( RunIdentity::option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
@@ -187,9 +205,14 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  string|null Exact replacement bytes when the write wins, otherwise null.
+	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned state cannot cross the persistence boundary, otherwise null.
 	 */
-	public function replace_if_raw_matches( string $run_id, string $expected_raw, RunState $replacement ): ?string {
+	public function replace_if_raw_matches( string $run_id, string $expected_raw, RunState $replacement ): string|Failure|null {
+		$rejected = self::kind_state_failure( $replacement->kind_state );
+		if ( null !== $rejected ) {
+			return $rejected;
+		}
+
 		$replacement_raw = self::serialize_state( $replacement );
 		if ( RowWriteOutcome::Won !== $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ) ) {
 			return null;
@@ -213,9 +236,14 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  string|null Exact replacement bytes when the write wins, otherwise null.
+	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned state cannot cross the persistence boundary, otherwise null.
 	 */
-	public function replace_if_state_matches( string $run_id, RunState $expected, RunState $replacement ): ?string {
+	public function replace_if_state_matches( string $run_id, RunState $expected, RunState $replacement ): string|Failure|null {
+		$rejected = self::kind_state_failure( $replacement->kind_state );
+		if ( null !== $rejected ) {
+			return $rejected;
+		}
+
 		$replacement_raw = self::serialize_state( $replacement );
 		if ( RowWriteOutcome::Won !== $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), self::serialize_state( $expected ), $replacement_raw ) ) {
 			return null;
@@ -244,10 +272,10 @@ final readonly class RunStore {
 	 * @throws  \LogicException           When the current site differs from the bound site or WordPress
 	 *                                    does not serialize the run state to a string.
 	 *
-	 * @return  array{raw: string, state: RunState}|null Caller-supplied snapshot when it already contains the key, which can omit concurrent effects; otherwise a persisted snapshot containing the key, or null when the row is absent, invalid, unreadable, or remains contended.
+	 * @return  array{raw: string, state: RunState}|Failure<EngineError>|null Caller-supplied snapshot when it already contains the key, which can omit concurrent effects; otherwise a persisted snapshot containing the key, payload rejection when the kind-owned state cannot cross the persistence boundary, or null when the row is absent, invalid, unreadable, or remains contended.
 	 */
 	#[\NoDiscard( 'a terminal effect persistence outcome must be handled, not dropped' )]
-	public function append_terminal_effect( string $run_id, RunState $expected, string $expected_raw, string $effect ): ?array {
+	public function append_terminal_effect( string $run_id, RunState $expected, string $expected_raw, string $effect ): array|Failure|null {
 		if ( '' === $effect ) {
 			throw new \InvalidArgumentException( 'A terminal effect key cannot be empty.' );
 		}
@@ -266,6 +294,9 @@ final readonly class RunStore {
 			$effects[]       = $effect;
 			$replacement     = $state->with_effects( $effects );
 			$replacement_raw = $this->replace_if_raw_matches( $run_id, $raw, $replacement );
+			if ( $replacement_raw instanceof Failure ) {
+				return $replacement_raw;
+			}
 			if ( null !== $replacement_raw ) {
 				return array(
 					'raw'   => $replacement_raw,
@@ -320,9 +351,9 @@ final readonly class RunStore {
 	 * @param   RunState|null $expected Complete state already observed by the caller, or null to inspect it here.
 	 * @param   int|null      $at       Liveness timestamp, or null to use the current clock time.
 	 *
-	 * @return  RunState|null Null when the run is absent, invalid, or changed concurrently.
+	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned state cannot cross the persistence boundary, or null when the run is absent, invalid, or changed concurrently.
 	 */
-	public function mark_executing_with_heartbeat( string $run_id, ?RunState $expected = null, ?int $at = null ): ?RunState {
+	public function mark_executing_with_heartbeat( string $run_id, ?RunState $expected = null, ?int $at = null ): RunState|Failure|null {
 		$raw = null;
 		if ( null === $expected ) {
 			$inspected = $this->inspect( $run_id );
@@ -343,6 +374,9 @@ final readonly class RunStore {
 		$replacement_raw = null === $raw
 			? $this->replace_if_state_matches( $run_id, $expected, $replacement )
 			: $this->replace_if_raw_matches( $run_id, $raw, $replacement );
+		if ( $replacement_raw instanceof Failure ) {
+			return $replacement_raw;
+		}
 
 		return null !== $replacement_raw ? $replacement : null;
 	}
@@ -387,7 +421,7 @@ final readonly class RunStore {
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
-	 *     queue: list<array<array-key, mixed>>,
+	 *     kind_state: array<array-key, mixed>,
 	 *     failed_attempts: int,
 	 *     action_sequence: int,
 	 *     created_at: int,
@@ -405,7 +439,7 @@ final readonly class RunStore {
 			'executing'       => $state->executing,
 			'start_args'      => $state->start_args,
 			'args_hash'       => $state->args_hash,
-			'queue'           => $state->queue,
+			'kind_state'      => $state->kind_state,
 			'failed_attempts' => $state->failed_attempts,
 			'action_sequence' => $state->action_sequence,
 			'created_at'      => $state->created_at,
@@ -490,7 +524,7 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, );
+		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], kind_state: $value['kind_state'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, );
 	}
 
 	/**
@@ -507,7 +541,7 @@ final readonly class RunStore {
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
-	 *     queue: list<array<array-key, mixed>>,
+	 *     kind_state: array<array-key, mixed>,
 	 *     failed_attempts: int,
 	 *     action_sequence: int,
 	 *     created_at: int,
@@ -532,8 +566,8 @@ final readonly class RunStore {
 			|| ! \is_array( $value['start_args'] ?? null )
 			|| ! PortableArguments::is_valid( $value['start_args'] )
 			|| ! \is_string( $value['args_hash'] ?? null )
-			|| ! \is_array( $value['queue'] ?? null )
-			|| ! \array_is_list( $value['queue'] )
+			|| ! \is_array( $value['kind_state'] ?? null )
+			|| ! PortableArguments::is_valid( $value['kind_state'] )
 			|| ! \is_int( $value['failed_attempts'] ?? null )
 			|| ! \is_int( $value['action_sequence'] ?? null )
 			|| ! \is_int( $value['created_at'] ?? null )
@@ -546,7 +580,51 @@ final readonly class RunStore {
 			return false;
 		}
 
-		return \array_all( $value['queue'], static fn ( mixed $chunk ): bool => \is_array( $chunk ) && PortableArguments::is_valid( $chunk ) );
+		return true;
+	}
+
+	/**
+	 * Returns a payload rejection when kind-owned state cannot cross the persistence boundary safely.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $kind_state Opaque kind-owned state payload.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize the kind-owned state to a string.
+	 *
+	 * @return  Failure<EngineError>|null
+	 */
+	private static function kind_state_failure( array $kind_state ): ?Failure {
+		if ( ! PortableArguments::is_valid( $kind_state ) ) {
+			return new Failure(
+				new EngineError(
+					'Run kind state must contain only null, scalar, or nested array values.',
+					reason: EngineErrorReason::PayloadRejected,
+				)
+			);
+		}
+
+		$serialized = \maybe_serialize( $kind_state );
+		if ( ! \is_string( $serialized ) ) {
+			throw new \LogicException( 'WordPress must serialize kind-owned run state to a string.' );
+		}
+
+		$actual_bytes = \strlen( $serialized );
+		if ( self::MAX_KIND_STATE_BYTES >= $actual_bytes ) {
+			return null;
+		}
+
+		return new Failure(
+			new EngineError(
+				\sprintf( 'Run kind state contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $actual_bytes, self::MAX_KIND_STATE_BYTES ),
+				reason: EngineErrorReason::PayloadRejected,
+				context: array(
+					'actual_bytes' => $actual_bytes,
+					'limit_bytes'  => self::MAX_KIND_STATE_BYTES,
+				),
+			)
+		);
 	}
 
 	/**
