@@ -319,7 +319,7 @@ final class InspectionTest extends TestCase {
 				)
 			)
 		);
-		$failure = new RunFailure( identity: $identity, run_id: RunId::from( $failed_id ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: $identity, run_id: RunId::from( $failed_id ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Retained failure.', details: null );
 		$this->put( $fixtures->failed( self::NOW - 1, array(), $failure, new EngineError( 'Retained failure.' ) ) );
 		$this->put( $fixtures->unreadable_run( self::run_id( 99 ) ) );
 

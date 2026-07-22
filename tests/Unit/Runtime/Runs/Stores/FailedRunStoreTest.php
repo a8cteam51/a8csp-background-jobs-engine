@@ -327,10 +327,10 @@ final class FailedRunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Unknown terminalization stages inspect as unretained data and never fatal.
+	 * Open terminalization stages remain retained for inspection and retry.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale A canonical fixture cannot contain an unknown stage, so corrupting only that scalar proves read validation fails closed through the public inspection and retry seams.
+	 * @pin-rationale Mutating only the stage scalar proves third-party stage values survive the failed-run read seam.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -338,8 +338,36 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_unknown_failure_stages_are_tolerated_as_unretained_data(): void {
-		$fixture = StoreFixtureBuilder::failed_runs_with_unknown_stage( $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) ) );
+	public function test_open_failure_stages_remain_retained(): void {
+		$fixture = StoreFixtureBuilder::failed_runs_with_stage( $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) ), 'acme.export_sync' );
+		$this->put_fixture( $fixture );
+
+		$stored = $this->store()->all();
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertIsArray( $stored->value );
+		$entry = $stored->value[0] ?? null;
+		self::assertIsArray( $entry );
+		$error = $entry['error'] ?? null;
+		self::assertIsArray( $error );
+		self::assertSame( 'acme.export_sync', $error['stage'] ?? null );
+		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		self::assertInstanceOf( Success::class, $result );
+	}
+
+	/**
+	 * Malformed terminalization stages inspect as unretained data and never fatal.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Mutating only the stage scalar proves lexical validation fails closed through the public inspection and retry seams.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_failure_stages_are_tolerated_as_unretained_data(): void {
+		$fixture = StoreFixtureBuilder::failed_runs_with_stage( $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) ), 'acme.invalid-stage' );
 		$this->put_fixture( $fixture );
 
 		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['history'] );
@@ -647,7 +675,7 @@ final class FailedRunStoreTest extends TestCase {
 	 */
 	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
 		$wire_id = null === RunId::try_from( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: $summary, failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: $summary, details: null );
 
 		return array(
 			'failed_at'  => $failed_at,

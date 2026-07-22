@@ -37,7 +37,7 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
+	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}|null $error
 	 * @phpstan-param list<string> $effects
 	 *
 	 * @param   RunStatus               $status                    Lifecycle state.
@@ -193,7 +193,7 @@ final readonly class RunState {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
+	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}|null $error
 	 *
 	 * @param   array|null $error Durable terminal failure detail, or null for non-failed runs.
 	 *

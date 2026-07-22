@@ -253,7 +253,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::Execution, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::execution(), null );
 		self::assertStringContainsString( 'kind_state', $failure->summary );
 		self::assertSame( array(), $this->chunked_job->generate_calls );
 	}
@@ -304,7 +304,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), null );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		$this->rig->assert_no_retry();
 	}
@@ -446,7 +446,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::queue_generation(), null );
 		self::assertSame( 1, $failure->attempts );
 		$this->rig->assert_no_retry();
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
@@ -469,7 +469,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::queue_generation(), null );
 		self::assertStringNotContainsString( 'private-payload-must-not-leak', $failure->summary );
 	}
 
@@ -569,7 +569,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::queue_generation(), null );
 		self::assertSame( 'chunked_job queue chunk at index 0 contains 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
 	}
 
@@ -619,7 +619,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::queue_generation(), null );
 		self::assertSame( 'chunked_job queue contains 1048577 persisted serialization bytes; the limit is 1048576 bytes.', $failure->summary );
 	}
 
@@ -656,7 +656,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::queue_generation(), null );
 	}
 
 	/**
@@ -679,7 +679,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::queue_generation(), null );
 		self::assertStringNotContainsString( 'credential secret', $failure->summary );
 	}
 
@@ -698,7 +698,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::QueueGeneration, null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::queue_generation(), null );
 		self::assertStringNotContainsString( 'filtered-private-payload', $failure->summary );
 	}
 
@@ -865,7 +865,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		\do_action( ActionDeliveries::DELIVER_HOOK, self::IDENTITY, self::RUN_ID, 2 );
 
-		$this->assert_failure( ErrorCode::UnknownWork, RunFailureStage::Execution, $current );
+		$this->assert_failure( ErrorCode::UnknownWork, RunFailureStage::execution(), $current );
 	}
 
 	/**
@@ -1003,7 +1003,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), $current );
 		self::assertStringNotContainsString( 'callback-private-payload', $failure->summary );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 	}
@@ -1042,7 +1042,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), $current );
 	}
 
 	/**
@@ -1118,7 +1118,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), $current );
 	}
 
 	/**
@@ -1352,7 +1352,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::scheduling(), null );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -1379,7 +1379,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, null );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), null );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 	}
 
@@ -1569,7 +1569,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, $current );
+		$failure = $this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::scheduling(), $current );
 		self::assertSame( 1, $failure->attempts );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
@@ -1590,7 +1590,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution, $current );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), $current );
 		self::assertSame( 1, $failure->attempts );
 		$this->rig->assert_no_retry();
 	}
@@ -1789,7 +1789,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::scheduling(), null );
 		self::assertCount( 1, $this->chunked_job->failed_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -1812,7 +1812,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::scheduling(), null );
 		self::assertSame( array( $current ), \array_column( $this->chunked_job->process_calls, 'chunk_args' ) );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
@@ -1834,7 +1834,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling, null );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::scheduling(), null );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -2049,13 +2049,13 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ErrorCode                 $code         Expected failure code.
-	 * @param   RunFailureStage              $stage        Expected failure stage.
-	 * @param   array<array-key, mixed>|null $failed_chunk Expected failed chunk.
+	 * @param   ErrorCode                     $code           Expected failure code.
+	 * @param   RunFailureStage               $stage          Expected failure stage.
+	 * @param   array<array-key, mixed>|null $expected_chunk Expected failed chunk.
 	 *
 	 * @return  RunFailure
 	 */
-	private function assert_failure( ErrorCode $code, RunFailureStage $stage, ?array $failed_chunk ): RunFailure {
+	private function assert_failure( ErrorCode $code, RunFailureStage $stage, ?array $expected_chunk ): RunFailure {
 		$events = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
 		self::assertNotEmpty( $events );
 		$latest = $events[ \count( $events ) - 1 ];
@@ -2064,7 +2064,8 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( $code, $failure->code );
 		self::assertSame( $stage, $failure->stage );
-		self::assertSame( $failed_chunk, $failure->failed_chunk );
+		$expected_details = null === $expected_chunk ? null : array( 'failed_chunk' => $expected_chunk );
+		self::assertSame( $expected_details, $failure->details );
 
 		return $failure;
 	}

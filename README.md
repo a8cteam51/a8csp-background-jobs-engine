@@ -461,7 +461,7 @@ All public type names below are relative to the `A8C\SpecialProjects\BackgroundJ
 | `Schedule\Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`. |
 | `Schedule\Recurrence` | Readonly fixed-interval recurrence created with `every( int $seconds )` or `every_anchored( int $seconds, int $anchor )`; an anchor is reduced modulo the interval. |
 | `Run\Run` | Readonly snapshot with `string $identity`, `Run\RunId $id`, and `Run\RunStatus $status`. |
-| `Run\RunFailure` | Readonly value with `string $identity`, `Run\RunId $run_id`, `int $attempts`, `Run\RunFailureStage $stage`, `Error\ErrorCode $code`, `string $summary`, and `?array $failed_chunk`. |
+| `Run\RunFailure` | Readonly value with `string $identity`, `Run\RunId $run_id`, `int $attempts`, `Run\RunFailureStage $stage`, `Error\ErrorCode $code`, `string $summary`, and generic diagnostic payload `?array $details`. |
 | `Job\RetryPolicy` | Readonly value constructed from `max_attempts`, `base_delay`, `multiplier`, and `max_delay`; defaults are 3, `MINUTE_IN_SECONDS`, 2, and `HOUR_IN_SECONDS`. `max_attempts` includes the initial attempt. Attempts, base delay, and multiplier are at least 1, and maximum delay is at least the base delay. It exposes `delay_ceiling_for_attempt( int $attempt ): int`. |
 | `Job\RunContext` | `get_run_id(): Run\RunId` and `get_start_args(): array`. |
 | `Job\Chunked\ChunkContext` | Extends `Job\RunContext` with `enqueue( array $chunk_args ): void` and `prepend( array $chunk_args ): void`. |
@@ -474,8 +474,9 @@ The backed enums are:
 | `Run\RunStatus` | `Running = 'running'`, `Completed = 'completed'`, `Failed = 'failed'`, `Cancelled = 'cancelled'`, `Superseded = 'superseded'` |
 | `Job\OverlapPolicy` | `Allow = 'allow'`, `Reject = 'reject'`, `Replace = 'replace'` |
 | `Schedule\CatchUpPolicy` | `RunOnce = 'run_once'`, `Skip = 'skip'` |
-| `Run\RunFailureStage` | `Execution = 'execution'`, `QueueGeneration = 'queue_generation'`, `CrashReclaim = 'crash_reclaim'`, `Scheduling = 'scheduling'` |
 | `Error\ErrorCode` | `InvalidArgument = 'invalid_argument'`, `AlreadyRegistered = 'already_registered'`, `EngineUnavailable = 'engine_unavailable'`, `MissingAutoloader = 'missing_autoloader'`, `UnknownWork = 'unknown_work'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailure = 'storage_failure'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
+
+`Run\RunFailureStage` is a final, interned, open string-backed value. `from( string )` wraps a lowercase snake key with at most one dot qualifier and throws `ValueError` for malformed input; `tryFrom( string )` returns null instead. Engine stages are available through `execution()`, `queue_generation()`, `crash_reclaim()`, and `scheduling()`. Grammar-valid third-party stages such as `acme.export_sync` remain intact.
 
 ## The work contracts
 
@@ -500,7 +501,7 @@ A class-authored Chunked Job extends `Job\Chunked\AbstractChunkedJob` and implem
 
 It uses `Job\JobDefaults` for the same policy and terminal-callback methods as `Job\AbstractJob`. The runtime ceiling applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution; the complete queue is capped at 1,048,576 bytes and each chunk at 8,192 bytes.
 
-Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `Run\RunFailureStage::CrashReclaim`, preserving the in-flight chunk in `Run\RunFailure::$failed_chunk`; `runs()->retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
+Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `Run\RunFailureStage::crash_reclaim()`, preserving the in-flight chunk in `Run\RunFailure::$details['failed_chunk']`; `runs()->retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
 
 ### Schedule
 

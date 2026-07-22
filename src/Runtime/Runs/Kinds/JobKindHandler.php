@@ -196,7 +196,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 					'run_id' => $run_id,
 				),
 			);
-			$this->terminal_transitions->fail_run( $this, $contract, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_run( $this, $contract, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
 
 			return $error;
 		}
@@ -290,7 +290,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 		try {
 			$job->handle( $state->start_args, $context );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failure( $this, $job, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::Execution, 'run' );
+			$this->failure_lifecycle->handle_failure( $this, $job, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::execution(), 'run' );
 
 			return;
 		}
@@ -318,7 +318,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Returns no failed chunk because one-off jobs have no chunk axis.
+	 * Returns no failure details because one-off jobs have no kind-specific diagnostics.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -328,7 +328,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @return  array<array-key, mixed>|null
 	 */
 	#[\Override]
-	public function failed_chunk_for_state( RunState $state ): ?array {
+	public function failure_details( RunState $state ): ?array {
 		return null;
 	}
 

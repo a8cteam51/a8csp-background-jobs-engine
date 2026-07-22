@@ -545,22 +545,23 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
-	 * Returns a production failed-run row whose first member has an unknown failure stage.
+	 * Returns a production failed-run row whose first member uses the supplied failure stage.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   array{string, string} $fixture Complete production failed-run fixture.
+	 * @param   string                $stage   Replacement failure stage.
 	 *
 	 * @return  array{string, string}
 	 */
-	public static function failed_runs_with_unknown_stage( array $fixture ): array {
+	public static function failed_runs_with_stage( array $fixture, string $stage ): array {
 		$entries = RawOptionDecoder::decode( $fixture[1] );
 		if ( ! \is_array( $entries ) || ! \is_array( $entries[0] ?? null ) || ! \is_array( $entries[0]['error'] ?? null ) ) {
 			throw new \InvalidArgumentException( 'The failed-run fixture must contain a complete first entry.' );
 		}
 
-		$entries[0]['error']['stage'] = 'unknown';
+		$entries[0]['error']['stage'] = $stage;
 
 		return array( $fixture[0], self::corrupt_row( $entries ) );
 	}

@@ -188,16 +188,16 @@ interface KindHandlerInterface {
 	public function failure_error( \Throwable $throwable ): EngineError;
 
 	/**
-	 * Returns the queued chunk associated with a failed continuation.
+	 * Returns kind-specific diagnostic details for the current failure state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   RunState $state Run state at terminalization.
 	 *
-	 * @return  array<array-key, mixed>|null
+	 * @return  array<array-key, mixed>|null Generic diagnostic payload, or null when no details are available.
 	 */
-	public function failed_chunk_for_state( RunState $state ): ?array;
+	public function failure_details( RunState $state ): ?array;
 
 	/**
 	 * Returns the observable queue depth for this kind.

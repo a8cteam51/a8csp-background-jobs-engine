@@ -799,7 +799,7 @@ final class CLICommandTest extends IntegrationTestCase {
 					),
 				)
 			),
-			$builder->failed( self::FAILED_AT, array(), new RunFailure( identity: self::CANCEL_NAME, run_id: RunId::from( self::HISTORY_FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'CLI history failure.', failed_chunk: null, ), new EngineError( 'CLI history failure.' ) ),
+			$builder->failed( self::FAILED_AT, array(), new RunFailure( identity: self::CANCEL_NAME, run_id: RunId::from( self::HISTORY_FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'CLI history failure.', details: null, ), new EngineError( 'CLI history failure.' ) ),
 		);
 		foreach ( $fixtures as $fixture ) {
 			self::persist_store_fixture( $fixture );
@@ -1221,7 +1221,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	private function seed_failed_run( string $name ): string {
 		$builder = StoreFixtureBuilder::for_identity( $name );
-		$fixture = $builder->failed( self::FAILED_AT, array( 'account_id' => 42 ), new RunFailure( identity: $name, run_id: RunId::from( self::RUN_ID ), attempts: 3, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', failed_chunk: null, ), new EngineError( 'CLI boundary failure.', \RuntimeException::class ) );
+		$fixture = $builder->failed( self::FAILED_AT, array( 'account_id' => 42 ), new RunFailure( identity: $name, run_id: RunId::from( self::RUN_ID ), attempts: 3, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', details: null, ), new EngineError( 'CLI boundary failure.', \RuntimeException::class ) );
 		self::persist_store_fixture( $fixture );
 
 		return $fixture[0];

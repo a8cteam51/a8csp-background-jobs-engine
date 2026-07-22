@@ -427,7 +427,7 @@ final readonly class RunStore {
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
-	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
+	 *     error?: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>},
 	 *     previous_completed_run_id?: string,
 	 *     effects?: non-empty-list<string>
 	 * }
@@ -547,7 +547,7 @@ final readonly class RunStore {
 	 *     created_at: int,
 	 *     heartbeat_at: int,
 	 *     pending?: StoredPendingAction,
-	 *     error?: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>},
+	 *     error?: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>},
 	 *     previous_completed_run_id?: string,
 	 *     effects?: non-empty-list<string>
 	 * } $value
@@ -665,16 +665,17 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-assert-if-true array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>} $value
+	 * @phpstan-assert-if-true array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>} $value
 	 *
 	 * @param   mixed $value Persisted terminal failure detail.
 	 *
 	 * @return  bool
 	 */
 	private static function is_stored_error( mixed $value ): bool {
+		$has_details = \is_array( $value ) && \array_key_exists( 'details', $value );
 		if (
 			! \is_array( $value )
-			|| ( 4 !== \count( $value ) && 5 !== \count( $value ) )
+			|| ( $has_details ? 5 : 4 ) !== \count( $value )
 			|| ! \array_key_exists( 'class', $value )
 			|| ( null !== $value['class'] && ! \is_string( $value['class'] ) )
 			|| ! \is_string( $value['message'] ?? null )
@@ -686,8 +687,8 @@ final readonly class RunStore {
 			return false;
 		}
 
-		return ! \array_key_exists( 'failed_chunk', $value )
-			|| ( \is_array( $value['failed_chunk'] ) && PortableArguments::is_valid( $value['failed_chunk'] ) );
+		return ! $has_details
+			|| ( \is_array( $value['details'] ) && PortableArguments::is_valid( $value['details'] ) );
 	}
 
 	/**

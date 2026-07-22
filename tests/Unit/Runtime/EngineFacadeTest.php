@@ -177,7 +177,7 @@ final class EngineFacadeTest extends TestCase {
 		$identity = 'facade-tests:email-digest';
 		$client   = $this->rig->client( 'facade-tests' );
 		$client->jobs()->register( new RecordingJob( 'email-digest' ) );
-		$failure               = new RunFailure( identity: $identity, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$failure               = new RunFailure( identity: $identity, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
 		$this->rig->wpdb()->put( $option_name, $raw );
 		$GLOBALS['a8csp_bgje_test_option_calls'] = array();

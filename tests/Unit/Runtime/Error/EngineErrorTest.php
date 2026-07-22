@@ -68,10 +68,10 @@ final class EngineErrorTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_public_failure_carries_an_absent_chunk_as_null(): void {
+	public function test_public_failure_carries_absent_details_as_null(): void {
 		$failure = self::failure( ErrorCode::ExecutionFailed, 'Work failed.' );
 
-		self::assertNull( $failure->failed_chunk );
+		self::assertNull( $failure->details );
 	}
 
 	/**
@@ -233,7 +233,7 @@ final class EngineErrorTest extends TestCase {
 	 * @return  RunFailure
 	 */
 	private static function failure( ErrorCode $code, string $summary ): RunFailure {
-		return new RunFailure( identity: 'consumer-plugin:sync', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::Scheduling, code: $code, summary: $summary, failed_chunk: null, );
+		return new RunFailure( identity: 'consumer-plugin:sync', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::scheduling(), code: $code, summary: $summary, details: null, );
 	}
 
 	// endregion.

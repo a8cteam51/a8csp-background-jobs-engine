@@ -203,11 +203,11 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( self::IDENTITY, $failure->identity );
 		self::assertSame( $failed_run_id, (string) $failure->run_id );
 		self::assertSame( 2, $failure->attempts );
-		self::assertSame( RunFailureStage::Execution, $failure->stage );
+		self::assertSame( RunFailureStage::execution(), $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
 		self::assertStringNotContainsString( 'The upstream service remains unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
-		self::assertNull( $failure->failed_chunk );
+		self::assertNull( $failure->details );
 		self::assertSame( array( $failure ), $recorded_failed, 'The failed hook must receive only the self-identifying failure value' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $retry_action_id ), 'Action Scheduler must complete the retry action after terminal engine handling' );
 		self::assertSame(
@@ -239,7 +239,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			array(
 				'class'   => \RuntimeException::class,
 				'message' => 'Background-work execution failed because RuntimeException was thrown.',
-				'stage'   => RunFailureStage::Execution->value,
+				'stage'   => RunFailureStage::execution()->value,
 				'code'    => 'execution_failed',
 			),
 			$failed_entry['error'] ?? null

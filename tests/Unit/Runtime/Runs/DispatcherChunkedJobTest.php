@@ -182,7 +182,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_restarts_a_chunked_job_and_removes_the_failed_entry(): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', details: array( 'failed_chunk' => array( 'chunk' => 1 ) ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
@@ -204,7 +204,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_refuses_to_replace_a_live_chunked_job(): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', details: array( 'failed_chunk' => array( 'chunk' => 1 ) ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
 		$incumbent                         = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -238,7 +238,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$incumbent = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
 		self::assertIsString( $incumbent->value );
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', details: array( 'failed_chunk' => array( 'chunk' => 1 ) ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 

@@ -94,7 +94,7 @@ final class AbstractChunkedJobTest extends TestCase {
 	 */
 	public function test_terminal_callbacks_are_no_ops(): void {
 		$chunked_job = self::chunked_job();
-		$failure     = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 3, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Background-work execution failed.', failed_chunk: array( 'post_id' => 42 ), );
+		$failure     = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 3, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Background-work execution failed.', details: array( 'failed_chunk' => array( 'post_id' => 42 ) ), );
 
 		$chunked_job->on_completed( 'run-7', array( 'post_type' => 'post' ), null );
 		$chunked_job->on_failed( 'run-7', array( 'post_type' => 'post' ), $failure );

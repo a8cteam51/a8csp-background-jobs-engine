@@ -377,7 +377,7 @@ final readonly class RunReconciliation {
 	 */
 	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, ?JobInterface $contract, KindHandlerInterface $handler, string $expected_raw ): AbstractResult {
 		$attempts = RunState::increment_attempts_safely( $state->failed_attempts );
-		$this->terminal_transitions->fail_run( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::CrashReclaim, ErrorCode::ExecutionFailed, $handler->failed_chunk_for_state( $state ), $expected_raw );
+		$this->terminal_transitions->fail_run( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::crash_reclaim(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ), $expected_raw );
 
 		return new Success( null );
 	}

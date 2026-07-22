@@ -319,17 +319,17 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Returns the authoritative queue head for a failed continuation.
+	 * Returns diagnostic details for the authoritative queue head of a failed continuation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   RunState $state Run state at terminalization.
 	 *
-	 * @return  array<array-key, mixed>|null
+	 * @return  array<array-key, mixed>|null Generic diagnostic payload, or null when no failing chunk is available.
 	 */
 	#[\Override]
-	public function failed_chunk_for_state( RunState $state ): ?array {
+	public function failure_details( RunState $state ): ?array {
 		if ( 'continue' !== $state->pending?->stage ) {
 			return null;
 		}
@@ -341,7 +341,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 		$chunk = $queue[0] ?? null;
 
-		return \is_array( $chunk ) ? $chunk : null;
+		return self::details_for_chunk( \is_array( $chunk ) ? $chunk : null );
 	}
 
 	/**
@@ -396,7 +396,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		try {
 			$queue = $this->materialize_queue( $chunked_job->generate_queue( $state->start_args, $context ) );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failure( $this, $chunked_job, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::QueueGeneration, 'start' );
+			$this->failure_lifecycle->handle_failure( $this, $chunked_job, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::queue_generation(), 'start' );
 
 			return;
 		}
@@ -449,7 +449,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 				return;
 			}
 
-			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::Execution, ErrorCode::ExecutionFailed );
+			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::ExecutionFailed );
 
 			return;
 		}
@@ -531,7 +531,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		}
 
 		if ( array() !== $queue ) {
-			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', self::KIND, $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::Execution, ErrorCode::UnsupportedOperation );
+			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', self::KIND, $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::UnsupportedOperation );
 
 			return;
 		}
@@ -557,7 +557,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	private function process_chunk( ChunkedJobInterface $chunked_job, string $identity, string $run_id, RunState $state, RunStore $run_store, array $queue ): void {
 		$chunk_args = $queue[0] ?? null;
 		if ( ! \is_array( $chunk_args ) ) {
-			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached chunk execution without a queued chunk; schedule continue only while the authoritative queue has a head.', self::KIND, $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::Execution, ErrorCode::UnsupportedOperation );
+			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached chunk execution without a queued chunk; schedule continue only while the authoritative queue has a head.', self::KIND, $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::UnsupportedOperation );
 
 			return;
 		}
@@ -567,7 +567,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		try {
 			$chunked_job->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_failure( $this, $chunked_job, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::Execution, 'continue', $chunk_args );
+			$this->failure_lifecycle->handle_failure( $this, $chunked_job, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::execution(), 'continue', self::details_for_chunk( $chunk_args ) );
 
 			return;
 		}
@@ -584,7 +584,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 				return;
 			}
 
-			$this->fail_processed_chunk( $chunked_job, $identity, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), RunFailureStage::Execution, ErrorCode::ExecutionFailed );
+			$this->fail_processed_chunk( $chunked_job, $identity, $run_id, $state, $run_store, $context->get_queue(), $reset_at, EngineError::from_throwable( $throwable ), RunFailureStage::execution(), ErrorCode::ExecutionFailed );
 
 			return;
 		}
@@ -595,7 +595,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 		$now = $this->clock->now()->getTimestamp();
 		if ( $delay > \PHP_INT_MAX - $now ) {
-			$this->fail_processed_chunk( $chunked_job, $identity, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( '%1$s "%2$s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', self::KIND, $identity ) ), RunFailureStage::Scheduling, ErrorCode::BackendRejected );
+			$this->fail_processed_chunk( $chunked_job, $identity, $run_id, $state, $run_store, $context->get_queue(), $reset_at, new EngineError( \sprintf( '%1$s "%2$s" could not schedule the continue action because its delay exceeds supported Unix seconds; return a smaller non-negative delay from the continue-delay filter.', self::KIND, $identity ) ), RunFailureStage::scheduling(), ErrorCode::BackendRejected );
 
 			return;
 		}
@@ -608,13 +608,27 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 		$scheduled = $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, $fire_at, array( $identity, $run_id, $replacement->action_sequence ), $identity . '|' . $run_id, 10 );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $replacement, $run_store, EngineError::scheduling( self::KIND, $identity, 'continue', $scheduled->error ), RunState::increment_attempts_safely( $replacement->failed_attempts ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $replacement, $run_store, EngineError::scheduling( self::KIND, $identity, 'continue', $scheduled->error ), RunState::increment_attempts_safely( $replacement->failed_attempts ), RunFailureStage::scheduling(), EngineError::api_code_for_scheduling( $scheduled->error ) );
 		}
 	}
 
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Projects one failing chunk into the generic diagnostic payload.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed>|null $chunk Chunk arguments, or null when no failing chunk is available.
+	 *
+	 * @return  array<array-key, mixed>|null
+	 */
+	private static function details_for_chunk( ?array $chunk ): ?array {
+		return null === $chunk ? null : array( 'failed_chunk' => $chunk );
+	}
 
 	/**
 	 * Schedules one asynchronous persisted successor.
@@ -634,7 +648,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	private function schedule_async_successor( ChunkedJobInterface $chunked_job, string $identity, string $run_id, RunState $state, RunStore $run_store, string $stage ): void {
 		$scheduled = $this->scheduler->enqueue_async( ActionDeliveries::DELIVER_HOOK, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, $stage, $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::Scheduling, EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, $stage, $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), EngineError::api_code_for_scheduling( $scheduled->error ) );
 		}
 	}
 
@@ -664,7 +678,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, $error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::QueueGeneration, $code );
+		$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, $error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::queue_generation(), $code );
 	}
 
 	/**
@@ -683,7 +697,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @return  void
 	 */
 	private function fail_malformed_kind_state( ChunkedJobInterface $chunked_job, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
-		$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, $error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::Execution, ErrorCode::PayloadRejected );
+		$this->terminal_transitions->fail_run( $this, $chunked_job, $identity, $run_id, $state, $run_store, $error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::PayloadRejected );
 	}
 
 	/**

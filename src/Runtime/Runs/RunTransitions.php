@@ -311,7 +311,7 @@ final readonly class RunTransitions {
 	 */
 	public function fail_unregistered_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
 		$attempts       = RunState::increment_attempts_safely( $state->failed_attempts );
-		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, RunFailureStage::Execution, ErrorCode::UnknownWork, $handler->failed_chunk_for_state( $state ) ) );
+		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, RunFailureStage::execution(), ErrorCode::UnknownWork, $handler->failure_details( $state ) ) );
 
 		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler );
 	}
@@ -324,7 +324,7 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<array-key, mixed>|null $failed_chunk
+	 * @phpstan-param array<array-key, mixed>|null $details
 	 *
 	 * @param   KindHandlerInterface $handler        Handler selected by the persisted kind.
 	 * @param   JobInterface|null    $callback_target Failed work contract, or null when unavailable.
@@ -336,13 +336,13 @@ final readonly class RunTransitions {
 	 * @param   int                  $attempts       Attempts consumed before failure.
 	 * @param   RunFailureStage      $stage          Terminalization stage.
 	 * @param   ErrorCode            $code           Machine-readable cause classification.
-	 * @param   array|null           $failed_chunk   Chunk arguments for the failing chunk, or null.
+	 * @param   array|null           $details        Generic diagnostic payload, or null when no details are available.
 	 * @param   string|null          $expected_raw   Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  void
 	 */
-	public function fail_run( KindHandlerInterface $handler, ?JobInterface $callback_target, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $failed_chunk = null, ?string $expected_raw = null ): void {
-		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $failed_chunk ) );
+	public function fail_run( KindHandlerInterface $handler, ?JobInterface $callback_target, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): void {
+		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $details ) );
 
 		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler, $callback_target, $expected_raw );
 	}
@@ -531,22 +531,22 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   EngineError                  $error        Failure detail.
-	 * @param   RunFailureStage              $stage        Terminalization stage.
-	 * @param   ErrorCode                    $code         Machine-readable cause classification.
-	 * @param   array<array-key, mixed>|null $failed_chunk Chunked Job chunk arguments for the failing chunk, or null.
+	 * @param   EngineError                  $error   Failure detail.
+	 * @param   RunFailureStage              $stage   Terminalization stage.
+	 * @param   ErrorCode                    $code    Machine-readable cause classification.
+	 * @param   array<array-key, mixed>|null $details Generic diagnostic payload, or null when no details are available.
 	 *
-	 * @return  array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
+	 * @return  array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 */
-	private static function error_detail( EngineError $error, RunFailureStage $stage, ErrorCode $code, ?array $failed_chunk ): array {
+	private static function error_detail( EngineError $error, RunFailureStage $stage, ErrorCode $code, ?array $details ): array {
 		$detail = array(
 			'class'   => $error->exception_class,
 			'message' => $error->message,
 			'stage'   => $stage->value,
 			'code'    => $code->value,
 		);
-		if ( null !== $failed_chunk ) {
-			$detail['failed_chunk'] = $failed_chunk;
+		if ( null !== $details ) {
+			$detail['details'] = $details;
 		}
 
 		return $detail;

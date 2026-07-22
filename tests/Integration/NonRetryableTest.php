@@ -105,11 +105,11 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame( self::IDENTITY, $failure->identity );
 		self::assertSame( $run_id, (string) $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
-		self::assertSame( RunFailureStage::Execution, $failure->stage );
+		self::assertSame( RunFailureStage::execution(), $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( $expected_message, $failure->summary );
 		self::assertStringNotContainsString( 'The requested record is permanently unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
-		self::assertNull( $failure->failed_chunk );
+		self::assertNull( $failure->details );
 		self::assertSame( array( $failure ), $failed, 'The failed hook must receive only the self-identifying failure value' );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'A non-retryable failure must not schedule another attempt' );

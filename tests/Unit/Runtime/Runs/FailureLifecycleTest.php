@@ -367,7 +367,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		self::assertSame( array( self::ARGS, self::ARGS ), $this->job->calls );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
-		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 		self::assertSame( 2, $failure->attempts );
 	}
 
@@ -397,7 +397,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( $contract, $observed );
-		self::assertSame( 1, $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution )->attempts );
+		self::assertSame( 1, $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() )->attempts );
 		$this->rig->assert_no_retry();
 	}
 
@@ -482,7 +482,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( array(), $this->rig->randomizer()->calls );
 	}
@@ -536,7 +536,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
-		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 	}
 
 	/**
@@ -590,7 +590,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
-		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::Scheduling );
+		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::scheduling() );
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -655,7 +655,7 @@ final class FailureLifecycleTest extends TestCase {
 			$this->rig->run_due();
 		}
 
-		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 		self::assertSame( 'Chunked Job chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
 	}
 
@@ -699,7 +699,7 @@ final class FailureLifecycleTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::Execution );
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 		self::assertSame( 1, $failure->attempts );
 		$this->rig->assert_no_retry();
 	}

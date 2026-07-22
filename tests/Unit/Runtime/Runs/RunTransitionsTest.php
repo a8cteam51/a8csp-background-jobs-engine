@@ -775,15 +775,15 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
 
-		$this->terminal_transitions->fail_run( $this->handler, $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
-		$this->terminal_transitions->fail_run( $this->handler, $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_run( $this->handler, $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_run( $this->handler, $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );
 		self::assertSame( self::IDENTITY, $error_records[0]['context']['name'] ?? null );
 		self::assertSame( self::RUN_ID, $error_records[0]['context']['run_id'] ?? null );
 		self::assertSame( 3, $error_records[0]['context']['attempts'] ?? null );
-		self::assertSame( RunFailureStage::Execution->value, $error_records[0]['context']['stage'] ?? null );
+		self::assertSame( RunFailureStage::execution()->value, $error_records[0]['context']['stage'] ?? null );
 		self::assertSame( \RuntimeException::class, $error_records[0]['context']['error_class'] ?? null );
 	}
 

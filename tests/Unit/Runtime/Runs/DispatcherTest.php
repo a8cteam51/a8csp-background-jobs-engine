@@ -1055,7 +1055,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_failed_run( string $run_id, array $start_args, int $attempts ): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $run_id ), attempts: $attempts, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Database unavailable.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $run_id ), attempts: $attempts, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Database unavailable.', details: null );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure ) );
 		$this->reset_observations();
 	}
@@ -1082,7 +1082,7 @@ final class DispatcherTest extends TestCase {
 			'error'      => array(
 				'class'   => null,
 				'message' => 'Database unavailable.',
-				'stage'   => RunFailureStage::Execution->value,
+				'stage'   => RunFailureStage::execution()->value,
 				'code'    => ErrorCode::ExecutionFailed->value,
 			),
 		);

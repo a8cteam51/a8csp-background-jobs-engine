@@ -16,7 +16,6 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( RunFailure::class )]
-#[CoversClass( RunFailureStage::class )]
 final class RunFailureTest extends TestCase {
 
 	/**
@@ -35,7 +34,7 @@ final class RunFailureTest extends TestCase {
 	}
 
 	/**
-	 * Every terminal failure field remains directly observable.
+	 * Every terminal failure field remains directly observable, and the diagnostic payload is generic.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -44,26 +43,17 @@ final class RunFailureTest extends TestCase {
 	 */
 	public function test_constructor_retains_the_complete_failure(): void {
 		$run_id  = RunId::from( '00000000001721664000-0000000000000000042' );
-		$failure = new RunFailure( identity: 'consumer-plugin:recount-comments', run_id: $run_id, attempts: 3, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Background-work execution failed because RuntimeException was thrown.', failed_chunk: array( 'post_id' => 42 ), );
+		$failure = new RunFailure( identity: 'consumer-plugin:recount-comments', run_id: $run_id, attempts: 3, stage: RunFailureStage::from( 'execution' ), code: ErrorCode::ExecutionFailed, summary: 'Background-work execution failed because RuntimeException was thrown.', details: array( 'failed_chunk' => array( 'post_id' => 42 ) ), );
 
 		self::assertSame( 'consumer-plugin:recount-comments', $failure->identity );
 		self::assertSame( $run_id, $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
-		self::assertSame( RunFailureStage::Execution, $failure->stage );
+		self::assertSame( RunFailureStage::from( 'execution' ), $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
-		self::assertSame( array( 'post_id' => 42 ), $failure->failed_chunk );
-	}
+		self::assertSame( array( 'failed_chunk' => array( 'post_id' => 42 ) ), $failure->details );
 
-	/**
-	 * Every terminalization stage exposes its persisted scalar value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_stage_cases_expose_the_persisted_values(): void {
-		self::assertEqualsCanonicalizing( array( 'execution', 'queue_generation', 'crash_reclaim', 'scheduling' ), \array_map( static fn ( RunFailureStage $stage ): string => $stage->value, RunFailureStage::cases() ) );
+		$reflection = new \ReflectionClass( RunFailure::class );
+		self::assertFalse( $reflection->hasProperty( 'failed_chunk' ), 'The kind-specific chunk field is a details projection, not a failure field.' );
 	}
 }

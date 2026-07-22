@@ -686,6 +686,35 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * A grammar-valid extension failure stage hydrates as opaque terminal metadata.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale An extension stage in active-run storage must survive hydration so terminal effects can reconstruct the public failure value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_grammar_valid_failure_stage_hydrates(): void {
+		$error = array(
+			'class'   => null,
+			'message' => 'Failure.',
+			'stage'   => 'acme.export_sync',
+			'code'    => ErrorCode::ExecutionFailed->value,
+		);
+		$state = $this->state()->with_status( RunStatus::Failed )->with_pending( null )->with_error( $error );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( $error, $inspected->value['state']->error );
+	}
+
+	/**
 	 * Optional terminal error and effect metadata accept only their canonical nested shapes.
 	 *
 	 * @load-bearing security
@@ -729,7 +758,7 @@ final class RunStoreTest extends TestCase {
 				'error' => array(
 					'class'   => null,
 					'message' => 'Failure.',
-					'stage'   => 'unknown',
+					'stage'   => 'acme.invalid-stage',
 					'code'    => ErrorCode::ExecutionFailed->value,
 				),
 			),

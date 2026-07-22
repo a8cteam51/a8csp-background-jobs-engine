@@ -110,7 +110,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertSame( 'execution', $observed[0]->stage->value );
 		self::assertSame( 'execution_failed', $observed[0]->code->value );
 		self::assertSame( \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class ), $observed[0]->summary );
-		self::assertNull( $observed[0]->failed_chunk );
+		self::assertNull( $observed[0]->details );
 		self::assertSame( 0, \did_action( 'a8csp_jobs_engine/failed/' . $identity ) );
 	}
 

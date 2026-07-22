@@ -169,7 +169,7 @@ final class EngineRigTest extends TestCase {
 		self::assertSame( 'job', self::decoded( $run_raw )['kind'] ?? null );
 		self::assertSame( self::ARGS, self::decoded( $run_raw )['start_args'] ?? null );
 
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', details: null );
 
 		[ $failed_name, $failed_raw ] = $fixtures->failed( self::NOW, self::ARGS, $failure, new EngineError( $failure->summary ) );
 		self::assertSame( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $failed_name );

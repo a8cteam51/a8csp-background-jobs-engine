@@ -60,7 +60,7 @@ final class CallableJobTest extends TestCase {
 		$args             = array( 'site_id' => 7 );
 		$context          = self::createStub( RunContext::class );
 		$retry            = $job->get_retry_policy();
-		$failure          = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$failure          = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null );
 
 		$job->handle( $args, $context );
 		$job->on_completed( 'run-7', $args, null );
@@ -97,7 +97,7 @@ final class CallableJobTest extends TestCase {
 		};
 		$job          = new CallableJob( 'refresh-index', static function ( array $args, RunContext $context ): void {}, on_completed: $on_completed, on_failed: $on_failed );
 		$args         = array( 'site_id' => 7 );
-		$failure      = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+		$failure      = new RunFailure( identity: 'consumer-plugin:refresh-index', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null );
 
 		$job->on_completed( 'run-7', $args, 'run-previous' );
 		$job->on_failed( 'run-7', $args, $failure );

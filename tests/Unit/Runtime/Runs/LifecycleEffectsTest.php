@@ -129,7 +129,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$this->guard  = new OverlapGuard( $this->clock, $this->logger, $rows );
 		$handler      = self::createStub( KindHandlerInterface::class );
 		$handler->method( 'key' )->willReturn( 'job' );
-		$handler->method( 'failed_chunk_for_state' )->willReturn( null );
+		$handler->method( 'failure_details' )->willReturn( null );
 
 		$this->handler          = $handler;
 		$this->stores           = new StoreFactory( $this->clock, $rows, $this->logger );
@@ -160,7 +160,7 @@ final class LifecycleEffectsTest extends TestCase {
 			array(
 				'class'   => $error->exception_class,
 				'message' => $error->message,
-				'stage'   => RunFailureStage::Execution->value,
+				'stage'   => RunFailureStage::execution()->value,
 				'code'    => ErrorCode::ExecutionFailed->value,
 			)
 		);

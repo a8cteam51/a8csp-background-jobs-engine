@@ -71,11 +71,11 @@ final readonly class FailureLifecycle {
 	 * @param   \Throwable                   $throwable      Failed attempt detail.
 	 * @param   RunFailureStage              $terminal_stage Failure stage when the retry ladder terminalizes the attempt.
 	 * @param   string                       $retry_stage    Pending-action stage for another attempt.
-	 * @param   array<array-key, mixed>|null $chunk_args     Chunked Job chunk arguments, or null for a job or start action.
+	 * @param   array<array-key, mixed>|null $details        Generic diagnostic payload, or null when no details are available.
 	 *
 	 * @return  void
 	 */
-	public function handle_failure( KindHandlerInterface $handler, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, ?array $chunk_args = null ): void {
+	public function handle_failure( KindHandlerInterface $handler, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, ?array $details = null ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -88,7 +88,7 @@ final readonly class FailureLifecycle {
 		$attempts_used = $state->failed_attempts + 1;
 		$error         = $handler->failure_error( $throwable );
 		if ( $throwable instanceof NonRetryableException ) {
-			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
 
 			return;
 		}
@@ -100,7 +100,7 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $handler->key(), $identity, $retry_policy_failure ), $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, EngineError::retry_policy( $handler->key(), $identity, $retry_policy_failure ), $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
 
 			return;
 		}
@@ -110,7 +110,7 @@ final readonly class FailureLifecycle {
 		}
 
 		if ( $attempts_used >= $policy->max_attempts ) {
-			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $chunk_args );
+			$this->fail_terminally( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
 
 			return;
 		}
@@ -122,7 +122,7 @@ final readonly class FailureLifecycle {
 				return;
 			}
 
-			$this->fail_terminally( $handler, $contract, $identity, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $chunk_args );
+			$this->fail_terminally( $handler, $contract, $identity, $run_id, $retry_state, $run_store, $retry_failure['error'], $attempts_used, $retry_failure['stage'], $retry_failure['code'], $details );
 		}
 	}
 
@@ -142,12 +142,12 @@ final readonly class FailureLifecycle {
 	 * @param   int                          $attempts_used Attempts consumed by the invocation.
 	 * @param   RunFailureStage              $stage         Terminalization stage.
 	 * @param   ErrorCode                    $code          Machine-readable cause classification.
-	 * @param   array<array-key, mixed>|null $chunk_args    Chunked Job chunk arguments, or null for a job.
+	 * @param   array<array-key, mixed>|null $details       Generic diagnostic payload, or null when no details are available.
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( KindHandlerInterface $handler, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $chunk_args ): void {
-		$this->terminal_transitions->fail_run( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $chunk_args );
+	private function fail_terminally( KindHandlerInterface $handler, JobInterface $contract, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $details ): void {
+		$this->terminal_transitions->fail_run( $handler, $contract, $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $details );
 	}
 
 	/**
@@ -216,7 +216,7 @@ final readonly class FailureLifecycle {
 				return array(
 					'state' => $state,
 					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $kind, $identity ) ),
-					'stage' => RunFailureStage::Scheduling,
+					'stage' => RunFailureStage::scheduling(),
 					'code'  => ErrorCode::BackendRejected,
 				);
 			}
@@ -224,7 +224,7 @@ final readonly class FailureLifecycle {
 			return array(
 				'state' => $state,
 				'error' => EngineError::retry_preparation( $kind, $identity, $throwable ),
-				'stage' => RunFailureStage::Scheduling,
+				'stage' => RunFailureStage::scheduling(),
 				'code'  => ErrorCode::EngineUnavailable,
 			);
 		}
@@ -240,7 +240,7 @@ final readonly class FailureLifecycle {
 			return array(
 				'state' => $state,
 				'error' => EngineError::retry_state( $kind, $identity, $throwable ),
-				'stage' => RunFailureStage::Scheduling,
+				'stage' => RunFailureStage::scheduling(),
 				'code'  => ErrorCode::EngineUnavailable,
 			);
 		}
@@ -271,7 +271,7 @@ final readonly class FailureLifecycle {
 			return array(
 				'state' => $state,
 				'error' => EngineError::retry_preparation( $kind, $identity, $throwable ),
-				'stage' => RunFailureStage::Execution,
+				'stage' => RunFailureStage::execution(),
 				'code'  => ErrorCode::ExecutionFailed,
 			);
 		}
@@ -286,7 +286,7 @@ final readonly class FailureLifecycle {
 				return array(
 					'state' => $state,
 					'error' => EngineError::scheduling( $kind, $identity, 'retry', $scheduled->error ),
-					'stage' => RunFailureStage::Scheduling,
+					'stage' => RunFailureStage::scheduling(),
 					'code'  => EngineError::api_code_for_scheduling( $scheduled->error ),
 				);
 			}
@@ -308,7 +308,7 @@ final readonly class FailureLifecycle {
 			return array(
 				'state' => $state,
 				'error' => EngineError::retry_preparation( $kind, $identity, $throwable ),
-				'stage' => RunFailureStage::Scheduling,
+				'stage' => RunFailureStage::scheduling(),
 				'code'  => ErrorCode::BackendUnavailable,
 			);
 		}

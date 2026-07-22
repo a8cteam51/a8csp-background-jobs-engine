@@ -21,8 +21,8 @@ use Psr\Log\LoggerInterface;
  * Persists the bounded failed-run data required by manual retry.
  *
  * The nested error class preserves `EngineError::$exception_class` exactly; null records that the
- * failure carries no throwable class. Client failure metadata is stored with every entry, and a
- * null failed chunk remains absent from serialized entries.
+ * failure carries no throwable class. Client failure metadata is stored with every entry, and
+ * null diagnostic details remain absent from serialized entries.
  *
  * @internal
  *
@@ -136,8 +136,8 @@ final readonly class FailedRunStore {
 				'stage'   => $failure->stage->value,
 				'code'    => $failure->code->value,
 			);
-			if ( null !== $failure->failed_chunk ) {
-				$error_detail['failed_chunk'] = $failure->failed_chunk;
+			if ( null !== $failure->details ) {
+				$error_detail['details'] = $failure->details;
 			}
 
 			$entries[]       = array(
@@ -188,7 +188,7 @@ final readonly class FailedRunStore {
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     attempts: int,
-	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
+	 *     error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 * }>, EngineError>
 	 */
 	#[\NoDiscard( 'a failed-run read outcome must be handled, not dropped' )]
@@ -217,7 +217,7 @@ final readonly class FailedRunStore {
 	 *         failed_at: int,
 	 *         start_args: array<array-key, mixed>,
 	 *         attempts: int,
-	 *         error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
+	 *         error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 *     }>,
 	 *     unreadable: int,
 	 *     row_unreadable: bool
@@ -427,7 +427,7 @@ final readonly class FailedRunStore {
 	 *         failed_at: int,
 	 *         start_args: array<array-key, mixed>,
 	 *         attempts: int,
-	 *         error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
+	 *         error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 *     }>,
 	 *     unreadable: int,
 	 *     row_unreadable: bool
@@ -541,7 +541,7 @@ final readonly class FailedRunStore {
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     attempts: int,
-	 *     error: array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}
+	 *     error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 * }|null
 	 */
 	private static function entry_from_option( mixed $value ): ?array {
@@ -559,10 +559,10 @@ final readonly class FailedRunStore {
 		) {
 			return null;
 		}
-		$error            = $value['error'];
-		$has_failed_chunk = \array_key_exists( 'failed_chunk', $error );
+		$error       = $value['error'];
+		$has_details = \array_key_exists( 'details', $error );
 		if (
-			! \in_array( \count( $error ), array( 4, 5 ), true )
+			( $has_details ? 5 : 4 ) !== \count( $error )
 			|| ! \is_string( $error['stage'] ?? null )
 			|| null === RunFailureStage::tryFrom( $error['stage'] )
 			|| ! \is_string( $error['code'] ?? null )
@@ -570,10 +570,10 @@ final readonly class FailedRunStore {
 		) {
 			return null;
 		}
-		$failed_chunk = null;
-		if ( $has_failed_chunk ) {
-			$failed_chunk = $error['failed_chunk'] ?? null;
-			if ( ! \is_array( $failed_chunk ) || ! PortableArguments::is_valid( $failed_chunk ) ) {
+		$details = null;
+		if ( $has_details ) {
+			$details = $error['details'] ?? null;
+			if ( ! \is_array( $details ) || ! PortableArguments::is_valid( $details ) ) {
 				return null;
 			}
 		}
@@ -584,8 +584,8 @@ final readonly class FailedRunStore {
 			'stage'   => $error['stage'],
 			'code'    => $error['code'],
 		);
-		if ( $has_failed_chunk ) {
-			$error_detail['failed_chunk'] = $failed_chunk;
+		if ( $has_details ) {
+			$error_detail['details'] = $details;
 		}
 
 		return array(
