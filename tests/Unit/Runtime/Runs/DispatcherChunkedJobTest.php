@@ -123,7 +123,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		self::assertSame( 23, $this->single_start_call()['args']['priority'] ?? null );
 		$run = \get_option( $this->run_option_name() );
 		self::assertIsArray( $run );
-		self::assertSame( 'ChunkedJob', $run['kind'] ?? null );
+		self::assertSame( 'chunked_job', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
 
 		$this->rig->run_due();
@@ -807,7 +807,19 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function start_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/start_chunked_job' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values(
+			\array_filter(
+				$this->rig->backend()->calls,
+				static function ( array $call ): bool {
+					$args = $call['args']['args'] ?? null;
+
+					return \is_array( $args )
+						&& 'enqueue_async' === $call['verb']
+						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& self::IDENTITY === ( $args[0] ?? null );
+				}
+			)
+		);
 	}
 
 	/**

@@ -8,7 +8,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
@@ -782,7 +781,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$args_hash = $builder->args_hash( array() );
 		$now       = \time();
-		$state     = new RunState( RunStatus::Running, JobType::Job, true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
+		$state     = new RunState( RunStatus::Running, 'job', true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
 		$fixtures  = array(
 			$builder->run( self::CANONICAL_RUN_ID, $state ),
 			$builder->history(
@@ -1172,7 +1171,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$args    = array( 'source' => 'cli-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, JobType::Job, $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'job', $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 
@@ -1191,7 +1190,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$args    = array( 'source' => 'cli-completeness-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_CHUNKED_JOB_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, JobType::ChunkedJob, false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'chunked_job', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 

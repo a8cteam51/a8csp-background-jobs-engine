@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins the only valid pending lifecycle-action combinations.
+ * Pins the pending lifecycle-action value: stages obey the lexical grammar, not a whitelist.
  *
  */
 #[CoversClass( PendingAction::class )]
@@ -26,14 +26,14 @@ final class PendingActionTest extends TestCase {
 	}
 
 	/**
-	 * Every lifecycle stage supports immediate asynchronous delivery.
+	 * Every grammar-valid stage supports immediate asynchronous delivery.
 	 *
-	 * @param   string $stage Supported lifecycle stage.
+	 * @param   string $stage Grammar-valid stage.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'async_stage_provider' )]
-	public function test_async_factory_creates_every_supported_stage( string $stage ): void {
+	#[DataProvider( 'valid_stage_provider' )]
+	public function test_async_factory_accepts_every_grammar_valid_stage( string $stage ): void {
 		$pending = PendingAction::async( $stage, 23 );
 
 		self::assertSame( $stage, $pending->stage );
@@ -43,14 +43,14 @@ final class PendingActionTest extends TestCase {
 	}
 
 	/**
-	 * Retryable work stages support scheduled single delivery.
+	 * Every grammar-valid stage supports scheduled single delivery.
 	 *
-	 * @param   string $stage Supported lifecycle stage.
+	 * @param   string $stage Grammar-valid stage.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'single_stage_provider' )]
-	public function test_single_factory_creates_only_scheduled_stages( string $stage ): void {
+	#[DataProvider( 'valid_stage_provider' )]
+	public function test_single_factory_accepts_every_grammar_valid_stage( string $stage ): void {
 		$pending = PendingAction::single( $stage, 175, 31 );
 
 		self::assertSame( $stage, $pending->stage );
@@ -59,57 +59,61 @@ final class PendingActionTest extends TestCase {
 		self::assertSame( 31, $pending->priority );
 	}
 
-	/** Unsupported asynchronous stages cannot enter run state. */
-	public function test_async_factory_rejects_an_unknown_stage(): void {
-		$this->expectException( \InvalidArgumentException::class );
-
-		PendingAction::async( 'unknown', 10 );
-	}
-
 	/**
-	 * Scheduled single delivery rejects stages that are async-only.
+	 * Lexically malformed stages cannot enter run state through the asynchronous factory.
 	 *
-	 * @param   string $stage Async-only lifecycle stage.
+	 * @param   string $stage Malformed stage candidate.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'async_only_stage_provider' )]
-	public function test_single_factory_rejects_async_only_stages( string $stage ): void {
+	#[DataProvider( 'malformed_stage_provider' )]
+	public function test_async_factory_rejects_a_malformed_stage( string $stage ): void {
+		$this->expectException( \InvalidArgumentException::class );
+
+		PendingAction::async( $stage, 10 );
+	}
+
+	/**
+	 * Lexically malformed stages cannot enter run state through the scheduled factory.
+	 *
+	 * @param   string $stage Malformed stage candidate.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'malformed_stage_provider' )]
+	public function test_single_factory_rejects_a_malformed_stage( string $stage ): void {
 		$this->expectException( \InvalidArgumentException::class );
 
 		PendingAction::single( $stage, 175, 10 );
 	}
 
 	/**
-	 * Returns every asynchronous lifecycle stage.
+	 * Returns grammar-valid stages: the engine's own plus vendor-qualified extensions.
 	 *
 	 * @return  iterable<string, array{string}>
 	 */
-	public static function async_stage_provider(): iterable {
+	public static function valid_stage_provider(): iterable {
 		yield 'start' => array( 'start' );
 		yield 'run' => array( 'run' );
 		yield 'continue' => array( 'continue' );
 		yield 'cleanup' => array( 'cleanup' );
+		yield 'queue_generation' => array( 'queue_generation' );
+		yield 'vendor-qualified' => array( 'acme.export' );
 	}
 
 	/**
-	 * Returns every scheduled single lifecycle stage.
+	 * Returns lexically malformed stage candidates.
 	 *
 	 * @return  iterable<string, array{string}>
 	 */
-	public static function single_stage_provider(): iterable {
-		yield 'start' => array( 'start' );
-		yield 'run' => array( 'run' );
-		yield 'continue' => array( 'continue' );
-	}
-
-	/**
-	 * Returns lifecycle stages that support only asynchronous delivery.
-	 *
-	 * @return  iterable<string, array{string}>
-	 */
-	public static function async_only_stage_provider(): iterable {
-		yield 'cleanup' => array( 'cleanup' );
-		yield 'unknown' => array( 'unknown' );
+	public static function malformed_stage_provider(): iterable {
+		yield 'empty' => array( '' );
+		yield 'uppercase' => array( 'Run' );
+		yield 'leading digit' => array( '9start' );
+		yield 'inner space' => array( 'has space' );
+		yield 'trailing dot' => array( 'trailing.' );
+		yield 'leading dot' => array( '.leading' );
+		yield 'double dot' => array( 'a..b' );
+		yield 'leading underscore' => array( '_private' );
 	}
 }

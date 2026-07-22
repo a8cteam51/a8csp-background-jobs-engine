@@ -11,7 +11,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
@@ -22,6 +21,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -48,11 +48,12 @@ use Psr\Clock\ClockInterface;
  * }
  * @phpstan-type LiveRunEntry array{
  *     run_id: string,
- *     kind: 'chunked_job'|'job',
+ *     kind: string,
  *     status: 'running',
  *     executing: bool,
  *     attempts: int,
  *     queue_depth: int|null,
+ *     queue_known: bool,
  *     heartbeat_at: int,
  *     stale: bool
  * }
@@ -85,8 +86,11 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @phpstan-param array<string, KindHandlerInterface> $handlers
+	 *
 	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
 	 * @param   JobRegistry      $work         Registered Job instances.
+	 * @param   array            $handlers     Kind handlers keyed by their persisted keys.
 	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
 	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
 	 * @param   StoreFactory     $stores       Name-bound run stores.
@@ -97,6 +101,7 @@ final readonly class Inspection {
 	public function __construct(
 		private ScheduleRegistry $schedules,
 		private JobRegistry $work,
+		private array $handlers,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
 		private StoreFactory $stores,
@@ -333,14 +338,15 @@ final readonly class Inspection {
 			}
 
 			$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
-			$kind      = $state->kind->machine_key();
+			$handler   = $this->handlers[ $state->kind ] ?? null;
 			$live[]    = array(
 				'run_id'       => $run_id,
-				'kind'         => $kind,
+				'kind'         => $state->kind,
 				'status'       => 'running',
 				'executing'    => $state->executing,
 				'attempts'     => $state->failed_attempts,
-				'queue_depth'  => JobType::Job === $state->kind ? null : \count( $state->queue ),
+				'queue_depth'  => $handler?->queue_depth( $state ),
+				'queue_known'  => null !== $handler,
 				'heartbeat_at' => $state->heartbeat_at,
 				'stale'        => self::heartbeat_is_stale( $state->heartbeat_at, $observed_at, $staleness ),
 			);

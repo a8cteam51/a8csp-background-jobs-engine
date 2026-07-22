@@ -6,7 +6,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
@@ -215,15 +214,18 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * A stored work kind outside the canonical Job/Chunked Job vocabulary is corrupt.
+	 * A grammar-valid unregistered kind hydrates as opaque run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_noncanonical_kind_never_hydrates(): void {
+	public function test_unknown_grammar_valid_kind_hydrates(): void {
 		$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
 		$stored  = \maybe_unserialize( $fixture[1] );
 		self::assertIsArray( $stored );
-		$stored['kind'] = 'job';
+		$stored['kind'] = 'acme.export';
 		$raw            = \maybe_serialize( $stored );
 		self::assertIsString( $raw );
 		$this->rig->wpdb()->put( $fixture[0], $raw );
@@ -233,7 +235,35 @@ final class RunStoreTest extends TestCase {
 		self::assertInstanceOf( Success::class, $inspected );
 		self::assertIsArray( $inspected->value );
 		self::assertSame( $raw, $inspected->value['raw'] ?? null );
-		self::assertNull( $inspected->value['state'] ?? null );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( 'acme.export', $inspected->value['state']->kind );
+	}
+
+	/**
+	 * Lexically malformed stored kind keys remain corrupt raw evidence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_kind_never_hydrates(): void {
+		foreach ( array( '', 'Job', 'Job!', 'acme.export.daily' ) as $kind ) {
+			$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
+			$stored  = \maybe_unserialize( $fixture[1] );
+			self::assertIsArray( $stored );
+			$stored['kind'] = $kind;
+			$raw            = \maybe_serialize( $stored );
+			self::assertIsString( $raw );
+			$this->rig->wpdb()->put( $fixture[0], $raw );
+
+			$inspected = $this->store()->inspect( self::RUN_ID );
+
+			self::assertInstanceOf( Success::class, $inspected );
+			self::assertIsArray( $inspected->value );
+			self::assertSame( $raw, $inspected->value['raw'] ?? null );
+			self::assertNull( $inspected->value['state'] ?? null );
+		}
 	}
 
 	// endregion.
@@ -434,7 +464,7 @@ final class RunStoreTest extends TestCase {
 		$raw = \maybe_serialize(
 			array(
 				'status'          => 'running',
-				'kind'            => 'Job',
+				'kind'            => 'job',
 				'executing'       => false,
 				'start_args'      => array(),
 				'args_hash'       => 'hash-a',
@@ -473,12 +503,12 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_start_single_pending_action_round_trips_through_run_storage(): void {
 		$fire_at = self::NOW + 60;
-		$fixture = $this->fixtures->run( self::RUN_ID, $this->state( JobType::ChunkedJob )->with_pending( PendingAction::single( 'start', $fire_at, 10 ) ) );
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state( 'chunked_job' )->with_pending( PendingAction::single( 'start', $fire_at, 10 ) ) );
 		$this->put_fixture( $fixture );
 
 		$stored = \maybe_unserialize( $fixture[1] );
 		self::assertIsArray( $stored );
-		self::assertSame( 'ChunkedJob', $stored['kind'] ?? null );
+		self::assertSame( 'chunked_job', $stored['kind'] ?? null );
 		self::assertSame(
 			array(
 				'stage'    => 'start',
@@ -493,7 +523,7 @@ final class RunStoreTest extends TestCase {
 		self::assertInstanceOf( Success::class, $inspected );
 		self::assertIsArray( $inspected->value );
 		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
-		self::assertSame( JobType::ChunkedJob, $inspected->value['state']->kind );
+		self::assertSame( 'chunked_job', $inspected->value['state']->kind );
 		self::assertInstanceOf( PendingAction::class, $inspected->value['state']->pending );
 		self::assertSame( 'start', $inspected->value['state']->pending->stage );
 		self::assertSame( 'single', $inspected->value['state']->pending->mode );
@@ -502,7 +532,42 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Pending descriptors accept only the canonical stage/mode/fire-time pairings and field set.
+	 * Grammar-valid stages round-trip independently of scheduler mode.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Storage validates the lexical extension seam while retaining only mode/fire-time coupling.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_grammar_valid_pending_stages_round_trip_in_both_modes(): void {
+		$pending_actions = array(
+			PendingAction::async( 'queue_generation', 10 ),
+			PendingAction::single( 'cleanup', self::NOW + 30, 11 ),
+			PendingAction::single( 'acme.export', self::NOW + 60, 12 ),
+		);
+
+		foreach ( $pending_actions as $pending ) {
+			$fixture = $this->fixtures->run( self::RUN_ID, $this->state()->with_pending( $pending ) );
+			$this->put_fixture( $fixture );
+
+			$inspected = $this->store()->inspect( self::RUN_ID );
+			self::assertInstanceOf( Success::class, $inspected );
+			self::assertIsArray( $inspected->value );
+			self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+			self::assertInstanceOf( PendingAction::class, $inspected->value['state']->pending );
+			self::assertSame( $pending->stage, $inspected->value['state']->pending->stage );
+			self::assertSame( $pending->mode, $inspected->value['state']->pending->mode );
+			self::assertSame( $pending->fire_at, $inspected->value['state']->pending->fire_at );
+			self::assertSame( $pending->priority, $inspected->value['state']->pending->priority );
+		}
+	}
+
+	/**
+	 * Pending descriptors accept only the lexical stage grammar, mode/fire-time pairings, and field set.
 	 *
 	 * @load-bearing security
 	 * @pin-rationale Inline corrupt rows cover the invalid pairings that production serialization cannot emit, preventing legacy or injected shapes from becoming executable pending actions.
@@ -512,7 +577,7 @@ final class RunStoreTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_noncanonical_pending_descriptors_never_become_live_runs(): void {
+	public function test_malformed_pending_descriptors_never_become_live_runs(): void {
 		$invalid = array(
 			array(
 				'stage'    => 'run',
@@ -546,9 +611,21 @@ final class RunStoreTest extends TestCase {
 				'extra'    => true,
 			),
 			array(
-				'stage'    => 'cleanup',
+				'stage'    => 'Run',
 				'mode'     => 'single',
 				'fire_at'  => 2,
+				'priority' => 10,
+			),
+			array(
+				'stage'    => '',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 10,
+			),
+			array(
+				'stage'    => 'acme.export.daily',
+				'mode'     => 'async',
+				'fire_at'  => null,
 				'priority' => 10,
 			),
 		);
@@ -644,7 +721,7 @@ final class RunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array{run_id: string, kind: string, status: string, executing: bool, attempts: int, queue_depth: int|null, heartbeat_at: int, stale: bool}
+	 * @return  array{run_id: string, kind: string, status: string, executing: bool, attempts: int, queue_depth: int|null, queue_known: bool, heartbeat_at: int, stale: bool}
 	 */
 	private function single_live_run(): array {
 		$live = $this->rig->inspection()->runs( self::IDENTITY )['live'];
@@ -659,12 +736,12 @@ final class RunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType $kind Admitted kind.
+	 * @param   string $kind Opaque admitted kind key.
 	 *
 	 * @return  RunState
 	 */
-	private function state( JobType $kind = JobType::Job ): RunState {
-		$pending_stage = JobType::Job === $kind ? 'run' : 'start';
+	private function state( string $kind = 'job' ): RunState {
+		$pending_stage = 'job' === $kind ? 'run' : 'start';
 
 		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), queue: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( $pending_stage, 10 ) );
 	}
@@ -708,7 +785,7 @@ final class RunStoreTest extends TestCase {
 	private function put_corrupt_state( array $metadata ): void {
 		$value = array(
 			'status'          => 'failed',
-			'kind'            => 'Job',
+			'kind'            => 'job',
 			'executing'       => false,
 			'start_args'      => array(),
 			'args_hash'       => 'hash-a',

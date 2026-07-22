@@ -91,13 +91,13 @@ final class ApiErrorMapperTest extends TestCase {
 	 */
 	#[DataProvider( 'scheduling_failure_codes' )]
 	public function test_scheduling_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_jobs_engine/run_job' ) ) ) );
+		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_jobs_engine/deliver' ) ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( ApiError::class, $result->error );
 		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Engine-authored scheduling detail.', $result->error->message );
-		self::assertSame( array( 'hook' => 'a8csp_jobs_engine/run_job' ), $result->error->context );
+		self::assertSame( array( 'hook' => 'a8csp_jobs_engine/deliver' ), $result->error->context );
 	}
 
 	/**

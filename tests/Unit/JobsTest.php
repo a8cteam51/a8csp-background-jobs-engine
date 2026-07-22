@@ -202,7 +202,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 	public function test_internal_failure_maps_every_api_error_field(): void {
 		$error = self::assert_wp_error( \a8csp_bgje( self::OWNER )->jobs()->enqueue( 'missing' ), ErrorCode::UnknownWork->value );
 
-		self::assertSame( 'Job "engine-test:missing" is not registered; register it before enqueueing.', $error->get_error_message() );
+		self::assertSame( 'job "engine-test:missing" is not registered; register it before enqueueing.', $error->get_error_message() );
 		self::assertSame( array( 'name' => self::OWNER . ':missing' ), $error->get_error_data() );
 	}
 

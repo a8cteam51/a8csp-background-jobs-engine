@@ -13,7 +13,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -387,7 +386,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_accepts_a_pre_start_chunked_job_with_an_empty_queue(): void {
-		$run_id = $this->start_chunked_job();
+		$run_id = $this->start();
 		$this->reset_backend_observations();
 
 		$result = $this->client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
@@ -404,7 +403,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_rejects_a_zero_chunk_chunked_job_pending_cleanup(): void {
-		$run_id = $this->start_chunked_job();
+		$run_id = $this->start();
 		$this->rig->run_due();
 		$this->reset_backend_observations();
 
@@ -425,7 +424,7 @@ final class DispatcherCancelTest extends TestCase {
 	 */
 	public function test_cancel_accepts_a_chunked_job_between_chunks(): void {
 		$this->chunked_job->queue = array( array( 'chunk' => 'next' ) );
-		$run_id                   = $this->start_chunked_job();
+		$run_id                   = $this->start();
 		$this->rig->run_due();
 		$this->reset_backend_observations();
 
@@ -545,7 +544,7 @@ final class DispatcherCancelTest extends TestCase {
 	 *
 	 * @return  string
 	 */
-	private function start_chunked_job(): string {
+	private function start(): string {
 		$result = $this->client->chunked_jobs()->start( self::CHUNKED_JOB_NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -569,7 +568,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  void
 	 */
 	private function put_job_state( RunStatus $status, bool $executing, int $failed_attempts, int $action_sequence, int $heartbeat_at, ?PendingAction $pending ): void {
-		$state   = new RunState( status: $status, kind: JobType::Job, executing: $executing, start_args: self::ARGS, args_hash: $this->job_fixtures->args_hash( self::ARGS ), queue: array( self::ARGS ), failed_attempts: $failed_attempts, action_sequence: $action_sequence, created_at: self::NOW, heartbeat_at: $heartbeat_at, pending: $pending );
+		$state   = new RunState( status: $status, kind: 'job', executing: $executing, start_args: self::ARGS, args_hash: $this->job_fixtures->args_hash( self::ARGS ), queue: array( self::ARGS ), failed_attempts: $failed_attempts, action_sequence: $action_sequence, created_at: self::NOW, heartbeat_at: $heartbeat_at, pending: $pending );
 		$fixture = $this->job_fixtures->run( self::RUN_ID, $state );
 		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 	}

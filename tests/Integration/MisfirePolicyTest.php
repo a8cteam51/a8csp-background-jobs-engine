@@ -6,6 +6,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -315,24 +317,27 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			)
 		);
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
-		$action_deliveries    = new ActionDeliveries( $work, $scheduler, $stores, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$dispatcher           = new Dispatcher( $work, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions, $terminal_effects );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $work, $scheduler );
+		$job_handler          = new JobKindHandler( $work, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler  = new ChunkedJobKindHandler( $work, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$handlers             = array(
+			$job_handler->key()         => $job_handler,
+			$chunked_job_handler->key() => $chunked_job_handler,
+		);
+		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new Schedules( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
-		$inspection           = new Inspection( $schedule_registry, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
+		$inspection           = new Inspection( $schedule_registry, $work, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
 
 		$this->deterministic_inspection = $inspection;
 		$this->deterministic_registry   = $schedule_registry;
 		$this->deterministic_work       = $work;
 
-		\remove_all_actions( 'a8csp_jobs_engine/start_chunked_job' );
-		\remove_all_actions( 'a8csp_jobs_engine/continue_chunked_job' );
-		\remove_all_actions( 'a8csp_jobs_engine/run_job' );
-		\remove_all_actions( 'a8csp_jobs_engine/cleanup_chunked_job' );
+		\remove_all_actions( 'a8csp_jobs_engine/deliver' );
 		\remove_all_actions( 'a8csp_jobs_engine/schedule_due' );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();

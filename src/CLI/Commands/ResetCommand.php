@@ -61,10 +61,7 @@ final readonly class ResetCommand {
 	 * @var     list<non-empty-string>
 	 */
 	private const array ACTION_HOOKS = array(
-		ActionDeliveries::START_HOOK,
-		ActionDeliveries::CONTINUE_HOOK,
-		ActionDeliveries::RUN_JOB_HOOK,
-		ActionDeliveries::CLEANUP_HOOK,
+		ActionDeliveries::DELIVER_HOOK,
 		OccurrenceDelivery::SCHEDULE_HOOK,
 	);
 

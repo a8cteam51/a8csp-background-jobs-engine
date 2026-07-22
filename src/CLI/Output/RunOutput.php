@@ -93,9 +93,7 @@ final readonly class RunOutput {
 				'status'    => 'running',
 				'phase'     => $entry['executing'] ? 'executing' : 'waiting',
 				'attempts'  => $entry['attempts'],
-				'queue'     => 'job' === $entry['kind']
-					? '—'
-					: ( $entry['queue_depth'] ?? 'unknown' ),
+				'queue'     => $entry['queue_depth'] ?? ( $entry['queue_known'] ? '—' : 'unknown' ),
 				'heartbeat' => self::heartbeat_label( $entry['heartbeat_at'], $observed_at, $entry['stale'] ),
 			);
 		}

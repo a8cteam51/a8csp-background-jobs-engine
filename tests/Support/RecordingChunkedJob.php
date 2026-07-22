@@ -114,6 +114,9 @@ final class RecordingChunkedJob extends AbstractChunkedJob {
 	/** Declared ceiling for one queue generation or chunk invocation. */
 	public int $max_callback_runtime = self::DEFAULT_MAX_CALLBACK_RUNTIME;
 
+	/** Number of callback-runtime declarations requested by delivery admission. */
+	public int $max_callback_runtime_calls = 0;
+
 	/**
 	 * Constructor.
 	 *
@@ -134,6 +137,8 @@ final class RecordingChunkedJob extends AbstractChunkedJob {
 	/** {@inheritDoc} */
 	#[\Override]
 	public function max_callback_runtime(): int {
+		++$this->max_callback_runtime_calls;
+
 		return $this->max_callback_runtime;
 	}
 

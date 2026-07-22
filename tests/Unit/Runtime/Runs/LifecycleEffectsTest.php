@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
@@ -70,6 +70,7 @@ final class LifecycleEffectsTest extends TestCase {
 
 	private FixedClock $clock;
 	private OverlapGuard $guard;
+	private KindHandlerInterface $handler;
 	private RecordingLogger $logger;
 	private StoreFactory $stores;
 	private LifecycleEffects $terminal_effects;
@@ -121,11 +122,16 @@ final class LifecycleEffectsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_lifecycle_events']     = array();
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
-		$this->clock            = new FixedClock( self::NOW );
-		$this->logger           = new RecordingLogger();
-		$this->wpdb             = new WpdbLockSpy();
-		$rows                   = new OptionRows( $this->wpdb );
-		$this->guard            = new OverlapGuard( $this->clock, $this->logger, $rows );
+		$this->clock  = new FixedClock( self::NOW );
+		$this->logger = new RecordingLogger();
+		$this->wpdb   = new WpdbLockSpy();
+		$rows         = new OptionRows( $this->wpdb );
+		$this->guard  = new OverlapGuard( $this->clock, $this->logger, $rows );
+		$handler      = self::createStub( KindHandlerInterface::class );
+		$handler->method( 'key' )->willReturn( 'job' );
+		$handler->method( 'failed_chunk_for_state' )->willReturn( null );
+
+		$this->handler          = $handler;
 		$this->stores           = new StoreFactory( $this->clock, $rows, $this->logger );
 		$this->terminal_effects = new LifecycleEffects( $this->guard, $this->stores, $this->logger );
 	}
@@ -161,7 +167,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
 		$job      = new RecordingJob( self::NAME );
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, JobType::Job, $job );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $this->handler, $job );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
@@ -208,7 +214,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
 		$job      = new RecordingJob( self::NAME );
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, JobType::Job, $job );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $this->handler, $job );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
@@ -258,87 +264,58 @@ final class LifecycleEffectsTest extends TestCase {
 		$claim_raw = $run_store->replace_if_state_matches( self::RUN_ID, $running, $terminal );
 		self::assertIsString( $claim_raw );
 
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $claim_raw, $run_store, JobType::Job ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $claim_raw, $run_store ) );
 		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
 		self::assertNull( $this->lock() );
 
 		$callbacks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'callbacks' );
 		self::assertNotNull( $callbacks );
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $callbacks['state'], $callbacks['raw'], $run_store, JobType::Job ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $callbacks['state'], $callbacks['raw'], $run_store ) );
 
 		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $callbacks['state'], $callbacks['raw'], 'hooks' );
 		self::assertNotNull( $hooks );
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store, JobType::Job ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store ) );
 
 		$complete = $run_store->append_terminal_effect( self::RUN_ID, $hooks['state'], $hooks['raw'], 'history' );
 		self::assertNotNull( $complete );
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store, JobType::Job ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store ) );
 		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
-		self::assertTrue( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $complete['raw'], $run_store, JobType::Job ) );
+		self::assertTrue( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $complete['raw'], $run_store ) );
 		self::assertNull( $run_store->get( self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
 	}
 
 	/**
-	 * Durable terminal effects are derived from one outcome-by-work-kind table.
+	 * Durable terminal effects are derived from one outcome table.
 	 *
 	 * @phpstan-param list<string> $effects
 	 */
 	#[DataProvider( 'terminal_effect_rows' )]
-	public function test_expected_terminal_effects( string $status, JobType $kind, array $effects ): void {
-		self::assertSame( $effects, LifecycleEffects::expected_effects( RunStatus::from( $status ), $kind ) );
+	public function test_expected_terminal_effects( string $status, array $effects ): void {
+		self::assertSame( $effects, LifecycleEffects::expected_effects( RunStatus::from( $status ) ) );
 	}
 
 	/**
-	 * Supplies every terminal outcome and work-kind combination.
+	 * Supplies every terminal outcome.
 	 *
-	 * @return  array<string, array{status: string, kind: JobType, effects: list<string>}>
+	 * @return  array<string, array{status: string, effects: list<string>}>
 	 */
 	public static function terminal_effect_rows(): array {
-		// Data providers run before setUpBeforeClass, while guarded source enums require the WordPress bootstrap constant.
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		return array(
-			'failed chunked job'     => array(
+			'failed'     => array(
 				'status'  => 'failed',
-				'kind'    => JobType::ChunkedJob,
 				'effects' => array( 'retention', 'callbacks', 'hooks', 'history' ),
 			),
-			'failed job'             => array(
-				'status'  => 'failed',
-				'kind'    => JobType::Job,
-				'effects' => array( 'retention', 'callbacks', 'hooks', 'history' ),
-			),
-			'completed chunked job'  => array(
+			'completed'  => array(
 				'status'  => 'completed',
-				'kind'    => JobType::ChunkedJob,
 				'effects' => array( 'callbacks', 'hooks', 'history' ),
 			),
-			'completed job'          => array(
-				'status'  => 'completed',
-				'kind'    => JobType::Job,
-				'effects' => array( 'callbacks', 'hooks', 'history' ),
-			),
-			'cancelled chunked job'  => array(
+			'cancelled'  => array(
 				'status'  => 'cancelled',
-				'kind'    => JobType::ChunkedJob,
 				'effects' => array( 'hooks', 'history' ),
 			),
-			'cancelled job'          => array(
-				'status'  => 'cancelled',
-				'kind'    => JobType::Job,
-				'effects' => array( 'hooks', 'history' ),
-			),
-			'superseded chunked job' => array(
+			'superseded' => array(
 				'status'  => 'superseded',
-				'kind'    => JobType::ChunkedJob,
-				'effects' => array( 'hooks', 'history' ),
-			),
-			'superseded job'         => array(
-				'status'  => 'superseded',
-				'kind'    => JobType::Job,
 				'effects' => array( 'hooks', 'history' ),
 			),
 		);
@@ -359,7 +336,7 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( LockClaimOutcome::Claimed, $claim );
 
 		$run_store = $this->stores->run_store( self::IDENTITY );
-		if ( null === $run_store->create( self::RUN_ID, JobType::Job, self::ARGS, self::ARGS_HASH, array() ) ) {
+		if ( null === $run_store->create( self::RUN_ID, 'job', self::ARGS, self::ARGS_HASH, array() ) ) {
 			throw new \RuntimeException( 'The terminal-effect fixture could not create its running row.' );
 		}
 		if ( ! $this->stores->run_history( self::IDENTITY )->record_started( self::RUN_ID, self::ARGS_HASH ) ) {

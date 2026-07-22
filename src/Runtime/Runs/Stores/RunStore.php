@@ -9,8 +9,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -29,7 +29,7 @@ use Psr\Clock\ClockInterface;
  *
  * @internal
  *
- * @phpstan-type StoredPendingAction = array{stage: 'start'|'run'|'continue'|'cleanup', mode: 'async', fire_at: null, priority: int}|array{stage: 'start'|'run'|'continue', mode: 'single', fire_at: int, priority: int}
+ * @phpstan-type StoredPendingAction = array{stage: string, mode: 'async', fire_at: null, priority: int}|array{stage: string, mode: 'single', fire_at: int, priority: int}
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -87,18 +87,18 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param JobType $kind
-	 *
 	 * @param   string                        $run_id     Run identifier.
-	 * @param   JobType                       $kind       Admitted kind.
+	 * @param   string                        $kind       Opaque admitted kind key.
 	 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run starts.
 	 * @param   string                        $args_hash  Stable single-flight identity.
 	 * @param   list<array<array-key, mixed>> $queue      Initial chunks in processing order.
 	 * @param   PendingAction|null            $pending    Durable successor delivery, or null when none exists.
 	 *
+	 * @throws  \InvalidArgumentException When the kind key is lexically malformed.
+	 *
 	 * @return  RunState|null Null when the run option cannot be added.
 	 */
-	public function create( string $run_id, JobType $kind, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
+	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $queue, ?PendingAction $pending = null ): ?RunState {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
 		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
@@ -374,7 +374,7 @@ final readonly class RunStore {
 	/**
 	 * Converts typed state to its persisted option shape.
 	 *
-	 * The `kind` field contains a JobType backing value.
+	 * The `kind` field contains the opaque handler key admitted for the run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -383,7 +383,7 @@ final readonly class RunStore {
 	 *
 	 * @return  array{
 	 *     status: string,
-	 *     kind: 'Job'|'ChunkedJob',
+	 *     kind: string,
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
@@ -401,7 +401,7 @@ final readonly class RunStore {
 	private static function to_option( RunState $state ): array {
 		$option = array(
 			'status'          => $state->status->value,
-			'kind'            => $state->kind->value,
+			'kind'            => $state->kind,
 			'executing'       => $state->executing,
 			'start_args'      => $state->start_args,
 			'args_hash'       => $state->args_hash,
@@ -490,20 +490,20 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState( status: $status, kind: JobType::from( $value['kind'] ), executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, );
+		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], queue: $value['queue'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, );
 	}
 
 	/**
 	 * Returns whether a value carries every persisted field with its required type.
 	 *
-	 * The `kind` field contains a JobType backing value.
+	 * The `kind` field contains a grammar-valid opaque handler key.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @phpstan-assert-if-true array{
 	 *     status: string,
-	 *     kind: 'Job'|'ChunkedJob',
+	 *     kind: string,
 	 *     executing: bool,
 	 *     start_args: array<array-key, mixed>,
 	 *     args_hash: string,
@@ -527,7 +527,7 @@ final readonly class RunStore {
 			! \is_array( $value )
 			|| ! \is_string( $value['status'] ?? null )
 			|| ! \is_string( $value['kind'] ?? null )
-			|| null === JobType::tryFrom( $value['kind'] )
+			|| 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $value['kind'] )
 			|| ! \is_bool( $value['executing'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
 			|| ! PortableArguments::is_valid( $value['start_args'] )
@@ -566,7 +566,7 @@ final readonly class RunStore {
 			! \is_array( $value )
 			|| 4 !== \count( $value )
 			|| ! \is_string( $value['stage'] ?? null )
-			|| ! \in_array( $value['stage'], array( 'start', 'run', 'continue', 'cleanup' ), true )
+			|| 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $value['stage'] )
 			|| ! \is_string( $value['mode'] ?? null )
 			|| ! \in_array( $value['mode'], array( 'async', 'single' ), true )
 			|| ! \array_key_exists( 'fire_at', $value )
@@ -576,12 +576,9 @@ final readonly class RunStore {
 			return false;
 		}
 
-		// The acceptance set is exactly PendingAction's seven factory combinations: async pairs with every
-		// guard-permitted stage, while single pairs only with start, run, and continue. PendingAction's factories
-		// are the only writers, so anything else is a corrupt row.
 		return 'async' === $value['mode']
 			? null === $value['fire_at']
-			: \is_int( $value['fire_at'] ) && \in_array( $value['stage'], array( 'start', 'run', 'continue' ), true );
+			: \is_int( $value['fire_at'] );
 	}
 
 	/**

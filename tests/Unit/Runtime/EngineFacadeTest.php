@@ -157,7 +157,7 @@ final class EngineFacadeTest extends TestCase {
 
 		$client->jobs()->register( new RecordingJob( 'shared' ) );
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work identity "facade-tests:shared" is already registered as a job; it cannot also be registered as a chunked job.' );
+		$this->expectExceptionMessageIs( 'Background-work identity "facade-tests:shared" is already registered as a job; it cannot also be registered as a chunked_job.' );
 		$client->chunked_jobs()->register( new RecordingChunkedJob( 'shared' ) );
 	}
 

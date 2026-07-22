@@ -18,6 +18,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
@@ -440,14 +443,22 @@ final readonly class StoreFixtureBuilder {
 					}
 				}
 
-				$before         = $this->option_names( $rows, '' );
-				$guard          = new OverlapGuard( $clock, $logger, $rows );
-				$stores         = new StoreFactory( $clock, $rows, $logger );
-				$windows        = new LockWindows( $clock, $logger );
-				$effects        = new LifecycleEffects( $guard, $stores, $logger );
-				$transitions    = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
-				$reconciliation = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, new JobRegistry(), $backend );
-				$intents        = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
+				$before          = $this->option_names( $rows, '' );
+				$guard           = new OverlapGuard( $clock, $logger, $rows );
+				$stores          = new StoreFactory( $clock, $rows, $logger );
+				$windows         = new LockWindows( $clock, $logger );
+				$effects         = new LifecycleEffects( $guard, $stores, $logger );
+				$transitions     = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
+				$work            = new JobRegistry();
+				$failure         = new FailureLifecycle( $backend, $clock, new RecordingRandomizer( 0 ), $logger, $transitions );
+				$job_handler     = new JobKindHandler( $work, $logger, $clock, $windows, $transitions, $effects, $failure );
+				$chunked_handler = new ChunkedJobKindHandler( $work, $backend, $logger, $clock, $windows, $transitions, $effects, $failure );
+				$handlers        = array(
+					$job_handler->key()     => $job_handler,
+					$chunked_handler->key() => $chunked_handler,
+				);
+				$reconciliation  = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, $handlers, $backend );
+				$intents         = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
 
 				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( 'fixture-maintenance-run', array() ) );
 				$added = \array_values( \array_diff( $this->option_names( $rows, '' ), $before ) );

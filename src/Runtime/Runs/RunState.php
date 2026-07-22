@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -37,10 +39,9 @@ final readonly class RunState {
 	 *
 	 * @phpstan-param array{class: string|null, message: string, stage: string, code: string, failed_chunk?: array<array-key, mixed>}|null $error
 	 * @phpstan-param list<string> $effects
-	 * @phpstan-param JobType $kind
 	 *
 	 * @param   RunStatus                     $status                    Lifecycle state.
-	 * @param   JobType                       $kind                      Admitted kind.
+	 * @param   string                        $kind                      Opaque admitted kind key.
 	 * @param   bool                          $executing                 Whether one lifecycle action is executing.
 	 * @param   array<array-key, mixed>       $start_args                Arguments supplied when the run started.
 	 * @param   string                        $args_hash                 Stable single-flight identity derived from arguments or a Job overlap key.
@@ -48,17 +49,19 @@ final readonly class RunState {
 	 * @param   int                           $failed_attempts           Failed attempts consumed by the current retry stage: queue
 	 *                                                                   generation or the current chunk for a chunked job, and handle()
 	 *                                                                   for a job.
-	 * @param   int                           $action_sequence      Newest scheduled lifecycle action sequence.
+	 * @param   int                           $action_sequence           Newest scheduled lifecycle action sequence.
 	 * @param   int                           $created_at                Creation timestamp.
 	 * @param   int                           $heartbeat_at              Latest liveness timestamp.
 	 * @param   PendingAction|null            $pending                   Durable successor delivery, or null when none exists.
 	 * @param   array|null                    $error                     Durable terminal failure detail, or null for non-failed runs.
 	 * @param   string|null                   $previous_completed_run_id Previous completed run identifier frozen for completion delivery, or null.
 	 * @param   array                         $effects                   Completed terminal effect keys in execution order.
+	 *
+	 * @throws  \InvalidArgumentException When the kind key is lexically malformed.
 	 */
 	public function __construct(
 		public RunStatus $status,
-		public JobType $kind,
+		public string $kind,
 		public bool $executing,
 		public array $start_args,
 		public string $args_hash,
@@ -72,6 +75,10 @@ final readonly class RunState {
 		public ?string $previous_completed_run_id = null,
 		public array $effects = array(),
 	) {
+		if ( 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $kind ) ) {
+			throw new \InvalidArgumentException( 'Run state requires a grammar-valid kind key.' );
+		}
+
 		$this->action_sequence = $action_sequence;
 	}
 

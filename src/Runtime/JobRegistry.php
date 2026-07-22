@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
@@ -20,24 +21,14 @@ final class JobRegistry {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Registered jobs keyed by stable identity.
+	 * Registered work contracts and their kind keys, keyed by stable identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<string, AbstractJob>
+	 * @var     array<string, array{kind: string, contract: JobInterface}>
 	 */
-	private array $jobs = array();
-
-	/**
-	 * Registered chunked jobs keyed by stable identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     array<string, ChunkedJobInterface>
-	 */
-	private array $chunked_jobs = array();
+	private array $registrations = array();
 
 	// endregion
 
@@ -58,8 +49,14 @@ final class JobRegistry {
 	 * @return  void
 	 */
 	public function register_job( string $identity, AbstractJob $job ): void {
-		$this->guard_registration( $identity, $job->get_name(), 'job' );
-		$this->jobs[ $identity ] = $job;
+		$this->register(
+			$identity,
+			$job->get_name(),
+			'job',
+			$job,
+			'Job identity must be canonical and end with the job\'s declared local name.',
+			'Job name is already registered; register each job name exactly once.'
+		);
 	}
 
 	/**
@@ -77,8 +74,14 @@ final class JobRegistry {
 	 * @return  void
 	 */
 	public function register_chunked_job( string $identity, ChunkedJobInterface $chunked_job ): void {
-		$this->guard_registration( $identity, $chunked_job->get_name(), 'chunked_job' );
-		$this->chunked_jobs[ $identity ] = $chunked_job;
+		$this->register(
+			$identity,
+			$chunked_job->get_name(),
+			'chunked_job',
+			$chunked_job,
+			'Chunked Job identity must be canonical and end with the chunked job\'s declared local name.',
+			'Chunked Job name is already registered; register each chunked job name exactly once.'
+		);
 	}
 
 	// endregion
@@ -96,7 +99,9 @@ final class JobRegistry {
 	 * @return  AbstractJob|null
 	 */
 	public function job( string $identity ): ?AbstractJob {
-		return $this->jobs[ $identity ] ?? null;
+		$contract = $this->contract_for_kind( $identity, 'job' );
+
+		return $contract instanceof AbstractJob ? $contract : null;
 	}
 
 	/**
@@ -110,7 +115,23 @@ final class JobRegistry {
 	 * @return  ChunkedJobInterface|null
 	 */
 	public function chunked_job( string $identity ): ?ChunkedJobInterface {
-		return $this->chunked_jobs[ $identity ] ?? null;
+		$contract = $this->contract_for_kind( $identity, 'chunked_job' );
+
+		return $contract instanceof ChunkedJobInterface ? $contract : null;
+	}
+
+	/**
+	 * Returns the work contract registered under a stable identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified work identity.
+	 *
+	 * @return  JobInterface|null
+	 */
+	public function contract( string $identity ): ?JobInterface {
+		return $this->registrations[ $identity ]['contract'] ?? null;
 	}
 
 	/**
@@ -121,14 +142,10 @@ final class JobRegistry {
 	 *
 	 * @param   string $identity Complete owner-qualified identity.
 	 *
-	 * @return  'chunked_job'|'job'|null
+	 * @return  string|null
 	 */
 	public function kind( string $identity ): ?string {
-		if ( isset( $this->jobs[ $identity ] ) ) {
-			return 'job';
-		}
-
-		return isset( $this->chunked_jobs[ $identity ] ) ? 'chunked_job' : null;
+		return $this->registrations[ $identity ]['kind'] ?? null;
 	}
 
 	// endregion
@@ -136,35 +153,76 @@ final class JobRegistry {
 	// region HELPERS
 
 	/**
-	 * Validates name grammar, identity agreement, and single-registration ownership.
+	 * Registers one validated contract without replacing an existing identity owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $identity Complete owner-qualified identity.
-	 * @param   string              $name     Declared local work name.
-	 * @param   'chunked_job'|'job' $kind     Incoming registration channel.
+	 * @param   string       $identity          Complete owner-qualified identity.
+	 * @param   string       $name              Declared local work name.
+	 * @param   string       $kind              Incoming registration channel.
+	 * @param   JobInterface $contract          Work contract.
+	 * @param   string       $identity_message  Non-canonical identity diagnostic.
+	 * @param   string       $duplicate_message Same-kind duplicate diagnostic.
 	 *
 	 * @throws  \InvalidArgumentException      When the identity is non-canonical or the other kind owns it.
 	 * @throws  DuplicateRegistrationException When the same kind already owns the identity.
 	 *
 	 * @return  void
 	 */
-	private function guard_registration( string $identity, string $name, string $kind ): void {
+	private function register(
+		string $identity,
+		string $name,
+		string $kind,
+		JobInterface $contract,
+		string $identity_message,
+		string $duplicate_message,
+	): void {
 		JobIdentity::validate_name( $name );
 		$parts = JobIdentity::parts( $identity );
 		if ( null === $parts || $name !== $parts[1] ) {
-			throw new \InvalidArgumentException( 'job' === $kind ? 'Job identity must be canonical and end with the job\'s declared local name.' : 'Chunked Job identity must be canonical and end with the chunked job\'s declared local name.' );
+			throw new \InvalidArgumentException( $identity_message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
 
-		$existing = $this->kind( $identity );
-		if ( $kind === $existing ) {
-			throw new DuplicateRegistrationException( 'job' === $kind ? 'Job name is already registered; register each job name exactly once.' : 'Chunked Job name is already registered; register each chunked job name exactly once.' );
+		$existing = $this->registrations[ $identity ] ?? null;
+		if ( null === $existing ) {
+			$this->registrations[ $identity ] = array(
+				'kind'     => $kind,
+				'contract' => $contract,
+			);
+
+			return;
 		}
-		if ( null !== $existing ) {
-			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', $identity, \str_replace( '_', ' ', $existing ), \str_replace( '_', ' ', $kind ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+		if ( $kind === $existing['kind'] ) {
+			throw new DuplicateRegistrationException( $duplicate_message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
+
+		// Exception values are diagnostic data, not rendered output.
+		throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', $identity, $existing['kind'], $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	}
+
+	/**
+	 * Returns a registered contract only when its registration channel matches.
+	 *
+	 * The stored kind, rather than implemented interfaces, keeps a contract implementing both public
+	 * work interfaces visible only through the channel that registered it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified identity.
+	 * @param   string $kind     Expected registration channel.
+	 *
+	 * @return  JobInterface|null
+	 */
+	private function contract_for_kind( string $identity, string $kind ): ?JobInterface {
+		$registration = $this->registrations[ $identity ] ?? null;
+		if ( null === $registration || $kind !== $registration['kind'] ) {
+			return null;
+		}
+
+		return $registration['contract'];
 	}
 
 	// endregion

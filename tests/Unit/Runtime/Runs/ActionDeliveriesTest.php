@@ -12,7 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -351,7 +350,7 @@ final class ActionDeliveriesTest extends TestCase {
 			}
 
 			$reentered = true;
-			\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, 1 );
+			\do_action( ActionDeliveries::DELIVER_HOOK, self::IDENTITY, self::RUN_ID, 1 );
 		};
 
 		$this->rig->run_due();
@@ -362,7 +361,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * A job-hook payload with a non-integer sequence is rejected before admission.
+	 * A delivery payload with a non-integer sequence is rejected before admission.
 	 *
 	 * @load-bearing security
 	 * @pin-rationale Direct registered-hook delivery proves the typed job boundary rejects a chunk-shaped payload without mutating authoritative run state.
@@ -372,13 +371,13 @@ final class ActionDeliveriesTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_run_job_handler_rejects_a_non_integer_sequence_before_admission(): void {
+	public function test_deliver_handler_rejects_a_non_integer_sequence_before_admission(): void {
 		$this->enqueue_job();
 		$before = $this->relevant_rows();
 		$thrown = null;
 
 		try {
-			\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ) );
+			\do_action( ActionDeliveries::DELIVER_HOOK, self::IDENTITY, self::RUN_ID, array( 'chunk' => 'misdelivered' ) );
 		} catch ( \TypeError $error ) {
 			$thrown = $error;
 		}
@@ -464,7 +463,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->seed_pending_run();
 
-		\do_action( 'a8csp_jobs_engine/run_job', self::IDENTITY, self::RUN_ID, 1 );
+		\do_action( ActionDeliveries::DELIVER_HOOK, self::IDENTITY, self::RUN_ID, 1 );
 
 		$this->rig->assert_failed( ErrorCode::UnknownWork );
 		$retry = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
@@ -611,7 +610,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 */
 	private function install_replacement_generation(): void {
 		$credit = self::NOW + 90 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME + 901 + JobInterface::DEFAULT_MAX_CALLBACK_RUNTIME;
-		$state  = new RunState( status: RunStatus::Running, kind: JobType::Job, executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $credit );
+		$state  = new RunState( status: RunStatus::Running, kind: 'job', executing: true, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: $credit );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, $credit ) );
 	}
@@ -645,7 +644,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_pending_run(): void {
-		$state = new RunState( status: RunStatus::Running, kind: JobType::Job, executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), queue: array( self::ARGS ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
 		$this->put_fixture(
@@ -747,7 +746,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/run_job' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && ActionDeliveries::DELIVER_HOOK === ( $call['args']['hook'] ?? null ) ) );
 	}
 
 	/**

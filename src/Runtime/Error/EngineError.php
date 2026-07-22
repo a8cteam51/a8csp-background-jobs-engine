@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ErrorInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -45,33 +44,20 @@ final readonly class EngineError implements ErrorInterface {
 	// region METHODS
 
 	/**
-	 * Returns the public held-lock job failure without relying on message inspection.
+	 * Returns a public held-lock failure without relying on message inspection.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $job_name      Complete owner-qualified job identity.
+	 * @param   string $kind           Persisted kind key.
+	 * @param   string $identity       Complete owner-qualified work identity.
 	 * @param   string $running_run_id Discoverable incumbent run identifier.
+	 * @param   string $admission_verb Kind-appropriate admission verb.
 	 *
 	 * @return  self
 	 */
-	public static function held_job( string $job_name, string $running_run_id ): self {
-		return new self( \sprintf( 'Job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', $job_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
-	}
-
-	/**
-	 * Returns the public held-lock chunked job failure without relying on message inspection.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $chunked_job_name Complete owner-qualified chunked job identity.
-	 * @param   string $running_run_id   Discoverable incumbent run identifier.
-	 *
-	 * @return  self
-	 */
-	public static function held_chunked_job( string $chunked_job_name, string $running_run_id ): self {
-		return new self( \sprintf( 'Chunked Job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments.', $chunked_job_name, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
+	public static function held( string $kind, string $identity, string $running_run_id, string $admission_verb ): self {
+		return new self( \sprintf( '%1$s "%2$s" is already running as run "%3$s"; wait for that run to finish before %4$sing the same arguments or overlap key.', $kind, $identity, $running_run_id, $admission_verb ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
 	}
 
 	/**
@@ -80,15 +66,15 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType                            $kind      Kind.
+	 * @param   string                             $kind      Persisted kind key.
 	 * @param   string                             $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   'continue'|'run'|'cleanup'|'retry' $stage     Internal action that was not scheduled.
 	 * @param   SchedulingError                    $error     Scheduling failure.
 	 *
 	 * @return  self
 	 */
-	public static function scheduling( JobType $kind, string $identity, string $stage, SchedulingError $error ): self {
-		return new self( \sprintf( '%1$s "%2$s" could not schedule the %3$s action: %4$s', $kind->value, $identity, $stage, $error->message ), SchedulingError::class );
+	public static function scheduling( string $kind, string $identity, string $stage, SchedulingError $error ): self {
+		return new self( \sprintf( '%1$s "%2$s" could not schedule the %3$s action: %4$s', $kind, $identity, $stage, $error->message ), SchedulingError::class );
 	}
 
 	/**
@@ -136,16 +122,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType    $kind      Kind.
+	 * @param   string     $kind      Persisted kind key.
 	 * @param   string     $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   \Throwable $throwable Retry-policy provider or filter failure.
 	 *
 	 * @return  self
 	 */
-	public static function retry_policy( JobType $kind, string $identity, \Throwable $throwable ): self {
+	public static function retry_policy( string $kind, string $identity, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self( \sprintf( '%1$s "%2$s" could not resolve the retry policy because %3$s was thrown. Fix the retry policy provider or filter before retrying the failed run manually.', $kind->value, $identity, $exception_type ), $exception_type );
+		return new self( \sprintf( '%1$s "%2$s" could not resolve the retry policy because %3$s was thrown. Fix the retry policy provider or filter before retrying the failed run manually.', $kind, $identity, $exception_type ), $exception_type );
 	}
 
 	/**
@@ -154,16 +140,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType    $kind      Kind.
+	 * @param   string     $kind      Persisted kind key.
 	 * @param   string     $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   \Throwable $throwable Retry-state construction failure.
 	 *
 	 * @return  self
 	 */
-	public static function retry_state( JobType $kind, string $identity, \Throwable $throwable ): self {
+	public static function retry_state( string $kind, string $identity, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self( \sprintf( '%1$s "%2$s" could not construct the retry state because %3$s was thrown. Restore the engine before retrying the failed run manually.', $kind->value, $identity, $exception_type ), $exception_type );
+		return new self( \sprintf( '%1$s "%2$s" could not construct the retry state because %3$s was thrown. Restore the engine before retrying the failed run manually.', $kind, $identity, $exception_type ), $exception_type );
 	}
 
 	/**
@@ -172,16 +158,16 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobType    $kind      Kind.
+	 * @param   string     $kind      Persisted kind key.
 	 * @param   string     $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   \Throwable $throwable Retry-policy, randomness, hook, or scheduler failure.
 	 *
 	 * @return  self
 	 */
-	public static function retry_preparation( JobType $kind, string $identity, \Throwable $throwable ): self {
+	public static function retry_preparation( string $kind, string $identity, \Throwable $throwable ): self {
 		$exception_type = \get_debug_type( $throwable );
 
-		return new self( \sprintf( '%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.', $kind->value, $identity, $exception_type ), $exception_type );
+		return new self( \sprintf( '%1$s "%2$s" could not prepare the retry action because %3$s was thrown. Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.', $kind, $identity, $exception_type ), $exception_type );
 	}
 
 	// endregion

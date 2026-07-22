@@ -49,14 +49,14 @@ final class JobRegistryTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Typed lookups return exact registered instances and reject unknown or wrong-kind identities.
+	 * Generic and typed lookups return exact registered instances while typed channels reject mismatches.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_typed_lookups_return_registered_instances_and_null_for_unknown_or_wrong_kind(): void {
+	public function test_generic_and_typed_lookups_return_registered_instances_and_preserve_channels(): void {
 		$job         = new RecordingJob( 'refresh_index-2' );
 		$chunked_job = new RecordingChunkedJob( 'rebuild-index' );
 		$work        = new JobRegistry();
@@ -68,8 +68,11 @@ final class JobRegistryTest extends TestCase {
 		self::assertNull( $work->chunked_job( 'consumer:refresh_index-2' ) );
 		self::assertSame( $chunked_job, $work->chunked_job( 'consumer:rebuild-index' ) );
 		self::assertNull( $work->job( 'consumer:rebuild-index' ) );
+		self::assertSame( $job, $work->contract( 'consumer:refresh_index-2' ) );
+		self::assertSame( $chunked_job, $work->contract( 'consumer:rebuild-index' ) );
 		self::assertNull( $work->job( 'consumer:unknown' ) );
 		self::assertNull( $work->chunked_job( 'consumer:unknown' ) );
+		self::assertNull( $work->contract( 'consumer:unknown' ) );
 	}
 
 	/**
@@ -235,7 +238,7 @@ final class JobRegistryTest extends TestCase {
 		$work->register_job( 'consumer:sync', new RecordingJob( 'sync' ) );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work identity "consumer:sync" is already registered as a job; it cannot also be registered as a chunked job.' );
+		$this->expectExceptionMessageIs( 'Background-work identity "consumer:sync" is already registered as a job; it cannot also be registered as a chunked_job.' );
 
 		$work->register_chunked_job( 'consumer:sync', new RecordingChunkedJob( 'sync' ) );
 	}
@@ -253,7 +256,7 @@ final class JobRegistryTest extends TestCase {
 		$work->register_chunked_job( 'consumer:sync', new RecordingChunkedJob( 'sync' ) );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work identity "consumer:sync" is already registered as a chunked job; it cannot also be registered as a job.' );
+		$this->expectExceptionMessageIs( 'Background-work identity "consumer:sync" is already registered as a chunked_job; it cannot also be registered as a job.' );
 
 		$work->register_job( 'consumer:sync', new RecordingJob( 'sync' ) );
 	}

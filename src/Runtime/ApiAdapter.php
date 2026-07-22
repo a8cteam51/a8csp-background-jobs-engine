@@ -122,7 +122,7 @@ final readonly class ApiAdapter implements JobsEngineInterface, ChunkedJobsEngin
 	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
 	#[\Override]
 	public function start( string $identity, array $start_args, int $priority ): AbstractResult {
-		return ApiErrorMapper::map( $this->dispatcher->start_chunked_job( $identity, $start_args, $priority ) );
+		return ApiErrorMapper::map( $this->dispatcher->start( $identity, $start_args, $priority ) );
 	}
 
 	/**

@@ -10,7 +10,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -18,7 +19,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
@@ -69,6 +69,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( StoreFactory::class )]
 #[UsesClass( LifecycleEffects::class )]
 #[UsesClass( JobRegistry::class )]
+#[UsesClass( JobKindHandler::class )]
 final class RunTransitionsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -91,6 +92,9 @@ final class RunTransitionsTest extends TestCase {
 	private RecordingRandomizer $randomizer;
 	private OptionRows $rows;
 	private RecordingJob $job;
+	private JobKindHandler $handler;
+	/** @var array<string, KindHandlerInterface> */
+	private array $handlers;
 	private RunTransitions $terminal_transitions;
 	private WpdbLockSpy $wpdb;
 	private Dispatcher $dispatcher;
@@ -156,8 +160,10 @@ final class RunTransitionsTest extends TestCase {
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
 		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
+		$this->handler              = new JobKindHandler( $work, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
+		$this->handlers             = array( $this->handler->key() => $this->handler );
 
-		$this->dispatcher = new Dispatcher( $work, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions, $terminal_effects );
+		$this->dispatcher = new Dispatcher( $work, $this->handlers, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
 	}
 
 	// endregion.
@@ -208,6 +214,7 @@ final class RunTransitionsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
 		$this->wpdb->recorded_queries                = array();
+		$this->job->max_callback_runtime_throwable   = new \RuntimeException( 'Stale delivery must not resolve callback liveness.' );
 
 		$this->handle_job_run_action( self::RUN_ID, 1 );
 
@@ -232,7 +239,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_claim_delivery_ownership_drops_a_fresh_same_sequence_delivery(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
+		$first     = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 		$expected_run  = $this->option( $this->run_option_name() );
@@ -242,8 +249,9 @@ final class RunTransitionsTest extends TestCase {
 		$this->wpdb->recorded_queries                = array();
 		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
+		$this->job->max_callback_runtime_throwable   = new \RuntimeException( 'Duplicate delivery must not resolve callback liveness.' );
 
-		$duplicate = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
+		$duplicate = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 
 		self::assertNull( $duplicate );
 		self::assertSame( $expected_run, $this->option( $this->run_option_name() ) );
@@ -266,19 +274,19 @@ final class RunTransitionsTest extends TestCase {
 	public function test_claim_delivery_ownership_admits_and_refences_a_stale_execution_marker(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$first     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
+		$first     = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
 
-		$this->clock->timestamp = self::NOW + 991;
+		$this->clock->timestamp = self::NOW + 1_291;
 		$this->logger->records  = array();
 
-		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store );
+		$reclaimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 
 		self::assertInstanceOf( RunState::class, $reclaimed );
 		self::assertTrue( $reclaimed->executing );
-		self::assertSame( self::NOW + 991, $reclaimed->heartbeat_at );
-		self::assertSame( self::NOW + 991, $this->lock()['heartbeat_at'] ?? null );
+		self::assertSame( self::NOW + 1_591, $reclaimed->heartbeat_at );
+		self::assertSame( self::NOW + 1_591, $this->lock()['heartbeat_at'] ?? null );
 		self::assertEquals( $reclaimed, $run_store->get( self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
 	}
@@ -292,7 +300,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$credit_at = self::NOW + 390;
-		$incumbent = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $this->action_sequence(), $run_store, static fn (): int => $credit_at );
+		$incumbent = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $incumbent );
 
 		$reset_at               = $credit_at + 901;
@@ -301,12 +309,12 @@ final class RunTransitionsTest extends TestCase {
 		$this->wpdb->before_next(
 			'select',
 			function () use ( $advanced, $incumbent, $reset_at, $run_store ): void {
-				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
+				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( $this->handler, self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
 				self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $incumbent, $advanced ) );
 			}
 		);
 
-		$reclaimed = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, self::RUN_ID, $incumbent->action_sequence, $run_store, static fn (): int => $reset_at + 300 );
+		$reclaimed = $this->claim_delivery_ownership( self::RUN_ID, $incumbent->action_sequence, $run_store );
 
 		self::assertNull( $reclaimed );
 		self::assertSame( $reset_at, $this->lock()['heartbeat_at'] ?? null );
@@ -345,7 +353,7 @@ final class RunTransitionsTest extends TestCase {
 			}
 		);
 
-		$must_abort = $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( $this->handler, self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		$after = $run_store->inspect( self::RUN_ID );
@@ -396,7 +404,7 @@ final class RunTransitionsTest extends TestCase {
 
 		try {
 			$this->terminal_transitions->cancel_run(
-				JobType::Job,
+				$this->handler,
 				self::IDENTITY,
 				self::RUN_ID,
 				$snapshot['state'],
@@ -606,7 +614,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
@@ -694,7 +702,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
-		$must_abort = $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( $this->handler, self::IDENTITY, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -767,8 +775,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
 
-		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
-		$this->terminal_transitions->fail_job( $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_run( $this->handler, $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_run( $this->handler, $this->job, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::Execution, ErrorCode::ExecutionFailed );
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );
@@ -795,7 +803,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_only_authoritative_run_read( 'missing-run' );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
 		self::assertSame( 'missing-run', $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'finished or cancelled', $this->logger->records[0]['message'] ?? '' );
 	}
@@ -815,7 +823,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'corrupt', $this->logger->records[0]['message'] ?? '' );
 	}
@@ -840,7 +848,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'could not be read', $this->logger->records[0]['message'] ?? '' );
 		$read_error = $this->logger->records[0]['context']['error'] ?? null;
@@ -922,24 +930,27 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	private function handle_job_run_action( string $run_id, int $action_sequence ): void {
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $this->terminal_transitions->claim_delivery_ownership( JobType::Job, self::IDENTITY, $run_id, $action_sequence, $run_store );
+		$state     = $this->claim_delivery_ownership( $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
 			return;
 		}
 
-		try {
-			$this->job->handle( $state->start_args, new RunContext( $run_id, $state->start_args ) );
-		} catch ( \Throwable $throwable ) {
-			$this->failure_lifecycle->handle_job_failure( $this->job, self::IDENTITY, $run_id, $state, $run_store, $throwable );
+		$this->handler->deliver( self::IDENTITY, $run_id, $state, $run_store );
+	}
 
-			return;
-		}
+	/**
+	 * Claims one job delivery and returns its fenced state.
+	 *
+	 * @param   string   $run_id          Run identifier.
+	 * @param   int|null $action_sequence Received lifecycle action sequence.
+	 * @param   RunStore $run_store       Active-run store.
+	 *
+	 * @return  RunState|null
+	 */
+	private function claim_delivery_ownership( string $run_id, ?int $action_sequence, RunStore $run_store ): ?RunState {
+		$claimed = $this->terminal_transitions->claim_delivery_ownership( $this->handlers, self::IDENTITY, $run_id, $action_sequence, $run_store );
 
-		if ( $this->terminal_transitions->enforce_delivery_fence( JobType::Job, self::IDENTITY, $run_id, $state, $run_store ) ) {
-			return;
-		}
-
-		$this->terminal_transitions->complete_job( $this->job, self::IDENTITY, $run_id, $state, $run_store );
+		return $claimed?->state;
 	}
 
 	/**

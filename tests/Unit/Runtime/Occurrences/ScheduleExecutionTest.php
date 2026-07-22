@@ -280,7 +280,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( self::ANCHOR, $next_due % self::INTERVAL );
 		$start_calls = $this->calls( 'enqueue_async' );
 		self::assertCount( 1, $start_calls );
-		self::assertSame( 'a8csp_jobs_engine/start_chunked_job', $start_calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/deliver', $start_calls[0]['args']['hook'] ?? null );
 		$action_args = $start_calls[0]['args']['args'] ?? null;
 		self::assertIsArray( $action_args );
 		$run_id = $action_args[1] ?? null;

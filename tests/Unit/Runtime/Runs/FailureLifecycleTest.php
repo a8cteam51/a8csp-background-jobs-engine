@@ -225,6 +225,13 @@ final class FailureLifecycleTest extends TestCase {
 		);
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS, 1, 17 ), $this->latest_retry() );
 		$this->rig->assert_retry_scheduled();
+		$run = $this->run_state();
+		self::assertIsArray( $run );
+		self::assertSame( 'job', $run['kind'] ?? null );
+		$pending = $run['pending'] ?? null;
+		self::assertIsArray( $pending );
+		self::assertSame( 'run', $pending['stage'] ?? null );
+		self::assertSame( 'single', $pending['mode'] ?? null );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
@@ -240,7 +247,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * A dual-interface contract registered as a job retains job retry routing.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The work registry records job while the object satisfies both interfaces; the exact retry hook and payload prove scheduling follows the registered kind.
+	 * @pin-rationale The work registry records job while the object satisfies both interfaces; the persisted lowercase kind and run-stage retry prove the job handler owns the generic delivery.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -258,14 +265,33 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->jobs()->enqueue( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
+		self::assertIsString( $result->value );
 		$this->rig->randomizer()->value = 7;
 		$this->rig->backend()->calls    = array();
 
 		$this->rig->run_due();
 
-		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'schedule_single' === $call['verb'] ) );
+		$run = $this->run_state_for( $identity, $result->value );
+		self::assertIsArray( $run );
+		self::assertSame( 'job', $run['kind'] ?? null );
+		$pending = $run['pending'] ?? null;
+		self::assertIsArray( $pending );
+		self::assertSame( 'run', $pending['stage'] ?? null );
+		self::assertSame( 'single', $pending['mode'] ?? null );
+		$calls = \array_values(
+			\array_filter(
+				$this->rig->backend()->calls,
+				static function ( array $call ) use ( $identity ): bool {
+					$args = $call['args']['args'] ?? null;
+
+					return \is_array( $args )
+						&& 'schedule_single' === $call['verb']
+						&& ( $args[0] ?? null ) === $identity;
+				}
+			)
+		);
 		self::assertCount( 1, $calls );
-		self::assertSame( 'a8csp_jobs_engine/run_job', $calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/deliver', $calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( $identity, $result->value, 2 ), $calls[0]['args']['args'] ?? null );
 
 		$this->rig->run_due();
@@ -885,7 +911,19 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  array{verb: string, args: array<string, mixed>}
 	 */
 	private function single_retry_call(): array {
-		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'schedule_single' === $call['verb'] && 'a8csp_jobs_engine/run_job' === ( $call['args']['hook'] ?? null ) ) );
+		$calls = \array_values(
+			\array_filter(
+				$this->rig->backend()->calls,
+				static function ( array $call ): bool {
+					$args = $call['args']['args'] ?? null;
+
+					return \is_array( $args )
+						&& 'schedule_single' === $call['verb']
+						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& self::IDENTITY === ( $args[0] ?? null );
+				}
+			)
+		);
 		self::assertCount( 1, $calls );
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, 2 ), $calls[0]['args']['args'] ?? null );
 
@@ -941,7 +979,22 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  array<array-key, mixed>|null
 	 */
 	private function run_state(): ?array {
-		$value = $this->decoded_row( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		return $this->run_state_for( self::IDENTITY, self::RUN_ID );
+	}
+
+	/**
+	 * Returns one decoded run state for an explicit work identity and run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $run_id   Run identifier.
+	 *
+	 * @return  array<array-key, mixed>|null
+	 */
+	private function run_state_for( string $identity, string $run_id ): ?array {
+		$value = $this->decoded_row( 'a8csp_bgje_run_' . $identity . '_' . $run_id );
 
 		return \is_array( $value ) ? $value : null;
 	}

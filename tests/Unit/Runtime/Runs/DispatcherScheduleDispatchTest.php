@@ -509,7 +509,19 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @return list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/run_job' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values(
+			\array_filter(
+				$this->rig->backend()->calls,
+				static function ( array $call ): bool {
+					$args = $call['args']['args'] ?? null;
+
+					return \is_array( $args )
+						&& 'enqueue_async' === $call['verb']
+						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& self::IDENTITY === ( $args[0] ?? null );
+				}
+			)
+		);
 	}
 
 	/**
@@ -521,7 +533,19 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function chunked_start_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] && 'a8csp_jobs_engine/start_chunked_job' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values(
+			\array_filter(
+				$this->rig->backend()->calls,
+				static function ( array $call ): bool {
+					$args = $call['args']['args'] ?? null;
+
+					return \is_array( $args )
+						&& 'enqueue_async' === $call['verb']
+						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& self::CHUNKED_IDENTITY === ( $args[0] ?? null );
+				}
+			)
+		);
 	}
 
 	/**

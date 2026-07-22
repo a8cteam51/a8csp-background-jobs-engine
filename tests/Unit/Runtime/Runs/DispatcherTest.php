@@ -126,7 +126,7 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( 23, $call['args']['priority'] ?? null );
 		$run = \get_option( $this->run_option_name() );
 		self::assertIsArray( $run );
-		self::assertSame( 'Job', $run['kind'] ?? null );
+		self::assertSame( 'job', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
 		$started = $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::IDENTITY );
 		$run_id  = $started[0][0] ?? null;
@@ -416,7 +416,7 @@ final class DispatcherTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		$calls = $this->backend_calls( 'schedule_single' );
 		self::assertCount( 1, $calls );
-		self::assertSame( 'a8csp_jobs_engine/run_job', $calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_jobs_engine/deliver', $calls[0]['args']['hook'] ?? null );
 		self::assertSame( self::NOW + 120, $calls[0]['args']['timestamp'] ?? null );
 		self::assertSame( 31, $calls[0]['args']['priority'] ?? null );
 		$this->rig->run_due();
@@ -1198,7 +1198,19 @@ final class DispatcherTest extends TestCase {
 	 * @return  list<array{verb: string, args: array<string, mixed>}>
 	 */
 	private function run_delivery_calls(): array {
-		return \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'enqueue_async', 'schedule_single' ), true ) && 'a8csp_jobs_engine/run_job' === ( $call['args']['hook'] ?? null ) ) );
+		return \array_values(
+			\array_filter(
+				$this->rig->backend()->calls,
+				static function ( array $call ): bool {
+					$args = $call['args']['args'] ?? null;
+
+					return \is_array( $args )
+						&& \in_array( $call['verb'], array( 'enqueue_async', 'schedule_single' ), true )
+						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& self::IDENTITY === ( $args[0] ?? null );
+				}
+			)
+		);
 	}
 
 	/**

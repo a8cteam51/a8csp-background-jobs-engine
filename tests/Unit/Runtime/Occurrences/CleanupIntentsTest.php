@@ -3,6 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Occurrences;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -584,15 +587,21 @@ final class CleanupIntentsTest extends TestCase {
 	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
 		$work = new JobRegistry();
 		$work->register_job( self::JOB_IDENTITY, new RecordingJob( self::JOB ) );
-		$guard                = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
-		$stores               = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
-		$randomizer           = new RecordingRandomizer( 42 );
-		$lock_windows         = new LockWindows( $this->clock, $this->logger );
-		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
-		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
-		$dispatcher           = new Dispatcher( $work, $this->backend, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, );
-
+		$guard                 = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
+		$stores                = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
+		$randomizer            = new RecordingRandomizer( 42 );
+		$lock_windows          = new LockWindows( $this->clock, $this->logger );
+		$terminal_effects      = new LifecycleEffects( $guard, $stores, $this->logger );
+		$terminal_transitions  = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler           ??= new SchedulerFacade( array( $this->backend ) );
+		$failure_lifecycle     = new FailureLifecycle( $scheduler, $this->clock, $randomizer, $this->logger, $terminal_transitions );
+		$job_handler           = new JobKindHandler( $work, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler   = new ChunkedJobKindHandler( $work, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$handlers              = array(
+			$job_handler->key()         => $job_handler,
+			$chunked_job_handler->key() => $chunked_job_handler,
+		);
+		$dispatcher            = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions );
 		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
 
 		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $this->cleanup_intents, $this->clock, $this->logger );

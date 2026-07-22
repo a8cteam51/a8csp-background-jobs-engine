@@ -16,7 +16,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\JobType;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
@@ -293,7 +292,7 @@ final class InspectionTest extends TestCase {
 		$this->rig->client( 'owner' )->chunked_jobs()->register( new RecordingChunkedJob( 'catalog-sync' ) );
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$live_id  = self::run_id( 1 );
-		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ), JobType::ChunkedJob ) ) );
+		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'chunked_job' ) ) );
 		$this->put(
 			$fixtures->history(
 				array(
@@ -329,6 +328,7 @@ final class InspectionTest extends TestCase {
 		self::assertCount( 1, $snapshot['live'] );
 		self::assertSame( 'chunked_job', $snapshot['live'][0]['kind'] );
 		self::assertSame( 2, $snapshot['live'][0]['queue_depth'] );
+		self::assertTrue( $snapshot['live'][0]['queue_known'] );
 		self::assertSame( 1, $snapshot['live_unreadable'] );
 		self::assertSame( array( $failed_id, $completed_id, $live_id ), \array_column( $snapshot['history'] ?? array(), 'run_id' ) );
 		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
@@ -348,8 +348,8 @@ final class InspectionTest extends TestCase {
 		$chunked_job_identity = 'owner-b:shared';
 		$this->rig->client( 'owner-a' )->jobs()->register( new RecordingJob( 'shared' ) );
 		$this->rig->client( 'owner-b' )->chunked_jobs()->register( new RecordingChunkedJob( 'shared' ) );
-		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ), JobType::ChunkedJob ) ) );
-		$this->put( StoreFixtureBuilder::for_identity( $job_identity )->run( self::run_id( 2 ), self::state( 'job-hash', array( array( 'page' => 1 ) ), JobType::ChunkedJob ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'chunked_job' ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $job_identity )->run( self::run_id( 2 ), self::state( 'job-hash', array( array( 'page' => 1 ) ), 'chunked_job' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $chunked_job_identity )->run( self::run_id( 3 ), self::state( 'chunked-job-hash', array( array( 'page' => 1 ) ) ) ) );
 
 		$orphaned    = $this->rig->inspection()->runs( $orphaned_identity )['live'][0];
@@ -358,10 +358,13 @@ final class InspectionTest extends TestCase {
 
 		self::assertSame( 'chunked_job', $orphaned['kind'] );
 		self::assertSame( 2, $orphaned['queue_depth'] );
+		self::assertTrue( $orphaned['queue_known'] );
 		self::assertSame( 'chunked_job', $job['kind'] );
 		self::assertSame( 1, $job['queue_depth'] );
+		self::assertTrue( $job['queue_known'] );
 		self::assertSame( 'job', $chunked_job['kind'] );
 		self::assertNull( $chunked_job['queue_depth'] );
+		self::assertTrue( $chunked_job['queue_known'] );
 	}
 
 	/**
@@ -608,11 +611,11 @@ final class InspectionTest extends TestCase {
 	 *
 	 * @param   string             $args_hash Persisted arguments hash.
 	 * @param   list<array<mixed>> $queue     Persisted pending queue.
-	 * @param   JobType            $kind      Persisted work kind.
+	 * @param   string             $kind      Persisted work kind key.
 	 *
 	 * @return  RunState
 	 */
-	private static function state( string $args_hash, array $queue = array( array() ), JobType $kind = JobType::Job ): RunState {
+	private static function state( string $args_hash, array $queue = array( array() ), string $kind = 'job' ): RunState {
 		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: array(), args_hash: $args_hash, queue: $queue, failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
 	}
 

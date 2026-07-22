@@ -105,8 +105,7 @@ final class ResetCommandTest extends TestCase {
 		self::assertSame( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_option );
 		$this->rig->wpdb()->put( $cursor_option, $cursor_raw );
 		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
-		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_JOB_HOOK ]  = 2;
-		$this->rig->backend()->pending_actions[ ActionDeliveries::CONTINUE_HOOK ] = 3;
+		$this->rig->backend()->pending_actions[ ActionDeliveries::DELIVER_HOOK ] = 5;
 		$owned_before = $this->engine_option_names();
 		self::assertNotEmpty( $owned_before );
 

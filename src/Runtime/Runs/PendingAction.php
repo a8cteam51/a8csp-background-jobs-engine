@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -21,7 +23,6 @@ final readonly class PendingAction {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'start'|'run'|'continue'|'cleanup' $stage
 	 * @phpstan-param 'async'|'single' $mode
 	 *
 	 * @param   string   $stage    Lifecycle stage delivered by the successor.
@@ -49,13 +50,13 @@ final readonly class PendingAction {
 	 * @param   string $stage    Lifecycle stage delivered by the successor.
 	 * @param   int    $priority Scheduler priority.
 	 *
-	 * @throws  \InvalidArgumentException When the lifecycle stage does not support asynchronous delivery.
+	 * @throws  \InvalidArgumentException When the lifecycle stage is lexically malformed.
 	 *
 	 * @return  self
 	 */
 	public static function async( string $stage, int $priority ): self {
-		if ( ! \in_array( $stage, array( 'start', 'run', 'continue', 'cleanup' ), true ) ) {
-			throw new \InvalidArgumentException( 'Pending asynchronous actions require a supported lifecycle stage.' );
+		if ( 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $stage ) ) {
+			throw new \InvalidArgumentException( 'Pending asynchronous actions require a grammar-valid lifecycle stage.' );
 		}
 
 		return new self( $stage, 'async', null, $priority );
@@ -71,13 +72,13 @@ final readonly class PendingAction {
 	 * @param   int    $fire_at  Scheduled Unix timestamp.
 	 * @param   int    $priority Scheduler priority.
 	 *
-	 * @throws  \InvalidArgumentException When the lifecycle stage does not support scheduled single delivery.
+	 * @throws  \InvalidArgumentException When the lifecycle stage is lexically malformed.
 	 *
 	 * @return  self
 	 */
 	public static function single( string $stage, int $fire_at, int $priority ): self {
-		if ( ! \in_array( $stage, array( 'start', 'run', 'continue' ), true ) ) {
-			throw new \InvalidArgumentException( 'Pending single actions require the start, run, or continue lifecycle stage.' );
+		if ( 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $stage ) ) {
+			throw new \InvalidArgumentException( 'Pending single actions require a grammar-valid lifecycle stage.' );
 		}
 
 		return new self( $stage, 'single', $fire_at, $priority );

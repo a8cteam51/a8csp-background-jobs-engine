@@ -233,7 +233,7 @@ final class DemoClientTest extends IntegrationTestCase {
 
 		$schedule_due_before_manual = \did_action( 'a8csp_jobs_engine/schedule_due' );
 		$matches_manual_run         = static fn ( string $hook, array $args ): bool =>
-			'a8csp_jobs_engine/run_job' === $hook
+			'a8csp_jobs_engine/deliver' === $hook
 			&& ( $args[1] ?? null ) === $manual_run_id;
 		$manual_actions_processed   = \class_exists( \ActionScheduler::class )
 			? $this->run_matching_due_action( $matches_manual_run )

@@ -158,7 +158,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $initial_action_id ) );
-		$retry_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/run_job', $group, array( self::BACKOFF_IDENTITY, $run_id, 2 ) );
+		$retry_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/deliver', $group, array( self::BACKOFF_IDENTITY, $run_id, 2 ) );
 		$run_state       = \get_option( 'a8csp_bgje_run_' . self::BACKOFF_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( 'running', $run_state['status'] ?? null );
@@ -240,7 +240,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( array( $next_chunk ), $run_state['queue'] ?? null );
 		self::assertSame( 3, $run_state['action_sequence'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
-		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/continue_chunked_job', $group, array( self::CHUNKED_JOB_IDENTITY, $run_id, 3 ) );
+		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/deliver', $group, array( self::CHUNKED_JOB_IDENTITY, $run_id, 3 ) );
 
 		$cancelled = $client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
@@ -324,7 +324,7 @@ final class CancellationTest extends IntegrationTestCase {
 			),
 			'The sibling group must retain its pending action'
 		);
-		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $action_args ): bool => 'a8csp_jobs_engine/run_job' === $hook && ( $action_args[1] ?? null ) === $run_b ), 'Action Scheduler must execute the surviving sibling' );
+		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $action_args ): bool => 'a8csp_jobs_engine/deliver' === $hook && ( $action_args[1] ?? null ) === $run_b ), 'Action Scheduler must execute the surviving sibling' );
 
 		self::assertSame( array( $args_b ), $job->calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_b ) );
@@ -385,7 +385,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$raw_deliveries = array();
 		\add_action(
-			'a8csp_jobs_engine/run_job',
+			'a8csp_jobs_engine/deliver',
 			static function ( string $name, string $run_id, int $action_sequence ) use ( &$raw_deliveries ): void {
 				if ( self::DEGRADED_IDENTITY === $name ) {
 					$raw_deliveries[] = array( $name, $run_id, $action_sequence );
@@ -406,7 +406,7 @@ final class CancellationTest extends IntegrationTestCase {
 		if ( \class_exists( \ActionScheduler::class ) ) {
 			$action_id = $this->assert_pending_job_action( self::DEGRADED_IDENTITY, $run_id, $group );
 		} else {
-			$cron_before = $this->wordpress_cron_events( 'a8csp_jobs_engine/run_job', $action_args );
+			$cron_before = $this->wordpress_cron_events( 'a8csp_jobs_engine/deliver', $action_args );
 			self::assertCount( 1, $cron_before, 'The degraded backend must retain one pending WP-Cron single' );
 			self::assertFalse( $cron_before[0]['schedule'] );
 		}
@@ -419,10 +419,10 @@ final class CancellationTest extends IntegrationTestCase {
 			self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $action_id ) );
 			self::assertSame( array(), $raw_deliveries );
 		} else {
-			self::assertSame( $cron_before, $this->wordpress_cron_events( 'a8csp_jobs_engine/run_job', $action_args ), 'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation' );
-			self::assertSame( 1, $this->run_matching_due_cron_event( static fn ( string $hook, array $event_args ): bool => 'a8csp_jobs_engine/run_job' === $hook && $event_args === $action_args ), 'The surviving WP-Cron single must reach the job run-admission hook once' );
+			self::assertSame( $cron_before, $this->wordpress_cron_events( 'a8csp_jobs_engine/deliver', $action_args ), 'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation' );
+			self::assertSame( 1, $this->run_matching_due_cron_event( static fn ( string $hook, array $event_args ): bool => 'a8csp_jobs_engine/deliver' === $hook && $event_args === $action_args ), 'The surviving WP-Cron single must reach the job run-admission hook once' );
 			self::assertSame( array( $action_args ), $raw_deliveries );
-			self::assertSame( array(), $this->wordpress_cron_events( 'a8csp_jobs_engine/run_job', $action_args ) );
+			self::assertSame( array(), $this->wordpress_cron_events( 'a8csp_jobs_engine/deliver', $action_args ) );
 		}
 
 		self::assertSame( array(), $job->calls, 'A surviving backend delivery must not invoke cancelled user work' );

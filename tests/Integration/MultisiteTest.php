@@ -34,10 +34,7 @@ final class MultisiteTest extends IntegrationTestCase {
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
 	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_jobs_engine/start_chunked_job',
-		'a8csp_jobs_engine/continue_chunked_job',
-		'a8csp_jobs_engine/run_job',
-		'a8csp_jobs_engine/cleanup_chunked_job',
+		'a8csp_jobs_engine/deliver',
 		'a8csp_jobs_engine/schedule_due',
 	);
 

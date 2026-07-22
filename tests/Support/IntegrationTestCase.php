@@ -222,7 +222,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_jobs_engine/run_job',
+				'hook'     => 'a8csp_jobs_engine/deliver',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -237,7 +237,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_jobs_engine/run_job', $action->get_hook() );
+		self::assertSame( 'a8csp_jobs_engine/deliver', $action->get_hook() );
 		self::assertSame( array( $name, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
@@ -270,7 +270,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_jobs_engine/continue_chunked_job',
+				'hook'     => 'a8csp_jobs_engine/deliver',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -285,7 +285,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_jobs_engine/continue_chunked_job', $action->get_hook() );
+		self::assertSame( 'a8csp_jobs_engine/deliver', $action->get_hook() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( array( $name, $run_id, $action_sequence ), $action->get_args(), 'A chunked job continuation must carry only its fenced delivery token' );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
