@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -90,16 +91,16 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$generic_completed = array();
 		\add_action(
 			'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
-				$named_retry_scheduled[] = array( $run_id, $start_args, $attempt, $delay );
+			static function ( RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
+				$named_retry_scheduled[] = array( (string) $run_id, $start_args, $attempt, $delay );
 			},
 			10,
 			4
 		);
 		\add_action(
 			'a8csp_jobs_engine/retry_scheduled',
-			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
-				$generic_retry_scheduled[] = array( $name, $run_id, $start_args, $attempt, $delay );
+			static function ( string $name, RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
+				$generic_retry_scheduled[] = array( $name, (string) $run_id, $start_args, $attempt, $delay );
 			},
 			10,
 			5
@@ -114,16 +115,16 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$named_completed ): void {
-				$named_completed[] = array( $run_id, $start_args, $previous_completed_run_id );
+			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$named_completed ): void {
+				$named_completed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			3
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$generic_completed ): void {
-				$generic_completed[] = array( $name, $run_id, $start_args, $previous_completed_run_id );
+			static function ( string $name, RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$generic_completed ): void {
+				$generic_completed[] = array( $name, (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			4
@@ -200,7 +201,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$failure = $recorded_failed[0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( self::IDENTITY, $failure->identity );
-		self::assertSame( $failed_run_id, $failure->run_id );
+		self::assertSame( $failed_run_id, (string) $failure->run_id );
 		self::assertSame( 2, $failure->attempts );
 		self::assertSame( RunFailureStage::Execution, $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );

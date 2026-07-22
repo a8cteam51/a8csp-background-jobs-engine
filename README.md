@@ -65,7 +65,7 @@ final class RefreshCache extends AbstractJob {
 	public function handle( array $args, RunContext $context ): void {
 		my_plugin_refresh_cache(
 			(int) ( $args['site_id'] ?? 0 ),
-			$context->get_run_id()
+			(string) $context->get_run_id()
 		);
 	}
 }
@@ -87,11 +87,11 @@ function my_plugin_queue_cache_refresh( int $site_id ): void {
 		return;
 	}
 
-	update_option( 'my_plugin_last_cache_run', $run->run_id );
+	update_option( 'my_plugin_last_cache_run', (string) $run->id );
 }
 ```
 
-Each successful enqueue returns an immutable `Run\Run` snapshot with `identity`, `run_id`, and `status`. Automatic attempts for one admitted run keep the same run ID. Every capability-manager verb returns its success value or `WP_Error` for an expected validation, registration, readiness, or engine failure. Errors have a stable string code and an engine-authored message, and may carry redaction-safe structured context.
+Each successful enqueue returns an immutable `Run\Run` snapshot with `identity`, `id` (a `Run\RunId` value), and `status`. Automatic attempts for one admitted run keep the same run ID. Every capability-manager verb returns its success value or `WP_Error` for an expected validation, registration, readiness, or engine failure. Errors have a stable string code and an engine-authored message, and may carry redaction-safe structured context.
 
 ## Examples
 
@@ -170,7 +170,7 @@ add_action( 'init', static function (): void {
 		static function ( array $args, RunContext $context ): void {
 			my_plugin_send_digest(
 				(int) $args['user_id'],
-				$context->get_run_id()
+				(string) $context->get_run_id()
 			);
 		},
 		array(
@@ -211,7 +211,7 @@ function my_plugin_queue_digest( int $user_id ): void {
 		return;
 	}
 
-	update_user_meta( $user_id, 'my_plugin_last_digest_run', $run->run_id );
+	update_user_meta( $user_id, 'my_plugin_last_digest_run', (string) $run->id );
 }
 ```
 
@@ -234,7 +234,7 @@ final class RecountComments extends AbstractChunkedJob {
 	}
 
 	public function generate_queue( array $start_args, RunContext $context ): iterable {
-		set_transient( 'my_plugin_recount_running', $context->get_run_id() );
+		set_transient( 'my_plugin_recount_running', (string) $context->get_run_id() );
 
 		$post_ids = get_posts(
 			array(
@@ -297,7 +297,7 @@ function my_plugin_start_recount(): void {
 		return;
 	}
 
-	update_option( 'my_plugin_last_recount_run', $run->run_id );
+	update_option( 'my_plugin_last_recount_run', (string) $run->id );
 }
 ```
 
@@ -306,9 +306,10 @@ Chunks run one at a time with a short pause between them. `Job\Chunked\ChunkCont
 ### 4. Day-2 operations: inspection, retry, cancellation, and the CLI
 
 ```php
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 
-function my_plugin_review_digest_run( string $run_id ): void {
+function my_plugin_review_digest_run( RunId $run_id ): void {
 	$bg  = a8csp_bgje( 'my-plugin' );
 	$run = $bg->runs()->inspect( 'email-digest', $run_id );
 	if ( is_wp_error( $run ) ) {
@@ -317,7 +318,7 @@ function my_plugin_review_digest_run( string $run_id ): void {
 	}
 
 	if ( RunStatus::Failed === $run->status ) {
-		$retry = $bg->runs()->retry_failed( 'email-digest', $run->run_id );
+		$retry = $bg->runs()->retry_failed( 'email-digest', $run->id );
 		if ( is_wp_error( $retry ) ) {
 			error_log( $retry->get_error_message() );
 		}
@@ -327,7 +328,7 @@ function my_plugin_review_digest_run( string $run_id ): void {
 	if ( is_wp_error( $last ) ) {
 		error_log( $last->get_error_message() );
 	} elseif ( null !== $last ) {
-		update_option( 'my_plugin_last_completed_digest', $last->run_id );
+		update_option( 'my_plugin_last_completed_digest', (string) $last->id );
 	}
 }
 
@@ -384,7 +385,7 @@ final class PublishWebhook extends AbstractJob {
 			throw new NonRetryableException( 'The endpoint is permanently unavailable.' );
 		}
 
-		my_plugin_publish_webhook( (string) $args['endpoint_id'], $context->get_run_id() );
+		my_plugin_publish_webhook( (string) $args['endpoint_id'], (string) $context->get_run_id() );
 	}
 
 	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {
@@ -431,10 +432,10 @@ The procedural facade is grouped by concept: `includes/job-functions.php` provid
 | `jobs()->start( string $name, array $start_args = [], int $priority = 10 )` | `a8csp_bgje_start( string $owner, string $name, array $start_args = [], int $priority = 10 )` | `Run\Run \| WP_Error` |
 | `schedules()->sync( Schedule\Schedule ...$schedules )` | `a8csp_bgje_sync_schedules( string $owner, array $schedules )` | `true \| WP_Error` |
 | `schedules()->dispatch( string $name )` | `a8csp_bgje_dispatch_schedule( string $owner, string $name )` | `Run\Run \| WP_Error` |
-| `runs()->inspect( string $name, string $run_id )` | `a8csp_bgje_inspect_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
+| `runs()->inspect( string $name, Run\RunId $run_id )` | `a8csp_bgje_inspect_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
 | `runs()->last_completed( string $name )` | `a8csp_bgje_last_completed_run( string $owner, string $name )` | `Run\Run \| null \| WP_Error` |
-| `runs()->retry_failed( string $name, string $run_id )` | `a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
-| `runs()->cancel( string $name, string $run_id )` | `a8csp_bgje_cancel_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
+| `runs()->retry_failed( string $name, Run\RunId $run_id )` | `a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
+| `runs()->cancel( string $name, Run\RunId $run_id )` | `a8csp_bgje_cancel_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
 
 The callable handler receives `(array $args, Job\RunContext $context)`. The procedural alias's `$options` array accepts:
 
@@ -459,10 +460,10 @@ All public type names below are relative to the `A8C\SpecialProjects\BackgroundJ
 | `Runs` | Owner-bound readonly manager for run inspection, retry, and cancellation. |
 | `Schedule\Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`. |
 | `Schedule\Recurrence` | Readonly fixed-interval recurrence created with `every( int $seconds )` or `every_anchored( int $seconds, int $anchor )`; an anchor is reduced modulo the interval. |
-| `Run\Run` | Readonly snapshot with `string $identity`, `string $run_id`, and `Run\RunStatus $status`. |
-| `Run\RunFailure` | Readonly value with `string $identity`, `string $run_id`, `int $attempts`, `Run\RunFailureStage $stage`, `Error\ErrorCode $code`, `string $summary`, and `?array $failed_chunk`. |
+| `Run\Run` | Readonly snapshot with `string $identity`, `Run\RunId $id`, and `Run\RunStatus $status`. |
+| `Run\RunFailure` | Readonly value with `string $identity`, `Run\RunId $run_id`, `int $attempts`, `Run\RunFailureStage $stage`, `Error\ErrorCode $code`, `string $summary`, and `?array $failed_chunk`. |
 | `Job\RetryPolicy` | Readonly value constructed from `max_attempts`, `base_delay`, `multiplier`, and `max_delay`; defaults are 3, `MINUTE_IN_SECONDS`, 2, and `HOUR_IN_SECONDS`. `max_attempts` includes the initial attempt. Attempts, base delay, and multiplier are at least 1, and maximum delay is at least the base delay. It exposes `delay_ceiling_for_attempt( int $attempt ): int`. |
-| `Job\RunContext` | `get_run_id(): string` and `get_start_args(): array`. |
+| `Job\RunContext` | `get_run_id(): Run\RunId` and `get_start_args(): array`. |
 | `Job\Chunked\ChunkContext` | Extends `Job\RunContext` with `enqueue( array $chunk_args ): void` and `prepend( array $chunk_args ): void`. |
 | `Job\NonRetryableException` | Runtime exception that marks client work as permanently failed. |
 
@@ -551,12 +552,12 @@ The `started`, `completed`, `cancelled`, `superseded`, and `retry_scheduled` eve
 
 | Event | Hooks and arguments |
 | --- | --- |
-| Started | `a8csp_jobs_engine/started/{identity}`: `(string $run_id, array $start_args)` · `a8csp_jobs_engine/started`: `(string $identity, string $run_id, array $start_args)` |
-| Completed | `a8csp_jobs_engine/completed/{identity}`: `(string $run_id, array $start_args, ?string $previous_completed_run_id)` · generic prepends `$identity` |
+| Started | `a8csp_jobs_engine/started/{identity}`: `(Run\RunId $run_id, array $start_args)` · `a8csp_jobs_engine/started`: `(string $identity, Run\RunId $run_id, array $start_args)` |
+| Completed | `a8csp_jobs_engine/completed/{identity}`: `(Run\RunId $run_id, array $start_args, ?Run\RunId $previous_completed_run_id)` · generic prepends `$identity` |
 | Failed | `a8csp_jobs_engine/failed`: `(Run\RunFailure $failure)`; filter per work item on `$failure->identity` |
-| Cancelled | `a8csp_jobs_engine/cancelled/{identity}`: `(string $run_id, array $start_args)` · generic prepends `string $identity` |
-| Superseded | `a8csp_jobs_engine/superseded/{identity}`: `(string $run_id, array $start_args)` · generic prepends `string $identity` |
-| Retry scheduled | `a8csp_jobs_engine/retry_scheduled/{identity}`: `(string $run_id, array $start_args, int $attempt, int $delay)` · generic prepends `string $identity`; attempt is the one-indexed failed-attempt count and delay is the chosen delay in seconds |
+| Cancelled | `a8csp_jobs_engine/cancelled/{identity}`: `(Run\RunId $run_id, array $start_args)` · generic prepends `string $identity` |
+| Superseded | `a8csp_jobs_engine/superseded/{identity}`: `(Run\RunId $run_id, array $start_args)` · generic prepends `string $identity` |
+| Retry scheduled | `a8csp_jobs_engine/retry_scheduled/{identity}`: `(Run\RunId $run_id, array $start_args, int $attempt, int $delay)` · generic prepends `string $identity`; attempt is the one-indexed failed-attempt count and delay is the chosen delay in seconds |
 | Misfire skipped | `a8csp_jobs_engine/misfire_skipped/{schedule_identity}`: `(string $owner, int $due_at, int $observed_at)` · generic prepends `string $schedule_identity` |
 | Log | `a8csp_jobs_engine/log`: `(string $level, string $message, array $context)` |
 

@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -286,7 +287,9 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_runs_merge_valid_live_history_and_failed_store_rows(): void {
-		$identity = 'owner:catalog-sync';
+		$identity     = 'owner:catalog-sync';
+		$completed_id = self::run_id( 2 );
+		$failed_id    = self::run_id( 3 );
 		$this->rig->client( 'owner' )->chunked_jobs()->register( new RecordingChunkedJob( 'catalog-sync' ) );
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$live_id  = self::run_id( 1 );
@@ -299,25 +302,25 @@ final class InspectionTest extends TestCase {
 						'args_hash' => 'hash-live',
 					),
 					array(
-						'run_id'    => 'run-completed',
+						'run_id'    => $completed_id,
 						'args_hash' => 'hash-completed',
 					),
 				),
 				array(
 					array(
-						'run_id'    => 'run-completed',
+						'run_id'    => $completed_id,
 						'args_hash' => 'hash-completed',
 						'status'    => RunStatus::Completed,
 					),
 					array(
-						'run_id'    => 'run-failed',
+						'run_id'    => $failed_id,
 						'args_hash' => 'hash-failed',
 						'status'    => RunStatus::Failed,
 					),
 				)
 			)
 		);
-		$failure = new RunFailure( identity: $identity, run_id: 'run-failed', attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: $identity, run_id: RunId::from( $failed_id ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Retained failure.', failed_chunk: null );
 		$this->put( $fixtures->failed( self::NOW - 1, array(), $failure, new EngineError( 'Retained failure.' ) ) );
 		$this->put( $fixtures->unreadable_run( self::run_id( 99 ) ) );
 
@@ -327,7 +330,7 @@ final class InspectionTest extends TestCase {
 		self::assertSame( 'chunked_job', $snapshot['live'][0]['kind'] );
 		self::assertSame( 2, $snapshot['live'][0]['queue_depth'] );
 		self::assertSame( 1, $snapshot['live_unreadable'] );
-		self::assertSame( array( 'run-failed', 'run-completed', $live_id ), \array_column( $snapshot['history'] ?? array(), 'run_id' ) );
+		self::assertSame( array( $failed_id, $completed_id, $live_id ), \array_column( $snapshot['history'] ?? array(), 'run_id' ) );
 		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
 	}
 

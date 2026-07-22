@@ -61,8 +61,8 @@ final class JobsTest extends CapabilityManagerTestCase {
 		$job_run     = self::assert_run( $jobs->enqueue( 'job', array( 'site_id' => 7 ), 15, 23 ), self::OWNER . ':job', RunStatus::Running );
 		$chunked_run = self::assert_run( $jobs->start( 'chunked-job', array( 'scope' => 'all' ), 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
 
-		self::assertNotSame( '', $job_run->run_id );
-		self::assertNotSame( '', $chunked_run->run_id );
+		self::assertNotSame( '', (string) $job_run->id );
+		self::assertNotSame( '', (string) $chunked_run->id );
 		self::assertSame( 23, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['priority'] ?? null );
 		self::assertSame( 31, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
 		self::assert_wp_error( $jobs->register( $job ), 'already_registered' );
@@ -143,7 +143,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 		$completed_run  = self::assert_run( $jobs->enqueue( 'callable', $completed_args ), self::OWNER . ':callable', RunStatus::Running );
 		++$this->rig->clock()->timestamp;
 		$overlap_error = self::assert_wp_error( $jobs->enqueue( 'callable', $completed_args ), ErrorCode::OverlapHeld->value );
-		self::assertSame( array( 'run_id' => $completed_run->run_id ), $overlap_error->get_error_data() );
+		self::assertSame( array( 'run_id' => (string) $completed_run->id ), $overlap_error->get_error_data() );
 
 		$this->rig->run_due();
 		++$this->rig->clock()->timestamp;
@@ -159,12 +159,12 @@ final class JobsTest extends CapabilityManagerTestCase {
 		}
 
 		self::assertSame( self::NOW + 43, $observed_heartbeat );
-		self::assertSame( array( $completed_run->run_id, $failed_run->run_id, $failed_run->run_id, $failed_run->run_id ), $observed_run_ids );
+		self::assertEquals( array( $completed_run->id, $failed_run->id, $failed_run->id, $failed_run->id ), $observed_run_ids );
 		self::assertSame( array( $completed_args, $completed_args, $failed_args ), $overlap_args );
 		self::assertSame(
 			array(
 				array(
-					'run_id'   => $completed_run->run_id,
+					'run_id'   => (string) $completed_run->id,
 					'args'     => $completed_args,
 					'previous' => null,
 				),
@@ -172,7 +172,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 			$completed
 		);
 		self::assertCount( 1, $failed );
-		self::assertSame( $failed_run->run_id, $failed[0]['run_id'] );
+		self::assertSame( (string) $failed_run->id, $failed[0]['run_id'] );
 		self::assertSame( $failed_args, $failed[0]['args'] );
 		self::assertSame( 3, $failed[0]['failure']->attempts );
 		self::assertSame( ErrorCode::ExecutionFailed, $failed[0]['failure']->code );

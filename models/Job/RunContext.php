@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -19,9 +21,9 @@ interface RunContext {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  string
+	 * @return  RunId
 	 */
-	public function get_run_id(): string;
+	public function get_run_id(): RunId;
 
 	/**
 	 * Returns the arguments supplied when the run started.

@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Error;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -228,7 +229,7 @@ final class EngineErrorTest extends TestCase {
 	 * @return  RunFailure
 	 */
 	private static function failure( ErrorCode $code, string $summary ): RunFailure {
-		return new RunFailure( identity: 'consumer-plugin:sync', run_id: 'run-7', attempts: 1, stage: RunFailureStage::Scheduling, code: $code, summary: $summary, failed_chunk: null, );
+		return new RunFailure( identity: 'consumer-plugin:sync', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::Scheduling, code: $code, summary: $summary, failed_chunk: null, );
 	}
 
 	// endregion.

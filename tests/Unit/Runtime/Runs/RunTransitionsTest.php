@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
@@ -416,18 +417,22 @@ final class RunTransitionsTest extends TestCase {
 		}
 		self::assertNull( $missing->value );
 		self::assertNull( $this->lock() );
+		$actions       = $this->fired_actions();
+		$public_run_id = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunId::class, $public_run_id );
+		self::assertSame( self::RUN_ID, (string) $public_run_id );
 		self::assertSame(
 			array(
 				array(
 					'hook_name' => 'a8csp_jobs_engine/cancelled/' . self::IDENTITY,
-					'args'      => array( self::RUN_ID, self::ARGS ),
+					'args'      => array( $public_run_id, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_jobs_engine/cancelled',
-					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, $public_run_id, self::ARGS ),
 				),
 			),
-			$this->fired_actions()
+			$actions
 		);
 		$this->assert_terminal_history( 'cancelled' );
 	}
@@ -514,18 +519,22 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertNull( $this->option( $this->run_option_name() ) );
+		$actions       = $this->fired_actions();
+		$public_run_id = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunId::class, $public_run_id );
+		self::assertSame( self::RUN_ID, (string) $public_run_id );
 		self::assertSame(
 			array(
 				array(
 					'hook_name' => 'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-					'args'      => array( self::RUN_ID, self::ARGS ),
+					'args'      => array( $public_run_id, self::ARGS ),
 				),
 				array(
 					'hook_name' => 'a8csp_jobs_engine/superseded',
-					'args'      => array( self::IDENTITY, self::RUN_ID, self::ARGS ),
+					'args'      => array( self::IDENTITY, $public_run_id, self::ARGS ),
 				),
 			),
-			$this->fired_actions()
+			$actions
 		);
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'info', $this->logger->records[0]['level'] ?? null );

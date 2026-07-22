@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -509,7 +510,7 @@ final readonly class LifecycleEffects {
 			// Terminal transitions encode enum-backed values, and store reads reject unknown values before replay.
 			return array(
 				'error'   => $error,
-				'failure' => new RunFailure( identity: $identity, run_id: $run_id, attempts: \max( 1, $state->failed_attempts ), stage: RunFailureStage::from( $state->error['stage'] ), code: ErrorCode::from( $state->error['code'] ), summary: $error->message, failed_chunk: $state->error['failed_chunk'] ?? null, ),
+				'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: \max( 1, $state->failed_attempts ), stage: RunFailureStage::from( $state->error['stage'] ), code: ErrorCode::from( $state->error['code'] ), summary: $error->message, failed_chunk: $state->error['failed_chunk'] ?? null, ),
 			);
 		}
 
@@ -525,7 +526,7 @@ final readonly class LifecycleEffects {
 
 		return array(
 			'error'   => $error,
-			'failure' => new RunFailure( identity: $identity, run_id: $run_id, attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::CrashReclaim, code: ErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $work_type, $state ), ),
+			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::CrashReclaim, code: ErrorCode::StorageFailure, summary: $error->message, failed_chunk: self::failed_chunk_for_state( $work_type, $state ), ),
 		);
 	}
 
@@ -616,7 +617,9 @@ final readonly class LifecycleEffects {
 	 * @return  void
 	 */
 	private function fire_lifecycle_hooks( string $event, string $identity, string $run_id, array $start_args, ?RunFailure $failure = null, ?string $previous_completed_run_id = null ): void {
-		$hook = self::LIFECYCLE_HOOKS[ $event ];
+		$hook                             = self::LIFECYCLE_HOOKS[ $event ];
+		$public_run_id                    = RunId::from( $run_id );
+		$public_previous_completed_run_id = null === $previous_completed_run_id ? null : RunId::from( $previous_completed_run_id );
 
 		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.
 		if ( 'completed' === $event ) {
@@ -629,11 +632,11 @@ final readonly class LifecycleEffects {
 				 * @since   1.0.0
 				 * @version 1.0.0
 				 *
-				 * @param   string                  $run_id                    Run identifier.
+				 * @param   RunId                   $run_id                    Run identifier.
 				 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
-				 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
+				 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
 				 */
-				\do_action( $hook . '/' . $identity, $run_id, $start_args, $previous_completed_run_id );
+				\do_action( $hook . '/' . $identity, $public_run_id, $start_args, $public_previous_completed_run_id );
 			} finally {
 				/**
 				 * Fires after the identity-specific completed lifecycle hook.
@@ -642,11 +645,11 @@ final readonly class LifecycleEffects {
 				 * @version 1.0.0
 				 *
 				 * @param   string                  $identity                  Complete owner-qualified job or chunked job identity.
-				 * @param   string                  $run_id                    Run identifier.
+				 * @param   RunId                   $run_id                    Run identifier.
 				 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
-				 * @param   string|null             $previous_completed_run_id Previous completed run identifier for this identity, or null.
+				 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
 				 */
-				\do_action( $hook, $identity, $run_id, $start_args, $previous_completed_run_id );
+				\do_action( $hook, $identity, $public_run_id, $start_args, $public_previous_completed_run_id );
 			}
 
 			return;
@@ -664,10 +667,10 @@ final readonly class LifecycleEffects {
 				 * @since   1.0.0
 				 * @version 1.0.0
 				 *
-				 * @param   string                  $run_id     Run identifier.
+				 * @param   RunId                   $run_id     Run identifier.
 				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 				 */
-				\do_action( $hook . '/' . $identity, $run_id, $start_args );
+				\do_action( $hook . '/' . $identity, $public_run_id, $start_args );
 			} finally {
 				/**
 				 * Fires after the identity-specific started, cancelled, or superseded lifecycle hook.
@@ -679,10 +682,10 @@ final readonly class LifecycleEffects {
 				 * @version 1.0.0
 				 *
 				 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
-				 * @param   string                  $run_id     Run identifier.
+				 * @param   RunId                   $run_id     Run identifier.
 				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 				 */
-				\do_action( $hook, $identity, $run_id, $start_args );
+				\do_action( $hook, $identity, $public_run_id, $start_args );
 			}
 
 			return;

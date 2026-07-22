@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -73,32 +74,32 @@ final class SupersededRunTest extends IntegrationTestCase {
 		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
 			'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-			static function ( string $run_id, array $args ) use ( &$named_superseded ): void {
-				$named_superseded[] = array( $run_id, $args );
+			static function ( RunId $run_id, array $args ) use ( &$named_superseded ): void {
+				$named_superseded[] = array( (string) $run_id, $args );
 			},
 			10,
 			2
 		);
 		\add_action(
 			'a8csp_jobs_engine/superseded',
-			static function ( string $name, string $run_id, array $args ) use ( &$generic_superseded ): void {
-				$generic_superseded[] = array( $name, $run_id, $args );
+			static function ( string $name, RunId $run_id, array $args ) use ( &$generic_superseded ): void {
+				$generic_superseded[] = array( $name, (string) $run_id, $args );
 			},
 			10,
 			3
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
-			static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$named_completed ): void {
-				$named_completed[] = array( $run_id, $args, $previous_completed_run_id );
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$named_completed ): void {
+				$named_completed[] = array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			3
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$generic_completed ): void {
-				$generic_completed[] = array( $name, $run_id, $args, $previous_completed_run_id );
+			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$generic_completed ): void {
+				$generic_completed[] = array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			4
@@ -204,7 +205,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$process_calls = $chunked_job->process_calls;
 		self::assertSame( $expected_chunks, \array_column( $process_calls, 'chunk_args' ) );
 		foreach ( $process_calls as $process_call ) {
-			self::assertSame( $run_b, $process_call['context']->get_run_id() );
+			self::assertSame( $run_b, (string) $process_call['context']->get_run_id() );
 			self::assertSame( $start_args, $process_call['context']->get_start_args() );
 		}
 		foreach ( $run_b_action_ids as $action_id ) {

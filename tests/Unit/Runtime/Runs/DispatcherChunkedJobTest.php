@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
@@ -128,7 +129,11 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
-		self::assertSame( array( array( self::RUN_ID, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::IDENTITY ) );
+		$started = $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::IDENTITY );
+		$run_id  = $started[0][0] ?? null;
+		self::assertInstanceOf( RunId::class, $run_id );
+		self::assertSame( self::RUN_ID, (string) $run_id );
+		self::assertSame( array( array( $run_id, self::ARGS ) ), $started );
 	}
 
 	/**
@@ -177,7 +182,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_restarts_a_chunked_job_and_removes_the_failed_entry(): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
@@ -199,7 +204,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_refuses_to_replace_a_live_chunked_job(): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->chunked_job->overlap_policy = OverlapPolicy::Replace;
 		$incumbent                         = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
@@ -233,7 +238,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$incumbent = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
 		self::assertIsString( $incumbent->value );
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::FAILED_RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', failed_chunk: array( 'chunk' => 1 ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 

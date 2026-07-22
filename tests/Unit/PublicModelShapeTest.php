@@ -38,6 +38,7 @@ final class PublicModelShapeTest extends TestCase {
 		'Job\\Batch\\BatchJobInterface',
 		'Job\\Batch\\AbstractBatchJob',
 		'Run\\Run',
+		'Run\\RunId',
 		'Run\\RunStatus',
 		'Run\\RunFailure',
 		'Run\\RunFailureStage',

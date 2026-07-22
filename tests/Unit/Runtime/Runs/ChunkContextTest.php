@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext as ChunkContextContract;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -93,13 +94,10 @@ final class ChunkContextTest extends TestCase {
 
 		$run_id = $this->start_and_deliver_first_chunk( $chunked_job, $start_args );
 
-		self::assertSame(
-			array(
-				'run_id'     => $run_id,
-				'start_args' => $start_args,
-			),
-			$observed
-		);
+		self::assertIsArray( $observed );
+		self::assertInstanceOf( RunId::class, $observed['run_id'] );
+		self::assertSame( $run_id, (string) $observed['run_id'] );
+		self::assertSame( $start_args, $observed['start_args'] );
 	}
 
 	/**

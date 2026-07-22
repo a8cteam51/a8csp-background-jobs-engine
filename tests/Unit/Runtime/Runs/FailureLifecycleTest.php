@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
@@ -857,7 +858,7 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * Returns the latest generic retry-scheduled hook payload.
+	 * Returns the latest generic retry-scheduled hook payload with the run identifier as its wire value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -868,7 +869,11 @@ final class FailureLifecycleTest extends TestCase {
 		$events = $this->rig->hooks()->fired( 'a8csp_jobs_engine/retry_scheduled' );
 		self::assertNotEmpty( $events );
 
-		return $events[ \count( $events ) - 1 ];
+		$payload = $events[ \count( $events ) - 1 ];
+		self::assertInstanceOf( RunId::class, $payload[1] ?? null );
+		$payload[1] = (string) $payload[1];
+
+		return $payload;
 	}
 
 	/**

@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
@@ -124,7 +125,7 @@ final readonly class Schedules {
 	 * @return  Run
 	 */
 	private function run( string $identity, string $run_id, RunStatus $status ): Run {
-		return new Run( $identity, $run_id, $status );
+		return new Run( $identity, RunId::from( $run_id ), $status );
 	}
 
 	/**

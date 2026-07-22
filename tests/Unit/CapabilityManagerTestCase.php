@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use PHPUnit\Framework\TestCase;
@@ -165,20 +166,20 @@ abstract class CapabilityManagerTestCase extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   mixed       $value    Expected run value.
-	 * @param   string      $identity Expected owner-qualified identity.
-	 * @param   RunStatus   $status   Expected public lifecycle state.
-	 * @param   string|null $run_id   Expected run identifier, or null to accept the generated identifier.
+	 * @param   mixed      $value    Expected run value.
+	 * @param   string     $identity Expected owner-qualified identity.
+	 * @param   RunStatus  $status   Expected public lifecycle state.
+	 * @param   RunId|null $id       Expected run identifier, or null to accept the generated identifier.
 	 *
 	 * @return  Run
 	 */
-	protected static function assert_run( mixed $value, string $identity, RunStatus $status, ?string $run_id = null ): Run {
+	protected static function assert_run( mixed $value, string $identity, RunStatus $status, ?RunId $id = null ): Run {
 		self::assertInstanceOf( Run::class, $value );
 		self::assertSame( $identity, $value->identity );
 		self::assertSame( $status, $value->status );
-		self::assertNotSame( '', $value->run_id );
-		if ( null !== $run_id ) {
-			self::assertSame( $run_id, $value->run_id );
+		self::assertNotSame( '', (string) $value->id );
+		if ( null !== $id ) {
+			self::assertSame( (string) $id, (string) $value->id );
 		}
 
 		return $value;

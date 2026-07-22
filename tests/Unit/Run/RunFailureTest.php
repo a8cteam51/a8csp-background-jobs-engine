@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -42,10 +43,11 @@ final class RunFailureTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_constructor_retains_the_complete_failure(): void {
-		$failure = new RunFailure( identity: 'consumer-plugin:recount-comments', run_id: 'run-7', attempts: 3, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Background-work execution failed because RuntimeException was thrown.', failed_chunk: array( 'post_id' => 42 ), );
+		$run_id  = RunId::from( '00000000001721664000-0000000000000000042' );
+		$failure = new RunFailure( identity: 'consumer-plugin:recount-comments', run_id: $run_id, attempts: 3, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Background-work execution failed because RuntimeException was thrown.', failed_chunk: array( 'post_id' => 42 ), );
 
 		self::assertSame( 'consumer-plugin:recount-comments', $failure->identity );
-		self::assertSame( 'run-7', $failure->run_id );
+		self::assertSame( $run_id, $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
 		self::assertSame( RunFailureStage::Execution, $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );

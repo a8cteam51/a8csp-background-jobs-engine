@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Run;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -32,7 +33,7 @@ final class RunTest extends TestCase {
 	}
 
 	/**
-	 * Every projection field remains independently observable.
+	 * Every projection field remains independently observable, and the identifier is the typed value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -40,10 +41,11 @@ final class RunTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_constructor_retains_each_projection_field(): void {
-		$run = new Run( identity: 'consumer-plugin:recount-comments', run_id: 'run-7', status: RunStatus::Failed, );
+		$id  = RunId::from( '00000000001721664000-0000000000000000042' );
+		$run = new Run( identity: 'consumer-plugin:recount-comments', id: $id, status: RunStatus::Failed, );
 
 		self::assertSame( 'consumer-plugin:recount-comments', $run->identity );
-		self::assertSame( 'run-7', $run->run_id );
+		self::assertSame( $id, $run->id );
 		self::assertSame( RunStatus::Failed, $run->status );
 	}
 }

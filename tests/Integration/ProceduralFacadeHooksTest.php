@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\CoversFunction;
 
@@ -42,8 +43,8 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		$args     = array( 'site_id' => 7 );
 		/** @var list<array{string, array<array-key, mixed>, string|null}> $observed */
 		$observed = array();
-		$listener = static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$observed ): void {
-			$observed[] = array( $run_id, $start_args, $previous_completed_run_id );
+		$listener = static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$observed ): void {
+			$observed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 		};
 
 		\add_action( 'a8csp_jobs_engine/completed/' . $identity, $listener, 10, 3 );
@@ -55,7 +56,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
-		self::assertSame( array( array( $run->run_id, $args, null ) ), $observed );
+		self::assertSame( array( array( (string) $run->id, $args, null ) ), $observed );
 	}
 
 	/**
@@ -104,7 +105,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertSame( 1, $observed_arity );
 		self::assertSame( array( array() ), $observed_extra_args );
 		self::assertSame( $identity, $observed[0]->identity );
-		self::assertSame( $run->run_id, $observed[0]->run_id );
+		self::assertSame( (string) $run->id, (string) $observed[0]->run_id );
 		self::assertSame( 1, $observed[0]->attempts );
 		self::assertSame( 'execution', $observed[0]->stage->value );
 		self::assertSame( 'execution_failed', $observed[0]->code->value );
@@ -138,7 +139,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
-		self::assertSame( array( array( $run->run_id, $args, null ) ), $observed );
+		self::assertSame( array( array( (string) $run->id, $args, null ) ), $observed );
 	}
 
 	/**
@@ -192,7 +193,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertSame( 1, $this->run_next_engine_action() );
 
 		self::assertCount( 1, $job->failures );
-		self::assertSame( $run->run_id, $job->failures[0][0] );
+		self::assertSame( (string) $run->id, $job->failures[0][0] );
 		self::assertSame( $args, $job->failures[0][1] );
 		self::assertSame( 'execution_failed', $job->failures[0][2]->code->value );
 	}

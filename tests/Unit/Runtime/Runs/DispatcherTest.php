@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
@@ -127,7 +128,11 @@ final class DispatcherTest extends TestCase {
 		self::assertIsArray( $run );
 		self::assertSame( 'Job', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
-		self::assertSame( array( array( self::RUN_ID, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::IDENTITY ) );
+		$started = $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::IDENTITY );
+		$run_id  = $started[0][0] ?? null;
+		self::assertInstanceOf( RunId::class, $run_id );
+		self::assertSame( self::RUN_ID, (string) $run_id );
+		self::assertSame( array( array( $run_id, self::ARGS ) ), $started );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 	}
@@ -1050,7 +1055,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_failed_run( string $run_id, array $start_args, int $attempts ): void {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: $attempts, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Database unavailable.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $run_id ), attempts: $attempts, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Database unavailable.', failed_chunk: null );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure ) );
 		$this->reset_observations();
 	}

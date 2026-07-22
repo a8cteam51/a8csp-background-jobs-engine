@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -144,15 +145,15 @@ final class ProceduralFacadeTest extends TestCase {
 		$job_run     = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
 		$chunked_run = self::assert_run( \a8csp_bgje_start( self::OWNER, 'chunked-job', $start_args, 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
 
-		self::assertNotSame( '', $job_run->run_id );
-		self::assertNotSame( '', $chunked_run->run_id );
+		self::assertNotSame( '', (string) $job_run->id );
+		self::assertNotSame( '', (string) $chunked_run->id );
 		self::assertSame( self::NOW + 15, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['timestamp'] ?? null );
 		self::assertSame( 23, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['priority'] ?? null );
 		self::assertSame( 31, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
-		self::assertSame( array( array( $job_run->run_id, $job_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':job' ) );
+		self::assertEquals( array( array( $job_run->id, $job_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':job' ) );
 
 		$this->rig->run_due();
-		self::assertSame( array( array( $chunked_run->run_id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':chunked-job' ) );
+		self::assertEquals( array( array( $chunked_run->id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':chunked-job' ) );
 	}
 
 	/**
@@ -179,7 +180,7 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, $schedules ) );
 		$run = self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
 
-		self::assertNotSame( '', $run->run_id );
+		self::assertNotSame( '', (string) $run->id );
 		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );
 		self::assertSame( 41, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
 	}
@@ -212,10 +213,24 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertNull( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ) );
 
 		$admitted = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
-		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', $admitted->run_id ), self::OWNER . ':inspect', RunStatus::Running, $admitted->run_id );
+		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Running, $admitted->id );
 		$this->rig->run_due();
-		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', $admitted->run_id ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->run_id );
-		self::assert_run( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->run_id );
+		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
+		self::assert_run( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
+	}
+
+	/**
+	 * Run aliases retain the invalid-argument boundary for malformed wire identifiers.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_aliases_reject_malformed_identifiers(): void {
+		self::assert_wp_error( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', 'malformed' ), 'invalid_argument' );
+		self::assert_wp_error( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', 'malformed' ), 'invalid_argument' );
+		self::assert_wp_error( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', 'malformed' ), 'invalid_argument' );
 	}
 
 	/**
@@ -238,13 +253,13 @@ final class ProceduralFacadeTest extends TestCase {
 		$this->rig->run_due();
 
 		++$this->rig->clock()->timestamp;
-		$retry = self::assert_run( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', $failed->run_id ), self::OWNER . ':failed', RunStatus::Running );
-		self::assertNotSame( $failed->run_id, $retry->run_id );
+		$retry = self::assert_run( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', (string) $failed->id ), self::OWNER . ':failed', RunStatus::Running );
+		self::assertNotSame( (string) $failed->id, (string) $retry->id );
 
 		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'cancel' ) ) );
 		$pending   = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
-		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', $pending->run_id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->run_id );
-		self::assertSame( $pending->run_id, $cancelled->run_id );
+		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', (string) $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
+		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 	}
 
 	/**
@@ -439,20 +454,20 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   mixed       $value    Expected run value.
-	 * @param   string      $identity Expected owner-qualified identity.
-	 * @param   RunStatus   $status   Expected public lifecycle state.
-	 * @param   string|null $run_id   Expected run identifier, or null to accept the generated identifier.
+	 * @param   mixed      $value    Expected run value.
+	 * @param   string     $identity Expected owner-qualified identity.
+	 * @param   RunStatus  $status   Expected public lifecycle state.
+	 * @param   RunId|null $id       Expected run identifier, or null to accept the generated identifier.
 	 *
 	 * @return  Run
 	 */
-	private static function assert_run( mixed $value, string $identity, RunStatus $status, ?string $run_id = null ): Run {
+	private static function assert_run( mixed $value, string $identity, RunStatus $status, ?RunId $id = null ): Run {
 		self::assertInstanceOf( Run::class, $value );
 		self::assertSame( $identity, $value->identity );
 		self::assertSame( $status, $value->status );
-		self::assertNotSame( '', $value->run_id );
-		if ( null !== $run_id ) {
-			self::assertSame( $run_id, $value->run_id );
+		self::assertNotSame( '', (string) $value->id );
+		if ( null !== $id ) {
+			self::assertSame( (string) $id, (string) $value->id );
 		}
 
 		return $value;

@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
@@ -219,7 +220,11 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
-		self::assertSame( array( array( self::RUN_ID, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
+		$started = $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY );
+		$run_id  = $started[0][0] ?? null;
+		self::assertInstanceOf( RunId::class, $run_id );
+		self::assertSame( self::RUN_ID, (string) $run_id );
+		self::assertSame( array( array( $run_id, self::ARGS ) ), $started );
 	}
 
 	/**

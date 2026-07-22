@@ -50,10 +50,9 @@ final class SchedulesTest extends CapabilityManagerTestCase {
 		self::assertSame( 50, ( $schedule_call['args']['first_run_timestamp'] ?? 0 ) % 300 );
 
 		$run = self::assert_run( $engine->schedules()->dispatch( 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
-		self::assert_run( $engine->runs()->inspect( 'scheduled-job', $run->run_id ), self::OWNER . ':scheduled-job', RunStatus::Running, $run->run_id );
+		self::assert_run( $engine->runs()->inspect( 'scheduled-job', $run->id ), self::OWNER . ':scheduled-job', RunStatus::Running, $run->id );
 		$this->rig->run_due();
 
-		self::assertNotSame( '', $run->run_id );
 		self::assertSame( array( $args ), $handled );
 	}
 

@@ -249,7 +249,7 @@ final readonly class StoreFixtureBuilder {
 				foreach ( $entries as $entry ) {
 					$failure = $entry['failure'];
 					$error   = $entry['error'] ?? null;
-					if ( ! $store->record( $failure->run_id, $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
+					if ( ! $store->record( (string) $failure->run_id, $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
 						throw new \LogicException( 'Production FailedRunStore rejected an isolated failed-run fixture.' );
 					}
 				}

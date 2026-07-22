@@ -6,9 +6,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 
@@ -97,7 +97,7 @@ final readonly class RunsCommand {
 	 *
 	 * @return  array{action: 'error', message: string}
 	 *          |array{action: 'list', name: string, format: string}
-	 *          |array{action: 'cancel', name: string, run_id: string}
+	 *          |array{action: 'cancel', name: string, run_id: RunId}
 	 */
 	public static function runs_request_from_args( array $args, array $assoc_args ): array {
 		if ( array() === $args ) {
@@ -128,7 +128,8 @@ final readonly class RunsCommand {
 					'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
 				);
 			}
-			if ( null === RunIdentity::parse( $args[2] ) ) {
+			$run_id = RunId::try_from( $args[2] );
+			if ( null === $run_id ) {
 				return array(
 					'action'  => 'error',
 					'message' => 'Run identifier is malformed; pass a run ID the engine returned.',
@@ -138,7 +139,7 @@ final readonly class RunsCommand {
 			return array(
 				'action' => 'cancel',
 				'name'   => $args[1],
-				'run_id' => $args[2],
+				'run_id' => $run_id,
 			);
 		}
 
@@ -257,7 +258,7 @@ final readonly class RunsCommand {
 	 *
 	 * @return  array{action: 'error', message: string}
 	 *          |array{action: 'list', owner: string|null, format: string}
-	 *          |array{action: 'retry', name: string, run_id: string}
+	 *          |array{action: 'retry', name: string, run_id: RunId}
 	 *          |array{action: 'purge', name: string|null}
 	 */
 	public static function failed_runs_request_from_args( array $args, array $assoc_args ): array {
@@ -326,7 +327,8 @@ final readonly class RunsCommand {
 						'message' => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
 					);
 				}
-				if ( null === RunIdentity::parse( $args[2] ) ) {
+				$run_id = RunId::try_from( $args[2] );
+				if ( null === $run_id ) {
 					return array(
 						'action'  => 'error',
 						'message' => 'Run identifier is malformed; pass a run ID the engine returned.',
@@ -336,7 +338,7 @@ final readonly class RunsCommand {
 				return array(
 					'action' => 'retry',
 					'name'   => $args[1],
-					'run_id' => $args[2],
+					'run_id' => $run_id,
 				);
 			case 'purge':
 				if ( ! self::has_only_keys( $assoc_args, array( 'all' ) ) ) {
@@ -422,18 +424,18 @@ final readonly class RunsCommand {
 	 * @version 1.0.0
 	 *
 	 * @param   string $name   Composed job or chunked job identity.
-	 * @param   string $run_id Retained run identifier.
+	 * @param   RunId  $run_id Retained run identifier.
 	 *
 	 * @return  void
 	 */
-	private function cancel_run( string $name, string $run_id ): void {
+	private function cancel_run( string $name, RunId $run_id ): void {
 		$engine = Component::get_engine();
 		if ( null === $engine ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		$result = $engine->cancel( $name, $run_id );
+		$result = $engine->cancel( $name, (string) $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;
@@ -529,18 +531,18 @@ final readonly class RunsCommand {
 	 * @version 1.0.0
 	 *
 	 * @param   string $name   Composed job or chunked job identity.
-	 * @param   string $run_id Retained failed-run identifier.
+	 * @param   RunId  $run_id Retained failed-run identifier.
 	 *
 	 * @return  void
 	 */
-	private function retry_failed_run( string $name, string $run_id ): void {
+	private function retry_failed_run( string $name, RunId $run_id ): void {
 		$engine = Component::get_engine();
 		if ( null === $engine ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		$result = $engine->retry_failed( $name, $run_id );
+		$result = $engine->retry_failed( $name, (string) $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;

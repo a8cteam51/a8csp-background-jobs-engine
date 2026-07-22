@@ -25,7 +25,7 @@ final readonly class RunFailure {
 	 * @version 1.0.0
 	 *
 	 * @param   string                       $identity     Complete owner-qualified job or chunked job identity.
-	 * @param   string                       $run_id       Run identifier.
+	 * @param   RunId                        $run_id       Run identifier.
 	 * @param   int                          $attempts     Attempts consumed before terminal failure.
 	 * @param   RunFailureStage              $stage        Terminalization stage.
 	 * @param   ErrorCode                    $code         Machine-readable cause classification.
@@ -34,7 +34,7 @@ final readonly class RunFailure {
 	 */
 	public function __construct(
 		public string $identity,
-		public string $run_id,
+		public RunId $run_id,
 		public int $attempts,
 		public RunFailureStage $stage,
 		public ErrorCode $code,

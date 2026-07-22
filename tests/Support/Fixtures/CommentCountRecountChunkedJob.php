@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
@@ -209,8 +210,8 @@ final class CommentCountRecountChunkedJob extends AbstractChunkedJob {
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
-		 * @param   int    $post_id Post whose comment count was refreshed.
-		 * @param   string $run_id  Engine-assigned chunked job run identifier.
+		 * @param   int   $post_id Post whose comment count was refreshed.
+		 * @param   RunId $run_id  Engine-assigned chunked job run identifier.
 		 */
 		\do_action( self::RECOUNTED_HOOK, $post_id, $context->get_run_id() );
 	}

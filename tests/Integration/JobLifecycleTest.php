@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -64,16 +65,16 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$generic_completed = array();
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::SUCCESS_IDENTITY,
-			static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$named_completed ): void {
-				$named_completed[] = array( $run_id, $start_args, $previous_completed_run_id );
+			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$named_completed ): void {
+				$named_completed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			3
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$generic_completed ): void {
-				$generic_completed[] = array( $name, $run_id, $start_args, $previous_completed_run_id );
+			static function ( string $name, RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$generic_completed ): void {
+				$generic_completed[] = array( $name, (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			4
@@ -177,7 +178,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		self::assertInstanceOf( RunFailure::class, $failure );
 		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class );
 		self::assertSame( self::FAILURE_IDENTITY, $failure->identity );
-		self::assertSame( $run_id, $failure->run_id );
+		self::assertSame( $run_id, (string) $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( RunFailureStage::Execution, $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );

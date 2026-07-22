@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
@@ -45,6 +46,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( RunFailure::class )]
+#[UsesClass( RunId::class )]
 #[UsesClass( RunHistory::class )]
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
@@ -58,12 +60,13 @@ final class LifecycleEffectsTest extends TestCase {
 		'mode'    => 'full',
 	);
 
-	private const string ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const string IDENTITY  = self::OWNER . ':' . self::NAME;
-	private const string NAME      = 'email-digest';
-	private const int NOW          = 1_700_000_000;
-	private const string OWNER     = 'runs-tests';
-	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
+	private const string ARGS_HASH       = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
+	private const string IDENTITY        = self::OWNER . ':' . self::NAME;
+	private const string NAME            = 'email-digest';
+	private const int NOW                = 1_700_000_000;
+	private const string OWNER           = 'runs-tests';
+	private const string PREVIOUS_RUN_ID = '00000000001699999999-0000000000000000041';
+	private const string RUN_ID          = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
 	private OverlapGuard $guard;
@@ -201,7 +204,7 @@ final class LifecycleEffectsTest extends TestCase {
 				$wpdb->script_result( 'update', false );
 			}
 		);
-		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( self::PREVIOUS_RUN_ID );
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
 		$job      = new RecordingJob( self::NAME );
@@ -217,19 +220,28 @@ final class LifecycleEffectsTest extends TestCase {
 				array(
 					'run_id'                    => self::RUN_ID,
 					'start_args'                => self::ARGS,
-					'previous_completed_run_id' => null,
+					'previous_completed_run_id' => self::PREVIOUS_RUN_ID,
 				),
 			),
 			$job->completed_calls
 		);
 		self::assertNull( $this->lock() );
+		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
 				'a8csp_jobs_engine/completed/' . self::IDENTITY,
 				'a8csp_jobs_engine/completed',
 			),
-			\array_column( $this->fired_actions(), 'hook_name' )
+			\array_column( $actions, 'hook_name' )
 		);
+		$named_run_id = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunId::class, $named_run_id );
+		self::assertSame( self::RUN_ID, (string) $named_run_id );
+		$named_previous_run_id = $actions[0]['args'][2] ?? null;
+		self::assertInstanceOf( RunId::class, $named_previous_run_id );
+		self::assertSame( self::PREVIOUS_RUN_ID, (string) $named_previous_run_id );
+		self::assertSame( $named_run_id, $actions[1]['args'][1] ?? null );
+		self::assertSame( $named_previous_run_id, $actions[1]['args'][3] ?? null );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );

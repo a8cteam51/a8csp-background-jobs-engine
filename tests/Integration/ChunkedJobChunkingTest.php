@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 
@@ -82,10 +83,10 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		$completion_observations = array();
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
-			static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( $chunked_job, &$completion_observations ): void {
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( $chunked_job, &$completion_observations ): void {
 				$completion_observations[] = array(
 					'hook'            => 'named',
-					'payload'         => array( $run_id, $args, $previous_completed_run_id ),
+					'payload'         => array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id ),
 					'completed_calls' => \count( $chunked_job->completed_calls ),
 				);
 			},
@@ -94,10 +95,10 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $args, ?string $previous_completed_run_id ) use ( $chunked_job, &$completion_observations ): void {
+			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( $chunked_job, &$completion_observations ): void {
 				$completion_observations[] = array(
 					'hook'            => 'generic',
-					'payload'         => array( $name, $run_id, $args, $previous_completed_run_id ),
+					'payload'         => array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id ),
 					'completed_calls' => \count( $chunked_job->completed_calls ),
 				);
 			},
@@ -139,7 +140,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 
 		self::assertSame( $expected_chunks, \array_column( $chunked_job->process_calls, 'chunk_args' ), 'Chunked Job chunks must run in generated, prepended, remaining, and appended order' );
 		foreach ( $chunked_job->process_calls as $process_call ) {
-			self::assertSame( $run_id, $process_call['context']->get_run_id() );
+			self::assertSame( $run_id, (string) $process_call['context']->get_run_id() );
 			self::assertSame( $start_args, $process_call['context']->get_start_args() );
 		}
 

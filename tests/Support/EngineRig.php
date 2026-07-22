@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
@@ -295,7 +296,7 @@ final class EngineRig {
 		Assert::assertInstanceOf( Client::class, $client );
 		$result = $client->runs()->last_completed_run_id( $parts[1] );
 		Assert::assertInstanceOf( Success::class, $result );
-		Assert::assertSame( $run_id, $result->value );
+		Assert::assertSame( (string) $run_id, $result->value );
 	}
 
 	/**
@@ -616,13 +617,13 @@ final class EngineRig {
 	 *
 	 * @param   array $args Generic lifecycle arguments.
 	 *
-	 * @return array{string, string}
+	 * @return array{string, RunId}
 	 */
 	private function identity_and_run_id( array $args ): array {
 		$identity = $args[0] ?? null;
 		$run_id   = $args[1] ?? null;
 		Assert::assertIsString( $identity );
-		Assert::assertIsString( $run_id );
+		Assert::assertInstanceOf( RunId::class, $run_id );
 
 		return array( $identity, $run_id );
 	}

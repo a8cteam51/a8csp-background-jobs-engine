@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
@@ -401,6 +402,8 @@ final readonly class FailureLifecycle {
 	 * @return  void
 	 */
 	private function fire_retry_scheduled_hooks( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
+		$public_run_id = RunId::from( $run_id );
+
 		try {
 			/**
 			 * Fires after retry state is persisted for one failed work attempt.
@@ -410,12 +413,12 @@ final readonly class FailureLifecycle {
 			 * @since   1.0.0
 			 * @version 1.0.0
 			 *
-			 * @param   string                  $run_id     Run identifier.
+			 * @param   RunId                   $run_id     Run identifier.
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 			 * @param   int                     $attempt    One-indexed number of the failed attempt.
 			 * @param   int                     $delay      Delay before the next attempt in seconds.
 			 */
-			\do_action( 'a8csp_jobs_engine/retry_scheduled/' . $identity, $run_id, $start_args, $attempt, $delay );
+			\do_action( 'a8csp_jobs_engine/retry_scheduled/' . $identity, $public_run_id, $start_args, $attempt, $delay );
 		} finally {
 			/**
 			 * Fires after the identity-specific retry-scheduled hook.
@@ -424,12 +427,12 @@ final readonly class FailureLifecycle {
 			 * @version 1.0.0
 			 *
 			 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
-			 * @param   string                  $run_id     Run identifier.
+			 * @param   RunId                   $run_id     Run identifier.
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 			 * @param   int                     $attempt    One-indexed number of the failed attempt.
 			 * @param   int                     $delay      Delay before the next attempt in seconds.
 			 */
-			\do_action( 'a8csp_jobs_engine/retry_scheduled', $identity, $run_id, $start_args, $attempt, $delay );
+			\do_action( 'a8csp_jobs_engine/retry_scheduled', $identity, $public_run_id, $start_args, $attempt, $delay );
 		}
 	}
 

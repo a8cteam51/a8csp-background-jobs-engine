@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
@@ -177,12 +178,22 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			),
 			$this->chunked_job->completed_calls
 		);
+		$completed              = $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY );
+		$first_public_run_id    = $completed[0][0] ?? null;
+		$second_public_run_id   = $completed[1][0] ?? null;
+		$previous_public_run_id = $completed[1][2] ?? null;
+		self::assertInstanceOf( RunId::class, $first_public_run_id );
+		self::assertInstanceOf( RunId::class, $second_public_run_id );
+		self::assertInstanceOf( RunId::class, $previous_public_run_id );
+		self::assertSame( $first->value, (string) $first_public_run_id );
+		self::assertSame( $second->value, (string) $second_public_run_id );
+		self::assertSame( $first->value, (string) $previous_public_run_id );
 		self::assertSame(
 			array(
-				array( $first->value, $first_args, null ),
-				array( $second->value, $second_args, $first->value ),
+				array( $first_public_run_id, $first_args, null ),
+				array( $second_public_run_id, $second_args, $previous_public_run_id ),
 			),
-			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY )
+			$completed
 		);
 	}
 
@@ -911,7 +922,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', 75 );
 		$this->chunked_job->on_process = static function ( array $chunk, ChunkContext $context ) use ( $current ): void {
 			self::assertSame( $current, $chunk );
-			self::assertSame( self::RUN_ID, $context->get_run_id() );
+			self::assertSame( self::RUN_ID, (string) $context->get_run_id() );
 			self::assertSame( self::ARGS, $context->get_start_args() );
 			$context->enqueue( array( 'chunk' => 'appended' ) );
 			$context->prepend( array( 'chunk' => 'prepended-1' ) );

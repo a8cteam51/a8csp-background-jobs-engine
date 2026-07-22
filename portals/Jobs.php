@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\DuplicateRegistrationException;
@@ -228,7 +229,7 @@ final readonly class Jobs {
 	 * @return  Run
 	 */
 	private function run( string $name, string $run_id, RunStatus $status ): Run {
-		return new Run( JobIdentity::compose( $this->owner, $name ), $run_id, $status );
+		return new Run( JobIdentity::compose( $this->owner, $name ), RunId::from( $run_id ), $status );
 	}
 
 	/**

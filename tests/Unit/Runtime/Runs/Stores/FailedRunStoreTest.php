@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
@@ -176,7 +177,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsArray( $result->value );
-		self::assertSame( array( 'run-a', 'run-b' ), \array_column( $result->value, 'run_id' ) );
+		self::assertSame( array( self::fixture_run_id( 'run-a' ), self::fixture_run_id( 'run-b' ) ), \array_column( $result->value, 'run_id' ) );
 		self::assertSame(
 			array(
 				array(
@@ -223,8 +224,8 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertInstanceOf( Success::class, $nested );
 		self::assertIsArray( $outer->value );
 		self::assertIsArray( $nested->value );
-		self::assertSame( array( 'run-a' ), \array_column( $outer->value, 'run_id' ) );
-		self::assertSame( array( 'run-a' ), \array_column( $nested->value, 'run_id' ) );
+		self::assertSame( array( self::fixture_run_id( 'run-a' ) ), \array_column( $outer->value, 'run_id' ) );
+		self::assertSame( array( self::fixture_run_id( 'run-a' ) ), \array_column( $nested->value, 'run_id' ) );
 		self::assertSame( 1, $listener_calls );
 		$fired = $GLOBALS['a8csp_bgje_test_fired_actions'] ?? null;
 		self::assertIsArray( $fired );
@@ -480,7 +481,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->fail_next_read();
-		self::assertFalse( $this->store()->remove( 'run-existing' ) );
+		self::assertFalse( $this->store()->remove( self::fixture_run_id( 'run-existing' ) ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertSame( array(), $this->write_queries() );
 
@@ -493,7 +494,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
-		self::assertFalse( $this->store()->remove( 'run-existing' ) );
+		self::assertFalse( $this->store()->remove( self::fixture_run_id( 'run-existing' ) ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
@@ -645,7 +646,8 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
 	 */
 	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: $run_id, attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: $summary, failed_chunk: null );
+		$wire_id = null === RunId::try_from( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: $summary, failed_chunk: null );
 
 		return array(
 			'failed_at'  => $failed_at,
@@ -653,6 +655,20 @@ final class FailedRunStoreTest extends TestCase {
 			'failure'    => $failure,
 			'error'      => new EngineError( $summary ),
 		);
+	}
+
+	/**
+	 * Returns one canonical identifier for a human-readable fixture label.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $label Stable fixture label.
+	 *
+	 * @return  string
+	 */
+	private static function fixture_run_id( string $label ): string {
+		return \sprintf( '%020d-%019u', self::NOW, \crc32( $label ) );
 	}
 
 	/**
@@ -666,7 +682,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  bool
 	 */
 	private function record_entry( array $entry ): bool {
-		return $this->store()->record( $entry['failure']->run_id, $entry['failed_at'], $entry['start_args'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
+		return $this->store()->record( (string) $entry['failure']->run_id, $entry['failed_at'], $entry['start_args'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
 	}
 
 	/**

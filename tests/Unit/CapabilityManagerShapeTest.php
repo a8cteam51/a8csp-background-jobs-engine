@@ -35,10 +35,10 @@ final class CapabilityManagerShapeTest extends TestCase {
 			'dispatch' => array( array( 'string' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
 		),
 		'Runs'      => array(
-			'inspect'        => array( array( 'string', 'string' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
+			'inspect'        => array( array( 'string', self::ROOT_NAMESPACE . 'Run\\RunId' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
 			'last_completed' => array( array( 'string' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error|null' ),
-			'retry_failed'   => array( array( 'string', 'string' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
-			'cancel'         => array( array( 'string', 'string' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
+			'retry_failed'   => array( array( 'string', self::ROOT_NAMESPACE . 'Run\\RunId' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
+			'cancel'         => array( array( 'string', self::ROOT_NAMESPACE . 'Run\\RunId' ), self::ROOT_NAMESPACE . 'Run\\Run|WP_Error' ),
 		),
 	);
 

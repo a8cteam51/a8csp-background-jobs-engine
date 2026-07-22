@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 
@@ -166,16 +167,16 @@ final class OverlapLockTest extends IntegrationTestCase {
 		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
 			'a8csp_jobs_engine/superseded/' . self::RECLAIM_IDENTITY,
-			static function ( string $run_id, array $args ) use ( &$named_superseded ): void {
-				$named_superseded[] = array( $run_id, $args );
+			static function ( RunId $run_id, array $args ) use ( &$named_superseded ): void {
+				$named_superseded[] = array( (string) $run_id, $args );
 			},
 			10,
 			2
 		);
 		\add_action(
 			'a8csp_jobs_engine/superseded',
-			static function ( string $name, string $run_id, array $args ) use ( &$generic_superseded ): void {
-				$generic_superseded[] = array( $name, $run_id, $args );
+			static function ( string $name, RunId $run_id, array $args ) use ( &$generic_superseded ): void {
+				$generic_superseded[] = array( $name, (string) $run_id, $args );
 			},
 			10,
 			3

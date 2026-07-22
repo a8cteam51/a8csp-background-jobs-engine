@@ -22,12 +22,12 @@ final readonly class Run {
 	 * @version 1.0.0
 	 *
 	 * @param   string    $identity Complete {owner}:{name} job or chunked-job identity.
-	 * @param   string    $run_id   Run identifier.
+	 * @param   RunId     $id       Run identifier.
 	 * @param   RunStatus $status   Run lifecycle state at projection time.
 	 */
 	public function __construct(
 		public string $identity,
-		public string $run_id,
+		public RunId $id,
 		public RunStatus $status,
 	) {}
 

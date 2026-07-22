@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext as RunContextContract;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -42,8 +43,8 @@ final readonly class RunContext implements RunContextContract {
 	 * @version 1.0.0
 	 */
 	#[\Override]
-	public function get_run_id(): string {
-		return $this->run_id;
+	public function get_run_id(): RunId {
+		return RunId::from( $this->run_id );
 	}
 
 	/**

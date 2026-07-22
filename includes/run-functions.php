@@ -1,6 +1,8 @@
 <?php declare( strict_types=1 );
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -18,7 +20,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
  */
 #[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 function a8csp_bgje_inspect_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->runs()->inspect( $name, $run_id );
+	$id = RunId::try_from( $run_id );
+	if ( null === $id ) {
+		return new \WP_Error( ErrorCode::InvalidArgument->value, 'Run identifier is malformed; pass a run ID the engine returned.' );
+	}
+
+	return a8csp_bgje( $owner )->runs()->inspect( $name, $id );
 }
 
 /**
@@ -51,7 +58,12 @@ function a8csp_bgje_last_completed_run( string $owner, string $name ): Run|null|
  */
 #[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 function a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->runs()->retry_failed( $name, $run_id );
+	$id = RunId::try_from( $run_id );
+	if ( null === $id ) {
+		return new \WP_Error( ErrorCode::InvalidArgument->value, 'Run identifier is malformed; pass a run ID the engine returned.' );
+	}
+
+	return a8csp_bgje( $owner )->runs()->retry_failed( $name, $id );
 }
 
 /**
@@ -68,5 +80,10 @@ function a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_i
  */
 #[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 function a8csp_bgje_cancel_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
-	return a8csp_bgje( $owner )->runs()->cancel( $name, $run_id );
+	$id = RunId::try_from( $run_id );
+	if ( null === $id ) {
+		return new \WP_Error( ErrorCode::InvalidArgument->value, 'Run identifier is malformed; pass a run ID the engine returned.' );
+	}
+
+	return a8csp_bgje( $owner )->runs()->cancel( $name, $id );
 }

@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 
@@ -47,14 +48,14 @@ final readonly class Runs {
 	 * @version 1.0.0
 	 *
 	 * @param   string $name   Owner-local job or chunked job name.
-	 * @param   string $run_id Run identifier.
+	 * @param   RunId  $run_id Run identifier.
 	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
-	public function inspect( string $name, string $run_id ): Run|\WP_Error {
+	public function inspect( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->inspect( $name, $run_id );
+			$result = $this->client()->runs()->inspect( $name, (string) $run_id );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -63,7 +64,7 @@ final readonly class Runs {
 			}
 
 			// The public projection covers every internal run status, so from() always resolves here.
-			return $this->run( $name, $run_id, RunStatus::from( $result->value->value ) );
+			return $this->run( $name, (string) $run_id, RunStatus::from( $result->value->value ) );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
@@ -107,14 +108,14 @@ final readonly class Runs {
 	 * @version 1.0.0
 	 *
 	 * @param   string $name   Owner-local job or chunked job name.
-	 * @param   string $run_id Retained failed-run identifier.
+	 * @param   RunId  $run_id Retained failed-run identifier.
 	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-	public function retry_failed( string $name, string $run_id ): Run|\WP_Error {
+	public function retry_failed( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->retry_failed( $name, $run_id );
+			$result = $this->client()->runs()->retry_failed( $name, (string) $run_id );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -134,19 +135,19 @@ final readonly class Runs {
 	 * @version 1.0.0
 	 *
 	 * @param   string $name   Owner-local job or chunked job name.
-	 * @param   string $run_id Retained run identifier.
+	 * @param   RunId  $run_id Retained run identifier.
 	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
-	public function cancel( string $name, string $run_id ): Run|\WP_Error {
+	public function cancel( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->cancel( $name, $run_id );
+			$result = $this->client()->runs()->cancel( $name, (string) $run_id );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
 
-			return $this->run( $name, $run_id, RunStatus::Cancelled );
+			return $this->run( $name, (string) $run_id, RunStatus::Cancelled );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
@@ -188,7 +189,7 @@ final readonly class Runs {
 	 * @return  Run
 	 */
 	private function run( string $name, string $run_id, RunStatus $status ): Run {
-		return new Run( JobIdentity::compose( $this->owner, $name ), $run_id, $status );
+		return new Run( JobIdentity::compose( $this->owner, $name ), RunId::from( $run_id ), $status );
 	}
 
 	/**

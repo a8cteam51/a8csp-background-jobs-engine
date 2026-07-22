@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Run\Runs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
@@ -588,8 +589,12 @@ final class DispatcherCancelTest extends TestCase {
 	private function assert_successful_cancel( mixed $result, string $identity, string $run_id ): void {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $run_id, $result->value );
-		self::assertSame( array( array( $run_id, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled/' . $identity ) );
-		self::assertSame( array( array( $identity, $run_id, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled' ) );
+		$named_cancelled = $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled/' . $identity );
+		$public_run_id   = $named_cancelled[0][0] ?? null;
+		self::assertInstanceOf( RunId::class, $public_run_id );
+		self::assertSame( $run_id, (string) $public_run_id );
+		self::assertSame( array( array( $public_run_id, self::ARGS ) ), $named_cancelled );
+		self::assertSame( array( array( $identity, $public_run_id, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled' ) );
 		$this->assert_group_clear( $identity . '|' . $run_id );
 		$this->rig->assert_cancelled();
 	}

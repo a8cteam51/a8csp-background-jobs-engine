@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -63,16 +64,16 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$failed                  = array();
 		\add_action(
 			'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
-				$named_retry_scheduled[] = array( $run_id, $start_args, $attempt, $delay );
+			static function ( RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
+				$named_retry_scheduled[] = array( (string) $run_id, $start_args, $attempt, $delay );
 			},
 			10,
 			4
 		);
 		\add_action(
 			'a8csp_jobs_engine/retry_scheduled',
-			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
-				$generic_retry_scheduled[] = array( $name, $run_id, $start_args, $attempt, $delay );
+			static function ( string $name, RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
+				$generic_retry_scheduled[] = array( $name, (string) $run_id, $start_args, $attempt, $delay );
 			},
 			10,
 			5
@@ -102,7 +103,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertInstanceOf( RunFailure::class, $failure );
 		$expected_message = \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class );
 		self::assertSame( self::IDENTITY, $failure->identity );
-		self::assertSame( $run_id, $failure->run_id );
+		self::assertSame( $run_id, (string) $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
 		self::assertSame( RunFailureStage::Execution, $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );

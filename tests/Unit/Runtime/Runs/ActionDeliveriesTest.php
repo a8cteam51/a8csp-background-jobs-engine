@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
@@ -126,7 +127,8 @@ final class ActionDeliveriesTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $chunked_job->generate_calls );
 		self::assertCount( 1, $chunked_job->generate_contexts );
-		self::assertSame( $result->value, $chunked_job->generate_contexts[0]->get_run_id() );
+		self::assertInstanceOf( RunId::class, $chunked_job->generate_contexts[0]->get_run_id() );
+		self::assertSame( $result->value, (string) $chunked_job->generate_contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $chunked_job->generate_contexts[0]->get_start_args() );
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] );
@@ -181,7 +183,7 @@ final class ActionDeliveriesTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		self::assertCount( 1, $this->job->contexts );
-		self::assertSame( $run_id, $this->job->contexts[0]->get_run_id() );
+		self::assertSame( $run_id, (string) $this->job->contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $this->job->contexts[0]->get_start_args() );
 		self::assertSame(
 			array(
@@ -193,15 +195,19 @@ final class ActionDeliveriesTest extends TestCase {
 			),
 			$this->job->completed_calls
 		);
+		$named_completed = $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY );
+		$public_run_id   = $named_completed[0][0] ?? null;
+		self::assertInstanceOf( RunId::class, $public_run_id );
+		self::assertSame( $run_id, (string) $public_run_id );
 		self::assertSame(
 			array(
-				array( $run_id, self::ARGS, null ),
+				array( $public_run_id, self::ARGS, null ),
 			),
-			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY )
+			$named_completed
 		);
 		self::assertSame(
 			array(
-				array( self::IDENTITY, $run_id, self::ARGS, null ),
+				array( self::IDENTITY, $public_run_id, self::ARGS, null ),
 			),
 			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' )
 		);

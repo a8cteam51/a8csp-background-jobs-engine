@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -213,10 +214,10 @@ final class ApiTest extends TestCase {
 		$observed  = array();
 		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
-		$callbacks['a8csp_jobs_engine/completed/consumer-plugin:sync'] = static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( $client, &$observed ): void {
+		$callbacks['a8csp_jobs_engine/completed/consumer-plugin:sync'] = static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $client, &$observed ): void {
 			$result = $client->runs()->last_completed_run_id( 'sync' );
 			self::assertInstanceOf( Success::class, $result );
-			$observed[] = array( $previous_completed_run_id, $result->value );
+			$observed[] = array( null === $previous_completed_run_id ? null : (string) $previous_completed_run_id, $result->value );
 		};
 
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;

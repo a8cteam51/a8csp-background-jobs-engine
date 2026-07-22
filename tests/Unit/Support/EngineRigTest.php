@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Support;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -65,7 +66,12 @@ final class EngineRigTest extends TestCase {
 			self::assertSame( array( self::ARGS ), $job->calls );
 			$rig->assert_completed();
 			$rig->assert_no_retry();
-			self::assertSame( array( self::IDENTITY, self::RUN_ID, self::ARGS, null ), $rig->hooks()->fired( 'a8csp_jobs_engine/completed' )[0] ?? null );
+			$completed = $rig->hooks()->fired( 'a8csp_jobs_engine/completed' )[0] ?? null;
+			self::assertIsArray( $completed );
+			$run_id = $completed[1] ?? null;
+			self::assertInstanceOf( RunId::class, $run_id );
+			self::assertSame( self::RUN_ID, (string) $run_id );
+			self::assertSame( array( self::IDENTITY, $run_id, self::ARGS, null ), $completed );
 		} finally {
 			$rig->tear_down();
 		}
@@ -164,7 +170,7 @@ final class EngineRigTest extends TestCase {
 		self::assertSame( 'Job', self::decoded( $run_raw )['kind'] ?? null );
 		self::assertSame( self::ARGS, self::decoded( $run_raw )['start_args'] ?? null );
 
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: self::RUN_ID, attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Engine-authored failure.', failed_chunk: null );
 
 		[ $failed_name, $failed_raw ] = $fixtures->failed( self::NOW, self::ARGS, $failure, new EngineError( $failure->summary ) );
 		self::assertSame( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $failed_name );
