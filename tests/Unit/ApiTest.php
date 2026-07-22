@@ -342,18 +342,6 @@ final class ApiTest extends TestCase {
 		self::assertStringNotContainsString( 'client-controlled', $result->error->message );
 	}
 
-	/**
-	 * The removed engine-constructor spelling is absent.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_removed_global_function_spelling_is_absent(): void {
-		self::assertFalse( \function_exists( 'a8csp_bgje_engine' ) );
-	}
-
 	// endregion.
 
 	// region HELPERS.

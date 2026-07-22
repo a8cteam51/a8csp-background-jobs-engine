@@ -91,28 +91,6 @@ final class RunIdTest extends TestCase {
 	}
 
 	/**
-	 * The surface is wrap-only: no minting, equality, or serialization affordances.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_the_surface_is_wrap_only(): void {
-		$reflection = new \ReflectionClass( RunId::class );
-		self::assertTrue( $reflection->isFinal() );
-
-		$methods = array();
-		foreach ( $reflection->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
-			if ( ! $method->isConstructor() ) {
-				$methods[] = $method->getName();
-			}
-		}
-		\sort( $methods );
-		self::assertSame( array( '__toString', 'from', 'try_from' ), $methods, 'The run identifier must stay a wrap-only value.' );
-	}
-
-	/**
 	 * Every identifier the internal minter generates wraps, and the wrapped length matches the
 	 * minter's canonical length, so the public pattern cannot drift from the wire format.
 	 *

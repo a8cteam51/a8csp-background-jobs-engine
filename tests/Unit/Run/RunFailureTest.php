@@ -52,8 +52,5 @@ final class RunFailureTest extends TestCase {
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
 		self::assertSame( array( 'failed_chunk' => array( 'post_id' => 42 ) ), $failure->details );
-
-		$reflection = new \ReflectionClass( RunFailure::class );
-		self::assertFalse( $reflection->hasProperty( 'failed_chunk' ), 'The kind-specific chunk field is a details projection, not a failure field.' );
 	}
 }

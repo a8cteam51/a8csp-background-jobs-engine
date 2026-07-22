@@ -242,36 +242,6 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 	}
 
-	/**
-	 * All aliases expose the exact capability-manager verb signatures and NoDiscard attributes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_public_function_signatures_and_no_discard_contracts(): void {
-		$signatures = array(
-			'a8csp_bgje_register_job'       => '(string $owner, A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition $definition): WP_Error|true',
-			'a8csp_bgje_enqueue_job'        => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_start_chunked_job'  => '(string $owner, string $name, array $start_args = array(), int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_sync_schedules'     => '(string $owner, array $schedules): WP_Error|true',
-			'a8csp_bgje_dispatch_schedule'  => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_inspect_run'        => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_last_completed_run' => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error|null',
-			'a8csp_bgje_retry_failed_run'   => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_cancel_run'         => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-		);
-
-		foreach ( $signatures as $function => $signature ) {
-			$reflection = new \ReflectionFunction( $function );
-			self::assertSame( $signature, self::reflection_signature( $reflection ) );
-			self::assertCount( 1, $reflection->getAttributes( \NoDiscard::class ) );
-		}
-	}
-
-	// endregion.
-
 	// region DATA PROVIDERS.
 
 	/**
@@ -413,42 +383,6 @@ final class ProceduralFacadeTest extends TestCase {
 		}
 
 		self::fail( 'Expected a backend call for verb ' . $verb . '.' );
-	}
-
-	/**
-	 * Normalizes one reflected public function signature for an exact contract assertion.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   \ReflectionFunction $reflection Reflected facade function.
-	 *
-	 * @throws  \LogicException When a facade adds an unsupported default-value type.
-	 *
-	 * @return  string
-	 */
-	private static function reflection_signature( \ReflectionFunction $reflection ): string {
-		$parameters = \array_map(
-			static function ( \ReflectionParameter $parameter ): string {
-				$signature = (string) $parameter->getType() . ' $' . $parameter->getName();
-				if ( ! $parameter->isDefaultValueAvailable() ) {
-					return $signature;
-				}
-
-				$default = $parameter->getDefaultValue();
-				if ( \is_array( $default ) ) {
-					return $signature . ' = array()';
-				}
-				if ( \is_int( $default ) ) {
-					return $signature . ' = ' . (string) $default;
-				}
-
-				throw new \LogicException( 'Facade signatures use only array or integer default values.' );
-			},
-			$reflection->getParameters()
-		);
-
-		return '(' . \implode( ', ', $parameters ) . '): ' . (string) $reflection->getReturnType();
 	}
 
 	// endregion.

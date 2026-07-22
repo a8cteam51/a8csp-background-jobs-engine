@@ -37,6 +37,39 @@ final class RunStateTest extends TestCase {
 	// region TESTS.
 
 	/**
+	 * The kind-state mutator clones with the replacement payload and leaves everything else equal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_with_kind_state_clones_with_the_replacement_payload(): void {
+		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: array( 'scope' => 'all' ), args_hash: 'stable-hash', kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: 1_700_000_000, heartbeat_at: 1_700_000_000 );
+
+		$payload = array( array( 'site_id' => 7 ) );
+		$next    = $state->with_kind_state( $payload );
+
+		self::assertNotSame( $state, $next );
+		self::assertSame( $payload, $next->kind_state );
+		self::assertSame( array(), $state->kind_state, 'The original state must stay untouched.' );
+
+		self::assertSame( $state->status, $next->status );
+		self::assertSame( $state->kind, $next->kind );
+		self::assertSame( $state->executing, $next->executing );
+		self::assertSame( $state->start_args, $next->start_args );
+		self::assertSame( $state->args_hash, $next->args_hash );
+		self::assertSame( $state->failed_attempts, $next->failed_attempts );
+		self::assertSame( $state->action_sequence, $next->action_sequence );
+		self::assertSame( $state->created_at, $next->created_at );
+		self::assertSame( $state->heartbeat_at, $next->heartbeat_at );
+		self::assertSame( $state->pending, $next->pending );
+		self::assertSame( $state->error, $next->error );
+		self::assertSame( $state->previous_completed_run_id, $next->previous_completed_run_id );
+		self::assertSame( $state->effects, $next->effects );
+	}
+
+	/**
 	 * Attempt increments remain positive and saturate instead of overflowing persisted integers.
 	 *
 	 * @since   1.0.0

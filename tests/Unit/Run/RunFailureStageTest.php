@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Run;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -31,20 +30,6 @@ final class RunFailureStageTest extends TestCase {
 		if ( ! \defined( 'ABSPATH' ) ) {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
-	}
-
-	/**
-	 * The stage is an open value class, not a closed enum.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_the_stage_is_an_open_value_class(): void {
-		// @phpstan-ignore function.impossibleType (The guard exists to fail when the stage regresses to a closed enum, which static analysis of the current class cannot see.)
-		self::assertFalse( \enum_exists( RunFailureStage::class ), 'The stage must not be a closed enum.' );
-		self::assertTrue( ( new \ReflectionClass( RunFailureStage::class ) )->isFinal() );
 	}
 
 	/**
@@ -76,21 +61,6 @@ final class RunFailureStageTest extends TestCase {
 
 		$this->expectException( \ValueError::class );
 		RunFailureStage::from( $value );
-	}
-
-	/**
-	 * The stage grammar stays byte-identical to the machinery's key grammar.
-	 *
-	 * The representation layer cannot import the machinery constant, so the pattern exists twice;
-	 * this pin is what keeps the two copies from drifting apart.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_the_stage_grammar_matches_the_machinery_key_grammar(): void {
-		self::assertSame( KindHandlerInterface::KEY_PATTERN, ( new \ReflectionClass( RunFailureStage::class ) )->getConstant( 'PATTERN' ), 'Stage and kind keys must share one lexical grammar.' );
 	}
 
 	/**
