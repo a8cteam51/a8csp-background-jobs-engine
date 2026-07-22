@@ -30,7 +30,7 @@ final class ScheduleTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 
-		require_once \dirname( __DIR__ ) . '/Engine/Backends/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__ ) . '/Runtime/Backends/wp-json-encode-stub.php';
 	}
 
 	/**

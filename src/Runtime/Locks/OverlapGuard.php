@@ -1,0 +1,833 @@
+<?php declare( strict_types=1 );
+
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
+
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
+
+\defined( 'ABSPATH' ) || exit;
+
+/**
+ * Owns execution-overlap locks stored as WordPress options.
+ *
+ * Nobody releases a crashed run's lock; the next claimant replaces it after its heartbeat age
+ * exceeds the caller-resolved staleness window. The stale row is deleted only while its exact raw
+ * value still matches, so a losing claimant cannot clobber the winner. Reclaim can double-fire when
+ * a crashed process revives after its lock has been reclaimed. Replace takeover has the same residual
+ * while an incumbent is inside a callback: PHP cannot abort it, so it finishes that callback and then
+ * fences. Clients' idempotency contract covers both windows. A leaked lock carrying a pre-credited
+ * execution lease reclaims only after the credited runtime plus the staleness window elapses.
+ * Malformed rows are not held and follow the same value-conditioned reclaim path.
+ *
+ * LockWindows resolves the 15-minute default, lock-staleness filter, and
+ * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
+ *
+ * @internal
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ */
+final readonly class OverlapGuard {
+	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Number of SHA-256 characters retained for malformed-row correlation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int MALFORMED_RAW_HASH_LENGTH = 16;
+
+	/**
+	 * Prefix for execution-overlap lock option names.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	public const string OPTION_PREFIX = 'a8csp_bgje_overlap_lock_';
+
+	// endregion
+
+	// region MAGIC METHODS
+
+	/**
+	 * Constructor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   ClockInterface  $clock  Timestamp source.
+	 * @param   LoggerInterface $logger Log event sink.
+	 * @param   OptionRows      $rows   Authoritative raw lock-row I/O.
+	 */
+	public function __construct(
+		private ClockInterface $clock,
+		private LoggerInterface $logger,
+		private OptionRows $rows,
+	) {}
+
+	// endregion
+
+	// region METHODS
+
+	/**
+	 * Claims an absent lock, refreshes a fresh owned lock, or replaces a stale or malformed row.
+	 *
+	 * Re-claiming a fresh lock with the same run identifier is idempotent: it refreshes the
+	 * heartbeat and returns Claimed without changing the original claim timestamp.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity         Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash        Stable single-flight identity.
+	 * @param   string $run_id           Claiming run identifier.
+	 * @param   int    $staleness_window Caller-resolved staleness window in seconds.
+	 *
+	 * @return  LockClaimOutcome
+	 */
+	public function claim( string $identity, string $args_hash, string $run_id, int $staleness_window ): LockClaimOutcome {
+		$key      = $this->option_name( $identity, $args_hash );
+		$now      = $this->clock->now()->getTimestamp();
+		$new_lock = self::new_lock( $run_id, $now );
+
+		if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
+			return LockClaimOutcome::Claimed;
+		}
+
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			return LockClaimOutcome::Held;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return LockClaimOutcome::Held;
+		}
+
+		$lock = self::parse( $raw );
+		if ( null === $lock ) {
+			return $this->reclaim( $key, $raw, null, $new_lock, $identity, $args_hash, $run_id );
+		}
+
+		if ( self::is_stale( $lock, $now, $staleness_window ) ) {
+			return $this->reclaim( $key, $raw, $lock, $new_lock, $identity, $args_hash, $run_id );
+		}
+
+		if ( $run_id !== $lock['run_id'] ) {
+			return LockClaimOutcome::Held;
+		}
+
+		$lock['heartbeat_at'] = $now;
+
+		return RowWriteOutcome::Won === $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) )
+			? LockClaimOutcome::Claimed
+			: LockClaimOutcome::Held;
+	}
+
+	/**
+	 * Returns the owner named by the current complete lock row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash Stable single-flight identity.
+	 *
+	 * @return  AbstractResult<string|null, EngineError>
+	 */
+	#[\NoDiscard( 'a lock-owner read outcome must be handled, not dropped' )]
+	public function owner_run_id( string $identity, string $args_hash ): AbstractResult {
+		$selected = $this->rows->read( $this->option_name( $identity, $args_hash ) );
+		if ( $selected->is_failure() ) {
+			return $selected;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return new Success( null );
+		}
+
+		$lock = self::parse( $raw );
+
+		return new Success( $lock['run_id'] ?? null );
+	}
+
+	/**
+	 * Replaces the currently selected lock only while its exact row is unchanged.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity           Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash          Stable single-flight identity.
+	 * @param   string $replacement_run_id Replacement owner.
+	 *
+	 * @return  bool Whether ownership moved to the replacement run.
+	 */
+	public function replace( string $identity, string $args_hash, string $replacement_run_id ): bool {
+		$key      = $this->option_name( $identity, $args_hash );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			return false;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return false;
+		}
+
+		$now = $this->clock->now()->getTimestamp();
+
+		return RowWriteOutcome::Won === $this->rows->compare_and_swap( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) );
+	}
+
+	/**
+	 * Refreshes liveness only while the run still owns the exact selected lock row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $identity              Complete owner-qualified job or chunked job identity.
+	 * @param   string   $args_hash             Stable single-flight identity.
+	 * @param   string   $run_id                Owning run identifier.
+	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time. A future value marks
+	 *                                          expected callback work or retry fire as the run's legitimate sign of life.
+	 * @param   int|null $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
+	 *
+	 * @return  HeartbeatOutcome Ownership classification after the heartbeat attempt.
+	 */
+	#[\NoDiscard( 'a lock-heartbeat outcome must be handled, not dropped' )]
+	public function heartbeat( string $identity, string $args_hash, string $run_id, ?int $at = null, ?int $expected_heartbeat_at = null ): HeartbeatOutcome {
+		$key      = $this->option_name( $identity, $args_hash );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			$this->logger->warning(
+				'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
+				array(
+					'key'       => $key,
+					'name'      => $identity,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
+
+			return HeartbeatOutcome::Indeterminate;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return HeartbeatOutcome::Lost;
+		}
+
+		$lock = self::parse( $raw );
+		if ( null === $lock || $run_id !== $lock['run_id'] ) {
+			return HeartbeatOutcome::Lost;
+		}
+		if ( null !== $expected_heartbeat_at && $expected_heartbeat_at !== $lock['heartbeat_at'] ) {
+			return HeartbeatOutcome::GenerationMismatch;
+		}
+
+		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
+
+		$write = $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) );
+		if ( RowWriteOutcome::Won === $write ) {
+			return HeartbeatOutcome::Owned;
+		}
+		if ( RowWriteOutcome::WriteFailed === $write ) {
+			$this->logger->warning(
+				'Execution-overlap lock heartbeat could not write the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
+				array(
+					'key'       => $key,
+					'name'      => $identity,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
+
+			return HeartbeatOutcome::Indeterminate;
+		}
+
+		// Ownership moved after selection, so execution cannot continue under this lock.
+		return null !== $expected_heartbeat_at ? HeartbeatOutcome::GenerationMismatch : HeartbeatOutcome::Lost;
+	}
+
+	/**
+	 * Deletes a lock only while the terminating run owns the exact selected row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash Stable single-flight identity.
+	 * @param   string $run_id    Owning run identifier.
+	 *
+	 * @return  bool Whether this run confirmed a clean release of, or absence of ownership over, the selected lock generation.
+	 */
+	public function release( string $identity, string $args_hash, string $run_id ): bool {
+		$key      = $this->option_name( $identity, $args_hash );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			$this->logger->warning(
+				'Execution-overlap lock release could not read the lock row; the staleness sweep reclaims the leaked key.',
+				array(
+					'key'       => $key,
+					'name'      => $identity,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
+
+			return false;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return true;
+		}
+
+		$lock = self::parse( $raw );
+		if ( null === $lock || $run_id !== $lock['run_id'] ) {
+			return true;
+		}
+
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $key, $raw );
+	}
+
+	/**
+	 * Returns whether a complete lock exists without exceeding the supplied staleness window.
+	 *
+	 * A heartbeat exactly one window old remains fresh; only a greater age is stale. Malformed rows
+	 * are not held, so a subsequent claim can reclaim them. An authoritative read failure reports
+	 * held so callers fail closed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity         Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash        Stable single-flight identity.
+	 * @param   int    $staleness_window Caller-resolved staleness window in seconds.
+	 *
+	 * @return  bool
+	 */
+	public function is_held( string $identity, string $args_hash, int $staleness_window ): bool {
+		$selected = $this->rows->read( $this->option_name( $identity, $args_hash ) );
+		if ( $selected->is_failure() ) {
+			return true;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return false;
+		}
+
+		$lock = self::parse( $raw );
+
+		return null !== $lock && ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness_window );
+	}
+
+	/**
+	 * Returns one exact raw lock snapshot and its validated schema for maintenance.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash Stable single-flight identity.
+	 *
+	 * @return  AbstractResult<array{raw: string, lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null}|null, EngineError>
+	 */
+	#[\NoDiscard( 'a persisted-lock read outcome must be handled, not dropped' )]
+	public function inspect_persisted_lock( string $identity, string $args_hash ): AbstractResult {
+		$selected = $this->rows->read( $this->option_name( $identity, $args_hash ) );
+		if ( $selected->is_failure() ) {
+			return $selected;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return new Success( null );
+		}
+
+		return new Success(
+			array(
+				'raw'  => $raw,
+				'lock' => self::parse( $raw ),
+			)
+		);
+	}
+
+	/**
+	 * Reads one persisted lock and reclaims a malformed row only while its exact raw value matches.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash Stable single-flight identity.
+	 *
+	 * @return  MaintenanceLockSweep Actionable owner or malformed-row reclaim result.
+	 */
+	#[\NoDiscard( 'a persisted-lock maintenance sweep must be handled, not dropped' )]
+	public function sweep_persisted_lock( string $identity, string $args_hash ): MaintenanceLockSweep {
+		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return new MaintenanceLockSweep( null, false );
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot ) {
+			return new MaintenanceLockSweep( null, false );
+		}
+
+		$lock = $snapshot['lock'];
+		if ( null === $lock ) {
+			return new MaintenanceLockSweep( null, $this->delete_persisted_lock( $identity, $args_hash, $snapshot['raw'] ) );
+		}
+
+		return new MaintenanceLockSweep( $lock['run_id'], false );
+	}
+
+	/**
+	 * Parses a canonical work identity and argument hash from one overlap-lock option name.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $option_name Complete option name.
+	 *
+	 * @return  array{name: string, args_hash: string}|null
+	 */
+	public static function identity_from_option_name( string $option_name ): ?array {
+		$matched = \preg_match( '/\A' . \preg_quote( self::OPTION_PREFIX, '/' ) . '(?<name>.+)_(?<args_hash>[a-f0-9]{64})\z/D', $option_name, $matches );
+		if ( 1 !== $matched || null === JobIdentity::parts( $matches['name'] ) ) {
+			return null;
+		}
+
+		return array(
+			'name'      => $matches['name'],
+			'args_hash' => $matches['args_hash'],
+		);
+	}
+
+	/**
+	 * Deletes a stale owned lock after rechecking its exact row and staleness boundary.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity         Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash        Stable single-flight identity.
+	 * @param   string $run_id           Expected lock owner.
+	 * @param   int    $staleness_window Resolved staleness window in seconds.
+	 *
+	 * @return  bool Whether the exact stale row was deleted.
+	 */
+	public function delete_stale_owned_lock( string $identity, string $args_hash, string $run_id, int $staleness_window ): bool {
+		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return false;
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot || null === $snapshot['lock'] ) {
+			return false;
+		}
+
+		$lock = $snapshot['lock'];
+		if (
+			$run_id !== $lock['run_id']
+			|| ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness_window )
+		) {
+			return false;
+		}
+
+		return $this->delete_persisted_lock( $identity, $args_hash, $snapshot['raw'] );
+	}
+
+	/**
+	 * Fences a running run when its owned lock is missing, transferred, or can be stale-deleted exactly.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity         Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash        Stable single-flight identity.
+	 * @param   string $run_id           Expected lock owner.
+	 * @param   int    $staleness_window Resolved staleness window in seconds.
+	 *
+	 * @return  MaintenanceFenceOutcome Typed ownership classification.
+	 */
+	public function fence_abandoned_run( string $identity, string $args_hash, string $run_id, int $staleness_window ): MaintenanceFenceOutcome {
+		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return MaintenanceFenceOutcome::Indeterminate;
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot ) {
+			return MaintenanceFenceOutcome::Abandoned;
+		}
+
+		$lock = $snapshot['lock'];
+		if ( null === $lock ) {
+			return MaintenanceFenceOutcome::Indeterminate;
+		}
+
+		if ( $run_id !== $lock['run_id'] ) {
+			return MaintenanceFenceOutcome::Transferred;
+		}
+
+		if ( ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness_window ) ) {
+			return MaintenanceFenceOutcome::Owned;
+		}
+
+		return $this->delete_persisted_lock( $identity, $args_hash, $snapshot['raw'] )
+			? MaintenanceFenceOutcome::Abandoned
+			: MaintenanceFenceOutcome::Indeterminate;
+	}
+
+	/**
+	 * Classifies run ownership without deleting a stale lock needed by a redelivered action.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash Stable single-flight identity.
+	 * @param   string $run_id    Expected lock owner.
+	 *
+	 * @return  MaintenanceFenceOutcome Typed ownership classification.
+	 */
+	public function classify_run_fence( string $identity, string $args_hash, string $run_id ): MaintenanceFenceOutcome {
+		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return MaintenanceFenceOutcome::Indeterminate;
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot ) {
+			return MaintenanceFenceOutcome::Abandoned;
+		}
+
+		$lock = $snapshot['lock'];
+		if ( null === $lock ) {
+			return MaintenanceFenceOutcome::Indeterminate;
+		}
+
+		return $run_id === $lock['run_id']
+			? MaintenanceFenceOutcome::Owned
+			: MaintenanceFenceOutcome::Transferred;
+	}
+
+	/**
+	 * Prepares the exact lock generation expected by a redelivered action.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash    Stable single-flight identity.
+	 * @param   string $run_id       Expected lock owner.
+	 * @param   int    $claimed_at   Original run claim timestamp.
+	 * @param   int    $heartbeat_at Delivery-generation heartbeat.
+	 * @param   int    $staleness    Resolved lock-staleness window.
+	 *
+	 * @return  RedeliveryFenceOutcome Typed readiness after the preparation attempt.
+	 */
+	public function prepare_run_redelivery_fence( string $identity, string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at, int $staleness ): RedeliveryFenceOutcome {
+		$key         = $this->option_name( $identity, $args_hash );
+		$replacement = array(
+			'run_id'       => $run_id,
+			'claimed_at'   => $claimed_at,
+			'heartbeat_at' => $heartbeat_at,
+		);
+		$inspected   = $this->inspect_persisted_lock( $identity, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return RedeliveryFenceOutcome::Indeterminate;
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot ) {
+			$write = $this->rows->insert_if_absent( $key, self::serialize( $replacement ) );
+			if ( RowWriteOutcome::Won === $write ) {
+				return RedeliveryFenceOutcome::Ready;
+			}
+			if ( RowWriteOutcome::WriteFailed === $write ) {
+				return RedeliveryFenceOutcome::Indeterminate;
+			}
+
+			return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
+		}
+
+		$lock = $snapshot['lock'];
+		if ( null === $lock ) {
+			$write = $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) );
+			if ( RowWriteOutcome::Won === $write ) {
+				return RedeliveryFenceOutcome::Ready;
+			}
+			if ( RowWriteOutcome::WriteFailed === $write ) {
+				return RedeliveryFenceOutcome::Indeterminate;
+			}
+
+			return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
+		}
+		if ( $run_id !== $lock['run_id'] ) {
+			return RedeliveryFenceOutcome::Transferred;
+		}
+		if ( $heartbeat_at === $lock['heartbeat_at'] ) {
+			return RedeliveryFenceOutcome::Ready;
+		}
+		if ( ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness ) ) {
+			return RedeliveryFenceOutcome::Live;
+		}
+
+		$replacement['claimed_at'] = $lock['claimed_at'];
+		$write                     = $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) );
+		if ( RowWriteOutcome::Won === $write ) {
+			return RedeliveryFenceOutcome::Ready;
+		}
+		if ( RowWriteOutcome::WriteFailed === $write ) {
+			return RedeliveryFenceOutcome::Indeterminate;
+		}
+
+		return $this->classify_redelivery_fence( $identity, $args_hash, $run_id, $heartbeat_at, $staleness );
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Reclassifies a redelivery fence after an exact lock write loses its race.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash    Stable single-flight identity.
+	 * @param   string $run_id       Expected lock owner.
+	 * @param   int    $heartbeat_at Delivery-generation heartbeat.
+	 * @param   int    $staleness    Resolved lock-staleness window.
+	 *
+	 * @return  RedeliveryFenceOutcome Typed readiness after the lost write.
+	 */
+	private function classify_redelivery_fence( string $identity, string $args_hash, string $run_id, int $heartbeat_at, int $staleness ): RedeliveryFenceOutcome {
+		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
+		if ( $inspected->is_failure() ) {
+			return RedeliveryFenceOutcome::Indeterminate;
+		}
+
+		$snapshot = $inspected->value;
+		if ( null === $snapshot || null === $snapshot['lock'] ) {
+			return RedeliveryFenceOutcome::Indeterminate;
+		}
+
+		$lock = $snapshot['lock'];
+		if ( $run_id !== $lock['run_id'] ) {
+			return RedeliveryFenceOutcome::Transferred;
+		}
+		if ( $heartbeat_at === $lock['heartbeat_at'] ) {
+			return RedeliveryFenceOutcome::Ready;
+		}
+
+		return self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness )
+			? RedeliveryFenceOutcome::Indeterminate
+			: RedeliveryFenceOutcome::Live;
+	}
+
+	/**
+	 * Replaces the exact stale or malformed row selected by a losing insert.
+	 *
+	 * The delete predicate prevents this claimant from removing a winner that changes the row after
+	 * selection; a rival that fills the absent row before insertion also wins normally.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                                                         $key       Lock option name.
+	 * @param   string                                                         $raw       Exact selected value.
+	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}|null $old_lock  Parsed stale row, or null when malformed.
+	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}      $new_lock  Replacement row.
+	 * @param   string                                                         $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string                                                         $args_hash Stable single-flight identity.
+	 * @param   string                                                         $run_id    Claiming run identifier.
+	 *
+	 * @return  LockClaimOutcome
+	 */
+	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $identity, string $args_hash, string $run_id ): LockClaimOutcome {
+		if ( RowDeleteOutcome::Deleted !== $this->rows->delete_if_value_matches( $key, $raw ) || RowWriteOutcome::Won !== $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
+			return LockClaimOutcome::Held;
+		}
+
+		if ( null === $old_lock ) {
+			$this->logger->warning(
+				'Reclaimed malformed execution-overlap lock.',
+				array(
+					'name'       => $identity,
+					'args_hash'  => $args_hash,
+					'malformed'  => true,
+					'raw_length' => \strlen( $raw ),
+					'raw_sha256' => \substr( \hash( 'sha256', $raw ), 0, self::MALFORMED_RAW_HASH_LENGTH ),
+					'run_id'     => $run_id,
+				)
+			);
+		} else {
+			$this->logger->warning(
+				'Reclaimed stale execution-overlap lock.',
+				array(
+					'name'        => $identity,
+					'args_hash'   => $args_hash,
+					'dead_run_id' => $old_lock['run_id'],
+					'run_id'      => $run_id,
+				)
+			);
+		}
+
+		return LockClaimOutcome::Reclaimed;
+	}
+
+	/**
+	 * Returns the execution-overlap option name.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash Stable single-flight identity.
+	 *
+	 * @return  string
+	 */
+	private function option_name( string $identity, string $args_hash ): string {
+		return self::OPTION_PREFIX . $identity . '_' . $args_hash;
+	}
+
+	/**
+	 * Returns a newly claimed lock row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $run_id Claiming run identifier.
+	 * @param   int    $now    Claim timestamp.
+	 *
+	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}
+	 */
+	private static function new_lock( string $run_id, int $now ): array {
+		return array(
+			'run_id'       => $run_id,
+			'claimed_at'   => $now,
+			'heartbeat_at' => $now,
+		);
+	}
+
+	/**
+	 * Returns a lock row's exact persisted representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $row Complete lock row.
+	 *
+	 * @throws  \LogicException When WordPress does not serialize the row to a string.
+	 *
+	 * @return  string
+	 */
+	private static function serialize( array $row ): string {
+		$value = \maybe_serialize( $row );
+		if ( ! \is_string( $value ) ) {
+			throw new \LogicException( 'WordPress must serialize an execution-overlap lock row to a string.' );
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Parses only the exact three-field persisted lock shape.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $raw Exact persisted option value.
+	 *
+	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+	 */
+	private static function parse( string $raw ): ?array {
+		$value = RawOptionDecoder::decode( $raw );
+		if (
+			! \is_array( $value )
+			|| 3 !== \count( $value )
+			|| ! \is_string( $value['run_id'] ?? null )
+			|| ! \is_int( $value['claimed_at'] ?? null )
+			|| ! \is_int( $value['heartbeat_at'] ?? null )
+		) {
+			return null;
+		}
+
+		return array(
+			'run_id'       => $value['run_id'],
+			'claimed_at'   => $value['claimed_at'],
+			'heartbeat_at' => $value['heartbeat_at'],
+		);
+	}
+
+	/**
+	 * Returns whether the heartbeat age is strictly greater than the supplied window.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $lock             Lock row.
+	 * @param   int                                                       $now              Current timestamp.
+	 * @param   int                                                       $staleness_window Staleness window in seconds.
+	 *
+	 * @return  bool
+	 */
+	private static function is_stale( array $lock, int $now, int $staleness_window ): bool {
+		return $now - $lock['heartbeat_at'] > $staleness_window;
+	}
+
+	/**
+	 * Deletes one inspected lock only while its exact raw row is unchanged.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash    Stable single-flight identity.
+	 * @param   string $expected_raw Exact inspected row value.
+	 *
+	 * @return  bool Whether the inspected row was deleted.
+	 */
+	private function delete_persisted_lock( string $identity, string $args_hash, string $expected_raw ): bool {
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $this->option_name( $identity, $args_hash ), $expected_raw );
+	}
+
+	// endregion
+}

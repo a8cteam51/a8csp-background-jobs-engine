@@ -59,8 +59,8 @@ final class RunStatusTest extends TestCase {
 	public function test_public_projection_covers_every_internal_run_state(): void {
 		$public_values   = \array_map( static fn ( RunStatus $status ): string => $status->value, RunStatus::cases() );
 		$internal_values = \array_map(
-			static fn ( \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus $status ): string => $status->value,
-			\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus::cases()
+			static fn ( \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus $status ): string => $status->value,
+			\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus::cases()
 		);
 
 		self::assertSame( array(), \array_values( \array_diff( $internal_values, $public_values ) ) );

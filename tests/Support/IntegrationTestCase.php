@@ -3,10 +3,10 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use PHPUnit\Framework\TestCase;
 
 /**

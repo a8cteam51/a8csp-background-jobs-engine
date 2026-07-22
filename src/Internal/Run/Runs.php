@@ -48,7 +48,7 @@ final readonly class Runs {
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
 	 *
-	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, ApiError>
+	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus|null, ApiError>
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 	public function inspect( string $name, string $run_id ): AbstractResult {

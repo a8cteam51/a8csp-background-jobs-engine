@@ -6,10 +6,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 
 /**
@@ -267,7 +267,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 			$gap_status  = $this->action_scheduler_store()->get_status( (string) $action_id );
 			$gap_visible = \as_has_scheduled_action( self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY );
 			$gap_entries = $this->schedule_entries( self::DUPLICATE_OWNER );
-			$gap_sync    = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::DUPLICATE_OWNER )->schedules()->sync( array( $schedule ) );
+			$gap_sync    = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::DUPLICATE_OWNER )->schedules()->sync( array( $schedule ) );
 		};
 		\add_action( 'action_scheduler_completed_action', $on_completed );
 		try {
@@ -368,7 +368,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @phpstan-param list<Schedule> $schedules
 	 */
 	private function assert_sync_succeeds( string $owner, array $schedules ): void {
-		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( $owner )->schedules()->sync( $schedules );
+		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( $owner )->schedules()->sync( $schedules );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
 	}

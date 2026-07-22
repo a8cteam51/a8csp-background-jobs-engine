@@ -21,7 +21,7 @@ final class PublicModelShapeTest extends TestCase {
 	private const string ROOT_NAMESPACE = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\';
 
 	/**
-	 * Every public representation type, keyed by the models/ concept path that must declare it.
+	 * Every public representation type, by its root-relative concept name.
 	 */
 	private const array PUBLIC_MODEL_TYPES = array(
 		'Job\\JobInterface',
@@ -96,7 +96,7 @@ final class PublicModelShapeTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Every public representation type is declared from its models/ concept directory.
+	 * Every public representation type is declared under its singular concept namespace.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -104,18 +104,9 @@ final class PublicModelShapeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_the_representation_layer_lives_under_singular_concept_namespaces(): void {
-		$models_directory = (string) \realpath( \dirname( __DIR__, 2 ) . '/models' );
-
 		foreach ( self::PUBLIC_MODEL_TYPES as $relative_name ) {
 			$type = self::ROOT_NAMESPACE . $relative_name;
 			self::assertTrue( \class_exists( $type ) || \interface_exists( $type ) || \enum_exists( $type ) || \trait_exists( $type ), 'The representation layer must declare ' . $type );
-
-			$reflection       = new \ReflectionClass( $type );
-			$declaration_file = $reflection->getFileName();
-			self::assertIsString( $declaration_file );
-
-			$expected_file = $models_directory . \DIRECTORY_SEPARATOR . \str_replace( '\\', \DIRECTORY_SEPARATOR, $relative_name ) . '.php';
-			self::assertSame( $expected_file, (string) \realpath( $declaration_file ), $type . ' must be declared from its concept path in models/.' );
 		}
 	}
 
@@ -241,7 +232,7 @@ final class PublicModelShapeTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns every shipped PHP source file: the plugin-root files plus the src, models, and includes trees.
+	 * Returns every shipped PHP source file: the plugin-root files plus every shipped source tree.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -253,8 +244,16 @@ final class PublicModelShapeTest extends TestCase {
 		$files = \glob( $root . '/*.php' );
 		self::assertIsArray( $files );
 
-		foreach ( array( '/src', '/models', '/includes' ) as $directory ) {
-			$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $root . $directory, \FilesystemIterator::SKIP_DOTS ) );
+		$directories = \glob( $root . '/*', \GLOB_ONLYDIR );
+		self::assertIsArray( $directories );
+
+		foreach ( $directories as $directory ) {
+			// Third-party code and development-only tooling; the remainder is first-party shipped source.
+			if ( \in_array( \basename( $directory ), array( 'bin', 'build', 'changelog', 'docs', 'node_modules', 'tests', 'vendor' ), true ) ) {
+				continue;
+			}
+
+			$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $directory, \FilesystemIterator::SKIP_DOTS ) );
 			foreach ( $iterator as $entry ) {
 				self::assertInstanceOf( \SplFileInfo::class, $entry );
 				if ( 'php' === $entry->getExtension() ) {

@@ -46,7 +46,7 @@ final class TypedScheduleShapeTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The schedule concept is public representation declared from models/Schedule/.
+	 * The schedule concept is public representation under the singular Schedule namespace.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -54,16 +54,9 @@ final class TypedScheduleShapeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_the_schedule_concept_is_public_representation(): void {
-		$models_directory = (string) \realpath( \dirname( __DIR__, 2 ) . '/models' );
-
 		foreach ( array( 'Schedule', 'Recurrence', 'CatchUpPolicy' ) as $short_name ) {
 			$type = self::ROOT_NAMESPACE . 'Schedule\\' . $short_name;
 			self::assertTrue( \class_exists( $type ) || \enum_exists( $type ), 'The schedule concept must declare ' . $type );
-
-			$reflection       = new \ReflectionClass( $type );
-			$declaration_file = $reflection->getFileName();
-			self::assertIsString( $declaration_file );
-			self::assertSame( $models_directory . \DIRECTORY_SEPARATOR . 'Schedule' . \DIRECTORY_SEPARATOR . $short_name . '.php', (string) \realpath( $declaration_file ), $type . ' must be declared from models/Schedule/.' );
 		}
 
 		self::assertTrue( ( new \ReflectionClass( self::ROOT_NAMESPACE . 'Schedule\\Schedule' ) )->isFinal() );

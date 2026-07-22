@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 
 \defined( 'ABSPATH' ) || exit;
 

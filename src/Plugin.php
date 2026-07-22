@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -38,7 +38,7 @@ final class Plugin {
 	 * @var     array<int, class-string<ComponentInterface>>
 	 */
 	private const array COMPONENTS = array(
-		Engine\Component::class,
+		Runtime\Component::class,
 		CLI\Component::class,
 	);
 

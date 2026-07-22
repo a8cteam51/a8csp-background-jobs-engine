@@ -215,7 +215,7 @@ final class DemoClientTest extends IntegrationTestCase {
 		\add_action(
 			'init',
 			static function () use ( &$api ): void {
-				$api = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( DemoClient::OWNER );
+				$api = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( DemoClient::OWNER );
 			},
 			\PHP_INT_MAX
 		);

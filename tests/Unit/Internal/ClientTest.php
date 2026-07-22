@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedules;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeChunkedJobsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeRunsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeSchedulesEngine;
@@ -51,7 +51,7 @@ final class ClientTest extends TestCase {
 		}
 
 		require_once \dirname( __DIR__ ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Engine/Backends/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__ ) . '/Runtime/Backends/wp-json-encode-stub.php';
 	}
 
 	/**

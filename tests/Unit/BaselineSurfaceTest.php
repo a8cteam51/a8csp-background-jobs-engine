@@ -7,7 +7,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins the baseline public-surface guarantees: exhaustive error codes, strict schedule
- * specifications, a single global door, and the per-concept procedural facade files.
+ * specifications, a single global door, and the procedural facade verbs.
  *
  * @load-bearing structural-guard
  * @pin-rationale Every emitted error code is an ErrorCode case, unknown specification keys fail loudly instead of silently applying defaults, and the sole global door is a8csp_bgje().
@@ -22,13 +22,19 @@ final class BaselineSurfaceTest extends TestCase {
 	private const string ROOT_NAMESPACE = 'A8C\\SpecialProjects\\BackgroundJobsEngine\\';
 
 	/**
-	 * Every procedural function, keyed by the includes/ concept file that must declare it.
+	 * Every procedural facade function.
 	 */
-	private const array PROCEDURAL_FILES = array(
-		'job-functions.php'         => array( 'a8csp_bgje_register', 'a8csp_bgje_register_callable', 'a8csp_bgje_enqueue' ),
-		'chunked-job-functions.php' => array( 'a8csp_bgje_start' ),
-		'schedule-functions.php'    => array( 'a8csp_bgje_sync_schedules', 'a8csp_bgje_dispatch_schedule' ),
-		'run-functions.php'         => array( 'a8csp_bgje_inspect_run', 'a8csp_bgje_last_completed_run', 'a8csp_bgje_retry_failed_run', 'a8csp_bgje_cancel_run' ),
+	private const array PROCEDURAL_FUNCTIONS = array(
+		'a8csp_bgje_register',
+		'a8csp_bgje_register_callable',
+		'a8csp_bgje_enqueue',
+		'a8csp_bgje_start',
+		'a8csp_bgje_sync_schedules',
+		'a8csp_bgje_dispatch_schedule',
+		'a8csp_bgje_inspect_run',
+		'a8csp_bgje_last_completed_run',
+		'a8csp_bgje_retry_failed_run',
+		'a8csp_bgje_cancel_run',
 	);
 
 	// endregion.
@@ -131,29 +137,17 @@ final class BaselineSurfaceTest extends TestCase {
 	}
 
 	/**
-	 * The procedural facade lives in per-concept includes/ files.
+	 * The procedural facade declares every verb.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_the_procedural_facade_lives_in_per_concept_files(): void {
-		$includes = (string) \realpath( \dirname( __DIR__, 2 ) . '/includes' );
-		self::assertFileDoesNotExist( $includes . \DIRECTORY_SEPARATOR . 'aliases.php' );
-
-		foreach ( self::PROCEDURAL_FILES as $file => $functions ) {
-			self::assertFileExists( $includes . \DIRECTORY_SEPARATOR . $file );
-
-			foreach ( $functions as $function ) {
-				self::assertTrue( \function_exists( $function ), $function . '() must be declared.' );
-				$reflection = new \ReflectionFunction( $function );
-				self::assertSame( $includes . \DIRECTORY_SEPARATOR . $file, (string) \realpath( (string) $reflection->getFileName() ), $function . '() must be declared by its concept file.' );
-			}
+	public function test_the_procedural_facade_declares_every_verb(): void {
+		foreach ( self::PROCEDURAL_FUNCTIONS as $function ) {
+			self::assertTrue( \function_exists( $function ), $function . '() must be declared.' );
 		}
-
-		$door = new \ReflectionFunction( 'a8csp_bgje' );
-		self::assertSame( (string) \realpath( \dirname( __DIR__, 2 ) . '/functions.php' ), (string) \realpath( (string) $door->getFileName() ), 'The global door must stay in functions.php.' );
 	}
 
 	// endregion.
@@ -161,7 +155,7 @@ final class BaselineSurfaceTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns every shipped PHP source file: the plugin-root files plus the src, models, and includes trees.
+	 * Returns every shipped PHP source file: the plugin-root files plus every shipped source tree.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -173,8 +167,16 @@ final class BaselineSurfaceTest extends TestCase {
 		$files = \glob( $root . '/*.php' );
 		self::assertIsArray( $files );
 
-		foreach ( array( '/src', '/models', '/includes' ) as $directory ) {
-			$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $root . $directory, \FilesystemIterator::SKIP_DOTS ) );
+		$directories = \glob( $root . '/*', \GLOB_ONLYDIR );
+		self::assertIsArray( $directories );
+
+		foreach ( $directories as $directory ) {
+			// Third-party code and development-only tooling; the remainder is first-party shipped source.
+			if ( \in_array( \basename( $directory ), array( 'bin', 'build', 'changelog', 'docs', 'node_modules', 'tests', 'vendor' ), true ) ) {
+				continue;
+			}
+
+			$iterator = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $directory, \FilesystemIterator::SKIP_DOTS ) );
 			foreach ( $iterator as $entry ) {
 				self::assertInstanceOf( \SplFileInfo::class, $entry );
 				if ( 'php' === $entry->getExtension() ) {

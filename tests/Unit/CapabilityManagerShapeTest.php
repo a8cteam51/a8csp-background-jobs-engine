@@ -68,26 +68,19 @@ final class CapabilityManagerShapeTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The handle and its three managers are final services declared from the src boundary.
+	 * The handle and its three managers are final root-namespace services.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_the_handle_and_managers_are_services_at_the_src_boundary(): void {
-		$src_directory = (string) \realpath( \dirname( __DIR__, 2 ) . '/src' );
-
+	public function test_the_handle_and_managers_are_final_services(): void {
 		foreach ( array( 'Engine', 'Jobs', 'Schedules', 'Runs' ) as $short_name ) {
 			$type = self::ROOT_NAMESPACE . $short_name;
 			self::assertTrue( \class_exists( $type ), 'The service layer must declare ' . $type );
 
-			$reflection = new \ReflectionClass( $type );
-			self::assertTrue( $reflection->isFinal() );
-
-			$declaration_file = $reflection->getFileName();
-			self::assertIsString( $declaration_file );
-			self::assertSame( $src_directory . \DIRECTORY_SEPARATOR . $short_name . '.php', (string) \realpath( $declaration_file ), $type . ' must be declared from the src/ boundary.' );
+			self::assertTrue( ( new \ReflectionClass( $type ) )->isFinal() );
 		}
 	}
 

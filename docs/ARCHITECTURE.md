@@ -26,8 +26,8 @@ every surviving component is initialized before any hook can fire.
   and enqueueing, `chunked-job-functions.php` provides chunked-job starts,
   `schedule-functions.php` provides schedule synchronization and dispatch, and
   `run-functions.php` provides run inspection, retry, and cancellation.
-- `src/` root holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services alongside the
-  bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
+- `portals/` holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services; `src/` root holds
+  the bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
   `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the
   optional defaults-only base, and `src/Plugin.php` the internal composition root — the one file to
   edit when wiring a top-level component into `COMPONENTS`. The main bootstrap registers the
@@ -41,7 +41,7 @@ every surviving component is initialized before any hook can fire.
   contexts, and input and returned value types.
   `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph
   is likewise `@internal`.
-- `src/Engine/` is the engine capability tree: `Component.php` assembles and publishes the
+- `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the
   request-local object graph; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the
   root collaborators; `Backends/` (Action Scheduler preferred, WP-Cron fallback), `Occurrences/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),

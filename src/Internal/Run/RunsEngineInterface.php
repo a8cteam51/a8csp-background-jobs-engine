@@ -29,7 +29,7 @@ interface RunsEngineInterface {
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
 	 *
-	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, ApiError>
+	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus|null, ApiError>
 	 */
 	public function inspect_run( string $identity, string $run_id ): AbstractResult;
 
