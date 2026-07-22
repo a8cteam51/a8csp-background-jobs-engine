@@ -19,7 +19,7 @@ Consumers use four connected surfaces:
 
 - **The Engine handle** — `a8csp_bgje( $owner )` returns an owner-bound `Engine` with `jobs()`, `schedules()`, and `runs()` portals to capability managers.
 - **The public models and execution roles** — compose work with `Job\JobDefinition`, `Job\JobKind`, and `Job\JobOptions`; implement `Job\JobExecution` or `Job\Chunked\ChunkedJobExecution`; declare schedules with `Schedule\Schedule`, `Schedule\Recurrence`, and `Schedule\CatchUpPolicy`; work receives `Job\RunContext` or `Job\Chunked\ChunkContext`; run-producing commands return `Run\Run` snapshots, terminal failures use `Run\RunFailure`, and verb failures return `WP_Error`.
-- **The procedural aliases** — nine `a8csp_bgje_*()` functions take `$owner` first, accept the same `Job\JobDefinition` registration value as the Jobs manager, preserve an import-free array dialect for schedule specifications, and invoke the capability-manager verbs.
+- **The procedural aliases** — nine verb-noun `a8csp_bgje_*()` functions take `$owner` first, accept the same `Job\JobDefinition` registration value as the Jobs manager, preserve an import-free array dialect for schedule specifications, and invoke the capability-manager verbs.
 - **The lifecycle hooks** — observe runs through the `a8csp_jobs_engine/*` actions.
 
 The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run\Run`, `Job\RunContext`, `Job\Chunked\ChunkContext`, and `Run\RunFailure`. The procedural schedule alias preserves arrays and scalars as an import-free schedule dialect.
@@ -168,7 +168,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 
 add_action( 'init', static function (): void {
-	$registered = a8csp_bgje_register(
+	$registered = a8csp_bgje_register_job(
 		'my-plugin',
 		JobDefinition::closure(
 			'email-digest',
@@ -186,7 +186,7 @@ add_action( 'init', static function (): void {
 }, 2 );
 
 function my_plugin_queue_digest( int $user_id ): void {
-	$run = a8csp_bgje_enqueue(
+	$run = a8csp_bgje_enqueue_job(
 		'my-plugin',
 		'email-digest',
 		array( 'user_id' => $user_id ),
@@ -251,7 +251,7 @@ final class RecountCommentsExecution implements ChunkedJobExecution {
 }
 
 add_action( 'init', static function (): void {
-	$registered = a8csp_bgje_register(
+	$registered = a8csp_bgje_register_job(
 		'my-plugin',
 		JobDefinition::chunked_job(
 			RecountCommentsExecution::NAME,
@@ -277,7 +277,7 @@ add_action( 'init', static function (): void {
 }, 2 );
 
 function my_plugin_start_recount(): void {
-	$run = a8csp_bgje_start(
+	$run = a8csp_bgje_start_chunked_job(
 		'my-plugin',
 		RecountCommentsExecution::NAME,
 		array( 'post_type' => 'post' )
@@ -379,7 +379,7 @@ final class PublishWebhookExecution implements JobExecution {
 }
 
 add_action( 'init', static function (): void {
-	$registered = a8csp_bgje_register(
+	$registered = a8csp_bgje_register_job(
 		'my-plugin',
 		JobDefinition::job( PublishWebhookExecution::NAME, new PublishWebhookExecution() )
 	);
@@ -410,13 +410,13 @@ The engine retains up to 20 failed runs per owner-qualified identity for manual 
 
 `a8csp_bgje( string $owner ): Engine` returns the lazy owner-bound handle. Each alias below takes `$owner` first, converts schedule specifications to the corresponding public values where needed, invokes the matching capability-manager verb, and returns the same shape.
 
-The procedural facade is grouped by concept: `includes/job-functions.php` provides job registration and enqueueing, `includes/chunked-job-functions.php` provides chunked-job starts, `includes/schedule-functions.php` provides schedule synchronization and dispatch, and `includes/run-functions.php` provides run inspection, retry, and cancellation.
+The procedural facade is grouped by concept: `includes/job.php` provides job registration and enqueueing, `includes/chunked-job.php` provides chunked-job starts, `includes/schedule.php` provides schedule synchronization and dispatch, and `includes/run.php` provides run inspection, retry, and cancellation.
 
 | Capability-manager verb | Procedural alias | Returns |
 | --- | --- | --- |
-| `jobs()->register( Job\JobDefinition $definition )` | `a8csp_bgje_register( string $owner, Job\JobDefinition $definition )` | `true \| WP_Error` |
-| `jobs()->enqueue( string $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | `a8csp_bgje_enqueue( string $owner, string $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | `Run\Run \| WP_Error` |
-| `jobs()->start( string $name, array $start_args = [], int $priority = 10 )` | `a8csp_bgje_start( string $owner, string $name, array $start_args = [], int $priority = 10 )` | `Run\Run \| WP_Error` |
+| `jobs()->register( Job\JobDefinition $definition )` | `a8csp_bgje_register_job( string $owner, Job\JobDefinition $definition )` | `true \| WP_Error` |
+| `jobs()->enqueue( string $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | `a8csp_bgje_enqueue_job( string $owner, string $name, array $args = [], int $delay_seconds = 0, int $priority = 10 )` | `Run\Run \| WP_Error` |
+| `jobs()->start( string $name, array $start_args = [], int $priority = 10 )` | `a8csp_bgje_start_chunked_job( string $owner, string $name, array $start_args = [], int $priority = 10 )` | `Run\Run \| WP_Error` |
 | `schedules()->sync( Schedule\Schedule ...$schedules )` | `a8csp_bgje_sync_schedules( string $owner, array $schedules )` | `true \| WP_Error` |
 | `schedules()->dispatch( string $name )` | `a8csp_bgje_dispatch_schedule( string $owner, string $name )` | `Run\Run \| WP_Error` |
 | `runs()->inspect( string $name, Run\RunId $run_id )` | `a8csp_bgje_inspect_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
@@ -517,8 +517,8 @@ Register work for each former action hook, then use an owner-bound handle or its
 
 | Action Scheduler | Engine |
 | --- | --- |
-| `as_enqueue_async_action( $hook, $args, $group )` | `a8csp_bgje_enqueue( 'my-plugin', 'name', $args )` |
-| `as_schedule_single_action( $ts, $hook, $args, $group )` | `a8csp_bgje_enqueue( 'my-plugin', 'name', $args, delay_seconds: max( 0, $ts - time() ) )` — a **relative** delay, not a timestamp. |
+| `as_enqueue_async_action( $hook, $args, $group )` | `a8csp_bgje_enqueue_job( 'my-plugin', 'name', $args )` |
+| `as_schedule_single_action( $ts, $hook, $args, $group )` | `a8csp_bgje_enqueue_job( 'my-plugin', 'name', $args, delay_seconds: max( 0, $ts - time() ) )` — a **relative** delay, not a timestamp. |
 | `as_schedule_recurring_action( $ts, $interval, $hook, $args, $group )` | Include `[ 'name' => 'name', 'every' => $interval, 'anchor' => $ts, 'job' => 'name', 'args' => $args ]` in the complete array passed to `a8csp_bgje_sync_schedules( 'my-plugin', [...] )`. The anchor preserves the fixed UTC phase modulo the interval, not the exact first timestamp or site-local time. |
 | `as_unschedule_action( $hook, $args, $group )` | Omit that schedule from the next complete array passed to `a8csp_bgje_sync_schedules()`. |
 | `as_unschedule_all_actions( … )` | `a8csp_bgje_sync_schedules( 'my-plugin', [] )` removes every schedule this owner declares. |

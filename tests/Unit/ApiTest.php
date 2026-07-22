@@ -343,17 +343,15 @@ final class ApiTest extends TestCase {
 	}
 
 	/**
-	 * Removed global spellings do not remain alongside the supported aliases.
+	 * The removed engine-constructor spelling is absent.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_removed_global_function_spellings_are_absent(): void {
-		foreach ( array( 'a8csp_bgje_engine', 'a8csp_bgje_enqueue_job', 'a8csp_bgje_start_chunked_job' ) as $function ) {
-			self::assertFalse( \function_exists( $function ), $function );
-		}
+	public function test_removed_global_function_spelling_is_absent(): void {
+		self::assertFalse( \function_exists( 'a8csp_bgje_engine' ) );
 	}
 
 	// endregion.

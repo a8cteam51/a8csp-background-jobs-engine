@@ -25,9 +25,9 @@ final class BaselineSurfaceTest extends TestCase {
 	 * Every procedural facade function.
 	 */
 	private const array PROCEDURAL_FUNCTIONS = array(
-		'a8csp_bgje_register',
-		'a8csp_bgje_enqueue',
-		'a8csp_bgje_start',
+		'a8csp_bgje_register_job',
+		'a8csp_bgje_enqueue_job',
+		'a8csp_bgje_start_chunked_job',
 		'a8csp_bgje_sync_schedules',
 		'a8csp_bgje_dispatch_schedule',
 		'a8csp_bgje_inspect_run',

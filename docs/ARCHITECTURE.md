@@ -23,10 +23,9 @@ every surviving component is initialized before any hook can fire.
   composition-root accessor `a8csp_bgje_plugin(): Plugin`, and a deterministic loader for the
   procedural facade files; handle and manager construction is lazy, while capability readiness
   starts at `init`.
-- `includes/` groups the procedural facade by concept: `job-functions.php` provides registration
-  and enqueueing, `chunked-job-functions.php` provides chunked-job starts,
-  `schedule-functions.php` provides schedule synchronization and dispatch, and
-  `run-functions.php` provides run inspection, retry, and cancellation.
+- `includes/` groups the procedural facade by concept: `job.php` provides registration and
+  enqueueing, `chunked-job.php` provides chunked-job starts, `schedule.php` provides schedule
+  synchronization and dispatch, and `run.php` provides run inspection, retry, and cancellation.
 - `portals/` holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services; `src/` root holds
   the bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
   `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the
@@ -40,7 +39,7 @@ every surviving component is initialized before any hook can fire.
   `Job\Chunked\ChunkedJobExecution` role. `Schedule\Schedule`, `Schedule\Recurrence`, and
   `Schedule\CatchUpPolicy` form the typed schedule declaration consumed by the public `Schedules`
   service.
-- The root services, `models/`, `a8csp_bgje()`, and the verb-mirror aliases form the SemVer-bound
+- The root services, `models/`, `a8csp_bgje()`, and the verb-noun procedural aliases form the SemVer-bound
   consumer surface: the owner-scoped `Engine` handle and capability managers plus job definitions,
   execution roles, policy, contexts, and input and returned value types.
   `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph

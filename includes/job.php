@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
  * @return  true|\WP_Error
  */
 #[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
-function a8csp_bgje_register( string $owner, JobDefinition $definition ): true|\WP_Error {
+function a8csp_bgje_register_job( string $owner, JobDefinition $definition ): true|\WP_Error {
 	return a8csp_bgje( $owner )->jobs()->register( $definition );
 }
 
@@ -36,6 +36,6 @@ function a8csp_bgje_register( string $owner, JobDefinition $definition ): true|\
  * @return  Run|\WP_Error
  */
 #[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-function a8csp_bgje_enqueue( string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10 ): Run|\WP_Error {
+function a8csp_bgje_enqueue_job( string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10 ): Run|\WP_Error {
 	return a8csp_bgje( $owner )->jobs()->enqueue( $name, $args, $delay_seconds, $priority );
 }

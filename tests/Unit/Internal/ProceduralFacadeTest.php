@@ -20,9 +20,9 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversFunction( 'a8csp_bgje_register' )]
-#[CoversFunction( 'a8csp_bgje_enqueue' )]
-#[CoversFunction( 'a8csp_bgje_start' )]
+#[CoversFunction( 'a8csp_bgje_register_job' )]
+#[CoversFunction( 'a8csp_bgje_enqueue_job' )]
+#[CoversFunction( 'a8csp_bgje_start_chunked_job' )]
 #[CoversFunction( 'a8csp_bgje_sync_schedules' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_schedule' )]
 #[CoversFunction( 'a8csp_bgje_inspect_run' )]
@@ -103,9 +103,9 @@ final class ProceduralFacadeTest extends TestCase {
 		$job         = self::job( 'job' );
 		$chunked_job = self::chunked_job( 'chunked-job' );
 
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, $job ) );
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, $chunked_job ) );
-		self::assert_wp_error( \a8csp_bgje_register( self::OWNER, $job ), 'already_registered' );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $job ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $chunked_job ) );
+		self::assert_wp_error( \a8csp_bgje_register_job( self::OWNER, $job ), 'already_registered' );
 	}
 
 	/**
@@ -117,13 +117,13 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_admission_aliases_delegate_every_argument(): void {
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'job' ) ) );
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::chunked_job( 'chunked-job' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'job' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::chunked_job( 'chunked-job' ) ) );
 		$job_args   = array( 'site_id' => 7 );
 		$start_args = array( 'scope' => 'all' );
 
-		$job_run     = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
-		$chunked_run = self::assert_run( \a8csp_bgje_start( self::OWNER, 'chunked-job', $start_args, 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
+		$job_run     = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
+		$chunked_run = self::assert_run( \a8csp_bgje_start_chunked_job( self::OWNER, 'chunked-job', $start_args, 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
 
 		self::assertNotSame( '', (string) $job_run->id );
 		self::assertNotSame( '', (string) $chunked_run->id );
@@ -145,7 +145,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_aliases_delegate_to_the_bound_engine(): void {
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'scheduled-job' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'scheduled-job' ) ) );
 		$schedules = array(
 			array(
 				'name'     => 'nightly',
@@ -189,10 +189,10 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_inspection_aliases_delegate_to_the_bound_engine(): void {
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'inspect' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'inspect' ) ) );
 		self::assertNull( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ) );
 
-		$admitted = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
+		$admitted = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
 		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Running, $admitted->id );
 		$this->rig->run_due();
 		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
@@ -228,16 +228,16 @@ final class ProceduralFacadeTest extends TestCase {
 				throw new NonRetryableException( 'Retain this failed run.' );
 			}
 		);
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, $failed_job ) );
-		$failed = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $failed_job ) );
+		$failed = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
 		$this->rig->run_due();
 
 		++$this->rig->clock()->timestamp;
 		$retry = self::assert_run( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', (string) $failed->id ), self::OWNER . ':failed', RunStatus::Running );
 		self::assertNotSame( (string) $failed->id, (string) $retry->id );
 
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'cancel' ) ) );
-		$pending   = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'cancel' ) ) );
+		$pending   = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
 		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', (string) $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
 		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 	}
@@ -252,9 +252,9 @@ final class ProceduralFacadeTest extends TestCase {
 	 */
 	public function test_public_function_signatures_and_no_discard_contracts(): void {
 		$signatures = array(
-			'a8csp_bgje_register'           => '(string $owner, A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition $definition): WP_Error|true',
-			'a8csp_bgje_enqueue'            => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_start'              => '(string $owner, string $name, array $start_args = array(), int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
+			'a8csp_bgje_register_job'       => '(string $owner, A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition $definition): WP_Error|true',
+			'a8csp_bgje_enqueue_job'        => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
+			'a8csp_bgje_start_chunked_job'  => '(string $owner, string $name, array $start_args = array(), int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
 			'a8csp_bgje_sync_schedules'     => '(string $owner, array $schedules): WP_Error|true',
 			'a8csp_bgje_dispatch_schedule'  => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
 			'a8csp_bgje_inspect_run'        => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
