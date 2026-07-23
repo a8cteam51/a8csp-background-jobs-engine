@@ -231,7 +231,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command();
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-jobs runs <action> <identity> [<run_id>] [--format=<format>]\n", $result['stdout'] );
+		self::assertSame( "usage: wp a8csp-bgje runs <action> <identity> [<run_id>] [--format=<format>]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -711,7 +711,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_command( 'schedules' );
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-jobs schedules <action> [<owner>] [--owner=<owner>] [--format=<format>] [--yes]\n", $result['stdout'] );
+		self::assertSame( "usage: wp a8csp-bgje schedules <action> [<owner>] [--owner=<owner>] [--format=<format>] [--yes]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -766,7 +766,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Schedule list accepts only --owner and --format; use wp background-jobs schedules list [--owner=<owner>] [--format=<format>].\n", $result['stderr'] );
+		self::assertSame( "Error: Schedule list accepts only --owner and --format; use wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**
@@ -878,7 +878,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_runs_without_required_positionals_use_the_native_synopsis(): void {
-		$expected = "usage: wp background-jobs runs <action> <identity> [<run_id>] [--format=<format>]\n";
+		$expected = "usage: wp a8csp-bgje runs <action> <identity> [<run_id>] [--format=<format>]\n";
 
 		foreach ( array( array(), array( 'list' ) ) as $arguments ) {
 			$result = self::run_runs_command( ...$arguments );
@@ -902,7 +902,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Run list requires exactly one identity and accepts only --format; use wp background-jobs runs list <identity> [--format=<format>].\n", $result['stderr'] );
+		self::assertSame( "Error: Run list requires exactly one identity and accepts only --format; use wp a8csp-bgje runs list <identity> [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**
@@ -1072,7 +1072,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $subcommand  Background-jobs subcommand.
+	 * @param   string $subcommand  a8csp-bgje subcommand.
 	 * @param   string ...$arguments Arguments following the subcommand.
 	 *
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
@@ -1089,7 +1089,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 *
 	 * @phpstan-param list<string> $global_arguments
 	 *
-	 * @param   string $subcommand       Background-jobs subcommand.
+	 * @param   string $subcommand       a8csp-bgje subcommand.
 	 * @param   array  $global_arguments Arguments preceding the registered command.
 	 * @param   string ...$arguments     Arguments following the subcommand.
 	 *
@@ -1109,7 +1109,7 @@ final class CLICommandTest extends IntegrationTestCase {
 				),
 				$global_arguments,
 				array(
-					'background-jobs',
+					'a8csp-bgje',
 					$subcommand,
 				),
 				$arguments
@@ -1264,7 +1264,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private static function purge_usage_error(): string {
-		return 'Error: Purge requires exactly one identity or --all; ' . "use wp background-jobs failed-runs purge <identity> or purge --all.\n";
+		return 'Error: Purge requires exactly one identity or --all; ' . "use wp a8csp-bgje failed-runs purge <identity> or purge --all.\n";
 	}
 
 	// endregion.

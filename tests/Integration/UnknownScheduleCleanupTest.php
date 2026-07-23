@@ -136,7 +136,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			self::assertCount( 3 > $occurrence ? 0 : 1, $warnings );
 		}
 
-		self::assertStringContainsString( 'wp background-jobs schedules remove ' . self::ZOMBIE_OWNER, $warnings[0][1] ?? '' );
+		self::assertStringContainsString( 'wp a8csp-bgje schedules remove ' . self::ZOMBIE_OWNER, $warnings[0][1] ?? '' );
 		$debug_records = \array_values(
 			\array_filter(
 				$log_records,

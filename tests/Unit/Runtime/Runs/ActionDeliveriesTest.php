@@ -435,9 +435,9 @@ final class ActionDeliveriesTest extends TestCase {
 
 		\do_action( ActionDeliveries::DELIVER_HOOK, self::IDENTITY, self::RUN_ID, 1 );
 
-		$this->rig->assert_failed( ErrorCode::UnknownWork );
+		$this->rig->assert_failed( ErrorCode::UnknownJob );
 		$retry = $this->client->retry_failed( self::NAME, self::RUN_ID );
-		$this->assert_failure_code( $retry, ErrorCode::UnknownWork );
+		$this->assert_failure_code( $retry, ErrorCode::UnknownJob );
 	}
 
 	/**

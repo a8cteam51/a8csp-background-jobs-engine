@@ -186,8 +186,8 @@ final class BoundaryErrorMapperTest extends TestCase {
 				'expected_code' => 'engine_unavailable',
 			),
 			'unknown work'          => array(
-				'reason'        => 'unknown_work',
-				'expected_code' => 'unknown_work',
+				'reason'        => 'unknown_job',
+				'expected_code' => 'unknown_job',
 			),
 			'unknown schedule'      => array(
 				'reason'        => 'unknown_schedule',
@@ -203,7 +203,7 @@ final class BoundaryErrorMapperTest extends TestCase {
 			),
 			'storage failure'       => array(
 				'reason'        => 'storage_failure',
-				'expected_code' => 'storage_failure',
+				'expected_code' => 'storage_failed',
 			),
 			'run not retained'      => array(
 				'reason'        => 'run_not_retained',
@@ -256,7 +256,7 @@ final class BoundaryErrorMapperTest extends TestCase {
 			),
 			'storage failure'    => array(
 				'reason'        => 'storage_failure',
-				'expected_code' => 'storage_failure',
+				'expected_code' => 'storage_failed',
 			),
 		);
 	}

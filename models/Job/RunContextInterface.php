@@ -9,6 +9,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 /**
  * Gives one work invocation controlled access to its own run.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

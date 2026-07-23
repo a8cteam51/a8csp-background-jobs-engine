@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -171,8 +172,8 @@ final class ApiTest extends TestCase {
 	public function test_concept_facades_map_internal_failures_to_public_codes(): void {
 		$client = $this->rig->operations( 'consumer-plugin' );
 
-		self::assert_api_failure( $client->dispatch( 'missing-job' ), ErrorCode::UnknownWork, array( 'name' ) );
-		self::assert_api_failure( $client->dispatch( 'missing-chunked-job' ), ErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->dispatch( 'missing-job' ), ErrorCode::UnknownJob, array( 'name' ) );
+		self::assert_api_failure( $client->dispatch( 'missing-chunked-job' ), ErrorCode::UnknownJob, array( 'name' ) );
 		self::assert_api_failure( $client->dispatch_now( 'missing-schedule' ), ErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
 	}
 
@@ -229,6 +230,76 @@ final class ApiTest extends TestCase {
 		$result = $client->last_completed_run_id( 'sync' );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $second, $result->value );
+	}
+
+	/**
+	 * A malformed retained history identifier cannot suppress the next completed hook.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale The malformed predecessor is injected below the typed store boundary; the public hook payload proves hydration excludes it before terminal state is frozen.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_hook_ignores_a_malformed_persisted_history_run_id(): void {
+		$identity = 'consumer-plugin:sync';
+		$client   = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'sync' ) )->definition() );
+
+		$completed = array();
+		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/completed/' . $identity ] = static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$completed ): void {
+			$completed[] = array(
+				'run_id'                    => (string) $run_id,
+				'start_args'                => $start_args,
+				'previous_completed_run_id' => null === $previous_completed_run_id ? null : (string) $previous_completed_run_id,
+			);
+		};
+		$GLOBALS['a8csp_bgje_test_action_callbacks']      = $callbacks;
+
+		$args = array( 'sequence' => 'after-corruption' );
+		++$this->rig->clock()->timestamp;
+		$dispatched = $client->dispatch( 'sync', $args );
+		self::assertInstanceOf( Success::class, $dispatched );
+		self::assertIsString( $dispatched->value );
+		$run_id = $dispatched->value;
+		$raw    = \maybe_serialize(
+			array(
+				'started'  => array( $run_id ),
+				'terminal' => array(
+					array(
+						'run_id' => 'malformed-run-id',
+						'status' => 'completed',
+					),
+				),
+				'by_hash'  => array(),
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( RunHistory::OPTION_PREFIX . $identity, $raw );
+
+		$this->rig->run_due();
+
+		self::assertSame(
+			array(
+				array(
+					'run_id'                    => $run_id,
+					'start_args'                => $args,
+					'previous_completed_run_id' => null,
+				),
+			),
+			$completed
+		);
+		$latest = $client->last_completed_run_id( 'sync' );
+		self::assertInstanceOf( Success::class, $latest );
+		self::assertSame( $run_id, $latest->value );
+		$history = $this->rig->inspection()->runs( $identity )['history'];
+		self::assertIsArray( $history );
+		self::assertSame( array( $run_id ), \array_column( $history, 'run_id' ) );
+		self::assertNotContains( 'malformed-run-id', \array_column( $history, 'run_id' ) );
 	}
 
 	/**
@@ -333,7 +404,7 @@ final class ApiTest extends TestCase {
 
 		$result = $client->retry_failed( 'sync', '00000000001700000000-0000000000000000042' );
 
-		self::assert_api_failure( $result, ErrorCode::StorageFailure, array( 'option_name' ) );
+		self::assert_api_failure( $result, ErrorCode::StorageFailed, array( 'option_name' ) );
 		if ( ! $result instanceof Failure || ! $result->error instanceof BoundaryError ) {
 			throw new \LogicException( 'The storage failure did not retain its public API error.' );
 		}

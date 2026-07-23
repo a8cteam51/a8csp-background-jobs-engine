@@ -130,7 +130,7 @@ jobs:
       plugin-slug: a8csp-background-jobs-engine
       # The artifact smokes without Action Scheduler on purpose: the engine activates and
       # registers its CLI surface in the documented WP-Cron-only degraded posture.
-      extra-smoke-commands: '["help background-jobs"]'
+      extra-smoke-commands: '["help a8csp-bgje"]'
 
   publish:
     name: Publish the release

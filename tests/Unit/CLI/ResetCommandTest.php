@@ -236,7 +236,7 @@ final class ResetCommandTest extends TestCase {
 		$result = CliHarness::run( 'reset', array( 'extra' ), array( 'yes' => true ) );
 
 		self::assertSame( 1, $result->exit_code );
-		self::assertSame( "Error: Reset accepts only --yes; use wp background-jobs reset [--yes].\n", $result->stderr );
+		self::assertSame( "Error: Reset accepts only --yes; use wp a8csp-bgje reset [--yes].\n", $result->stderr );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 	}
 

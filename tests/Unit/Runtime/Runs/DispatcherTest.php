@@ -363,7 +363,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
@@ -459,7 +459,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 
 		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
-		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
+		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$retried = $this->client->dispatch( self::NAME, self::ARGS );
@@ -486,7 +486,7 @@ final class DispatcherTest extends TestCase {
 		);
 
 		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
-		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
+		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$retried = $this->client->dispatch( self::NAME, self::ARGS );
@@ -510,7 +510,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->wpdb()->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->script_result( 'update', false ) );
 
 		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
-		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
+		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
@@ -552,7 +552,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::UNKNOWN_NAME, self::ARGS );
 
-		$error = $this->assert_failure_code( $result, ErrorCode::UnknownWork );
+		$error = $this->assert_failure_code( $result, ErrorCode::UnknownJob );
 		self::assertSame( self::UNKNOWN_IDENTITY, $error->context['name'] ?? null );
 		self::assertSame( $before, $this->public_effects_snapshot() );
 	}
@@ -881,7 +881,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 
-		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}

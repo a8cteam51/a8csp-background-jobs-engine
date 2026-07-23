@@ -162,7 +162,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->boundary_error( $result );
-		self::assertSame( ErrorCode::UnknownWork, $error->code );
+		self::assertSame( ErrorCode::UnknownJob, $error->code );
 		self::assertSame( 'Background-work "runs-tests:missing-target" is not registered; register it before dispatching.', $error->message );
 		self::assertSame( array(), $this->rig->backend()->calls );
 	}
@@ -317,7 +317,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->boundary_error( $result );
-		self::assertSame( ErrorCode::StorageFailure, $error->code );
+		self::assertSame( ErrorCode::StorageFailed, $error->code );
 		self::assertStringContainsString( 'repair WordPress option reads and writes', $error->message );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}

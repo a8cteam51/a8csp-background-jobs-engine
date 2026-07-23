@@ -10,6 +10,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
  * Minor releases may add cases; consumers treat an unknown value as a generic
  * non-terminal or terminal state, as appropriate.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

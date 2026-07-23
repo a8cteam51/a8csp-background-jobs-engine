@@ -541,7 +541,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$error = $this->assert_failure_code( $result, ErrorCode::StorageFailure );
+		$error = $this->assert_failure_code( $result, ErrorCode::StorageFailed );
 		self::assertSame( \sprintf( 'chunked_job "%s" could not confirm the owner of a contended overlap lock; repair database reads and retry the dispatch.', self::IDENTITY ), $error->message );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->start_calls() );
@@ -719,7 +719,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
 		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->start_calls() );
 	}

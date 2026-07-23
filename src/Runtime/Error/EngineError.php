@@ -93,7 +93,7 @@ final readonly class EngineError implements ErrorInterface {
 
 		// Registry persistence failures classify as storage regardless of which path surfaces them.
 		if ( SchedulingErrorReason::StorageFailure === $error->reason ) {
-			return ErrorCode::StorageFailure;
+			return ErrorCode::StorageFailed;
 		}
 
 		return ErrorCode::BackendRejected;

@@ -9,6 +9,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
  *
  * The projection captures the run at response time; it is not a live handle.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

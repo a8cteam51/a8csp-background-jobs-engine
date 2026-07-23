@@ -9,6 +9,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
  *
  * Engine and third-party stages share the persisted kind and lifecycle-stage key grammar.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

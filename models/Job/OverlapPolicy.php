@@ -7,6 +7,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
 /**
  * Policy applied when a job admission overlaps matching work.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

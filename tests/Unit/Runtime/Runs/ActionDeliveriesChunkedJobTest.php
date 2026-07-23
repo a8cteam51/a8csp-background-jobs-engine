@@ -855,7 +855,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		\do_action( ActionDeliveries::DELIVER_HOOK, self::IDENTITY, self::RUN_ID, 2 );
 
-		$this->assert_failure( ErrorCode::UnknownWork, RunFailureStage::execution(), $current );
+		$this->assert_failure( ErrorCode::UnknownJob, RunFailureStage::execution(), $current );
 	}
 
 	/**

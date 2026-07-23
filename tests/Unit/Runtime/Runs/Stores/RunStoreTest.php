@@ -43,15 +43,16 @@ final class RunStoreWakeupProbe {
 final class RunStoreTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const array ARGS      = array(
+	private const array ARGS             = array(
 		'scope'   => 'all',
 		'site_id' => 7,
 	);
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
-	private const string NAME     = 'reports';
-	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
-	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
+	private const string IDENTITY        = self::OWNER . ':' . self::NAME;
+	private const string NAME            = 'reports';
+	private const int NOW                = 1_700_000_000;
+	private const string OWNER           = 'runs-tests';
+	private const string PREVIOUS_RUN_ID = '00000000001699999999-0000000000000000041';
+	private const string RUN_ID          = '00000000001700000000-0000000000000000042';
 
 	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
@@ -484,18 +485,42 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_completed_state_round_trips_its_previous_completed_run_id(): void {
-		$terminal = $this->state()->with_status( RunStatus::Completed )->with_previous_completed_run_id( 'previous-run-id' );
+		$terminal = $this->state()->with_status( RunStatus::Completed )->with_previous_completed_run_id( self::PREVIOUS_RUN_ID );
 		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
 		$this->put_fixture( $fixture );
 
 		$stored = \maybe_unserialize( $fixture[1] );
 		self::assertIsArray( $stored );
-		self::assertSame( 'previous-run-id', $stored['previous_completed_run_id'] ?? null );
+		self::assertSame( self::PREVIOUS_RUN_ID, $stored['previous_completed_run_id'] ?? null );
 		$inspected = $this->store()->inspect( self::RUN_ID );
 		self::assertInstanceOf( Success::class, $inspected );
 		self::assertIsArray( $inspected->value );
 		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
-		self::assertSame( 'previous-run-id', $inspected->value['state']->previous_completed_run_id );
+		self::assertSame( self::PREVIOUS_RUN_ID, $inspected->value['state']->previous_completed_run_id );
+	}
+
+	/**
+	 * A malformed frozen predecessor is dropped without discarding its completed state.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale The malformed predecessor is persisted below the typed store boundary; retaining the completed state allows terminal effects to deliver with a null predecessor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_state_drops_a_malformed_previous_completed_run_id_during_hydration(): void {
+		$terminal = $this->state()->with_status( RunStatus::Completed )->with_previous_completed_run_id( 'malformed-run-id' );
+		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
+		$this->put_fixture( $fixture );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertNull( $inspected->value['state']->previous_completed_run_id );
 	}
 
 	/**

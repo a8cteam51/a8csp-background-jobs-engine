@@ -16,6 +16,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
  * The engine supplies the only implementation; consumers must not implement this interface; methods
  * may be added in minor versions.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

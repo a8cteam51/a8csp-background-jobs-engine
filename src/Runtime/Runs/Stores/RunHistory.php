@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
@@ -422,7 +423,7 @@ final readonly class RunHistory {
 	}
 
 	/**
-	 * Returns only string entries from a persisted list value.
+	 * Returns only canonical run identifiers from a persisted list value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -436,7 +437,7 @@ final readonly class RunHistory {
 			return array();
 		}
 
-		return \array_values( \array_filter( $value, static fn ( mixed $entry ): bool => \is_string( $entry ) ) );
+		return \array_values( \array_filter( $value, static fn ( mixed $entry ): bool => \is_string( $entry ) && null !== RunIdentity::parse( $entry ) ) );
 	}
 
 	/**
@@ -459,6 +460,7 @@ final readonly class RunHistory {
 			if (
 				! \is_array( $entry )
 				|| ! \is_string( $entry['run_id'] ?? null )
+				|| null === RunIdentity::parse( $entry['run_id'] )
 				|| ! \is_string( $entry['status'] ?? null )
 			) {
 				continue;

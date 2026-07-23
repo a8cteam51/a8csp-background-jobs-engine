@@ -51,15 +51,15 @@ final readonly class RunsCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-jobs runs list consumer-plugin:email-digest
-	 *     $ wp background-jobs runs list consumer-plugin:email-digest --format=json
-	 *     $ wp background-jobs runs cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
+	 *     $ wp a8csp-bgje runs list consumer-plugin:email-digest
+	 *     $ wp a8csp-bgje runs list consumer-plugin:email-digest --format=json
+	 *     $ wp a8csp-bgje runs cancel consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 	 *
 	 * A waiting live run has a backend delivery or retry pending. An executing run has an admitted
 	 * lifecycle action in progress, whether engine orchestration or client execution, and a stale
 	 * heartbeat means maintenance can reclaim the abandoned execution. The `recent history` section
 	 * is bounded; `failed store` identifies failures still available to
-	 * `wp background-jobs failed-runs retry`.
+	 * `wp a8csp-bgje failed-runs retry`.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -119,7 +119,7 @@ final readonly class RunsCommand {
 			if ( 3 !== \count( $args ) || array() !== $assoc_args ) {
 				return array(
 					'action'  => 'error',
-					'message' => 'Cancel requires exactly an identity and run_id; use wp background-jobs runs cancel <identity> <run_id>.',
+					'message' => 'Cancel requires exactly an identity and run_id; use wp a8csp-bgje runs cancel <identity> <run_id>.',
 				);
 			}
 			if ( null === JobIdentity::parts( $args[1] ) ) {
@@ -128,7 +128,7 @@ final readonly class RunsCommand {
 					'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
 				);
 			}
-			$run_id = RunId::try_from( $args[2] );
+			$run_id = RunId::tryFrom( $args[2] );
 			if ( null === $run_id ) {
 				return array(
 					'action'  => 'error',
@@ -146,7 +146,7 @@ final readonly class RunsCommand {
 		if ( 2 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'format' ) ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Run list requires exactly one identity and accepts only --format; use wp background-jobs runs list <identity> [--format=<format>].',
+				'message' => 'Run list requires exactly one identity and accepts only --format; use wp a8csp-bgje runs list <identity> [--format=<format>].',
 			);
 		}
 
@@ -206,11 +206,11 @@ final readonly class RunsCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-jobs failed-runs list
-	 *     $ wp background-jobs failed-runs list --owner=consumer-plugin --format=json
-	 *     $ wp background-jobs failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
-	 *     $ wp background-jobs failed-runs purge consumer-plugin:email-digest
-	 *     $ wp background-jobs failed-runs purge --all
+	 *     $ wp a8csp-bgje failed-runs list
+	 *     $ wp a8csp-bgje failed-runs list --owner=consumer-plugin --format=json
+	 *     $ wp a8csp-bgje failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
+	 *     $ wp a8csp-bgje failed-runs purge consumer-plugin:email-digest
+	 *     $ wp a8csp-bgje failed-runs purge --all
 	 *
 	 * List output excludes unreadable entries or whole option rows and reports one count warning on
 	 * STDERR for every format.
@@ -275,7 +275,7 @@ final readonly class RunsCommand {
 				if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'owner', 'format' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'List accepts only --owner and --format; use wp background-jobs failed-runs list [--owner=<owner>] [--format=<format>].',
+						'message' => 'List accepts only --owner and --format; use wp a8csp-bgje failed-runs list [--owner=<owner>] [--format=<format>].',
 					);
 				}
 
@@ -318,7 +318,7 @@ final readonly class RunsCommand {
 				if ( 3 !== \count( $args ) || array() !== $assoc_args ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Retry requires exactly an identity and run_id; use wp background-jobs failed-runs retry <identity> <run_id>.',
+						'message' => 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.',
 					);
 				}
 				if ( null === JobIdentity::parts( $args[1] ) ) {
@@ -327,7 +327,7 @@ final readonly class RunsCommand {
 						'message' => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
 					);
 				}
-				$run_id = RunId::try_from( $args[2] );
+				$run_id = RunId::tryFrom( $args[2] );
 				if ( null === $run_id ) {
 					return array(
 						'action'  => 'error',
@@ -344,7 +344,7 @@ final readonly class RunsCommand {
 				if ( ! self::has_only_keys( $assoc_args, array( 'all' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Purge accepts only --all; use wp background-jobs failed-runs purge <identity> or purge --all.',
+						'message' => 'Purge accepts only --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.',
 					);
 				}
 
@@ -372,7 +372,7 @@ final readonly class RunsCommand {
 
 				return array(
 					'action'  => 'error',
-					'message' => 'Purge requires exactly one identity or --all; use wp background-jobs failed-runs purge <identity> or purge --all.',
+					'message' => 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.',
 				);
 			default:
 				return array(

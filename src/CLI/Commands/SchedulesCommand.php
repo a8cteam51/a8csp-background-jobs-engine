@@ -46,10 +46,10 @@ final readonly class SchedulesCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-jobs schedules list
-	 *     $ wp background-jobs schedules list --owner=consumer-plugin --format=json
-	 *     $ wp background-jobs schedules remove consumer-plugin
-	 *     $ wp background-jobs schedules remove consumer-plugin --yes
+	 *     $ wp a8csp-bgje schedules list
+	 *     $ wp a8csp-bgje schedules list --owner=consumer-plugin --format=json
+	 *     $ wp a8csp-bgje schedules remove consumer-plugin
+	 *     $ wp a8csp-bgje schedules remove consumer-plugin --yes
 	 *
 	 * An overdue `next_due` with `occurrence_visible: no` means no occurrence is visible on currently-ready
 	 * backends. A separately reported dormant backend candidate may retain an occurrence outside that
@@ -113,7 +113,7 @@ final readonly class SchedulesCommand {
 			) {
 				return array(
 					'action'  => 'error',
-					'message' => 'Schedule removal requires exactly one owner and accepts only --yes; use wp background-jobs schedules remove <owner> [--yes].',
+					'message' => 'Schedule removal requires exactly one owner and accepts only --yes; use wp a8csp-bgje schedules remove <owner> [--yes].',
 				);
 			}
 
@@ -143,7 +143,7 @@ final readonly class SchedulesCommand {
 		if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'owner', 'format' ) ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Schedule list accepts only --owner and --format; use wp background-jobs schedules list [--owner=<owner>] [--format=<format>].',
+				'message' => 'Schedule list accepts only --owner and --format; use wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>].',
 			);
 		}
 

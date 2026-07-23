@@ -9,6 +9,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 /**
  * Carries immutable invocation context for one job or chunked job run.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

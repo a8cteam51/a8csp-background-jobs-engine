@@ -10,6 +10,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 /**
  * Executes background work split into independently processed chunks.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

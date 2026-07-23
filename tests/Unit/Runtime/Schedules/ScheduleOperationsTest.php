@@ -296,7 +296,7 @@ final class ScheduleOperationsTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
 		self::assertSame( array(), $backend->calls );
 		$backend->assert_not_scheduled( 'owner-a:nightly' );
 		self::assertSame( $before, $this->raw_registry() );
@@ -365,7 +365,7 @@ final class ScheduleOperationsTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
 		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
 		self::assertSame(
 			array(
@@ -396,7 +396,7 @@ final class ScheduleOperationsTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 		self::assertSame( array(), $this->write_calls() );
@@ -514,7 +514,7 @@ final class ScheduleOperationsTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( BoundaryError::class, $failed->error );
-		self::assertSame( ErrorCode::StorageFailure, $failed->error->code );
+		self::assertSame( ErrorCode::StorageFailed, $failed->error->code );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $fixture[1], $this->raw_registry() );
 		$this->rig->backend()->assert_not_scheduled( 'owner-a:nightly' );

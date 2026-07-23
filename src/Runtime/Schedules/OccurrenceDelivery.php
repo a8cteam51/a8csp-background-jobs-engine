@@ -330,7 +330,7 @@ final readonly class OccurrenceDelivery {
 				if ( null !== $parts ) {
 					$this->logger->warning(
 						\sprintf(
-							'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp background-jobs schedules remove %3$s".',
+							'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp a8csp-bgje schedules remove %3$s".',
 							$registration_key,
 							self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
 							$parts[0]

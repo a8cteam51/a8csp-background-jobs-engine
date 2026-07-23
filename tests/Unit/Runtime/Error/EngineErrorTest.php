@@ -212,7 +212,7 @@ final class EngineErrorTest extends TestCase {
 			),
 			'storage failure'    => array(
 				'reason'        => 'storage_failure',
-				'expected_code' => 'storage_failure',
+				'expected_code' => 'storage_failed',
 			),
 		);
 	}

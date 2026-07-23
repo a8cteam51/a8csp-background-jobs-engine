@@ -37,8 +37,8 @@ final class RecurrenceTest extends TestCase {
 		self::assertNull( $recurrence->anchor );
 		self::assertSame(
 			array(
-				'type'  => 'every',
-				'value' => 1,
+				'kind'     => 'every',
+				'interval' => 1,
 			),
 			$recurrence->fingerprint_value()
 		);
@@ -56,9 +56,9 @@ final class RecurrenceTest extends TestCase {
 		self::assertSame( 3_600, $recurrence->anchor );
 		self::assertSame(
 			array(
-				'type'   => 'every',
-				'value'  => 86_400,
-				'anchor' => 3_600,
+				'kind'     => 'every',
+				'interval' => 86_400,
+				'anchor'   => 3_600,
 			),
 			$recurrence->fingerprint_value()
 		);

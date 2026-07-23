@@ -288,7 +288,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 	 * @return  void
 	 */
 	public function test_internal_failure_maps_every_boundary_error_field(): void {
-		$error = self::assert_wp_error( \a8csp_bgje( self::OWNER )->jobs()->dispatch( 'missing' ), ErrorCode::UnknownWork->value );
+		$error = self::assert_wp_error( \a8csp_bgje( self::OWNER )->jobs()->dispatch( 'missing' ), ErrorCode::UnknownJob->value );
 
 		self::assertSame( 'Background-work "engine-test:missing" is not registered; register it before dispatching.', $error->get_error_message() );
 		self::assertSame( array( 'name' => self::OWNER . ':missing' ), $error->get_error_data() );

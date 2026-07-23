@@ -185,7 +185,7 @@ final class CliHarness {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $subcommand Spoken subcommand below background-jobs.
+	 * @param   string               $subcommand Spoken subcommand below a8csp-bgje.
 	 * @param   array                $args       Positional arguments delivered to the command.
 	 * @param   array<string, mixed> $assoc_args Named arguments delivered to the command.
 	 *
@@ -309,7 +309,7 @@ final class CliHarness {
 			throw new \LogicException( 'WP-CLI did not publish a composite root command.' );
 		}
 
-		$args    = array( 'background-jobs' );
+		$args    = array( 'a8csp-bgje' );
 		$command = $root->find_subcommand( $args );
 
 		return $command instanceof CompositeCommand ? $command : null;
@@ -328,13 +328,13 @@ final class CliHarness {
 	private static function subcommand( string $name ): Subcommand {
 		$root = self::root_command();
 		if ( null === $root ) {
-			throw new \LogicException( 'The background-jobs command root is not registered.' );
+			throw new \LogicException( 'The a8csp-bgje command root is not registered.' );
 		}
 
 		$args    = array( $name );
 		$command = $root->find_subcommand( $args );
 		if ( ! $command instanceof Subcommand ) {
-			throw new \LogicException( \sprintf( 'The background-jobs command "%s" is not registered.', $name ) );
+			throw new \LogicException( \sprintf( 'The a8csp-bgje command "%s" is not registered.', $name ) );
 		}
 
 		return $command;

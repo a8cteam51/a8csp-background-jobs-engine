@@ -516,6 +516,9 @@ final readonly class RunStore {
 		) {
 			return null;
 		}
+		if ( null !== $previous_completed_run_id && null === RunIdentity::parse( $previous_completed_run_id ) ) {
+			$previous_completed_run_id = null;
+		}
 		$stored_pending = $value['pending'] ?? null;
 		$pending        = null;
 		if ( null !== $stored_pending ) {

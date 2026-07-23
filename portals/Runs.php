@@ -19,6 +19,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
  * Owner validation and engine resolution remain lazy until a verb is invoked. Every expected
  * validation, readiness, or engine failure crosses this boundary as a `WP_Error`.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -185,6 +187,7 @@ final readonly class Runs {
 	 * @param   RunStatus $status Public lifecycle state.
 	 *
 	 * @throws  \InvalidArgumentException When the owner or name violates the identity contract.
+	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  Run
 	 */

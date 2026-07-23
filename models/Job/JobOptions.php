@@ -9,6 +9,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
  *
  * Null values select the corresponding engine default.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

@@ -83,8 +83,8 @@ final readonly class ResetCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-jobs reset
-	 *     $ wp background-jobs reset --yes
+	 *     $ wp a8csp-bgje reset
+	 *     $ wp a8csp-bgje reset --yes
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -162,7 +162,7 @@ final readonly class ResetCommand {
 		) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Reset accepts only --yes; use wp background-jobs reset [--yes].',
+				'message' => 'Reset accepts only --yes; use wp a8csp-bgje reset [--yes].',
 			);
 		}
 

@@ -58,7 +58,7 @@ every surviving component is initialized before any hook can fire.
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
   `Locks/`, `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
   on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.
-- `src/CLI/` registers the `wp background-jobs` command surface, gated on WP-CLI.
+- `src/CLI/` registers the `wp a8csp-bgje` command surface, gated on WP-CLI.
 - `languages/` contains the POT generated from the plugin's strings; the release workflow
   regenerates it so archives always ship current strings.
 - `uninstall.php` carries the persisted footprint inline — the `a8csp_bgje_` prefix sweep is the
@@ -70,6 +70,12 @@ every surviving component is initialized before any hook can fire.
 - `.github/workflows/` includes quality, test, audit, CodeQL, workflow-checks, mutation, and
   release automation; the release pipeline builds, smoke-tests the artifact through the shared
   reusable workflow, and publishes prereleases off the stable update channel.
+
+## Naming conventions
+
+Carry a unit suffix only where a value could plausibly be mistaken for a timestamp:
+`$delay_seconds` keeps its suffix, while `Recurrence::every()`, `max_runtime`, `base_delay`, and
+`max_delay` remain unsuffixed.
 
 ## Delivery and degradation
 

@@ -372,7 +372,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->cancel( 'unknown', self::RUN_ID );
 
-		$this->assert_failure_code( $result, ErrorCode::UnknownWork );
+		$this->assert_failure_code( $result, ErrorCode::UnknownJob );
 		self::assertSame( $before, $this->cancellation_effects() );
 	}
 
@@ -496,7 +496,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
+		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
 	}

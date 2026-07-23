@@ -356,7 +356,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
 		self::assertSame( array(), $this->rig->backend()->calls );
 		self::assertSame( $before, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 		self::assertSame( array(), $this->write_queries() );

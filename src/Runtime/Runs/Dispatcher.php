@@ -139,12 +139,12 @@ final readonly class Dispatcher {
 	public function dispatch( string $identity, array $args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
 		$kind = $this->work->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
 		$priority ??= 10;
 
@@ -168,12 +168,12 @@ final readonly class Dispatcher {
 	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
 		$kind = $this->work->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
 
 		return $this->dispatch_resolved( $handler, $options, $identity, $args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted );
@@ -200,12 +200,12 @@ final readonly class Dispatcher {
 
 		$kind = $this->work->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
 
 		$failed_store = $this->stores->failed_run_store( $identity );
@@ -273,11 +273,11 @@ final readonly class Dispatcher {
 
 		$kind = $this->work->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		if ( null === $handler->execution( $identity ) ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $identity );

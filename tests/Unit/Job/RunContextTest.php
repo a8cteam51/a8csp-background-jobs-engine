@@ -68,7 +68,7 @@ final class RunContextTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_non_canonical_string_is_rejected_before_context_construction(): void {
-		$this->expectException( \InvalidArgumentException::class );
+		$this->expectException( \ValueError::class );
 		$this->expectExceptionMessageIsOrContains( 'Run identifier must match the canonical shape' );
 
 		$context = new RunContext( RunId::from( 'non-canonical-run-id' ), array() );

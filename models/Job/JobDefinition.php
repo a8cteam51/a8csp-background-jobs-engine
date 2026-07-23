@@ -9,6 +9,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInte
 /**
  * Composes a stable job identity, execution role, kind, and policy declaration.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

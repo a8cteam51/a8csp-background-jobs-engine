@@ -674,7 +674,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
 	 */
 	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
-		$wire_id = null === RunId::try_from( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
+		$wire_id = null === RunId::tryFrom( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: $summary, details: null );
 
 		return array(

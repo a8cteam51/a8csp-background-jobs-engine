@@ -146,7 +146,7 @@ add_action( 'init', static function (): void {
 
 register_deactivation_hook( __FILE__, static function (): void {
 	if ( 0 === did_action( 'init' ) && ! doing_action( 'init' ) ) {
-		error_log( 'Run: wp background-jobs schedules remove my-plugin --yes' );
+		error_log( 'Run: wp a8csp-bgje schedules remove my-plugin --yes' );
 		return;
 	}
 
@@ -157,7 +157,7 @@ register_deactivation_hook( __FILE__, static function (): void {
 } );
 ```
 
-An unanchored schedule first runs one interval after synchronization. An anchored schedule uses the first strictly future point on its UTC phase grid. There is no first-run timestamp field. Omitting a schedule from the next complete declaration removes it; synchronizing an empty array removes all schedules for the owner without cancelling admitted runs. If the plugin is inactive, `wp background-jobs schedules remove my-plugin --yes` performs the same schedule convergence.
+An unanchored schedule first runs one interval after synchronization. An anchored schedule uses the first strictly future point on its UTC phase grid. There is no first-run timestamp field. Omitting a schedule from the next complete declaration removes it; synchronizing an empty array removes all schedules for the owner without cancelling admitted runs. If the plugin is inactive, `wp a8csp-bgje schedules remove my-plugin --yes` performs the same schedule convergence.
 
 ### 2. A one-shot callable, dispatched asynchronously
 
@@ -336,24 +336,24 @@ Every CLI `<identity>` is the composed `{owner}:{name}`:
 
 ```sh
 # What is scheduled, and is it healthy?
-wp background-jobs schedules list --owner=my-plugin
+wp a8csp-bgje schedules list --owner=my-plugin
 
 # Live and recent runs for one job or chunked job.
-wp background-jobs runs list my-plugin:recount-comments
-wp background-jobs runs list my-plugin:recount-comments --format=json
+wp a8csp-bgje runs list my-plugin:recount-comments
+wp a8csp-bgje runs list my-plugin:recount-comments --format=json
 
 # What failed, and retry it.
-wp background-jobs failed-runs list --owner=my-plugin
-wp background-jobs failed-runs retry my-plugin:email-digest <run_id>
+wp a8csp-bgje failed-runs list --owner=my-plugin
+wp a8csp-bgje failed-runs retry my-plugin:email-digest <run_id>
 
 # Cancel a specific retained run.
-wp background-jobs runs cancel my-plugin:email-digest <run_id>
+wp a8csp-bgje runs cancel my-plugin:email-digest <run_id>
 
 # Remove an inactive plugin's schedules.
-wp background-jobs schedules remove my-plugin --yes
+wp a8csp-bgje schedules remove my-plugin --yes
 ```
 
-`runs list --format=count` and `--format=csv` report only the live rows (the bounded inspected page, up to 20); `table`, `json`, and `yaml` include recent history. Unreadable rows are excluded and counted in a warning on STDERR for every format, so machine-readable STDOUT stays parseable. `wp background-jobs reset` destroys **all** engine state; it is a development reset, not an operational tool.
+`runs list --format=count` and `--format=csv` report only the live rows (the bounded inspected page, up to 20); `table`, `json`, and `yaml` include recent history. Unreadable rows are excluded and counted in a warning on STDERR for every format, so machine-readable STDOUT stays parseable. `wp a8csp-bgje reset` destroys **all** engine state; it is a development reset, not an operational tool.
 
 ### 5. Handling failures
 
@@ -427,9 +427,15 @@ A procedural schedule entry accepts exactly the keys `name`, `every`, `job`, `ar
 
 ## Public models, roles, and contexts
 
+Imports are optional; public types can also be referenced fully qualified:
+
+```php
+$run_id = \A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId::tryFrom( $persisted_run_id );
+```
+
 All public type names below are relative to the `A8C\SpecialProjects\BackgroundJobsEngine` namespace.
 
-This table is the canonical public PHP type index. Every listed type is part of the supported ABI and follows SemVer; any other autoloadable engine type is internal unless this README explicitly documents it as public.
+This table is the canonical public PHP type index. Every listed type is marked `@api` and is part of the SemVer-bound public ABI; any other autoloadable engine type is internal unless this README explicitly documents it as public.
 
 | Type | Public shape |
 | --- | --- |
@@ -445,6 +451,7 @@ This table is the canonical public PHP type index. Every listed type is part of 
 | `Schedule\Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`. |
 | `Schedule\Recurrence` | Readonly fixed-interval recurrence created with `every( int $seconds )` or `every_anchored( int $seconds, int $anchor )`; an anchor is reduced modulo the interval. |
 | `Run\Run` | Readonly snapshot with `string $identity`, `Run\RunId $id`, and `Run\RunStatus $status`. |
+| `Run\RunId` | Final readonly stringable wrapper for a canonical run identifier; `from( string )` requires canonical input, `tryFrom( string )` returns null for another shape, and string casting returns the wire value. |
 | `Run\RunFailure` | Readonly value with `string $identity`, `Run\RunId $run_id`, `int $attempts`, `Run\RunFailureStage $stage`, `Error\ErrorCode $code`, `string $summary`, and generic diagnostic payload `?array $details`. |
 | `Job\RetryPolicy` | Readonly value constructed from `max_attempts`, `base_delay`, `multiplier`, and `max_delay`; defaults are 3, `MINUTE_IN_SECONDS`, 2, and `HOUR_IN_SECONDS`. `max_attempts` includes the initial attempt. Attempts, base delay, and multiplier are at least 1, and maximum delay is at least the base delay. It exposes `delay_ceiling_for_attempt( int $attempt ): int`. |
 | `Job\RunContextInterface` | `get_run_id(): Run\RunId` and `get_start_args(): array`. |
@@ -463,9 +470,11 @@ The backed enums are:
 | `Run\RunStatus` | `Running = 'running'`, `Completed = 'completed'`, `Failed = 'failed'`, `Cancelled = 'cancelled'`, `Superseded = 'superseded'` |
 | `Job\OverlapPolicy` | `Allow = 'allow'`, `Reject = 'reject'`, `Replace = 'replace'` |
 | `Schedule\CatchUpPolicy` | `RunOnce = 'run_once'`, `Skip = 'skip'` |
-| `Error\ErrorCode` | `InvalidArgument = 'invalid_argument'`, `AlreadyRegistered = 'already_registered'`, `EngineUnavailable = 'engine_unavailable'`, `MissingAutoloader = 'missing_autoloader'`, `UnknownWork = 'unknown_work'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailure = 'storage_failure'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
+| `Error\ErrorCode` | `InvalidArgument = 'invalid_argument'`, `AlreadyRegistered = 'already_registered'`, `EngineUnavailable = 'engine_unavailable'`, `UnknownJob = 'unknown_job'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailed = 'storage_failed'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
 
-`Run\RunFailureStage` is a final, interned, open string-backed value. `from( string )` wraps a lowercase snake key with at most one dot qualifier and throws `ValueError` for malformed input; `tryFrom( string )` returns null instead. Engine stages are available through `execution()`, `queue_generation()`, `crash_reclamation()`, and `scheduling()`. Grammar-valid third-party stages such as `acme.export_sync` remain intact.
+`Run\RunFailureStage` is a final, interned, open string-backed value. `from( string )` wraps a lowercase snake key with at most one dot qualifier and throws `\ValueError` for malformed input; `tryFrom( string )` returns null instead. Engine stages are available through `execution()`, `queue_generation()`, `crash_reclamation()`, and `scheduling()`. Grammar-valid third-party stages such as `acme.export_sync` remain intact.
+
+`Job\JobKind::from()`, `Run\RunId::from()`, and `Run\RunFailureStage::from()` throw `\ValueError` for malformed strings. `\ValueError` extends `\Error`, not `\Exception`; use the corresponding `tryFrom()` parser when malformed consumer input should return null.
 
 ## Authoring work
 
@@ -618,19 +627,19 @@ Network activation is supported; each site runs its own isolated engine state, b
 
 ## WP-CLI
 
-The command root is `wp background-jobs`, exposing three action-taking subcommands — `schedules`, `runs`, `failed-runs` — plus the leaf subcommand `reset`.
+The command root is `wp a8csp-bgje`, exposing three action-taking subcommands — `schedules`, `runs`, `failed-runs` — plus the leaf subcommand `reset`.
 
 | Operation | Synopsis |
 | --- | --- |
-| List failed runs | `wp background-jobs failed-runs list [--owner=<owner>] [--format=<format>]` |
-| Retry a failed run | `wp background-jobs failed-runs retry <identity> <run_id>` |
-| Purge failed runs for one identity | `wp background-jobs failed-runs purge <identity>` |
-| Purge every failed-run store | `wp background-jobs failed-runs purge --all` |
-| Cancel a retained run | `wp background-jobs runs cancel <identity> <run_id>` |
-| List runs and recent history | `wp background-jobs runs list <identity> [--format=<format>]` |
-| List schedules | `wp background-jobs schedules list [--owner=<owner>] [--format=<format>]` |
-| Remove every schedule owned by one plugin | `wp background-jobs schedules remove <owner> [--yes]` |
-| Destroy all engine state (development reset) | `wp background-jobs reset [--yes]` |
+| List failed runs | `wp a8csp-bgje failed-runs list [--owner=<owner>] [--format=<format>]` |
+| Retry a failed run | `wp a8csp-bgje failed-runs retry <identity> <run_id>` |
+| Purge failed runs for one identity | `wp a8csp-bgje failed-runs purge <identity>` |
+| Purge every failed-run store | `wp a8csp-bgje failed-runs purge --all` |
+| Cancel a retained run | `wp a8csp-bgje runs cancel <identity> <run_id>` |
+| List runs and recent history | `wp a8csp-bgje runs list <identity> [--format=<format>]` |
+| List schedules | `wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>]` |
+| Remove every schedule owned by one plugin | `wp a8csp-bgje schedules remove <owner> [--yes]` |
+| Destroy all engine state (development reset) | `wp a8csp-bgje reset [--yes]` |
 
 Every `<identity>` is a composed `{owner}:{name}`; PHP calls take the owner-local name while the CLI takes the full identity. List commands accept `table`, `csv`, `json`, `count`, or `yaml` (default `table`); `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. `reset` permanently deletes every engine option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. `schedules remove` converges an owner's schedules to empty without cancelling existing runs and errors on an owner with no persisted registry row.
 

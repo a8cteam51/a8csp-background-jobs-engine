@@ -151,7 +151,7 @@ final class EngineFacadeTest extends TestCase {
 		if ( ! $unknown->error instanceof BoundaryError ) {
 			throw new \LogicException( 'Unknown work must produce a public API error.' );
 		}
-		self::assertSame( ErrorCode::UnknownWork, $unknown->error->code );
+		self::assertSame( ErrorCode::UnknownJob, $unknown->error->code );
 		self::assertSame( array(), $this->rig->backend()->calls );
 
 		$client->register( ( new RecordingJob( 'shared' ) )->definition() );

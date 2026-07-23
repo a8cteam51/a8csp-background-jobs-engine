@@ -124,11 +124,11 @@ final class BoundaryErrorMapper {
 
 		return match ( $error->reason ) {
 			EngineErrorReason::EngineUnavailable    => ErrorCode::EngineUnavailable,
-			EngineErrorReason::UnknownWork          => ErrorCode::UnknownWork,
+			EngineErrorReason::UnknownJob           => ErrorCode::UnknownJob,
 			EngineErrorReason::UnknownSchedule      => ErrorCode::UnknownSchedule,
 			EngineErrorReason::OverlapHeld          => ErrorCode::OverlapHeld,
 			EngineErrorReason::PayloadRejected      => ErrorCode::PayloadRejected,
-			EngineErrorReason::StorageFailure       => ErrorCode::StorageFailure,
+			EngineErrorReason::StorageFailure       => ErrorCode::StorageFailed,
 			EngineErrorReason::RunNotRetained       => ErrorCode::RunNotRetained,
 			EngineErrorReason::RunNotCancellable    => ErrorCode::RunNotCancellable,
 			EngineErrorReason::UnsupportedOperation => ErrorCode::UnsupportedOperation,
@@ -153,7 +153,7 @@ final class BoundaryErrorMapper {
 			SchedulingErrorReason::InvalidTimeInput,
 			SchedulingErrorReason::InvalidPayload        => ErrorCode::PayloadRejected,
 			SchedulingErrorReason::ScheduleFailed        => ErrorCode::BackendRejected,
-			SchedulingErrorReason::StorageFailure        => ErrorCode::StorageFailure,
+			SchedulingErrorReason::StorageFailure        => ErrorCode::StorageFailed,
 		};
 	}
 

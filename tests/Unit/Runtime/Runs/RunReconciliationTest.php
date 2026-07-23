@@ -1803,7 +1803,7 @@ final class RunReconciliationTest extends TestCase {
 						'class'   => null,
 						'message' => $expected_summary,
 						'stage'   => RunFailureStage::crash_reclamation()->value,
-						'code'    => ErrorCode::StorageFailure->value,
+						'code'    => ErrorCode::StorageFailed->value,
 						'details' => array( 'failed_chunk' => $chunk ),
 					),
 				),
@@ -1817,7 +1817,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::RUN_ID, (string) $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
 		self::assertSame( RunFailureStage::crash_reclamation(), $failure->stage );
-		self::assertSame( ErrorCode::StorageFailure, $failure->code );
+		self::assertSame( ErrorCode::StorageFailed, $failure->code );
 		self::assertSame( $expected_summary, $failure->summary );
 		self::assertSame( array( 'failed_chunk' => $chunk ), $failure->details );
 		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
@@ -2191,10 +2191,10 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		// A retained pre-bucket row exercises normalization; current history writes also populate by_hash.
 		$options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] = array(
-			'started'  => array( 'existing-run' ),
+			'started'  => array( self::PREVIOUS_RUN_ID ),
 			'terminal' => array(
 				array(
-					'run_id' => 'existing-run',
+					'run_id' => self::PREVIOUS_RUN_ID,
 					'status' => 'completed',
 				),
 			),
@@ -2214,7 +2214,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'run_id' => 'existing-run',
+					'run_id' => self::PREVIOUS_RUN_ID,
 					'status' => 'completed',
 				),
 				array(

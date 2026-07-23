@@ -7,6 +7,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
 /**
  * Defines bounded exponential retry-delay ceilings.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

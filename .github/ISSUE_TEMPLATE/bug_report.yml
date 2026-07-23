@@ -24,7 +24,7 @@ body:
     attributes:
       label: What you expected to happen
       placeholder: |
-        e.g. The job runs on its schedule and shows up in wp background-jobs runs list.
+        e.g. The job runs on its schedule and shows up in wp a8csp-bgje runs list.
 
   - type: textarea
     id: actual

@@ -187,7 +187,7 @@ final class RunTransitionsTest extends TestCase {
 
 		try {
 			$this->handler->deliver( self::IDENTITY, 'non-canonical-run-id', $state, $run_store );
-		} catch ( \InvalidArgumentException $exception ) {
+		} catch ( \ValueError $exception ) {
 			$caught = $exception;
 		}
 

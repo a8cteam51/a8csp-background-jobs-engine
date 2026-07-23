@@ -491,7 +491,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertIsString( $warning_message );
 		self::assertStringContainsString( 'reinstate', $warning_message );
 		self::assertStringContainsString( 'sync()', $warning_message );
-		self::assertStringContainsString( 'wp background-jobs schedules remove ' . self::OWNER, $warning_message );
+		self::assertStringContainsString( 'wp a8csp-bgje schedules remove ' . self::OWNER, $warning_message );
 
 		$this->rig->run_due();
 
@@ -814,7 +814,7 @@ final class ScheduleExecutionTest extends TestCase {
 		return \array_values(
 			\array_filter(
 				$this->rig->logger()->records,
-				static fn ( array $record ): bool => 'warning' === $record['level'] && \str_contains( $record['message'], 'wp background-jobs schedules remove' )
+				static fn ( array $record ): bool => 'warning' === $record['level'] && \str_contains( $record['message'], 'wp a8csp-bgje schedules remove' )
 			)
 		);
 	}

@@ -451,7 +451,7 @@ final readonly class LifecycleEffects {
 
 		return array(
 			'error'   => $error,
-			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::crash_reclamation(), code: ErrorCode::StorageFailure, summary: $error->message, details: $handler->failure_details( $state ), ),
+			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::crash_reclamation(), code: ErrorCode::StorageFailed, summary: $error->message, details: $handler->failure_details( $state ), ),
 		);
 	}
 

@@ -19,6 +19,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
  * Owner validation and engine resolution remain lazy until a verb is invoked. Every expected
  * validation, readiness, or engine failure crosses this boundary as a `WP_Error`.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -121,6 +123,8 @@ final readonly class Schedules {
 	 * @param   string    $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string    $run_id   Run identifier.
 	 * @param   RunStatus $status   Public lifecycle state.
+	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  Run
 	 */

@@ -99,7 +99,7 @@ final class SchedulingErrorTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 	}
@@ -117,7 +117,7 @@ final class SchedulingErrorTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
 	}
@@ -133,7 +133,7 @@ final class SchedulingErrorTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
 		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
 		self::assertSame(
 			array(
@@ -205,7 +205,7 @@ final class SchedulingErrorTest extends TestCase {
 			),
 			'storage failure'    => array(
 				'reason'        => 'storage_failure',
-				'expected_code' => 'storage_failure',
+				'expected_code' => 'storage_failed',
 			),
 		);
 	}

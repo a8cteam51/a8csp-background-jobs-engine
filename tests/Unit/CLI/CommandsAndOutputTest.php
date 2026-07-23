@@ -220,7 +220,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertSame( '', $result->stdout );
-		self::assertSame( 'Error: Schedule registry option row "a8csp_bgje_schedule_registrations_consumer-plugin" is unreadable; maintenance reclaims it, then re-declare schedules on the next init. Owner removal converges incrementally; after resolving this error, rerun "wp background-jobs schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
+		self::assertSame( 'Error: Schedule registry option row "a8csp_bgje_schedule_registrations_consumer-plugin" is unreadable; maintenance reclaims it, then re-declare schedules on the next init. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
 		self::assertSame( $incomplete[1], $this->rig->wpdb()->rows[ $incomplete[0] ] ?? null );
 	}
 
@@ -261,7 +261,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertSame( '', $result->stdout );
-		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp background-jobs schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
+		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
 		self::assertSame( array( 'consumer-plugin:nightly' ), \array_column( $snapshot['entries'], 'name' ) );
@@ -333,7 +333,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $failed->exit_code );
 		self::assertSame( '', $failed->stdout );
-		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp background-jobs schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $failed->stderr );
+		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $failed->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
 		self::assertSame( array( 'consumer-plugin:beta' ), \array_column( $snapshot['entries'], 'name' ) );
@@ -1038,8 +1038,8 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_schedule_requests(): array {
-		$usage        = 'Schedule list accepts only --owner and --format; use wp background-jobs schedules list [--owner=<owner>] [--format=<format>].';
-		$remove_usage = 'Schedule removal requires exactly one owner and accepts only --yes; use wp background-jobs schedules remove <owner> [--yes].';
+		$usage        = 'Schedule list accepts only --owner and --format; use wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>].';
+		$remove_usage = 'Schedule removal requires exactly one owner and accepts only --yes; use wp a8csp-bgje schedules remove <owner> [--yes].';
 		return array(
 			'missing action'         => array(
 				'args'       => array(),
@@ -1156,7 +1156,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_run_requests(): array {
-		$usage = 'Run list requires exactly one identity and accepts only --format; use wp background-jobs runs list <identity> [--format=<format>].';
+		$usage = 'Run list requires exactly one identity and accepts only --format; use wp a8csp-bgje runs list <identity> [--format=<format>].';
 		return array(
 			'missing action' => array(
 				'args'       => array(),
@@ -1347,9 +1347,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_failed_run_requests(): array {
-		$list_usage  = 'List accepts only --owner and --format; use wp background-jobs failed-runs list [--owner=<owner>] [--format=<format>].';
-		$retry_usage = 'Retry requires exactly an identity and run_id; use wp background-jobs failed-runs retry <identity> <run_id>.';
-		$purge_usage = 'Purge requires exactly one identity or --all; use wp background-jobs failed-runs purge <identity> or purge --all.';
+		$list_usage  = 'List accepts only --owner and --format; use wp a8csp-bgje failed-runs list [--owner=<owner>] [--format=<format>].';
+		$retry_usage = 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.';
+		$purge_usage = 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.';
 		return array(
 			'missing action'         => array(
 				'args'       => array(),
@@ -1449,7 +1449,7 @@ final class CommandsAndOutputTest extends TestCase {
 			'purge flag'             => array(
 				'args'       => array( 'purge' ),
 				'assoc_args' => array( 'format' => 'json' ),
-				'message'    => 'Purge accepts only --all; use wp background-jobs failed-runs purge <identity> or purge --all.',
+				'message'    => 'Purge accepts only --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.',
 			),
 		);
 	}
