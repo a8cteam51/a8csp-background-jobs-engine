@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -45,7 +45,7 @@ final class ActionDeliveriesTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -117,8 +117,8 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_registered_delivery_hooks_drive_every_chunked_job_stage(): void {
 		$chunked_job        = new RecordingChunkedJob( 'hook-registration-probe' );
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
-		$this->client->jobs()->register( $chunked_job->definition() );
-		$result = $this->client->chunked_jobs()->start( 'hook-registration-probe', self::ARGS );
+		$this->client->register( $chunked_job->definition() );
+		$result = $this->client->start( 'hook-registration-probe', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
@@ -150,18 +150,18 @@ final class ActionDeliveriesTest extends TestCase {
 			'site_id' => 8,
 			'mode'    => 'delta',
 		);
-		$first          = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$first          = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$duplicate                     = $this->client->jobs()->enqueue( self::NAME, $successor_args );
+		$duplicate                     = $this->client->enqueue( self::NAME, $successor_args );
 		$this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
 		self::assertCount( 1, $this->run_delivery_calls() );
 
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->clock()->timestamp = self::NOW + 2;
-		$reused                        = $this->client->jobs()->enqueue( self::NAME, $successor_args );
+		$reused                        = $this->client->enqueue( self::NAME, $successor_args );
 		self::assertInstanceOf( Success::class, $reused );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS, $successor_args ), $this->job->calls );
@@ -429,14 +429,14 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_unregistered_job_delivery_terminalizes_the_live_run(): void {
 		$this->rig->tear_down();
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client   = $this->rig->client( self::OWNER );
+		$this->client   = $this->rig->operations( self::OWNER );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->seed_pending_run();
 
 		\do_action( ActionDeliveries::DELIVER_HOOK, self::IDENTITY, self::RUN_ID, 1 );
 
 		$this->rig->assert_failed( ErrorCode::UnknownWork );
-		$retry = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$retry = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $retry, ErrorCode::UnknownWork );
 	}
 
@@ -473,7 +473,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		$last_completed = $this->client->runs()->last_completed_run_id( self::NAME );
+		$last_completed = $this->client->last_completed_run_id( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertNull( $last_completed->value );
 	}
@@ -520,7 +520,7 @@ final class ActionDeliveriesTest extends TestCase {
 	private function boot( ?JobOptions $options = null ): void {
 		$this->overlap_key_resolver = null;
 		$this->rig                  = EngineRig::set_up( self::NOW );
-		$this->client               = $this->rig->client( self::OWNER );
+		$this->client               = $this->rig->operations( self::OWNER );
 		$this->job                  = new RecordingJob( self::NAME );
 		if ( null === $options ) {
 			$options = new JobOptions(
@@ -533,7 +533,7 @@ final class ActionDeliveriesTest extends TestCase {
 				}
 			);
 		}
-		$this->client->jobs()->register( $this->job->definition( $options ) );
+		$this->client->register( $this->job->definition( $options ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
@@ -561,7 +561,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -773,12 +773,12 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @param   mixed        $result Facade result.
 	 * @param   ErrorCode $code   Expected public code.
 	 *
-	 * @return  ApiError
+	 * @return  BoundaryError
 	 */
-	private function assert_failure_code( mixed $result, ErrorCode $code ): ApiError {
+	private function assert_failure_code( mixed $result, ErrorCode $code ): BoundaryError {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $result->error;
-		self::assertInstanceOf( ApiError::class, $error );
+		self::assertInstanceOf( BoundaryError::class, $error );
 		self::assertSame( $code, $error->code );
 
 		return $error;

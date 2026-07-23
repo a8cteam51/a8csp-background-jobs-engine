@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;

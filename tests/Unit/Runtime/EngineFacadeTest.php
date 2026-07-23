@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ApiAdapter;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
@@ -28,7 +28,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( EngineFacade::class )]
-#[CoversClass( ApiAdapter::class )]
+#[CoversClass( OwnerOperations::class )]
 final class EngineFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -99,11 +99,11 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_job_facade_round_trips_one_public_run(): void {
-		$client = $this->rig->client( 'facade-tests' );
+		$client = $this->rig->operations( 'facade-tests' );
 		$job    = new RecordingJob( 'email-digest' );
-		$client->jobs()->register( $job->definition() );
+		$client->register( $job->definition() );
 
-		$result = $client->jobs()->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
+		$result = $client->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->backend()->assert_scheduled( 'facade-tests:email-digest' );
@@ -121,11 +121,11 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunked_job_facade_round_trips_one_public_run(): void {
-		$client      = $this->rig->client( 'facade-tests' );
+		$client      = $this->rig->operations( 'facade-tests' );
 		$chunked_job = new RecordingChunkedJob( 'catalog-sync' );
-		$client->jobs()->register( $chunked_job->definition() );
+		$client->register( $chunked_job->definition() );
 
-		$result = $client->chunked_jobs()->start( 'catalog-sync', array( 'site_id' => 7 ), priority: 23 );
+		$result = $client->start( 'catalog-sync', array( 'site_id' => 7 ), priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
@@ -144,20 +144,20 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_facade_rejects_unknown_and_ambiguous_work_before_scheduling(): void {
-		$client                      = $this->rig->client( 'facade-tests' );
+		$client                      = $this->rig->operations( 'facade-tests' );
 		$this->rig->backend()->calls = array();
-		$unknown                     = $client->jobs()->enqueue( 'missing' );
+		$unknown                     = $client->enqueue( 'missing' );
 		self::assertInstanceOf( Failure::class, $unknown );
-		if ( ! $unknown->error instanceof ApiError ) {
+		if ( ! $unknown->error instanceof BoundaryError ) {
 			throw new \LogicException( 'Unknown work must produce a public API error.' );
 		}
 		self::assertSame( ErrorCode::UnknownWork, $unknown->error->code );
 		self::assertSame( array(), $this->rig->backend()->calls );
 
-		$client->jobs()->register( ( new RecordingJob( 'shared' ) )->definition() );
+		$client->register( ( new RecordingJob( 'shared' ) )->definition() );
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work identity "facade-tests:shared" is already registered as a job; it cannot also be registered as a chunked_job.' );
-		$client->jobs()->register( ( new RecordingChunkedJob( 'shared' ) )->definition() );
+		$client->register( ( new RecordingChunkedJob( 'shared' ) )->definition() );
 	}
 
 	/**
@@ -174,14 +174,14 @@ final class EngineFacadeTest extends TestCase {
 	 */
 	public function test_retry_failed_consumes_authoritative_storage_without_option_function_writes(): void {
 		$identity = 'facade-tests:email-digest';
-		$client   = $this->rig->client( 'facade-tests' );
-		$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+		$client   = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		$failure               = new RunFailure( identity: $identity, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
 		$this->rig->wpdb()->put( $option_name, $raw );
 		$GLOBALS['a8csp_bgje_test_option_calls'] = array();
 
-		$result = $client->runs()->retry_failed( 'email-digest', self::FAILED_RUN_ID );
+		$result = $client->retry_failed( 'email-digest', self::FAILED_RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		$remaining = new FailedRunStore( $identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() )->all();
@@ -200,15 +200,15 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_terminalizes_a_waiting_public_run(): void {
-		$client = $this->rig->client( 'facade-tests' );
-		$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-		$enqueued = $client->jobs()->enqueue( 'email-digest' );
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+		$enqueued = $client->enqueue( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
 		if ( ! \is_string( $enqueued->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
 		}
 
-		$cancelled = $client->runs()->cancel( 'email-digest', $enqueued->value );
+		$cancelled = $client->cancel( 'email-digest', $enqueued->value );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'facade-tests:email-digest' )['history'][0]['outcome'] ?? null );

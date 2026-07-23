@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 
 \defined( 'ABSPATH' ) || exit;
 

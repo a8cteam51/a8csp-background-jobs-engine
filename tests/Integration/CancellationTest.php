@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -75,11 +75,11 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 41 );
 		$job  = new RecordingJob( self::EXECUTING_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::EXECUTING_IDENTITY );
 
-		$enqueued = $client->jobs()->enqueue( self::EXECUTING_NAME, $args );
+		$enqueued = $client->enqueue( self::EXECUTING_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id    = $enqueued->value;
@@ -93,7 +93,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$job->on_handle  = static function ( array $received_args ) use ( $action_id, $client, $run_id, $store, &$cancel_result, &$observed_state, &$observed_status ): void {
 			$observed_status = $store->get_status( $action_id );
 			$observed_state  = \get_option( 'a8csp_bgje_run_' . self::EXECUTING_IDENTITY . '_' . $run_id, null );
-			$cancel_result   = $client->runs()->cancel( self::EXECUTING_NAME, $run_id );
+			$cancel_result   = $client->cancel( self::EXECUTING_NAME, $run_id );
 		};
 
 		$completed_action_ids = array();
@@ -111,7 +111,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertIsArray( $observed_state );
 		self::assertTrue( $observed_state['executing'] ?? false, 'The admitted delivery must persist its executing marker' );
 		self::assertInstanceOf( Failure::class, $cancel_result );
-		self::assertInstanceOf( ApiError::class, $cancel_result->error );
+		self::assertInstanceOf( BoundaryError::class, $cancel_result->error );
 		self::assertSame( \sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ), $cancel_result->error->message );
 		self::assertSame( array( $args ), $job->calls, 'Refusal must leave the admitted job invocation intact' );
 		self::assertSame( array( (int) $action_id ), $completed_action_ids );
@@ -146,11 +146,11 @@ final class CancellationTest extends IntegrationTestCase {
 		$job->throwable = new \RuntimeException( 'Retry after the upstream recovers.' );
 		$options        = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 ) );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition( $options ) );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition( $options ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::BACKOFF_IDENTITY );
 
-		$enqueued = $client->jobs()->enqueue( self::BACKOFF_NAME, $args );
+		$enqueued = $client->enqueue( self::BACKOFF_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id            = $enqueued->value;
@@ -169,7 +169,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertSame( 2, $run_state['action_sequence'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The persisted backoff window must be cancellable' );
 
-		$cancelled = $client->runs()->cancel( self::BACKOFF_NAME, $run_id );
+		$cancelled = $client->cancel( self::BACKOFF_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
@@ -216,8 +216,8 @@ final class CancellationTest extends IntegrationTestCase {
 		$chunked_job        = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
 		$chunked_job->queue = array( $first_chunk, $next_chunk );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $chunked_job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CHUNKED_JOB_IDENTITY );
 
 		$terminal_hooks = array();
@@ -258,7 +258,7 @@ final class CancellationTest extends IntegrationTestCase {
 			1
 		);
 
-		$started = $client->chunked_jobs()->start( self::CHUNKED_JOB_NAME, $start_args );
+		$started = $client->start( self::CHUNKED_JOB_NAME, $start_args );
 		self::assertInstanceOf( Success::class, $started );
 		self::assertIsString( $started->value );
 		$run_id = $started->value;
@@ -283,7 +283,7 @@ final class CancellationTest extends IntegrationTestCase {
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
 		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/deliver', $group, array( self::CHUNKED_JOB_IDENTITY, $run_id, 3 ) );
 
-		$cancelled = $client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
+		$cancelled = $client->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
@@ -336,12 +336,12 @@ final class CancellationTest extends IntegrationTestCase {
 		$args_b = array( 'account_id' => 45 );
 		$job    = new RecordingJob( self::SIBLING_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SIBLING_IDENTITY );
 
-		$enqueued_a = $client->jobs()->enqueue( self::SIBLING_NAME, $args_a );
-		$enqueued_b = $client->jobs()->enqueue( self::SIBLING_NAME, $args_b );
+		$enqueued_a = $client->enqueue( self::SIBLING_NAME, $args_a );
+		$enqueued_b = $client->enqueue( self::SIBLING_NAME, $args_b );
 		self::assertInstanceOf( Success::class, $enqueued_a );
 		self::assertInstanceOf( Success::class, $enqueued_b );
 		self::assertIsString( $enqueued_a->value );
@@ -353,7 +353,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$action_a = $this->assert_pending_job_action( self::SIBLING_IDENTITY, $run_a, $group_a );
 		$action_b = $this->assert_pending_job_action( self::SIBLING_IDENTITY, $run_b, $group_b );
 
-		$cancelled = $client->runs()->cancel( self::SIBLING_NAME, $run_a );
+		$cancelled = $client->cancel( self::SIBLING_NAME, $run_a );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_a, $cancelled->value );
@@ -426,8 +426,8 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 46 );
 		$job  = new RecordingJob( self::DEGRADED_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::DEGRADED_IDENTITY );
 
 		$raw_deliveries = array();
@@ -442,7 +442,7 @@ final class CancellationTest extends IntegrationTestCase {
 			3
 		);
 
-		$enqueued = $client->jobs()->enqueue( self::DEGRADED_NAME, $args );
+		$enqueued = $client->enqueue( self::DEGRADED_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id      = $enqueued->value;
@@ -458,7 +458,7 @@ final class CancellationTest extends IntegrationTestCase {
 			self::assertFalse( $cron_before[0]['schedule'] );
 		}
 
-		$cancelled = $client->runs()->cancel( self::DEGRADED_NAME, $run_id );
+		$cancelled = $client->cancel( self::DEGRADED_NAME, $run_id );
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
 

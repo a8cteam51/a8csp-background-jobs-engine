@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -954,17 +954,17 @@ final class CLICommandTest extends IntegrationTestCase {
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::INSPECTION_OWNER );
+		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::INSPECTION_OWNER );
 		$job            = new RecordingJob( self::INSPECTION_JOB );
 		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
-		$client->jobs()->register( $job->definition() );
+		$client->register( $job->definition() );
 		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_JOB, array( 'source' => 'schedule' ) );
-		$synced   = $client->schedules()->sync( array( $schedule ) );
+		$synced   = $client->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
 		\add_filter( 'a8csp_jobs_engine/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
-		$enqueued = $client->jobs()->enqueue( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
+		$enqueued = $client->enqueue( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id = $enqueued->value;
@@ -1015,7 +1015,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertSame( $run_id, $history_rows[0]['run_id'] ?? null );
 			self::assertSame( 'started', $history_rows[0]['outcome'] ?? null );
 		} finally {
-			$cancelled = $client->runs()->cancel( self::INSPECTION_JOB, $run_id );
+			$cancelled = $client->cancel( self::INSPECTION_JOB, $run_id );
 			self::assertInstanceOf( Success::class, $cancelled );
 		}
 	}

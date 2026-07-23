@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
@@ -46,7 +46,7 @@ final class RunHistoryTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 
 	private RecordingChunkedJob $chunked_job;
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
@@ -82,11 +82,11 @@ final class RunHistoryTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->client( self::OWNER );
+		$this->client      = $this->rig->operations( self::OWNER );
 		$this->job         = new RecordingJob( self::NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::NAME . '-chunked-job' );
-		$this->client->jobs()->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
-		$this->client->jobs()->register( $this->chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
+		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
+		$this->client->register( $this->chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -410,11 +410,11 @@ final class RunHistoryTest extends TestCase {
 		if ( 'superseded' === $status ) {
 			$name     = self::NAME . '-chunked-job';
 			$identity = self::OWNER . ':' . $name;
-			$first    = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ) );
+			$first    = $this->client->start( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $first );
 			self::assertIsString( $first->value );
 			$this->rig->randomizer()->value = 8;
-			$second                         = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ) );
+			$second                         = $this->client->start( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $second );
 			$this->rig->run_due();
 
@@ -424,11 +424,11 @@ final class RunHistoryTest extends TestCase {
 		if ( 'failed' === $status ) {
 			$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		}
-		$result = $this->client->jobs()->enqueue( self::NAME, array( 'scope' => $status ) );
+		$result = $this->client->enqueue( self::NAME, array( 'scope' => $status ) );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		if ( 'cancelled' === $status ) {
-			$cancelled = $this->client->runs()->cancel( self::NAME, $result->value );
+			$cancelled = $this->client->cancel( self::NAME, $result->value );
 			self::assertInstanceOf( Success::class, $cancelled );
 		} else {
 			$this->rig->run_due();
@@ -452,7 +452,7 @@ final class RunHistoryTest extends TestCase {
 		$run_ids = array();
 		foreach ( \range( 1, $count ) as $index ) {
 			$this->rig->randomizer()->value = $offset + $index;
-			$result                         = $this->client->jobs()->enqueue( self::NAME, array( 'index' => $offset + $index ) );
+			$result                         = $this->client->enqueue( self::NAME, array( 'index' => $offset + $index ) );
 			self::assertInstanceOf( Success::class, $result );
 			self::assertIsString( $result->value );
 			$run_ids[] = $result->value;

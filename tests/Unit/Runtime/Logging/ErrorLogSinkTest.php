@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Logging;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ThrowableContextNormalizer;
 use PHPUnit\Framework\Attributes\CoversClass;

@@ -3,13 +3,13 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
@@ -50,7 +50,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
 	private RecordingChunkedJob $chunked_job;
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private JobOptions $options;
 	private bool $registered;
@@ -86,7 +86,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->client( self::OWNER );
+		$this->client      = $this->rig->operations( self::OWNER );
 		$this->chunked_job = new RecordingChunkedJob( self::NAME );
 		$this->fixtures    = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->options     = new JobOptions();
@@ -150,7 +150,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->chunked_job->queue = array();
 		$this->register_chunked_job();
 		$first_args = array( 'sequence' => 'first' );
-		$first      = $this->client->chunked_jobs()->start( self::NAME, $first_args );
+		$first      = $this->client->start( self::NAME, $first_args );
 		self::assertInstanceOf( Success::class, $first );
 		self::assertIsString( $first->value );
 
@@ -160,7 +160,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		++$this->rig->clock()->timestamp;
 		$second_args = array( 'sequence' => 'second' );
-		$second      = $this->client->chunked_jobs()->start( self::NAME, $second_args );
+		$second      = $this->client->start( self::NAME, $second_args );
 		self::assertInstanceOf( Success::class, $second );
 		self::assertIsString( $second->value );
 
@@ -415,7 +415,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->rig->randomizer()->value = 7;
 		$this->rig->run_due();
 
-		$result = $this->client->runs()->cancel( self::NAME, self::RUN_ID );
+		$result = $this->client->cancel( self::NAME, self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -827,7 +827,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$queue   = array( $current, array( 'chunk' => 'remaining' ) );
 		$this->rig->tear_down();
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client   = $this->rig->client( self::OWNER );
+		$this->client   = $this->rig->operations( self::OWNER );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$state          = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: $queue, failed_attempts: 0, action_sequence: 2, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'continue', 10 ) );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
@@ -1727,7 +1727,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->observe_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
 			function () use ( &$replacement ): void {
-				$replacement = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
+				$replacement = $this->client->start( self::NAME, self::ARGS );
 			}
 		);
 
@@ -1886,7 +1886,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	private function start(): string {
 		$this->register_chunked_job();
-		$result = $this->client->chunked_jobs()->start( self::NAME, self::ARGS );
+		$result = $this->client->start( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -1906,7 +1906,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$this->client->jobs()->register( $this->chunked_job->definition( $this->options ) );
+		$this->client->register( $this->chunked_job->definition( $this->options ) );
 		$this->registered = true;
 	}
 

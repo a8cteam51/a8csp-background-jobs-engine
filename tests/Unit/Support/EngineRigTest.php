@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -55,10 +55,10 @@ final class EngineRigTest extends TestCase {
 	public function test_job_completion_round_trips_through_the_real_graph(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$client = $rig->client( 'rig-tests' );
+			$client = $rig->operations( 'rig-tests' );
 			$job    = new RecordingJob( 'job' );
-			$client->jobs()->register( $job->definition() );
-			$result = $client->jobs()->enqueue( 'job', self::ARGS );
+			$client->register( $job->definition() );
+			$result = $client->enqueue( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -81,12 +81,12 @@ final class EngineRigTest extends TestCase {
 	public function test_terminal_failure_helpers_observe_real_failure_lifecycle(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$client = $rig->client( 'rig-tests' );
+			$client = $rig->operations( 'rig-tests' );
 			$job    = new RecordingJob( 'job' );
 
 			$job->throwable = new NonRetryableException( 'Permanent failure.' );
-			$client->jobs()->register( $job->definition() );
-			$result = $client->jobs()->enqueue( 'job', self::ARGS );
+			$client->register( $job->definition() );
+			$result = $client->enqueue( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -102,12 +102,12 @@ final class EngineRigTest extends TestCase {
 	public function test_retry_helper_observes_real_failure_redelivery(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$client = $rig->client( 'rig-tests' );
+			$client = $rig->operations( 'rig-tests' );
 			$job    = new RecordingJob( 'job' );
 
 			$job->throwable = new \RuntimeException( 'Transient failure.' );
-			$client->jobs()->register( $job->definition() );
-			$result = $client->jobs()->enqueue( 'job', self::ARGS );
+			$client->register( $job->definition() );
+			$result = $client->enqueue( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -122,13 +122,13 @@ final class EngineRigTest extends TestCase {
 	public function test_cancelled_helper_observes_real_runs_facade_cancellation(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$client = $rig->client( 'rig-tests' );
-			$client->jobs()->register( ( new RecordingJob( 'job' ) )->definition() );
-			$enqueued = $client->jobs()->enqueue( 'job', self::ARGS );
+			$client = $rig->operations( 'rig-tests' );
+			$client->register( ( new RecordingJob( 'job' ) )->definition() );
+			$enqueued = $client->enqueue( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $enqueued );
 			self::assertIsString( $enqueued->value );
 
-			$cancelled = $client->runs()->cancel( 'job', $enqueued->value );
+			$cancelled = $client->cancel( 'job', $enqueued->value );
 			self::assertInstanceOf( Success::class, $cancelled );
 			$rig->assert_cancelled();
 		} finally {
@@ -140,14 +140,14 @@ final class EngineRigTest extends TestCase {
 	public function test_superseded_helper_observes_real_chunked_job_replacement(): void {
 		$rig = EngineRig::set_up( self::NOW );
 		try {
-			$client      = $rig->client( 'rig-tests' );
+			$client      = $rig->operations( 'rig-tests' );
 			$chunked_job = new RecordingChunkedJob( 'chunked_job' );
-			$client->jobs()->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
-			$first = $client->chunked_jobs()->start( 'chunked_job', self::ARGS );
+			$client->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
+			$first = $client->start( 'chunked_job', self::ARGS );
 			self::assertInstanceOf( Success::class, $first );
 			++$rig->clock()->timestamp;
 
-			$replacement = $client->chunked_jobs()->start( 'chunked_job', self::ARGS );
+			$replacement = $client->start( 'chunked_job', self::ARGS );
 			self::assertInstanceOf( Success::class, $replacement );
 			$rig->run_due();
 			$rig->assert_superseded();

@@ -2,12 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Run\Runs;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
@@ -46,7 +45,7 @@ final class DispatcherCancelTest extends TestCase {
 	private const string JOB_NAME             = 'email-digest';
 
 	private RecordingChunkedJob $chunked_job;
-	private Client $client;
+	private OwnerOperations $client;
 	private EngineRig $rig;
 	private RecordingJob $job;
 	private StoreFixtureBuilder $job_fixtures;
@@ -81,11 +80,11 @@ final class DispatcherCancelTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW, 2 );
-		$this->client      = $this->rig->client( self::OWNER );
+		$this->client      = $this->rig->operations( self::OWNER );
 		$this->job         = new RecordingJob( self::JOB_NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
-		$this->client->jobs()->register( $this->job->definition() );
-		$this->client->jobs()->register( $this->chunked_job->definition() );
+		$this->client->register( $this->job->definition() );
+		$this->client->register( $this->chunked_job->definition() );
 		$this->job_fixtures = StoreFixtureBuilder::for_identity( self::JOB_IDENTITY );
 		$this->reset_backend_observations();
 	}
@@ -123,7 +122,7 @@ final class DispatcherCancelTest extends TestCase {
 		$run_id = $this->enqueue_job();
 		$this->reset_backend_observations();
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::JOB_IDENTITY, $run_id );
 	}
@@ -141,7 +140,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->reset_backend_observations();
 		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair scheduling.' ) );
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::JOB_IDENTITY, $run_id );
 	}
@@ -165,7 +164,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->reset_backend_observations();
 		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_jobs_engine/cancelled/' . self::JOB_IDENTITY => $throwable );
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $run_id, $result->value );
@@ -188,7 +187,7 @@ final class DispatcherCancelTest extends TestCase {
 	 */
 	public function test_cancel_rejects_a_malformed_run_identifier(): void {
 		try {
-			(void) $this->client->runs()->cancel( self::JOB_NAME, 'malformed_run_id' );
+			(void) $this->client->cancel( self::JOB_NAME, 'malformed_run_id' );
 			self::fail( 'A malformed cancellation identifier must be rejected before storage lookup.' );
 		} catch ( \InvalidArgumentException $exception ) {
 			self::assertSame( 'Run identifier is malformed; pass a run ID the engine returned.', $exception->getMessage() );
@@ -206,7 +205,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_a_missing_run(): void {
 		$before = $this->cancellation_effects();
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, self::RUN_ID );
+		$result = $this->client->cancel( self::JOB_NAME, self::RUN_ID );
 
 		$this->assert_failure_code( $result, ErrorCode::RunNotRetained );
 		self::assertSame( $before, $this->cancellation_effects() );
@@ -224,7 +223,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->wpdb()->put( $this->run_option_name( self::JOB_IDENTITY, self::RUN_ID ), 'corrupt' );
 		$before = $this->cancellation_effects();
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, self::RUN_ID );
+		$result = $this->client->cancel( self::JOB_NAME, self::RUN_ID );
 
 		$this->assert_failure_code( $result, ErrorCode::RunNotRetained );
 		self::assertSame( $before, $this->cancellation_effects() );
@@ -243,7 +242,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->put_job_state( RunStatus::Completed, false, 0, 1, self::NOW, null );
 		$before = $this->cancellation_effects();
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$error = $this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertSame( 'completed', $error->context['status'] ?? null );
@@ -267,7 +266,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->put_job_state( RunStatus::Running, true, 0, 1, self::NOW + 300, null );
 		$before = $this->rig->wpdb()->rows;
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
@@ -296,7 +295,7 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertSame( self::NOW + 1, $this->decoded_job_state()['heartbeat_at'] ?? null );
@@ -324,7 +323,7 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertTrue( $this->decoded_job_state()['executing'] ?? false );
@@ -349,7 +348,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( &$cancel_result, $run_id ): void {
-				$cancel_result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+				$cancel_result = $this->client->cancel( self::JOB_NAME, $run_id );
 			}
 		);
 
@@ -371,7 +370,7 @@ final class DispatcherCancelTest extends TestCase {
 	public function test_cancel_rejects_an_unregistered_name(): void {
 		$before = $this->cancellation_effects();
 
-		$result = $this->client->runs()->cancel( 'unknown', self::RUN_ID );
+		$result = $this->client->cancel( 'unknown', self::RUN_ID );
 
 		$this->assert_failure_code( $result, ErrorCode::UnknownWork );
 		self::assertSame( $before, $this->cancellation_effects() );
@@ -389,7 +388,7 @@ final class DispatcherCancelTest extends TestCase {
 		$run_id = $this->start();
 		$this->reset_backend_observations();
 
-		$result = $this->client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::CHUNKED_JOB_IDENTITY, $run_id );
 	}
@@ -407,7 +406,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->run_due();
 		$this->reset_backend_observations();
 
-		$result = $this->client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		$this->rig->backend()->assert_scheduled( self::CHUNKED_JOB_IDENTITY );
@@ -428,7 +427,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->run_due();
 		$this->reset_backend_observations();
 
-		$result = $this->client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::CHUNKED_JOB_IDENTITY, $run_id );
 	}
@@ -448,7 +447,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->rig->assert_retry_scheduled();
 		$this->reset_backend_observations();
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::JOB_IDENTITY, $run_id );
 	}
@@ -463,11 +462,11 @@ final class DispatcherCancelTest extends TestCase {
 	 */
 	public function test_second_cancel_reports_that_the_run_is_not_retained(): void {
 		$run_id = $this->enqueue_job();
-		$first  = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$first  = $this->client->cancel( self::JOB_NAME, $run_id );
 		self::assertInstanceOf( Success::class, $first );
 		$this->reset_backend_observations();
 
-		$second = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$second = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_failure_code( $second, ErrorCode::RunNotRetained );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
@@ -495,7 +494,7 @@ final class DispatcherCancelTest extends TestCase {
 			}
 		);
 
-		$result = $this->client->runs()->cancel( self::JOB_NAME, $run_id );
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
@@ -511,7 +510,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_declares_no_discard_on_the_public_facade(): void {
-		$method = new \ReflectionMethod( Runs::class, 'cancel' );
+		$method = new \ReflectionMethod( OwnerOperations::class, 'cancel' );
 
 		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
 	}
@@ -529,7 +528,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$result = $this->client->jobs()->enqueue( self::JOB_NAME, self::ARGS );
+		$result = $this->client->enqueue( self::JOB_NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -545,7 +544,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function start(): string {
-		$result = $this->client->chunked_jobs()->start( self::CHUNKED_JOB_NAME, self::ARGS );
+		$result = $this->client->start( self::CHUNKED_JOB_NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -705,12 +704,12 @@ final class DispatcherCancelTest extends TestCase {
 	 * @param   mixed        $result Facade result.
 	 * @param   ErrorCode $code   Expected public code.
 	 *
-	 * @return  ApiError
+	 * @return  BoundaryError
 	 */
-	private function assert_failure_code( mixed $result, ErrorCode $code ): ApiError {
+	private function assert_failure_code( mixed $result, ErrorCode $code ): BoundaryError {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $result->error;
-		self::assertInstanceOf( ApiError::class, $error );
+		self::assertInstanceOf( BoundaryError::class, $error );
 		self::assertSame( $code, $error->code );
 
 		return $error;

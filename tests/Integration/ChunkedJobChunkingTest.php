@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -65,8 +65,8 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			$context->prepend( array( 'chunk' => 'front' ) );
 		};
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $chunked_job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		$continue_delay_calls = array();
@@ -105,7 +105,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = $client->chunked_jobs()->start( self::NAME, $start_args );
+		$result = $client->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The registered chunked job must start through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
@@ -158,7 +158,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			'Completed hooks must preserve identity-specific then generic payload order'
 		);
 
-		$last_completed = $client->runs()->last_completed_run_id( self::NAME );
+		$last_completed = $client->last_completed_run_id( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );
 		$runs = $this->inspection()->runs( self::IDENTITY );
@@ -187,8 +187,8 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 	public function test_action_scheduler_delivers_float_chunk_from_the_authoritative_run_row(): void {
 		$chunked_job        = new RecordingChunkedJob( self::FIDELITY_NAME );
 		$chunked_job->queue = array( array( 'value' => 1.0 ) );
-		$client             = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $chunked_job->definition() );
+		$client             = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FIDELITY_IDENTITY );
 		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
@@ -212,7 +212,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			1
 		);
 
-		$result = $client->chunked_jobs()->start( self::FIDELITY_NAME, array() );
+		$result = $client->start( self::FIDELITY_NAME, array() );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;

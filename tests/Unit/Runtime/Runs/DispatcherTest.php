@@ -2,17 +2,16 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
@@ -47,7 +46,7 @@ final class DispatcherTest extends TestCase {
 	private const string UNKNOWN_NAME     = 'unknown';
 	private const string UNKNOWN_IDENTITY = self::OWNER . ':' . self::UNKNOWN_NAME;
 
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -117,7 +116,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_with_default_overlap_key_dispatches_the_original_arguments(): void {
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS, priority: 23 );
+		$result = $this->client->enqueue( self::NAME, self::ARGS, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -147,11 +146,11 @@ final class DispatcherTest extends TestCase {
 	public function test_dedup_key_cannot_collide_with_the_argument_identity_domain(): void {
 		$this->overlap_key_resolver = static fn ( array $args ): ?string => isset( $args['opaque'] ) ? '[]' : null;
 
-		$argument_identity = $this->client->jobs()->enqueue( self::NAME );
+		$argument_identity = $this->client->enqueue( self::NAME );
 		self::assertInstanceOf( Success::class, $argument_identity );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$overlap_identity = $this->client->jobs()->enqueue( self::NAME, array( 'opaque' => true ) );
+		$overlap_identity = $this->client->enqueue( self::NAME, array( 'opaque' => true ) );
 
 		self::assertInstanceOf( Success::class, $overlap_identity );
 		self::assertNotSame( $argument_identity->value, $overlap_identity->value );
@@ -168,11 +167,11 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_enqueue_treats_different_overlap_keys_as_distinct_single_flight_identities(): void {
 		$this->overlap_key_resolver = static fn ( array $args ): ?string => \is_string( $args['overlap_key'] ?? null ) ? $args['overlap_key'] : null;
-		$first                      = $this->client->jobs()->enqueue( self::NAME, self::ARGS + array( 'overlap_key' => 'site-7-full' ) );
+		$first                      = $this->client->enqueue( self::NAME, self::ARGS + array( 'overlap_key' => 'site-7-full' ) );
 		self::assertInstanceOf( Success::class, $first );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$second = $this->client->jobs()->enqueue( self::NAME, self::ARGS + array( 'overlap_key' => 'site-8-full' ) );
+		$second = $this->client->enqueue( self::NAME, self::ARGS + array( 'overlap_key' => 'site-8-full' ) );
 
 		self::assertInstanceOf( Success::class, $second );
 		self::assertNotSame( $first->value, $second->value );
@@ -190,10 +189,10 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_honors_the_job_allow_invariant_without_a_caller_policy(): void {
 		$this->restart_with_overlap_policy( OverlapPolicy::Allow );
 
-		$first = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$first = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$second                        = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$second                        = $this->client->enqueue( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $second );
 		self::assertNotSame( $first->value, $second->value );
@@ -211,7 +210,7 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_accepts_a_64_byte_overlap_key(): void {
 		$this->overlap_key_resolver = static fn ( array $args ): string => \str_repeat( 'a', 64 );
 
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 	}
@@ -230,7 +229,7 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_rejects_an_invalid_job_overlap_key( string $overlap_key ): void {
 		$this->overlap_key_resolver = static fn ( array $args ): string => $overlap_key;
 
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 
 		$this->assert_failure_code( $result, ErrorCode::PayloadRejected );
 		self::assertSame( array(), $this->run_delivery_calls() );
@@ -263,7 +262,7 @@ final class DispatcherTest extends TestCase {
 		$run_id = $this->enqueue_job();
 		$this->reset_observations();
 
-		$result = $this->client->runs()->cancel( self::NAME, $run_id );
+		$result = $this->client->cancel( self::NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $result );
 		$unschedule = $this->backend_calls( 'unschedule' );
@@ -282,7 +281,7 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_terminalizes_when_a_started_listener_throws(): void {
 		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_jobs_engine/started/' . self::IDENTITY => new \RuntimeException( 'Started listener exploded.' ) );
 
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 
 		$this->assert_failure_code( $result, ErrorCode::ExecutionFailed );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
@@ -323,7 +322,7 @@ final class DispatcherTest extends TestCase {
 		}
 		$this->seed_running_lock( $heartbeat_age );
 
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 
 		if ( $is_reclaimed ) {
 			self::assertInstanceOf( Success::class, $result );
@@ -360,7 +359,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 
 		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
@@ -389,7 +388,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -410,7 +409,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_with_delay_routes_to_single_scheduling(): void {
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120, priority: 31 );
+		$result = $this->client->enqueue( self::NAME, self::ARGS, delay: 120, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$calls = $this->backend_calls( 'schedule_single' );
@@ -437,11 +436,11 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_with_delay_releases_its_lock_when_heartbeat_write_fails(): void {
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->enqueue( self::NAME, self::ARGS, delay: 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
-		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$retried = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $retried );
 	}
 
@@ -464,11 +463,11 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->enqueue( self::NAME, self::ARGS, delay: 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
-		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$retried = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $retried );
 	}
 
@@ -488,12 +487,12 @@ final class DispatcherTest extends TestCase {
 		$this->rig->wpdb()->before_next( 'update', static function (): void {} );
 		$this->rig->wpdb()->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->script_result( 'update', false ) );
 
-		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->enqueue( self::NAME, self::ARGS, delay: 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailure );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$reused                        = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 120 );
+		$reused                        = $this->client->enqueue( self::NAME, self::ARGS, delay: 120 );
 		self::assertInstanceOf( Success::class, $reused );
 	}
 
@@ -507,11 +506,11 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_enqueue_uses_the_overlap_key_as_the_single_flight_identity(): void {
 		$this->overlap_key_resolver = static fn ( array $args ): string => "logical-account\0\xFF";
-		$first                      = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$first                      = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$duplicate = $this->client->jobs()->enqueue( self::NAME, array( 'site_id' => 8 ) );
+		$duplicate = $this->client->enqueue( self::NAME, array( 'site_id' => 8 ) );
 
 		$error = $this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
 		self::assertSame( $first->value, $error->context['run_id'] ?? null );
@@ -529,7 +528,7 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_rejects_an_unknown_job_without_boundary_effects(): void {
 		$before = $this->public_effects_snapshot();
 
-		$result = $this->client->jobs()->enqueue( self::UNKNOWN_NAME, self::ARGS );
+		$result = $this->client->enqueue( self::UNKNOWN_NAME, self::ARGS );
 
 		$error = $this->assert_failure_code( $result, ErrorCode::UnknownWork );
 		self::assertSame( self::UNKNOWN_IDENTITY, $error->context['name'] ?? null );
@@ -551,7 +550,7 @@ final class DispatcherTest extends TestCase {
 		$before = $this->public_effects_snapshot();
 
 		try {
-			(void) $this->client->jobs()->enqueue( self::NAME, self::ARGS, priority: $priority );
+			(void) $this->client->enqueue( self::NAME, self::ARGS, priority: $priority );
 			self::fail( 'Invalid priority must throw before dispatch.' );
 		} catch ( \InvalidArgumentException ) {
 			self::assertSame( $before, $this->public_effects_snapshot() );
@@ -569,11 +568,11 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_maps_backend_failure_and_allows_readmission(): void {
 		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
 
-		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$failed = $this->client->enqueue( self::NAME, self::ARGS );
 		$this->assert_failure_code( $failed, ErrorCode::BackendRejected );
 		unset( $this->rig->backend()->results['enqueue_async'] );
 
-		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$retried = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $retried );
 	}
 
@@ -593,13 +592,13 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$failed = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$failed = $this->client->enqueue( self::NAME, self::ARGS );
 
 		$this->assert_failure_code( $failed, ErrorCode::BackendRejected );
-		$missing = $this->client->runs()->cancel( self::NAME, self::RUN_ID );
+		$missing = $this->client->cancel( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $missing, ErrorCode::RunNotRetained );
 
-		$retried = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$retried = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $retried );
 	}
 
@@ -618,7 +617,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
 		$this->script_scheduling_rollback_failure( $failure );
 
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 
 		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
 		$record = $this->scheduling_rollback_warning();
@@ -659,7 +658,7 @@ final class DispatcherTest extends TestCase {
 		$before = $this->security_boundary_snapshot();
 
 		try {
-			(void) $this->client->jobs()->enqueue( self::NAME, array( 'private-payload' => new \stdClass() ) );
+			(void) $this->client->enqueue( self::NAME, array( 'private-payload' => new \stdClass() ) );
 			self::fail( 'Non-portable payload must throw before dispatch.' );
 		} catch ( \InvalidArgumentException ) {
 			self::assertSame( $before, $this->security_boundary_snapshot() );
@@ -677,7 +676,7 @@ final class DispatcherTest extends TestCase {
 	public function test_enqueue_rejects_a_delay_that_overflows_unix_seconds(): void {
 		$this->rig->clock()->timestamp = \PHP_INT_MAX - 5;
 
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS, delay: 10 );
+		$result = $this->client->enqueue( self::NAME, self::ARGS, delay: 10 );
 
 		$this->assert_failure_code( $result, ErrorCode::PayloadRejected );
 		self::assertSame( array(), $this->run_delivery_calls() );
@@ -692,7 +691,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_enqueue_declares_no_discard_on_the_public_facade(): void {
-		$method = new \ReflectionMethod( Jobs::class, 'enqueue' );
+		$method = new \ReflectionMethod( OwnerOperations::class, 'enqueue' );
 
 		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
 	}
@@ -707,7 +706,7 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_retry_failed_rejects_a_malformed_run_identifier(): void {
 		try {
-			(void) $this->client->runs()->retry_failed( self::NAME, 'malformed_run_id' );
+			(void) $this->client->retry_failed( self::NAME, 'malformed_run_id' );
 			self::fail( 'A malformed retry identifier must be rejected before storage lookup.' );
 		} catch ( \InvalidArgumentException $exception ) {
 			self::assertSame( 'Run identifier is malformed; pass a run ID the engine returned.', $exception->getMessage() );
@@ -726,12 +725,12 @@ final class DispatcherTest extends TestCase {
 		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
-		$consumed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$consumed = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $consumed, ErrorCode::RunNotRetained );
 	}
 
@@ -746,16 +745,16 @@ final class DispatcherTest extends TestCase {
 	public function test_retry_failed_forces_reject_for_a_replace_job(): void {
 		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
 
-		$incumbent = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$incumbent = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
 		$this->seed_failed_run( self::OTHER_RUN_ID, self::ARGS, 2 );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$retry = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
+		$retry = $this->client->retry_failed( self::NAME, self::OTHER_RUN_ID );
 
 		$error = $this->assert_failure_code( $retry, ErrorCode::OverlapHeld );
 		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
-		$still_retained = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
+		$still_retained = $this->client->retry_failed( self::NAME, self::OTHER_RUN_ID );
 		$this->assert_failure_code( $still_retained, ErrorCode::OverlapHeld );
 	}
 
@@ -770,12 +769,12 @@ final class DispatcherTest extends TestCase {
 	public function test_retry_failed_admits_an_allow_job_under_its_own_policy(): void {
 		$this->restart_with_overlap_policy( OverlapPolicy::Allow );
 
-		$incumbent = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$incumbent = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
 		$this->seed_failed_run( self::OTHER_RUN_ID, self::ARGS, 2 );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$retry = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
+		$retry = $this->client->retry_failed( self::NAME, self::OTHER_RUN_ID );
 
 		self::assertInstanceOf( Success::class, $retry );
 		self::assertNotSame( $incumbent->value, $retry->value );
@@ -798,14 +797,14 @@ final class DispatcherTest extends TestCase {
 		$this->rig->clock()->timestamp = self::NOW + 100;
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		$first = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$first = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $first );
 		self::assertIsString( $first->value );
-		$cancelled = $this->client->runs()->cancel( self::NAME, $first->value );
+		$cancelled = $this->client->cancel( self::NAME, $first->value );
 		self::assertInstanceOf( Success::class, $cancelled );
 		$this->rig->clock()->timestamp = self::NOW + 101;
 
-		$second = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$second = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $second );
 	}
 
@@ -829,7 +828,7 @@ final class DispatcherTest extends TestCase {
 		$this->rig->wpdb()->put( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $raw );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
@@ -858,7 +857,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 
 		$this->assert_failure_code( $result, ErrorCode::StorageFailure );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
@@ -876,11 +875,11 @@ final class DispatcherTest extends TestCase {
 	public function test_retry_failed_rejects_a_missing_entry_without_consuming_existing_work(): void {
 		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 
-		$missing = $this->client->runs()->retry_failed( self::NAME, self::OTHER_RUN_ID );
+		$missing = $this->client->retry_failed( self::NAME, self::OTHER_RUN_ID );
 		$error   = $this->assert_failure_code( $missing, ErrorCode::RunNotRetained );
 		self::assertSame( self::OTHER_RUN_ID, $error->context['run_id'] ?? null );
 
-		$retained = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$retained = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $retained );
 	}
 
@@ -896,12 +895,12 @@ final class DispatcherTest extends TestCase {
 		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
 		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
 
-		$failed = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$failed = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $failed, ErrorCode::BackendRejected );
 		unset( $this->rig->backend()->results['enqueue_async'] );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
-		$retried = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$retried = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $retried );
 	}
 
@@ -1010,7 +1009,7 @@ final class DispatcherTest extends TestCase {
 	private function boot( ?OverlapPolicy $overlap = null ): void {
 		$this->overlap_key_resolver = null;
 		$this->rig                  = EngineRig::set_up( self::NOW );
-		$this->client               = $this->rig->client( self::OWNER );
+		$this->client               = $this->rig->operations( self::OWNER );
 		$this->job                  = new RecordingJob( self::NAME );
 		$overlap_key                = function ( array $args ): ?string {
 			if ( null === $this->overlap_key_resolver ) {
@@ -1019,7 +1018,7 @@ final class DispatcherTest extends TestCase {
 
 			return ( $this->overlap_key_resolver )( $args );
 		};
-		$this->client->jobs()->register( $this->job->definition( new JobOptions( overlap: $overlap, overlap_key: $overlap_key ) ) );
+		$this->client->register( $this->job->definition( new JobOptions( overlap: $overlap, overlap_key: $overlap_key ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->reset_observations();
 	}
@@ -1048,7 +1047,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 
@@ -1325,12 +1324,12 @@ final class DispatcherTest extends TestCase {
 	 * @param   mixed        $result Facade result.
 	 * @param   ErrorCode $code   Expected public code.
 	 *
-	 * @return  ApiError
+	 * @return  BoundaryError
 	 */
-	private function assert_failure_code( mixed $result, ErrorCode $code ): ApiError {
+	private function assert_failure_code( mixed $result, ErrorCode $code ): BoundaryError {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $result->error;
-		self::assertInstanceOf( ApiError::class, $error );
+		self::assertInstanceOf( BoundaryError::class, $error );
 		self::assertSame( $code, $error->code );
 
 		return $error;

@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Occurrences;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
@@ -80,7 +80,7 @@ final class ScheduleExecutionTest extends TestCase {
 	private const string JOB              = 'refresh-index';
 	private const string JOB_IDENTITY     = self::OWNER . ':' . self::JOB;
 
-	private Client $client;
+	private OwnerOperations $client;
 	private RecordingChunkedJob $chunked_job;
 	private StoreFixtureBuilder $chunked_fixtures;
 	private StoreFixtureBuilder $fixtures;
@@ -117,7 +117,7 @@ final class ScheduleExecutionTest extends TestCase {
 		parent::setUp();
 
 		$this->rig              = EngineRig::set_up( self::NOW );
-		$this->client           = $this->rig->client( self::OWNER );
+		$this->client           = $this->rig->operations( self::OWNER );
 		$this->job              = new RecordingJob( self::JOB );
 		$this->chunked_job      = new RecordingChunkedJob( self::CHUNKED_JOB );
 		$this->fixtures         = StoreFixtureBuilder::for_identity( self::JOB_IDENTITY );
@@ -534,7 +534,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( $replacement, &$replacement_raw ): void {
-				self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $replacement ) ) );
+				self::assertInstanceOf( Success::class, $this->client->sync( array( $replacement ) ) );
 				$replacement_raw = $wpdb->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null;
 				self::assertIsString( $replacement_raw );
 			}
@@ -724,9 +724,9 @@ final class ScheduleExecutionTest extends TestCase {
 			self::CHUNKED_JOB => $this->chunked_job,
 			default => throw new \LogicException( 'Schedule target has no execution fixture.' ),
 		};
-		$this->client->jobs()->register( $execution->definition( $options ) );
+		$this->client->register( $execution->definition( $options ) );
 
-		self::assertInstanceOf( Success::class, $this->client->schedules()->sync( array( $schedule ) ) );
+		self::assertInstanceOf( Success::class, $this->client->sync( array( $schedule ) ) );
 		$this->reset_observations();
 	}
 

@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 

@@ -6,8 +6,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
@@ -165,9 +165,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_registered_schedule_remove_clears_only_the_named_owner_and_then_reports_not_found(): void {
 		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-			$client = $this->rig->client( $owner );
-			$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+			$client = $this->rig->operations( $owner );
+			$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+			self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
@@ -252,9 +252,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_remove_reports_first_backend_failure_without_deleting_the_registry(): void {
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Backend clearance failed.' ) );
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
@@ -280,9 +280,9 @@ final class CommandsAndOutputTest extends TestCase {
 		$this->rig->tear_down();
 		$this->rig = EngineRig::set_up( self::NOW, 2 );
 		CliHarness::set_up();
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		$this->rig->backend()->ready = false;
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
@@ -305,11 +305,11 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_remove_reports_partial_progress_and_converges_on_retry(): void {
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		self::assertInstanceOf(
 			Success::class,
-			$client->schedules()->sync(
+			$client->sync(
 				array(
 					new Schedule( 'alpha', Recurrence::every( 300 ), 'refresh' ),
 					new Schedule( 'beta', Recurrence::every( 600 ), 'refresh' ),
@@ -431,9 +431,9 @@ final class CommandsAndOutputTest extends TestCase {
 		if ( 'csv' === $format ) {
 			$result = CliHarness::run_csv( 'runs' );
 		} else {
-			$client = $this->rig->client( 'consumer-plugin' );
-			$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'email-digest' ) );
+			$client = $this->rig->operations( 'consumer-plugin' );
+			$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+			self::assertInstanceOf( Success::class, $client->enqueue( 'email-digest' ) );
 			$result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), $assoc_args );
 		}
 
@@ -471,7 +471,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_lock_labels_are_discriminated(): void {
-		$client        = $this->rig->client( 'lock-tests' );
+		$client        = $this->rig->operations( 'lock-tests' );
 		$schedules     = array(
 			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
 			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
@@ -484,14 +484,14 @@ final class CommandsAndOutputTest extends TestCase {
 			$job     = new RecordingJob( $schedule->job );
 			$options = 'allow' === $name ? new JobOptions( overlap: OverlapPolicy::Allow ) : null;
 
-			$client->jobs()->register( $job->definition( $options ) );
+			$client->register( $job->definition( $options ) );
 			$declarations[ 'lock-tests:' . $name ]  = array(
 				'schedule' => $schedule,
 				'job'      => 'lock-tests:' . $schedule->job,
 			);
 			$registrations[ 'lock-tests:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'lock-tests:invalid-job' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -552,9 +552,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registered_runs_cancel_action_terminalizes_a_real_run(): void {
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-		$enqueued = $client->jobs()->enqueue( 'email-digest' );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+		$enqueued = $client->enqueue( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
 		if ( ! \is_string( $enqueued->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
@@ -737,9 +737,9 @@ final class CommandsAndOutputTest extends TestCase {
 	#[DataProvider( 'heartbeat_boundaries' )]
 	public function test_registered_runs_command_renders_every_heartbeat_boundary( int $heartbeat_at, string $expected ): void {
 		$this->rig->clock()->timestamp = $heartbeat_at;
-		$client                        = $this->rig->client( 'clock-tests' );
-		$client->jobs()->register( ( new RecordingJob( 'heartbeat' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'heartbeat' ) );
+		$client                        = $this->rig->operations( 'clock-tests' );
+		$client->register( ( new RecordingJob( 'heartbeat' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->enqueue( 'heartbeat' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$result = CliHarness::run( 'runs', array( 'list', 'clock-tests:heartbeat' ) );
@@ -758,9 +758,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_registered_runs_command_handles_clock_skew_and_integer_extremes(): void {
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$client                        = $this->rig->client( 'clock-skew' );
-		$client->jobs()->register( ( new RecordingJob( 'future' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'future' ) );
+		$client                        = $this->rig->operations( 'clock-skew' );
+		$client->register( ( new RecordingJob( 'future' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->enqueue( 'future' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$future = CliHarness::run( 'runs', array( 'list', 'clock-skew:future' ) );
@@ -785,14 +785,14 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registered_schedule_command_renders_due_boundaries_in_utc(): void {
-		$client = $this->rig->client( 'due-tests' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		$client = $this->rig->operations( 'due-tests' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		$schedules = array(
 			'future'  => new Schedule( 'future', Recurrence::every( 300 ), 'refresh' ),
 			'now'     => new Schedule( 'now', Recurrence::every( 300 ), 'refresh' ),
 			'overdue' => new Schedule( 'overdue', Recurrence::every( 300 ), 'refresh' ),
 		);
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
 		$declarations = array();
 		foreach ( $schedules as $name => $schedule ) {
 			$declarations[ 'due-tests:' . $name ] = array(
@@ -901,9 +901,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	private function register_schedules(): void {
 		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-			$client = $this->rig->client( $owner );
-			$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+			$client = $this->rig->operations( $owner );
+			$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+			self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
 	}
 
@@ -916,8 +916,8 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_failed_runs(): void {
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
 			$failed_chunk   = 'consumer-plugin:email_digest-2' === $identity ? array( 'post_id' => 42 ) : null;
 			$details        = null === $failed_chunk ? null : array( 'failed_chunk' => $failed_chunk );

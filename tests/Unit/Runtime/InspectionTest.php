@@ -6,8 +6,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
@@ -104,14 +104,14 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedules_join_live_declarations_with_persisted_orphans_and_locks(): void {
-		$client = $this->rig->client( 'owner-a' );
+		$client = $this->rig->operations( 'owner-a' );
 		$job    = new RecordingJob( 'refresh-index' );
 
 		$options = new JobOptions( overlap_key: static fn ( array $args ): ?string => 'all' === ( $args['scope'] ?? null ) ? 'scope:all' : null );
-		$client->jobs()->register( $job->definition( $options ) );
+		$client->register( $job->definition( $options ) );
 
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( $schedule ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( array( $schedule ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -167,7 +167,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_locks_preserve_every_discriminated_honesty_state(): void {
-		$client        = $this->rig->client( 'owner' );
+		$client        = $this->rig->operations( 'owner' );
 		$schedules     = array(
 			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
 			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
@@ -179,14 +179,14 @@ final class InspectionTest extends TestCase {
 		foreach ( $schedules as $name => $schedule ) {
 			$job     = new RecordingJob( $schedule->job );
 			$options = 'allow' === $name ? new JobOptions( overlap: OverlapPolicy::Allow ) : null;
-			$client->jobs()->register( $job->definition( $options ) );
+			$client->register( $job->definition( $options ) );
 			$declarations[ 'owner:' . $name ]  = array(
 				'schedule' => $schedule,
 				'job'      => 'owner:' . $schedule->job,
 			);
 			$registrations[ 'owner:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'owner:invalid-job' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -251,14 +251,14 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_public_job_lifecycle_is_visible_with_strict_staleness(): void {
 		$identity       = 'owner:email-digest';
-		$client         = $this->rig->client( 'owner' );
+		$client         = $this->rig->operations( 'owner' );
 		$job            = new RecordingJob( 'email-digest' );
 		$during         = null;
 		$job->on_handle = function () use ( $identity, &$during ): void {
 			$during = $this->rig->inspection()->runs( $identity )['live'][0] ?? null;
 		};
-		$client->jobs()->register( $job->definition() );
-		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'email-digest' ) );
+		$client->register( $job->definition() );
+		self::assertInstanceOf( Success::class, $client->enqueue( 'email-digest' ) );
 
 		$waiting = $this->rig->inspection()->runs( $identity )['live'][0];
 		self::assertFalse( $waiting['executing'] );
@@ -288,7 +288,7 @@ final class InspectionTest extends TestCase {
 		$identity     = 'owner:catalog-sync';
 		$completed_id = self::run_id( 2 );
 		$failed_id    = self::run_id( 3 );
-		$this->rig->client( 'owner' )->jobs()->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
+		$this->rig->operations( 'owner' )->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$live_id  = self::run_id( 1 );
 		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'chunked_job' ) ) );
@@ -345,8 +345,8 @@ final class InspectionTest extends TestCase {
 		$orphaned_identity    = 'owner:orphaned';
 		$job_identity         = 'owner-a:shared';
 		$chunked_job_identity = 'owner-b:shared';
-		$this->rig->client( 'owner-a' )->jobs()->register( ( new RecordingJob( 'shared' ) )->definition() );
-		$this->rig->client( 'owner-b' )->jobs()->register( ( new RecordingChunkedJob( 'shared' ) )->definition() );
+		$this->rig->operations( 'owner-a' )->register( ( new RecordingJob( 'shared' ) )->definition() );
+		$this->rig->operations( 'owner-b' )->register( ( new RecordingChunkedJob( 'shared' ) )->definition() );
 		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'chunked_job' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $job_identity )->run( self::run_id( 2 ), self::state( 'job-hash', array( array( 'page' => 1 ) ), 'chunked_job' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $chunked_job_identity )->run( self::run_id( 3 ), self::state( 'chunked-job-hash', array( array( 'page' => 1 ) ) ) ) );

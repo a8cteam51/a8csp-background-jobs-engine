@@ -606,7 +606,7 @@ The engine is designed for a handful of plugins with tens of jobs and schedules 
 
 ## Testing consumer code
 
-Do not redefine `a8csp_bgje()` or the `a8csp_bgje_*()` aliases; the engine declares them unconditionally, so a test redefinition fatals. Keep application code testable by placing engine capability calls behind an application-owned interface or callable and fake that boundary in unit tests. Exercise the public models and functions in WordPress integration tests. Types under `src/Internal/` are internal engine seams, not consumer injection contracts.
+Do not redefine `a8csp_bgje()` or the `a8csp_bgje_*()` aliases; the engine declares them unconditionally, so a test redefinition fatals. Keep application code testable by placing engine capability calls behind an application-owned interface or callable and fake that boundary in unit tests. Exercise the public models and functions in WordPress integration tests. Types under `src/Boundary/` cross engine-layer boundaries and remain internal engine seams, not consumer injection contracts.
 
 ## Multisite
 

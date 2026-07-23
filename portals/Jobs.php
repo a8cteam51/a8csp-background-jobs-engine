@@ -3,15 +3,15 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\DuplicateRegistrationException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\DuplicateRegistrationException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -56,7 +56,7 @@ final readonly class Jobs {
 	#[\NoDiscard( 'a job-registration failure must be handled, not dropped' )]
 	public function register( JobDefinition $definition ): true|\WP_Error {
 		try {
-			$this->client()->jobs()->register( $definition );
+			$this->operations()->register( $definition );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( DuplicateRegistrationException $exception ) {
@@ -84,7 +84,7 @@ final readonly class Jobs {
 	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
 	public function enqueue( string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10 ): Run|\WP_Error {
 		try {
-			$result = $this->client()->jobs()->enqueue( $name, $args, $delay_seconds, $priority );
+			$result = $this->operations()->enqueue( $name, $args, $delay_seconds, $priority );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -112,7 +112,7 @@ final readonly class Jobs {
 	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
 	public function start( string $name, array $start_args = array(), int $priority = 10 ): Run|\WP_Error {
 		try {
-			$result = $this->client()->chunked_jobs()->start( $name, $start_args, $priority );
+			$result = $this->operations()->start( $name, $start_args, $priority );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -130,18 +130,18 @@ final readonly class Jobs {
 	// region HELPERS
 
 	/**
-	 * Resolves the internal client for the bound owner.
+	 * Resolves the owner operations adapter for the bound owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
+	 * @throws  \InvalidArgumentException When the owner violates the owner contract.
 	 * @throws  \LogicException           When the internal graph is unavailable.
 	 *
-	 * @return  Client
+	 * @return  OwnerOperations
 	 */
-	private function client(): Client {
-		return Component::client( $this->owner );
+	private function operations(): OwnerOperations {
+		return Component::operations( $this->owner );
 	}
 
 	/**
@@ -163,16 +163,16 @@ final readonly class Jobs {
 	}
 
 	/**
-	 * Converts one internal client failure to the WordPress error boundary.
+	 * Converts one boundary failure to the WordPress error boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiError $error Internal client failure.
+	 * @param   BoundaryError $error Boundary failure.
 	 *
 	 * @return  \WP_Error
 	 */
-	private static function wp_error( ApiError $error ): \WP_Error {
+	private static function wp_error( BoundaryError $error ): \WP_Error {
 		return new \WP_Error( $error->code->value, $error->message, $error->context );
 	}
 

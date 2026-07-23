@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\ComponentCollection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
@@ -90,7 +90,7 @@ final class PluginBootGateTest extends TestCase {
 		self::assertTrue( $plugin->is_booted() );
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'init' => 1 );
 
-		self::assertInstanceOf( Client::class, Component::client( 'plugin-boot-gate' ) );
+		self::assertInstanceOf( OwnerOperations::class, Component::operations( 'plugin-boot-gate' ) );
 	}
 
 	/**
@@ -118,6 +118,6 @@ final class PluginBootGateTest extends TestCase {
 
 		$this->expectException( \LogicException::class );
 
-		Component::client( 'plugin-boot-gate' );
+		Component::operations( 'plugin-boot-gate' );
 	}
 }

@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
@@ -58,8 +58,8 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$job->throwable          = new \RuntimeException( 'The upstream service remains unavailable.' );
 		$definition_retry_policy = new RetryPolicy();
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition( new JobOptions( retry: $definition_retry_policy ) ) );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition( new JobOptions( retry: $definition_retry_policy ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY );
@@ -132,7 +132,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = $client->jobs()->enqueue( self::NAME, $args );
+		$result = $client->enqueue( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The retryable job must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
 		$failed_run_id     = $result->value;
@@ -247,7 +247,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			$failed_entry['error'] ?? null
 		);
 
-		$manual_result = $client->runs()->retry_failed( self::NAME, $failed_run_id );
+		$manual_result = $client->retry_failed( self::NAME, $failed_run_id );
 		self::assertInstanceOf( Success::class, $manual_result, 'Manual retry must enqueue a fresh run through the public API' );
 		self::assertIsString( $manual_result->value );
 		$successful_run_id = $manual_result->value;

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
@@ -224,9 +224,9 @@ final class KindDeliveryTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$client = $this->rig->client( self::OWNER );
-		$client->jobs()->register( ( new RecordingJob( self::NAME ) )->definition() );
-		$result = $client->jobs()->enqueue( self::NAME );
+		$client = $this->rig->operations( self::OWNER );
+		$client->register( ( new RecordingJob( self::NAME ) )->definition() );
+		$result = $client->enqueue( self::NAME );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 

@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
@@ -56,8 +56,8 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		);
 		$job  = new RecordingJob( self::SUCCESS_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SUCCESS_IDENTITY );
 
@@ -80,7 +80,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = $client->jobs()->enqueue( self::SUCCESS_NAME, $args );
+		$result = $client->enqueue( self::SUCCESS_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The registered job must enqueue through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
@@ -97,7 +97,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		self::assertSame( array( $args ), $job->calls, 'The job must receive its original argument array exactly once' );
 		self::assertSame( array( array( $run_id, $args, null ) ), $named_completed, 'The identity-specific completed hook must receive run ID, start arguments, and the previous completion' );
 		self::assertSame( array( array( self::SUCCESS_IDENTITY, $run_id, $args, null ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same payload' );
-		$last_completed = $client->runs()->last_completed_run_id( self::SUCCESS_NAME );
+		$last_completed = $client->last_completed_run_id( self::SUCCESS_NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertSame( $run_id, $last_completed->value );
 		$runs = $this->inspection()->runs( self::SUCCESS_IDENTITY );
@@ -134,8 +134,8 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$job            = new RecordingJob( self::FAILURE_NAME );
 		$job->throwable = new NonRetryableException( 'The remote record no longer exists.' );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FAILURE_IDENTITY );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::FAILURE_IDENTITY );
@@ -150,7 +150,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 			1
 		);
 
-		$result = $client->jobs()->enqueue( self::FAILURE_NAME, $args );
+		$result = $client->enqueue( self::FAILURE_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The failing job must enqueue before its handler executes' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;

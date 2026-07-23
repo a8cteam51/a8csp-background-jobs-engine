@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
@@ -53,8 +53,8 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$job            = new RecordingJob( self::NAME );
 		$job->throwable = new NonRetryableException( 'The requested record is permanently unavailable.' );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY );
@@ -87,7 +87,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			1
 		);
 
-		$result = $client->jobs()->enqueue( self::NAME, $args );
+		$result = $client->enqueue( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The non-retryable job must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;

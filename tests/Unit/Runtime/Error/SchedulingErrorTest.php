@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\ApiErrorMapper;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -20,8 +20,8 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( SchedulingError::class )]
-#[UsesClass( ApiError::class )]
-#[UsesClass( ApiErrorMapper::class )]
+#[UsesClass( BoundaryError::class )]
+#[UsesClass( BoundaryErrorMapper::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingErrorReason::class )]
 final class SchedulingErrorTest extends TestCase {
@@ -59,10 +59,10 @@ final class SchedulingErrorTest extends TestCase {
 			'hook'     => 'a8csp_jobs_engine/deliver',
 			'priority' => 10,
 		);
-		$result  = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context ) ) );
+		$result  = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::BackendRejected, $result->error->code );
 		self::assertSame( 'Retry after the backend becomes available.', $result->error->message );
 		self::assertSame( $context, $result->error->context );
@@ -77,10 +77,10 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_context_defaults_to_an_empty_array(): void {
-		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' ) ) );
+		$result = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::BackendUnavailable, $result->error->code );
 		self::assertSame( 'Load a supported scheduling backend.', $result->error->message );
 		self::assertSame( array(), $result->error->context );
@@ -95,10 +95,10 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_read_failure_surfaces_as_storage_failure(): void {
-		$result = ApiErrorMapper::map( new Failure( SchedulingError::registry_read_failure( 'owner-a' ) ) );
+		$result = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_read_failure( 'owner-a' ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
@@ -113,10 +113,10 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_persist_failure_surfaces_as_storage_failure(): void {
-		$result = ApiErrorMapper::map( new Failure( SchedulingError::registry_persist_failure( 'owner-a' ) ) );
+		$result = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_persist_failure( 'owner-a' ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
 		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
@@ -129,10 +129,10 @@ final class SchedulingErrorTest extends TestCase {
 	 */
 	public function test_registry_corruption_surfaces_as_storage_failure(): void {
 		$option_name = 'a8csp_bgje_schedule_registrations_owner-a';
-		$result      = ApiErrorMapper::map( new Failure( SchedulingError::registry_corrupt( 'owner-a', $option_name ) ) );
+		$result      = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_corrupt( 'owner-a', $option_name ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailure, $result->error->code );
 		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
 		self::assertSame(
@@ -160,10 +160,10 @@ final class SchedulingErrorTest extends TestCase {
 	 */
 	#[DataProvider( 'scheduling_failure_codes' )]
 	public function test_scheduling_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = ApiErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_jobs_engine/deliver' ) ) ) );
+		$result = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_jobs_engine/deliver' ) ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Correct the scheduling request and retry.', $result->error->message );
 		self::assertSame( array( 'hook' => 'a8csp_jobs_engine/deliver' ), $result->error->context );

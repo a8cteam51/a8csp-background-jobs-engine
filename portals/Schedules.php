@@ -3,12 +3,12 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 
 \defined( 'ABSPATH' ) || exit;
@@ -54,7 +54,7 @@ final readonly class Schedules {
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	public function sync( Schedule ...$schedules ): true|\WP_Error {
 		try {
-			$result = $this->client()->schedules()->sync( $schedules );
+			$result = $this->operations()->sync( $schedules );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -80,7 +80,7 @@ final readonly class Schedules {
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch( string $name ): Run|\WP_Error {
 		try {
-			$result = $this->client()->schedules()->dispatch_now( $name );
+			$result = $this->operations()->dispatch_now( $name );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -98,18 +98,18 @@ final readonly class Schedules {
 	// region HELPERS
 
 	/**
-	 * Resolves the internal client for the bound owner.
+	 * Resolves the owner operations adapter for the bound owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
+	 * @throws  \InvalidArgumentException When the owner violates the owner contract.
 	 * @throws  \LogicException           When the internal graph is unavailable.
 	 *
-	 * @return  Client
+	 * @return  OwnerOperations
 	 */
-	private function client(): Client {
-		return Component::client( $this->owner );
+	private function operations(): OwnerOperations {
+		return Component::operations( $this->owner );
 	}
 
 	/**
@@ -129,16 +129,16 @@ final readonly class Schedules {
 	}
 
 	/**
-	 * Converts one internal client failure to the WordPress error boundary.
+	 * Converts one boundary failure to the WordPress error boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiError $error Internal client failure.
+	 * @param   BoundaryError $error Boundary failure.
 	 *
 	 * @return  \WP_Error
 	 */
-	private static function wp_error( ApiError $error ): \WP_Error {
+	private static function wp_error( BoundaryError $error ): \WP_Error {
 		return new \WP_Error( $error->code->value, $error->message, $error->context );
 	}
 

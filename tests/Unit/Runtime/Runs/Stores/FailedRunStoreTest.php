@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -51,7 +51,7 @@ final class FailedRunStoreTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
@@ -87,10 +87,10 @@ final class FailedRunStoreTest extends TestCase {
 		parent::setUp();
 
 		$this->rig            = EngineRig::set_up( self::NOW );
-		$this->client         = $this->rig->client( self::OWNER );
+		$this->client         = $this->rig->operations( self::OWNER );
 		$this->job            = new RecordingJob( self::NAME );
 		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
-		$this->client->jobs()->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
+		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -259,18 +259,18 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertTrue( $retained[ $run_ids[1] ] );
 		self::assertCount( 20, \array_filter( $retained ) );
 
-		$evicted = $this->client->runs()->retry_failed( self::NAME, $run_ids[0] );
+		$evicted = $this->client->retry_failed( self::NAME, $run_ids[0] );
 		self::assertInstanceOf( Failure::class, $evicted );
-		self::assertInstanceOf( ApiError::class, $evicted->error );
+		self::assertInstanceOf( BoundaryError::class, $evicted->error );
 		self::assertSame( ErrorCode::RunNotRetained, $evicted->error->code );
 
 		$this->job->throwable           = null;
 		$this->rig->randomizer()->value = 99;
-		$retried                        = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
+		$retried                        = $this->client->retry_failed( self::NAME, $run_ids[1] );
 		self::assertInstanceOf( Success::class, $retried );
-		$consumed = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
+		$consumed = $this->client->retry_failed( self::NAME, $run_ids[1] );
 		self::assertInstanceOf( Failure::class, $consumed );
-		self::assertInstanceOf( ApiError::class, $consumed->error );
+		self::assertInstanceOf( BoundaryError::class, $consumed->error );
 		self::assertSame( ErrorCode::RunNotRetained, $consumed->error->code );
 		$this->rig->run_due();
 		self::assertSame( array( 'index' => 1 ), $this->job->calls[21] ?? null );
@@ -293,7 +293,7 @@ final class FailedRunStoreTest extends TestCase {
 		$this->job->throwable           = null;
 		$this->rig->randomizer()->value = 8;
 
-		$retried = $this->client->runs()->retry_failed( self::NAME, $failed );
+		$retried = $this->client->retry_failed( self::NAME, $failed );
 		self::assertInstanceOf( Success::class, $retried );
 		self::assertNotSame( $failed, $retried->value );
 		$this->rig->run_due();
@@ -320,9 +320,9 @@ final class FailedRunStoreTest extends TestCase {
 
 		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
 		self::assertSame( array(), $snapshot['history'] );
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
 	}
 
@@ -350,7 +350,7 @@ final class FailedRunStoreTest extends TestCase {
 		$error = $entry['error'] ?? null;
 		self::assertIsArray( $error );
 		self::assertSame( 'acme.export_sync', $error['stage'] ?? null );
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $result );
 	}
 
@@ -371,9 +371,9 @@ final class FailedRunStoreTest extends TestCase {
 		$this->put_fixture( $fixture );
 
 		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['history'] );
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
 	}
 
@@ -651,7 +651,7 @@ final class FailedRunStoreTest extends TestCase {
 	 */
 	private function fail_job( array $args, int $randomness ): string {
 		$this->rig->randomizer()->value = $randomness;
-		$result                         = $this->client->jobs()->enqueue( self::NAME, $args );
+		$result                         = $this->client->enqueue( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		$this->rig->run_due();

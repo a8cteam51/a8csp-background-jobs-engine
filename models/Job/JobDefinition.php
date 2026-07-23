@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\ClosureJobExecution;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
 
 \defined( 'ABSPATH' ) || exit;

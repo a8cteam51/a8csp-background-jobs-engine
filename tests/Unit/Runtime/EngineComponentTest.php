@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
@@ -323,14 +323,14 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$client = Component::client( 'consumer-plugin' );
-		self::assertInstanceOf( Client::class, $client );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		$client->jobs()->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
+		$client = Component::operations( 'consumer-plugin' );
+		self::assertInstanceOf( OwnerOperations::class, $client );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		$client->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
 
-		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->chunked_jobs()->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		self::assertInstanceOf( Success::class, $client->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 
 		$cron = \get_option( 'cron', array() );
 		self::assertIsArray( $cron );
@@ -356,12 +356,12 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$client = Component::client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'preferred' ) )->definition() );
+		$client = Component::operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'preferred' ) )->definition() );
 		$GLOBALS['a8csp_bgje_test_as_calls']   = array();
 		$GLOBALS['a8csp_bgje_test_cron_calls'] = array();
 
-		$result = $client->jobs()->enqueue( 'preferred' );
+		$result = $client->enqueue( 'preferred' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $GLOBALS['a8csp_bgje_test_as_calls'], 'function' ) );

@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\CommentCountRecountChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\DemoClient;
@@ -216,15 +216,15 @@ final class DemoClientTest extends IntegrationTestCase {
 		\add_action(
 			'init',
 			static function () use ( &$api ): void {
-				$api = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( DemoClient::OWNER );
+				$api = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( DemoClient::OWNER );
 			},
 			\PHP_INT_MAX
 		);
 		\do_action( 'init' );
-		self::assertInstanceOf( Client::class, $api );
+		self::assertInstanceOf( OwnerOperations::class, $api );
 
 		$manual_args = array( 'transient' => self::MANUAL_SNAPSHOT_TRANSIENT );
-		$manual      = $api->jobs()->enqueue( SiteHealthPingJob::NAME, $manual_args );
+		$manual      = $api->enqueue( SiteHealthPingJob::NAME, $manual_args );
 		self::assertInstanceOf( Success::class, $manual, 'The demo job must enqueue through the owner-bound facade' );
 		self::assertIsString( $manual->value );
 		$manual_run_id = $manual->value;
@@ -254,7 +254,7 @@ final class DemoClientTest extends IntegrationTestCase {
 		self::assertIsString( $scheduled_run_id );
 		self::assertContains( array( $scheduled_run_id, $scheduled_args ), $job_started_named );
 
-		$stopped_schedule = $api->schedules()->sync( array() );
+		$stopped_schedule = $api->sync( array() );
 		self::assertInstanceOf( Success::class, $stopped_schedule, 'Public owner sync must stop the one-second proof recurrence after its occurrence fires' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The scheduler must execute the scheduled demo job' );
 		$this->assert_site_health_snapshot( SiteHealthPingJob::SNAPSHOT_TRANSIENT );
@@ -286,7 +286,7 @@ final class DemoClientTest extends IntegrationTestCase {
 		}
 
 		$chunked_job_args = array( 'post_type' => self::POST_TYPE );
-		$chunked_job      = $api->chunked_jobs()->start( CommentCountRecountChunkedJob::NAME, $chunked_job_args );
+		$chunked_job      = $api->start( CommentCountRecountChunkedJob::NAME, $chunked_job_args );
 		self::assertInstanceOf( Success::class, $chunked_job, 'The demo chunked job must start through the owner-bound facade' );
 		self::assertIsString( $chunked_job->value );
 		$chunked_job_run_id = $chunked_job->value;

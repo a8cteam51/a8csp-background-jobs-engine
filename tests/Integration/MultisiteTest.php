@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -200,12 +200,12 @@ final class MultisiteTest extends IntegrationTestCase {
 
 		\switch_to_blog( $other_site_id );
 		try {
-			$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( 'multisite-contract' );
-			$client->jobs()->register( ( new RecordingJob( 'site-bound-job' ) )->definition() );
+			$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( 'multisite-contract' );
+			$client->register( ( new RecordingJob( 'site-bound-job' ) )->definition() );
 
 			$this->expectException( \LogicException::class );
 
-			$result = $client->jobs()->enqueue( 'site-bound-job' );
+			$result = $client->enqueue( 'site-bound-job' );
 			self::fail( \sprintf( 'Expected storage access to fail after switch_to_blog(); got %s.', \get_debug_type( $result ) ) );
 		} finally {
 			\restore_current_blog();

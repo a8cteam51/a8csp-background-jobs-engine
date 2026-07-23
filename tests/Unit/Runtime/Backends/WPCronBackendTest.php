@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Backends;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\ApiErrorMapper;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( WPCronBackend::class )]
-#[UsesClass( ApiErrorMapper::class )]
+#[UsesClass( BoundaryErrorMapper::class )]
 final class WPCronBackendTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -196,7 +196,7 @@ final class WPCronBackendTest extends TestCase {
 	 * Arbitrary WP_Error text is removed before a scheduling failure reaches a consumer.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale WordPress extensions can place credentials or user data in WP_Error messages; the public admission mapper must not expose that external text in ApiError context or prose.
+	 * @pin-rationale WordPress extensions can place credentials or user data in WP_Error messages; the public admission mapper must not expose that external text in BoundaryError context or prose.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -210,13 +210,13 @@ final class WPCronBackendTest extends TestCase {
 		);
 
 		$internal = ( new WPCronBackend() )->schedule_single( self::HOOK, 1_700_000_300 );
-		$public   = ApiErrorMapper::map( $internal );
+		$public   = BoundaryErrorMapper::map( $internal );
 
 		self::assertInstanceOf( Failure::class, $internal );
 		self::assertInstanceOf( SchedulingError::class, $internal->error );
 		self::assertSame( $secret, $internal->error->context['wp_error'] ?? null );
 		self::assertInstanceOf( Failure::class, $public );
-		self::assertInstanceOf( ApiError::class, $public->error );
+		self::assertInstanceOf( BoundaryError::class, $public->error );
 		self::assertSame( ErrorCode::BackendRejected, $public->error->code );
 		self::assertArrayNotHasKey( 'wp_error', $public->error->context );
 		self::assertStringNotContainsString( $secret, $public->error->message );

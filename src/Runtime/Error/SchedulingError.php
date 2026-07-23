@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ErrorInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\ErrorInterface;
 
 \defined( 'ABSPATH' ) || exit;
 

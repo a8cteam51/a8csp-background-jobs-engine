@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;

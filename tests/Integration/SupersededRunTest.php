@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 
@@ -56,8 +56,8 @@ final class SupersededRunTest extends IntegrationTestCase {
 			array( 'chunk' => 'two' ),
 		);
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
@@ -126,7 +126,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 
-		$run_a_result = $client->chunked_jobs()->start( self::NAME, $start_args );
+		$run_a_result = $client->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_a_result, 'The incumbent chunked job must start through the public API' );
 		self::assertIsString( $run_a_result->value );
 		$run_a      = $run_a_result->value;
@@ -140,7 +140,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 
 		$run_a_action_id = $this->assert_pending_chunk_continuation( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
-		$run_b_result = $client->chunked_jobs()->start( self::NAME, $start_args );
+		$run_b_result = $client->start( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
 		self::assertIsString( $run_b_result->value );
 		$run_b      = $run_b_result->value;

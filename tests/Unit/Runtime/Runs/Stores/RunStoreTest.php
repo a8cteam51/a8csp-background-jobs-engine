@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -53,7 +53,7 @@ final class RunStoreTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
@@ -89,9 +89,9 @@ final class RunStoreTest extends TestCase {
 		parent::setUp();
 
 		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
+		$this->client = $this->rig->operations( self::OWNER );
 		$this->job    = new RecordingJob( self::NAME );
-		$this->client->jobs()->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 ) ) ) );
+		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 ) ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -130,7 +130,7 @@ final class RunStoreTest extends TestCase {
 		$this->job->on_handle = function () use ( &$during_execution ): void {
 			$during_execution = $this->single_live_run();
 		};
-		$result               = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result               = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$queued = $this->single_live_run();
@@ -161,7 +161,7 @@ final class RunStoreTest extends TestCase {
 	public function test_retry_transition_is_visible_through_live_run_inspection(): void {
 		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
-		$result                         = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->rig->run_due();

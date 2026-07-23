@@ -20,8 +20,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -246,11 +246,11 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertCount( 1, $unknown_successor_ids, 'The unknown recurrence must birth one successor' );
 		$unknown_successor_id = $unknown_successor_ids[0];
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
 		$job    = new RecordingJob( self::REDECLARED_JOB );
-		$client->jobs()->register( $job->definition() );
+		$client->register( $job->definition() );
 		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), CatchUpPolicy::RunOnce );
-		$synced   = $client->schedules()->sync( array( $schedule ) );
+		$synced   = $client->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertTrue( $synced->value );
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $unknown_successor_id ), 'Redeclaration must cancel the stale unknown-chain successor before creating its live chain' );

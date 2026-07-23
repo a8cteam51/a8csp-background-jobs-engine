@@ -3,13 +3,13 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -55,7 +55,7 @@ final readonly class Runs {
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 	public function inspect( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->inspect( $name, (string) $run_id );
+			$result = $this->operations()->inspect( $name, (string) $run_id );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -85,7 +85,7 @@ final readonly class Runs {
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	public function last_completed( string $name ): Run|null|\WP_Error {
 		try {
-			$result = $this->client()->runs()->last_completed_run_id( $name );
+			$result = $this->operations()->last_completed_run_id( $name );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -115,7 +115,7 @@ final readonly class Runs {
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->retry_failed( $name, (string) $run_id );
+			$result = $this->operations()->retry_failed( $name, (string) $run_id );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -142,7 +142,7 @@ final readonly class Runs {
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->cancel( $name, (string) $run_id );
+			$result = $this->operations()->cancel( $name, (string) $run_id );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -160,18 +160,18 @@ final readonly class Runs {
 	// region HELPERS
 
 	/**
-	 * Resolves the internal client for the bound owner.
+	 * Resolves the owner operations adapter for the bound owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
+	 * @throws  \InvalidArgumentException When the owner violates the owner contract.
 	 * @throws  \LogicException           When the internal graph is unavailable.
 	 *
-	 * @return  Client
+	 * @return  OwnerOperations
 	 */
-	private function client(): Client {
-		return Component::client( $this->owner );
+	private function operations(): OwnerOperations {
+		return Component::operations( $this->owner );
 	}
 
 	/**
@@ -193,16 +193,16 @@ final readonly class Runs {
 	}
 
 	/**
-	 * Converts one internal client failure to the WordPress error boundary.
+	 * Converts one boundary failure to the WordPress error boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ApiError $error Internal client failure.
+	 * @param   BoundaryError $error Boundary failure.
 	 *
 	 * @return  \WP_Error
 	 */
-	private static function wp_error( ApiError $error ): \WP_Error {
+	private static function wp_error( BoundaryError $error ): \WP_Error {
 		return new \WP_Error( $error->code->value, $error->message, $error->context );
 	}
 

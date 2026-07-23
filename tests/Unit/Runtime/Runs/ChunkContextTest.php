@@ -3,11 +3,11 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext as ChunkContextContract;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -26,7 +26,7 @@ final class ChunkContextTest extends TestCase {
 	private const int NOW      = 1_700_000_000;
 	private const string OWNER = 'chunked-job-context-tests';
 
-	private Client $client;
+	private OwnerOperations $client;
 	private EngineRig $rig;
 
 	// endregion.
@@ -53,7 +53,7 @@ final class ChunkContextTest extends TestCase {
 		parent::setUp();
 
 		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
+		$this->client = $this->rig->operations( self::OWNER );
 	}
 
 	/**
@@ -299,8 +299,8 @@ final class ChunkContextTest extends TestCase {
 	 */
 	private function start_and_deliver_first_chunk( RecordingChunkedJob $chunked_job, array $start_args ): string {
 		$definition = $chunked_job->definition();
-		$this->client->jobs()->register( $definition );
-		$result = $this->client->chunked_jobs()->start( $definition->name, $start_args );
+		$this->client->register( $definition );
+		$result = $this->client->start( $definition->name, $start_args );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Job;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\ClosureJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\ClosureJobExecution;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;

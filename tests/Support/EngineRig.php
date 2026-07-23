@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
@@ -32,7 +33,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use PHPUnit\Framework\Assert;
 
@@ -45,8 +45,8 @@ use PHPUnit\Framework\Assert;
 final class EngineRig {
 	// region FIELDS AND CONSTANTS.
 
-	/** @var array<string, Client> */
-	private array $clients = array();
+	/** @var array<string, OwnerOperations> */
+	private array $operations = array();
 
 	/** @var non-empty-list<RecordingBackend> */
 	private array $backends;
@@ -166,20 +166,20 @@ final class EngineRig {
 	// region GETTERS.
 
 	/**
-	 * Returns an owner-bound client from the published component graph.
+	 * Returns owner-bound operations from the published component graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Client owner.
+	 * @param   string $owner Owner identifier.
 	 *
-	 * @return  Client
+	 * @return  OwnerOperations
 	 */
-	public function client( string $owner ): Client {
-		$client                  = Component::client( $owner );
-		$this->clients[ $owner ] = $client;
+	public function operations( string $owner ): OwnerOperations {
+		$operations                 = Component::operations( $owner );
+		$this->operations[ $owner ] = $operations;
 
-		return $client;
+		return $operations;
 	}
 
 	/**
@@ -283,7 +283,7 @@ final class EngineRig {
 	}
 
 	/**
-	 * Asserts the latest completed event and retained Runs-facade pointer agree.
+	 * Asserts the latest completed event and retained completion pointer agree.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -295,15 +295,15 @@ final class EngineRig {
 		[ $identity, $run_id ] = $this->identity_and_run_id( $args );
 		$parts                 = JobIdentity::parts( $identity );
 		Assert::assertNotNull( $parts );
-		$client = $this->clients[ $parts[0] ] ?? null;
-		Assert::assertInstanceOf( Client::class, $client );
-		$result = $client->runs()->last_completed_run_id( $parts[1] );
+		$operations = $this->operations[ $parts[0] ] ?? null;
+		Assert::assertInstanceOf( OwnerOperations::class, $operations );
+		$result = $operations->last_completed_run_id( $parts[1] );
 		Assert::assertInstanceOf( Success::class, $result );
 		Assert::assertSame( (string) $run_id, $result->value );
 	}
 
 	/**
-	 * Asserts the latest failed event exposes the requested client failure code.
+	 * Asserts the latest failed event exposes the requested boundary failure code.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

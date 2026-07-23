@@ -42,12 +42,13 @@ every surviving component is initialized before any hook can fire.
 - The root services, `models/`, `a8csp_bgje()`, and the verb-noun procedural aliases form the SemVer-bound
   consumer surface: the owner-scoped `Engine` handle and capability managers plus job definitions,
   execution roles, policy, contexts, and input and returned value types.
-  `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph
-  is likewise `@internal`.
+  `src/Boundary/` contains engine-owned values that cross layer boundaries; the rest of the engine
+  graph is likewise `@internal`.
 - `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the
-  request-local object graph; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the
-  root collaborators. `JobRegistry.php` retains each definition's kind key, name, execution object,
-  and options. The single kind-handler registry resolves a definition's kind; the resolved
+  request-local object graph, while `OwnerOperations.php` exposes its owner-bound verb surface to
+  the public portals; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the root
+  collaborators. `JobRegistry.php` retains each definition's kind key, name, execution object, and
+  options. The single kind-handler registry resolves a definition's kind; the resolved
   internal handler validates its execution role and owns invocation. Only engine-installed kinds are
   accepted, and the handler SPI is internal. `Backends/` (Action Scheduler preferred, WP-Cron
   fallback), `Occurrences/`

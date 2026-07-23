@@ -4,13 +4,13 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
@@ -49,7 +49,7 @@ final class FailureLifecycleTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -84,7 +84,7 @@ final class FailureLifecycleTest extends TestCase {
 		parent::setUp();
 
 		$this->rig                      = EngineRig::set_up( self::NOW );
-		$this->client                   = $this->rig->client( self::OWNER );
+		$this->client                   = $this->rig->operations( self::OWNER );
 		$this->job                      = new RecordingJob( self::NAME );
 		$this->fixtures                 = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls    = array();
@@ -254,9 +254,9 @@ final class FailureLifecycleTest extends TestCase {
 	public function test_retry_uses_the_registered_job_kind_for_a_dual_role_execution(): void {
 		$name     = 'dual-kind-job';
 		$identity = self::OWNER . ':' . $name;
-		$this->client->jobs()->register( $this->dual_kind_job( $name ) );
+		$this->client->register( $this->dual_kind_job( $name ) );
 		$this->rig->randomizer()->value = 42;
-		$result                         = $this->client->jobs()->enqueue( $name, self::ARGS );
+		$result                         = $this->client->enqueue( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		$this->rig->randomizer()->value = 7;
@@ -636,8 +636,8 @@ final class FailureLifecycleTest extends TestCase {
 		$chunked_job                    = new RecordingChunkedJob( 'bounded-chunked-job' );
 		$chunked_job->queue             = array( array( 'chunk' => 'current' ) );
 		$chunked_job->process_throwable = InvalidChunkException::chunkTooLarge( 8_193, 8_192 );
-		$this->client->jobs()->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
-		$result = $this->client->chunked_jobs()->start( 'bounded-chunked-job', self::ARGS );
+		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
+		$result = $this->client->start( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 2; ++$delivery ) {
@@ -663,10 +663,10 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job( ?JobOptions $options = null ): string {
-		$this->client->jobs()->register( $this->job->definition( $options ) );
+		$this->client->register( $this->job->definition( $options ) );
 		$retry_value                    = $this->rig->randomizer()->value;
 		$this->rig->randomizer()->value = 42;
-		$result                         = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->enqueue( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->rig->randomizer()->value = $retry_value;

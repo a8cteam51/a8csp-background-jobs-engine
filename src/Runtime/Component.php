@@ -2,12 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob\ChunkedJobs as ApiChunkedJobs;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Run\Runs as ApiRuns;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedules as ApiSchedules;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\Jobs as ApiJobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
@@ -35,7 +31,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 
 \defined( 'ABSPATH' ) || exit;
@@ -267,7 +262,7 @@ final class Component extends AbstractComponent {
 	// region METHODS
 
 	/**
-	 * Returns a supported facade set bound to one validated client owner.
+	 * Returns supported operations bound to one validated client owner.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -277,9 +272,9 @@ final class Component extends AbstractComponent {
 	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
 	 * @throws  \LogicException           When the internal graph is unavailable.
 	 *
-	 * @return  Client
+	 * @return  OwnerOperations
 	 */
-	public static function client( string $owner ): Client {
+	public static function operations( string $owner ): OwnerOperations {
 		JobIdentity::validate_owner( $owner );
 		$work       = self::$work;
 		$schedules  = self::$schedules;
@@ -289,15 +284,7 @@ final class Component extends AbstractComponent {
 			throw new \LogicException( 'The background jobs engine graph is unavailable after engine boot.' );
 		}
 
-		$adapter = new ApiAdapter( $owner, $schedules, $dispatcher, $inspection );
-
-		return new Client(
-			$owner,
-			new ApiJobs( $owner, $adapter ),
-			new ApiChunkedJobs( $owner, $adapter ),
-			new ApiSchedules( $owner, $adapter ),
-			new ApiRuns( $owner, $adapter )
-		);
+		return new OwnerOperations( $owner, $schedules, $dispatcher, $inspection );
 	}
 
 	// endregion
