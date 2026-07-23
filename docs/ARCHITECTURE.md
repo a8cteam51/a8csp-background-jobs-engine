@@ -51,7 +51,7 @@ every surviving component is initialized before any hook can fire.
   options. The single kind-handler registry resolves a definition's kind; the resolved
   internal handler validates its execution role and owns invocation. Only engine-installed kinds are
   accepted, and the handler SPI is internal. `Backends/` (Action Scheduler preferred, WP-Cron
-  fallback), `Occurrences/`
+  fallback), `Schedules/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
   `Locks/`, `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
   on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.

@@ -1,11 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ClaimedLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLeaseClaim;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLeaseOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ClaimedLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLeaseClaim;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLeaseOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;

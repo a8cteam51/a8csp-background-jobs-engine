@@ -1,10 +1,10 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\RegistrationUpdateOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;

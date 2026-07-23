@@ -11,10 +11,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
@@ -23,7 +23,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
@@ -175,9 +175,9 @@ final class BackendFailoverTest extends IntegrationTestCase {
 	 *
 	 * @param   SchedulerFacade $scheduler Scheduling facade under test.
 	 *
-	 * @return  Schedules
+	 * @return  ScheduleOperations
 	 */
-	private function schedules_with_scheduler( SchedulerFacade $scheduler ): Schedules {
+	private function schedules_with_scheduler( SchedulerFacade $scheduler ): ScheduleOperations {
 		global $wpdb;
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
@@ -204,7 +204,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 
-		return new Schedules( $registry, $scheduler, $clock, $occurrence_delivery );
+		return new ScheduleOperations( $registry, $scheduler, $clock, $occurrence_delivery );
 	}
 
 	// endregion.

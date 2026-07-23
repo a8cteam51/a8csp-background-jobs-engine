@@ -17,11 +17,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
@@ -423,7 +423,7 @@ final class EngineRig {
 			JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
 			JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job )
 		);
-		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
+		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $work, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
@@ -509,16 +509,16 @@ final class EngineRig {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   EngineFacade    $engine     Engine facade.
-	 * @param   Inspection      $inspection Inspection facade.
-	 * @param   SchedulerFacade $scheduler  Scheduler facade.
-	 * @param   JobRegistry     $work       Registered job and chunked job instances.
-	 * @param   Schedules       $schedules  Schedule engine operations.
-	 * @param   Dispatcher      $dispatcher Background-work admission coordinator.
+	 * @param   EngineFacade       $engine     Engine facade.
+	 * @param   Inspection         $inspection Inspection facade.
+	 * @param   SchedulerFacade    $scheduler  Scheduler facade.
+	 * @param   JobRegistry        $work       Registered job and chunked job instances.
+	 * @param   ScheduleOperations $schedules  Schedule engine operations.
+	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
 	 *
 	 * @return  void
 	 */
-	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, JobRegistry $work, Schedules $schedules, Dispatcher $dispatcher ): void {
+	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, JobRegistry $work, ScheduleOperations $schedules, Dispatcher $dispatcher ): void {
 		self::set_component_property( 'engine', $engine );
 		self::set_component_property( 'inspection', $inspection );
 		self::set_component_property( 'scheduler', $scheduler );

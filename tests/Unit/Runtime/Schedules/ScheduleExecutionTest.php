@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -10,11 +10,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OwnerReplacementOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;

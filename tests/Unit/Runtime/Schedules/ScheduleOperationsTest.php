@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
@@ -11,10 +11,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\UndeclaredOccurrenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\UndeclaredOccurrenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
@@ -30,8 +30,8 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversClass( Schedules::class )]
-final class SchedulesTest extends TestCase {
+#[CoversClass( ScheduleOperations::class )]
+final class ScheduleOperationsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const int NOW = 1_700_000_000;

@@ -18,15 +18,15 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\RegistrationUpdateOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
@@ -329,7 +329,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
-		$schedules            = new Schedules( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
+		$schedules            = new ScheduleOperations( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
 		$inspection           = new Inspection( $schedule_registry, $work, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
 
@@ -352,13 +352,13 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Schedules       $schedules Schedule API.
-	 * @param   string          $owner     Stable owner.
-	 * @param   array<Schedule> $declared  Complete owner declaration.
+	 * @param   ScheduleOperations $schedules Schedule API.
+	 * @param   string             $owner     Stable owner.
+	 * @param   array<Schedule>    $declared  Complete owner declaration.
 	 *
 	 * @return  void
 	 */
-	private function assert_sync_success( Schedules $schedules, string $owner, array $declared ): void {
+	private function assert_sync_success( ScheduleOperations $schedules, string $owner, array $declared ): void {
 		$declarations = array();
 		foreach ( $declared as $schedule ) {
 			$identity                  = $owner . ':' . $schedule->name;

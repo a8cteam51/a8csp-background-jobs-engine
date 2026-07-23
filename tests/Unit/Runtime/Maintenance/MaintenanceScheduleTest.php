@@ -6,8 +6,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
@@ -27,7 +27,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( ScheduleRegistry::class )]
-#[UsesClass( Schedules::class )]
+#[UsesClass( ScheduleOperations::class )]
 final class MaintenanceScheduleTest extends TestCase {
 	private const int NOW = 1_700_000_000;
 

@@ -21,11 +21,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHa
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
@@ -92,9 +92,9 @@ final class Component extends AbstractComponent {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     Schedules|null
+	 * @var     ScheduleOperations|null
 	 */
-	private static ?Schedules $schedules = null;
+	private static ?ScheduleOperations $schedules = null;
 
 	/**
 	 * Background-work admission coordinator published by the initialized component.
@@ -209,7 +209,7 @@ final class Component extends AbstractComponent {
 				JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
 				JobDefinition::job( MaintenanceJob::NAME, new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) )
 			);
-			$schedule_api         = new Schedules( $schedules, $scheduler, $clock, $occurrence_delivery );
+			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
 			$inspection           = new Inspection( $schedules, $work, $handlers, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
 			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );

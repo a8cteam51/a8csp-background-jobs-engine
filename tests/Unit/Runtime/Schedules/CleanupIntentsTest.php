@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Occurrences;
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
@@ -15,14 +15,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
@@ -42,7 +42,7 @@ use PHPUnit\Framework\TestCase;
  *
  */
 #[CoversClass( CleanupIntents::class )]
-#[UsesClass( Schedules::class )]
+#[UsesClass( ScheduleOperations::class )]
 #[UsesClass( OccurrenceDelivery::class )]
 #[UsesClass( Recurrence::class )]
 #[UsesClass( Schedule::class )]
@@ -65,7 +65,7 @@ final class CleanupIntentsTest extends TestCase {
 	private const string JOB              = 'refresh-index';
 	private const string JOB_IDENTITY     = 'owner-a:refresh-index';
 
-	private Schedules $api;
+	private ScheduleOperations $api;
 	private RecordingBackend $backend;
 	private FixedClock $clock;
 	private CleanupIntents $cleanup_intents;
@@ -128,7 +128,7 @@ final class CleanupIntentsTest extends TestCase {
 		$this->wpdb     = new WpdbLockSpy();
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ), $this->logger );
 		$this->delivery = $this->new_delivery( $this->registry );
-		$this->api      = new Schedules( $this->registry, $this->backend, $this->clock, $this->delivery );
+		$this->api      = new ScheduleOperations( $this->registry, $this->backend, $this->clock, $this->delivery );
 	}
 
 	// endregion.

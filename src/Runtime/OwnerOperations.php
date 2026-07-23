@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 
@@ -57,14 +57,14 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $owner      Client plugin owner.
-	 * @param   Schedules  $schedules  Schedule engine operations.
-	 * @param   Dispatcher $dispatcher Background-work admission coordinator.
-	 * @param   Inspection $inspection Read-only run inspection.
+	 * @param   string             $owner      Client plugin owner.
+	 * @param   ScheduleOperations $schedules  Schedule engine operations.
+	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
+	 * @param   Inspection         $inspection Read-only run inspection.
 	 */
 	public function __construct(
 		private string $owner,
-		private Schedules $schedules,
+		private ScheduleOperations $schedules,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
 	) {}

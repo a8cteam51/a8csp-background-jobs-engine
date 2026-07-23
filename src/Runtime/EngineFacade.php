@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 
 \defined( 'ABSPATH' ) || exit;
@@ -27,12 +27,12 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Schedules  $schedules  Schedule API.
-	 * @param   Dispatcher $dispatcher Background-work admission coordinator.
-	 * @param   Inspection $inspection Read-only run inspection.
+	 * @param   ScheduleOperations $schedules  Schedule API.
+	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
+	 * @param   Inspection         $inspection Read-only run inspection.
 	 */
 	public function __construct(
-		public Schedules $schedules,
+		public ScheduleOperations $schedules,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
 	) {}

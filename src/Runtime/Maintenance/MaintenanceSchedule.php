@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
@@ -28,11 +28,11 @@ final readonly class MaintenanceSchedule {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Schedules       $schedules Client schedule API with the reserved-owner service entry.
-	 * @param   LoggerInterface $logger    Log event sink.
+	 * @param   ScheduleOperations $schedules Client schedule API with the reserved-owner service entry.
+	 * @param   LoggerInterface    $logger    Log event sink.
 	 */
 	public function __construct(
-		private Schedules $schedules,
+		private ScheduleOperations $schedules,
 		private LoggerInterface $logger,
 	) {}
 
