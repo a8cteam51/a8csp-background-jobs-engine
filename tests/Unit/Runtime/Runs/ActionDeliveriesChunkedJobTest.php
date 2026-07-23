@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -948,19 +948,19 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$current = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
 		$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', 75 );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContext $context ) use ( $current ): void {
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ) use ( $current ): void {
 			self::assertSame( $current, $chunk );
 			self::assertSame( self::RUN_ID, (string) $context->get_run_id() );
 			self::assertSame( self::ARGS, $context->get_start_args() );
-			$context->enqueue( array( 'chunk' => 'appended' ) );
-			$context->prepend( array( 'chunk' => 'prepended-1' ) );
-			$context->prepend( array( 'chunk' => 'prepended-2' ) );
+			$context->append_chunk( array( 'chunk' => 'appended' ) );
+			$context->prepend_chunk( array( 'chunk' => 'prepended-1' ) );
+			$context->prepend_chunk( array( 'chunk' => 'prepended-2' ) );
 		};
 		$this->rig->clock()->timestamp = self::NOW + 120;
 
 		$this->rig->run_due();
 
-		self::assertInstanceOf( ChunkContext::class, $this->chunked_job->process_calls[0]['context'] ?? null );
+		self::assertInstanceOf( ChunkContextInterface::class, $this->chunked_job->process_calls[0]['context'] ?? null );
 		self::assertSame( array( array( 'chunk' => 'prepended-2' ), array( 'chunk' => 'prepended-1' ), array( 'chunk' => 'remaining' ), array( 'chunk' => 'appended' ) ), $this->run_state()['kind_state'] ?? null );
 		self::assertSame( self::NOW + 195, $this->single_call_for_hook( ActionDeliveries::DELIVER_HOOK )['args']['timestamp'] ?? null );
 	}
@@ -983,14 +983,14 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->options = new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) );
 
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContext $context ) use ( $invalid_value, $mutation ): void {
-			if ( 'enqueue' === $mutation ) {
-				$context->enqueue( array( 'execution-private-payload' => $invalid_value ) );
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ) use ( $invalid_value, $mutation ): void {
+			if ( 'append_chunk' === $mutation ) {
+				$context->append_chunk( array( 'execution-private-payload' => $invalid_value ) );
 
 				return;
 			}
 
-			$context->prepend( array( 'execution-private-payload' => $invalid_value ) );
+			$context->prepend_chunk( array( 'execution-private-payload' => $invalid_value ) );
 		};
 
 		$this->rig->run_due();
@@ -1016,14 +1016,14 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->options = new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) );
 
 		$this->prepare_scheduled_chunk( array( $current ) );
-		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkContext $context ) use ( $chunk, $mutation ): void {
-			if ( 'enqueue' === $mutation ) {
-				$context->enqueue( $chunk );
+		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $chunk, $mutation ): void {
+			if ( 'append_chunk' === $mutation ) {
+				$context->append_chunk( $chunk );
 
 				return;
 			}
 
-			$context->prepend( $chunk );
+			$context->prepend_chunk( $chunk );
 		};
 
 		$this->rig->run_due();
@@ -1041,27 +1041,27 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	/**
 	 * Supplies both context directions on both sides of the chunk byte boundary.
 	 *
-	 * @return  array<string, array{mutation: 'enqueue'|'prepend', json_bytes: int, accepted: bool}>
+	 * @return  array<string, array{mutation: 'append_chunk'|'prepend_chunk', json_bytes: int, accepted: bool}>
 	 */
 	public static function bounded_context_chunks(): array {
 		return array(
-			'enqueue at limit'   => array(
-				'mutation'   => 'enqueue',
+			'append_chunk at limit'    => array(
+				'mutation'   => 'append_chunk',
 				'json_bytes' => 8_192,
 				'accepted'   => true,
 			),
-			'enqueue over limit' => array(
-				'mutation'   => 'enqueue',
+			'append_chunk over limit'  => array(
+				'mutation'   => 'append_chunk',
 				'json_bytes' => 8_193,
 				'accepted'   => false,
 			),
-			'prepend at limit'   => array(
-				'mutation'   => 'prepend',
+			'prepend_chunk at limit'   => array(
+				'mutation'   => 'prepend_chunk',
 				'json_bytes' => 8_192,
 				'accepted'   => true,
 			),
-			'prepend over limit' => array(
-				'mutation'   => 'prepend',
+			'prepend_chunk over limit' => array(
+				'mutation'   => 'prepend_chunk',
 				'json_bytes' => 8_193,
 				'accepted'   => false,
 			),
@@ -1083,21 +1083,21 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	public function test_context_mutations_observe_the_persisted_queue_byte_ceiling( string $mutation, int $persisted_bytes, bool $accepted ): void {
 		$current        = array( 'chunk' => 'current' );
 		$candidate      = self::queue_with_persisted_bytes( $persisted_bytes );
-		$mutation_chunk = 'prepend' === $mutation ? \array_shift( $candidate ) : \array_pop( $candidate );
+		$mutation_chunk = 'prepend_chunk' === $mutation ? \array_shift( $candidate ) : \array_pop( $candidate );
 		self::assertIsArray( $mutation_chunk );
 
 		$this->options = new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) );
 		$this->prepare_scheduled_chunk( array( $current, ...$candidate ) );
 		$this->chunked_job->queue            = array();
 		$this->rig->wpdb()->recorded_queries = array();
-		$this->chunked_job->on_process       = static function ( array $chunk_args, ChunkContext $context ) use ( $mutation, $mutation_chunk ): void {
-			if ( 'enqueue' === $mutation ) {
-				$context->enqueue( $mutation_chunk );
+		$this->chunked_job->on_process       = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $mutation, $mutation_chunk ): void {
+			if ( 'append_chunk' === $mutation ) {
+				$context->append_chunk( $mutation_chunk );
 
 				return;
 			}
 
-			$context->prepend( $mutation_chunk );
+			$context->prepend_chunk( $mutation_chunk );
 		};
 
 		$this->rig->run_due();
@@ -1117,27 +1117,27 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	/**
 	 * Supplies both context directions on both sides of the persisted queue byte boundary.
 	 *
-	 * @return  array<string, array{mutation: 'enqueue'|'prepend', persisted_bytes: int, accepted: bool}>
+	 * @return  array<string, array{mutation: 'append_chunk'|'prepend_chunk', persisted_bytes: int, accepted: bool}>
 	 */
 	public static function bounded_context_queue_bytes(): array {
 		return array(
-			'enqueue at limit'   => array(
-				'mutation'        => 'enqueue',
+			'append_chunk at limit'    => array(
+				'mutation'        => 'append_chunk',
 				'persisted_bytes' => 1_048_576,
 				'accepted'        => true,
 			),
-			'enqueue over limit' => array(
-				'mutation'        => 'enqueue',
+			'append_chunk over limit'  => array(
+				'mutation'        => 'append_chunk',
 				'persisted_bytes' => 1_048_577,
 				'accepted'        => false,
 			),
-			'prepend at limit'   => array(
-				'mutation'        => 'prepend',
+			'prepend_chunk at limit'   => array(
+				'mutation'        => 'prepend_chunk',
 				'persisted_bytes' => 1_048_576,
 				'accepted'        => true,
 			),
-			'prepend over limit' => array(
-				'mutation'        => 'prepend',
+			'prepend_chunk over limit' => array(
+				'mutation'        => 'prepend_chunk',
 				'persisted_bytes' => 1_048_577,
 				'accepted'        => false,
 			),
@@ -1150,16 +1150,16 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return array<string, array{mutation: 'enqueue'|'prepend', invalid_value: mixed}>
+	 * @return array<string, array{mutation: 'append_chunk'|'prepend_chunk', invalid_value: mixed}>
 	 */
 	public static function invalid_context_mutations(): array {
 		return array(
-			'enqueue closure' => array(
-				'mutation'      => 'enqueue',
+			'append_chunk closure' => array(
+				'mutation'      => 'append_chunk',
 				'invalid_value' => static fn (): null => null,
 			),
-			'prepend object'  => array(
-				'mutation'      => 'prepend',
+			'prepend_chunk object' => array(
+				'mutation'      => 'prepend_chunk',
 				'invalid_value' => new \stdClass(),
 			),
 		);
@@ -1288,8 +1288,8 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_supersedes_after_chunk_work_loses_ownership(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process = function ( array $chunk, ChunkContext $context ): void {
-			$context->enqueue( array( 'chunk' => 'discarded' ) );
+		$this->chunked_job->on_process = function ( array $chunk, ChunkContextInterface $context ): void {
+			$context->append_chunk( array( 'chunk' => 'discarded' ) );
 			$this->install_foreign_generation( self::NOW );
 		};
 
@@ -1337,9 +1337,9 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_fails_terminally_when_continue_scheduling_fails(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process                    = static function ( array $chunk, ChunkContext $context ): void {
-			$context->prepend( array( 'chunk' => 'committed-front' ) );
-			$context->enqueue( array( 'chunk' => 'committed-back' ) );
+		$this->chunked_job->on_process                    = static function ( array $chunk, ChunkContextInterface $context ): void {
+			$context->prepend_chunk( array( 'chunk' => 'committed-front' ) );
+			$context->append_chunk( array( 'chunk' => 'committed-back' ) );
 		};
 		$this->rig->backend()->results['schedule_single'] = $this->scheduling_failure_result();
 
@@ -1359,8 +1359,8 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_fails_terminally_when_continue_delay_filter_throws(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContext $context ): void {
-			$context->enqueue( array( 'chunk' => 'committed' ) );
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ): void {
+			$context->append_chunk( array( 'chunk' => 'committed' ) );
 		};
 		$this->set_filter_value(
 			'a8csp_jobs_engine/continue_delay',
@@ -1445,9 +1445,9 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->options = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) );
 
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process        = static function ( array $chunk, ChunkContext $context ): void {
-			$context->prepend( array( 'chunk' => 'discarded-front' ) );
-			$context->enqueue( array( 'chunk' => 'discarded-back' ) );
+		$this->chunked_job->on_process        = static function ( array $chunk, ChunkContextInterface $context ): void {
+			$context->prepend_chunk( array( 'chunk' => 'discarded-front' ) );
+			$context->append_chunk( array( 'chunk' => 'discarded-back' ) );
 		};
 		$this->chunked_job->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
 		$this->rig->randomizer()->value       = 11;

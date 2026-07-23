@@ -5,12 +5,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobKind;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
@@ -133,7 +133,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 		$error  = self::assert_wp_error( $result, ErrorCode::InvalidArgument->value );
 
 		self::assertStringContainsString( 'job', $error->get_error_message() );
-		self::assertStringContainsString( JobExecution::class, $error->get_error_message() );
+		self::assertStringContainsString( JobExecutionInterface::class, $error->get_error_message() );
 	}
 
 	/**
@@ -150,8 +150,8 @@ final class JobsTest extends CapabilityManagerTestCase {
 		$jobs               = \a8csp_bgje( self::OWNER )->jobs();
 		$definition         = JobDefinition::closure(
 			'closure-defaults',
-			function ( array $args, RunContext $context ) use ( &$handled, &$observed_heartbeat ): void {
-				$handled[]          = array( $args, (string) $context->get_run_id() );
+			function ( array $start_args, RunContextInterface $context ) use ( &$handled, &$observed_heartbeat ): void {
+				$handled[]          = array( $start_args, (string) $context->get_run_id() );
 				$snapshot           = $this->rig->inspection()->runs( self::OWNER . ':closure-defaults' );
 				$observed_heartbeat = $snapshot['live'][0]['heartbeat_at'] ?? null;
 			}
@@ -183,13 +183,13 @@ final class JobsTest extends CapabilityManagerTestCase {
 		$observed_heartbeat = null;
 		$observed_run_ids   = array();
 		$jobs               = \a8csp_bgje( self::OWNER )->jobs();
-		$handler            = function ( array $args, RunContext $context ) use ( &$observed_heartbeat, &$observed_run_ids ): void {
+		$handler            = function ( array $start_args, RunContextInterface $context ) use ( &$observed_heartbeat, &$observed_run_ids ): void {
 			$observed_run_ids[] = $context->get_run_id();
 			if ( null === $observed_heartbeat ) {
 				$snapshot           = $this->rig->inspection()->runs( self::OWNER . ':configured' );
 				$observed_heartbeat = $snapshot['live'][0]['heartbeat_at'] ?? null;
 			}
-			if ( true === ( $args['fail'] ?? false ) ) {
+			if ( true === ( $start_args['fail'] ?? false ) ) {
 				throw new \RuntimeException( 'Retry this callable failure.' );
 			}
 		};
@@ -203,7 +203,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 
 			return 'site-' . $site_id;
 		};
-		$execution   = new class( $handler ) implements JobExecution {
+		$execution   = new class( $handler ) implements JobExecutionInterface {
 			/**
 			 * Constructor.
 			 *
@@ -215,8 +215,8 @@ final class JobsTest extends CapabilityManagerTestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args, RunContext $context ): void {
-				( $this->handler )( $args, $context );
+			public function handle( array $start_args, RunContextInterface $context ): void {
+				( $this->handler )( $start_args, $context );
 			}
 		};
 		$options     = new JobOptions(

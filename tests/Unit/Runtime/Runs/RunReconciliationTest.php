@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -20,7 +21,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
@@ -2254,7 +2254,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	private function run_maintenance(): void {
-		$this->maintenance->handle( array(), new RunContext( 'maintenance-test-run', array() ) );
+		$this->maintenance->handle( array(), new RunContext( RunId::from( '00000000000000000000-0000000000000000001' ), array() ) );
 	}
 
 	/**

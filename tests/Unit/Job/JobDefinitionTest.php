@@ -3,13 +3,13 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Job;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\ClosureJobExecution;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobKind;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -55,21 +55,21 @@ final class JobDefinitionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_typed_constructors_compose_exact_values(): void {
-		$job_execution     = new class() implements JobExecution {
+		$job_execution     = new class() implements JobExecutionInterface {
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args, RunContext $context ): void {}
+			public function handle( array $start_args, RunContextInterface $context ): void {}
 		};
-		$chunked_execution = new class() implements ChunkedJobExecution {
+		$chunked_execution = new class() implements ChunkedJobExecutionInterface {
 			/** {@inheritDoc} */
 			#[\Override]
-			public function generate_queue( array $start_args, RunContext $context ): iterable {
+			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 				return array();
 			}
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
 		};
 		$options           = new JobOptions( max_runtime: 42 );
 		$job               = JobDefinition::job( 'refresh-index', $job_execution, $options );
@@ -119,16 +119,16 @@ final class JobDefinitionTest extends TestCase {
 		$calls      = array();
 		$definition = JobDefinition::closure(
 			'refresh-index',
-			static function ( array $args, RunContext $context ) use ( &$calls ): void {
-				$calls[] = array( $args, $context );
+			static function ( array $start_args, RunContextInterface $context ) use ( &$calls ): void {
+				$calls[] = array( $start_args, $context );
 			}
 		);
-		$context    = self::createStub( RunContext::class );
+		$context    = self::createStub( RunContextInterface::class );
 		$args       = array( 'site_id' => 7 );
 
 		self::assertSame( array( 'name', 'handler' ), \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), ( new \ReflectionMethod( JobDefinition::class, 'closure' ) )->getParameters() ) );
 		self::assertSame( 'job', $definition->kind->value );
-		self::assertInstanceOf( JobExecution::class, $definition->execution );
+		self::assertInstanceOf( JobExecutionInterface::class, $definition->execution );
 		self::assertNull( $definition->options->max_runtime );
 		self::assertNull( $definition->options->retry );
 		self::assertNull( $definition->options->overlap );

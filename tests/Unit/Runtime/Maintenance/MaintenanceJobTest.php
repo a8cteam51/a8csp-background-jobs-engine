@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Maintenance;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
@@ -14,7 +16,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -150,7 +151,7 @@ final class MaintenanceJobTest extends TestCase {
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $backend );
 		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows, $this->logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $this->logger );
 		$this->maintenance    = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$this->run_context    = new RunContext( self::RUN_ID, array() );
+		$this->run_context    = new RunContext( RunId::from( self::RUN_ID ), array() );
 	}
 
 	// endregion.

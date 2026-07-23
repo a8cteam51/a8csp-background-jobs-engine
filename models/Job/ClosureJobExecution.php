@@ -12,7 +12,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class ClosureJobExecution implements JobExecution {
+final readonly class ClosureJobExecution implements JobExecutionInterface {
 	// region MAGIC METHODS
 
 	/**
@@ -21,7 +21,7 @@ final readonly class ClosureJobExecution implements JobExecution {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param \Closure(array<array-key, mixed>, RunContext): mixed $handler
+	 * @phpstan-param \Closure(array<array-key, mixed>, RunContextInterface): mixed $handler
 	 *
 	 * @param   \Closure $handler Job handler.
 	 */
@@ -39,14 +39,14 @@ final readonly class ClosureJobExecution implements JobExecution {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $args    Invocation arguments.
-	 * @param   RunContext              $context Controlled access to this run.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function handle( array $args, RunContext $context ): void {
-		( $this->handler )( $args, $context );
+	public function handle( array $start_args, RunContextInterface $context ): void {
+		( $this->handler )( $start_args, $context );
 	}
 
 	// endregion

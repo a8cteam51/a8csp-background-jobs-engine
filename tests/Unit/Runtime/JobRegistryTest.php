@@ -2,15 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobKind;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -373,7 +373,7 @@ final class JobRegistryTest extends TestCase {
 	 * @param   string              $name    Declared local name.
 	 * @param   JobOptions|null     $options Optional policy declaration.
 	 *
-	 * @return  array{definition: JobDefinition, execution: JobExecution|ChunkedJobExecution}
+	 * @return  array{definition: JobDefinition, execution: JobExecutionInterface|ChunkedJobExecutionInterface}
 	 */
 	private static function registration( string $kind, string $name, ?JobOptions $options = null ): array {
 		if ( 'job' === $kind ) {
@@ -396,23 +396,23 @@ final class JobRegistryTest extends TestCase {
 	/**
 	 * Creates one execution object implementing both installed roles.
 	 *
-	 * @return  JobExecution&ChunkedJobExecution
+	 * @return  JobExecutionInterface&ChunkedJobExecutionInterface
 	 */
-	private static function dual_execution(): JobExecution&ChunkedJobExecution {
-		return new class() implements JobExecution, ChunkedJobExecution {
+	private static function dual_execution(): JobExecutionInterface&ChunkedJobExecutionInterface {
+		return new class() implements JobExecutionInterface, ChunkedJobExecutionInterface {
 			/** {@inheritDoc} */
 			#[\Override]
-			public function handle( array $args, RunContext $context ): void {}
+			public function handle( array $start_args, RunContextInterface $context ): void {}
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function generate_queue( array $start_args, RunContext $context ): iterable {
+			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 				return array();
 			}
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
 		};
 	}
 

@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -12,10 +12,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
@@ -708,17 +708,17 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  JobDefinition
 	 */
 	private function dual_kind_job( string $name ): JobDefinition {
-		$execution = new class() implements JobExecution, ChunkedJobExecution {
+		$execution = new class() implements JobExecutionInterface, ChunkedJobExecutionInterface {
 			/**
 			 * Fails every attempt with a retryable throwable.
 			 *
-			 * @param   array<array-key, mixed> $args    Job arguments.
-			 * @param   RunContext     $context Controlled access to this run.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+			 * @param   RunContextInterface     $context    Controlled access to this run.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function handle( array $args, RunContext $context ): void {
+			public function handle( array $start_args, RunContextInterface $context ): void {
 				throw new \RuntimeException( 'Database unavailable.' );
 			}
 
@@ -726,12 +726,12 @@ final class FailureLifecycleTest extends TestCase {
 			 * Returns an empty queue.
 			 *
 			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-			 * @param   RunContext     $context    Controlled access to this run.
+			 * @param   RunContextInterface     $context    Controlled access to this run.
 			 *
 			 * @return  iterable<array<array-key, mixed>>
 			 */
 			#[\Override]
-			public function generate_queue( array $start_args, RunContext $context ): iterable {
+			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 				return array();
 			}
 
@@ -739,12 +739,12 @@ final class FailureLifecycleTest extends TestCase {
 			 * Processes nothing.
 			 *
 			 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-			 * @param   ChunkContext   $context    Controlled access to this chunk's run.
+			 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
 
 		};
 

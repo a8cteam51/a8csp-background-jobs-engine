@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
@@ -25,7 +25,7 @@ use Psr\Log\LoggerInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class MaintenanceJob implements JobExecution {
+final class MaintenanceJob implements JobExecutionInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -122,15 +122,15 @@ final class MaintenanceJob implements JobExecution {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $args    Unused schedule arguments.
-	 * @param   RunContext              $context Maintenance run context.
+	 * @param   array<array-key, mixed> $start_args Unused schedule arguments.
+	 * @param   RunContextInterface     $context    Maintenance run context.
 	 *
 	 * @throws  \LogicException When the site changes or WordPress cannot serialize cursor state.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function handle( array $args, RunContext $context ): void {
+	public function handle( array $start_args, RunContextInterface $context ): void {
 		$selected_cursor = $this->rows->read( self::SWEEP_CURSOR_OPTION );
 		if ( $selected_cursor->is_failure() ) {
 			$this->log_sweep_abort(

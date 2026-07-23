@@ -10,7 +10,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
  * @since   1.0.0
  * @version 1.0.0
  */
-interface JobExecution {
+interface JobExecutionInterface {
 	// region METHODS
 
 	/**
@@ -22,14 +22,14 @@ interface JobExecution {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $args    Invocation arguments.
-	 * @param   RunContext              $context Controlled access to this run.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @throws  \Throwable When job handling fails.
 	 *
 	 * @return  void
 	 */
-	public function handle( array $args, RunContext $context ): void;
+	public function handle( array $start_args, RunContextInterface $context ): void;
 
 	// endregion
 }

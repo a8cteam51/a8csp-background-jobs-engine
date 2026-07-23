@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -13,7 +13,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
  * @since   1.0.0
  * @version 1.0.0
  */
-interface ChunkedJobExecution {
+interface ChunkedJobExecutionInterface {
 	// region METHODS
 
 	/**
@@ -25,14 +25,14 @@ interface ChunkedJobExecution {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   RunContext              $context    Controlled access to this run.
+	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @throws  \Throwable When queue generation fails. {@see NonRetryableException} bypasses any
 	 *                     remaining automatic attempts.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
-	public function generate_queue( array $start_args, RunContext $context ): iterable;
+	public function generate_queue( array $start_args, RunContextInterface $context ): iterable;
 
 	/**
 	 * Processes one queued chunk.
@@ -41,14 +41,14 @@ interface ChunkedJobExecution {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-	 * @param   ChunkContext            $context    Controlled access to this chunk's run.
+	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
 	 *
 	 * @throws  \Throwable When chunk processing fails. {@see NonRetryableException} bypasses any
 	 *                     remaining automatic attempts.
 	 *
 	 * @return  void
 	 */
-	public function process_chunk( array $chunk_args, ChunkContext $context ): void;
+	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void;
 
 	// endregion
 }

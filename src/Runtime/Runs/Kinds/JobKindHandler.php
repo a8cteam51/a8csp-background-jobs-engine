@@ -4,9 +4,11 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
@@ -14,7 +16,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
@@ -100,14 +101,14 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @param   string        $identity   Complete owner-qualified job identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
-	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecution.
+	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecutionInterface.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public function register( string $identity, JobDefinition $definition ): void {
-		if ( ! $definition->execution instanceof JobExecution ) {
-			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, JobExecution::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+		if ( ! $definition->execution instanceof JobExecutionInterface ) {
+			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, JobExecutionInterface::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
 
 		$this->work->register( $identity, $definition );
@@ -121,13 +122,13 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 *
 	 * @param   string $identity Complete owner-qualified job identity.
 	 *
-	 * @return  JobExecution|null
+	 * @return  JobExecutionInterface|null
 	 */
 	#[\Override]
-	public function execution( string $identity ): ?JobExecution {
+	public function execution( string $identity ): ?JobExecutionInterface {
 		$execution = $this->work->execution( $identity );
 
-		return self::KIND === $this->work->kind( $identity ) && $execution instanceof JobExecution ? $execution : null;
+		return self::KIND === $this->work->kind( $identity ) && $execution instanceof JobExecutionInterface ? $execution : null;
 	}
 
 	/**
@@ -313,7 +314,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$context = new RunContext( $run_id, $state->start_args );
+		$context = new RunContext( RunId::from( $run_id ), $state->start_args );
 		try {
 			$execution->handle( $state->start_args, $context );
 		} catch ( \Throwable $throwable ) {

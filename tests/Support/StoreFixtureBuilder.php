@@ -2,7 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
@@ -21,7 +23,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -460,7 +461,7 @@ final readonly class StoreFixtureBuilder {
 				$reconciliation  = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, $handlers, $backend );
 				$intents         = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
 
-				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( 'fixture-maintenance-run', array() ) );
+				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( RunId::from( '00000000000000000000-0000000000000000003' ), array() ) );
 				$added = \array_values( \array_diff( $this->option_names( $rows, '' ), $before ) );
 				if ( 1 !== \count( $added ) ) {
 					throw new \LogicException( 'Production MaintenanceJob did not emit exactly one isolated cursor row.' );

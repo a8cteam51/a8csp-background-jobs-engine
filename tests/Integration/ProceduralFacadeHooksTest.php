@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -48,7 +48,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 
 		\add_action( 'a8csp_jobs_engine/completed/' . $identity, $listener, 10, 3 );
 		self::assertSame( 10, \has_action( 'a8csp_jobs_engine/completed/' . $identity, $listener ) );
-		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, JobDefinition::closure( $name, static function ( array $handler_args, RunContext $context ): void {} ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, JobDefinition::closure( $name, static function ( array $start_args, RunContextInterface $context ): void {} ) ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 
 		$run = \a8csp_bgje_dispatch_job( self::OWNER, $name, $args );
@@ -89,7 +89,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 				self::OWNER,
 				JobDefinition::closure(
 					$name,
-					static function ( array $handler_args, RunContext $context ): void {
+					static function ( array $start_args, RunContextInterface $context ): void {
 						throw new NonRetryableException( 'Permanent failure.' );
 					}
 				)

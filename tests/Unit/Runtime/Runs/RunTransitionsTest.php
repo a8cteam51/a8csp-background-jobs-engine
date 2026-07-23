@@ -177,6 +177,25 @@ final class RunTransitionsTest extends TestCase {
 	// region TESTS.
 	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
+	/** A malformed wire identifier cannot reach consumer execution through context construction. */
+	public function test_job_context_rejects_a_non_canonical_run_id_before_execution(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$state     = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $state );
+		$caught = null;
+
+		try {
+			$this->handler->deliver( self::IDENTITY, 'non-canonical-run-id', $state, $run_store );
+		} catch ( \InvalidArgumentException $exception ) {
+			$caught = $exception;
+		}
+
+		self::assertNotNull( $caught );
+		self::assertStringContainsString( 'Run identifier must match the canonical shape', $caught->getMessage() );
+		self::assertSame( array(), $this->job->calls );
+	}
+
 	/** A terminal winner deleting the run during a live heartbeat CAS silences the stale delivery. */
 	public function test_handle_run_action_live_state_cas_cannot_resurrect_a_terminally_deleted_run(): void {
 		$this->prepare_run_action();

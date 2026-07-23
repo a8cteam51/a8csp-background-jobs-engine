@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext as ChunkContextContract;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 
@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class ChunkContext implements ChunkContextContract {
+final class ChunkContext implements ChunkContextInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -117,7 +117,7 @@ final class ChunkContext implements ChunkContextContract {
 	 * @version 1.0.0
 	 */
 	#[\Override]
-	public function enqueue( array $chunk_args ): void {
+	public function append_chunk( array $chunk_args ): void {
 		$chunk_args = self::snapshot_arguments( $chunk_args );
 		self::assert_valid_chunk( $chunk_args );
 		self::assert_queue_within_persisted_byte_limit( array( ...$this->get_queue(), $chunk_args ) );
@@ -132,7 +132,7 @@ final class ChunkContext implements ChunkContextContract {
 	 * @version 1.0.0
 	 */
 	#[\Override]
-	public function prepend( array $chunk_args ): void {
+	public function prepend_chunk( array $chunk_args ): void {
 		$chunk_args = self::snapshot_arguments( $chunk_args );
 		self::assert_valid_chunk( $chunk_args );
 		self::assert_queue_within_persisted_byte_limit( array( $chunk_args, ...$this->get_queue() ) );

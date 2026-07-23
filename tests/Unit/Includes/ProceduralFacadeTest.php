@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -253,7 +253,7 @@ final class ProceduralFacadeTest extends TestCase {
 	public function test_mutation_aliases_delegate_to_the_bound_engine(): void {
 		$failed_job = self::job(
 			'failed',
-			static function ( array $args, RunContext $context ): void {
+			static function ( array $start_args, RunContextInterface $context ): void {
 				throw new NonRetryableException( 'Retain this failed run.' );
 			}
 		);
@@ -325,7 +325,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param (\Closure(array<array-key, mixed>, RunContext): void)|null $handler
+	 * @phpstan-param (\Closure(array<array-key, mixed>, RunContextInterface): void)|null $handler
 	 *
 	 * @param   string        $name    Stable owner-local job name.
 	 * @param   \Closure|null $handler Optional invocation behavior.
@@ -333,7 +333,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  JobDefinition
 	 */
 	private static function job( string $name, ?\Closure $handler = null ): JobDefinition {
-		return JobDefinition::closure( $name, $handler ?? static function ( array $args, RunContext $context ): void {} );
+		return JobDefinition::closure( $name, $handler ?? static function ( array $start_args, RunContextInterface $context ): void {} );
 	}
 
 	/**

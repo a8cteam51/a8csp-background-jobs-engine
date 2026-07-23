@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
@@ -28,7 +29,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
@@ -378,7 +378,7 @@ final class EngineRig {
 	 * @return  void
 	 */
 	public function run_maintenance(): void {
-		$this->maintenance_job->handle( array(), new RunContext( 'rig-maintenance-run', array() ) );
+		$this->maintenance_job->handle( array(), new RunContext( RunId::from( '00000000000000000000-0000000000000000002' ), array() ) );
 	}
 
 	// endregion.

@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
@@ -87,7 +87,7 @@ abstract class CapabilityManagerTestCase extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param (\Closure(array<array-key, mixed>, RunContext): void)|null $handler
+	 * @phpstan-param (\Closure(array<array-key, mixed>, RunContextInterface): void)|null $handler
 	 *
 	 * @param   string        $name    Stable owner-local job name.
 	 * @param   \Closure|null $handler Optional invocation behavior.
@@ -109,16 +109,16 @@ abstract class CapabilityManagerTestCase extends TestCase {
 	 * @return  JobDefinition
 	 */
 	protected static function chunked_job( string $name ): JobDefinition {
-		$execution = new class() implements ChunkedJobExecution {
+		$execution = new class() implements ChunkedJobExecutionInterface {
 			/** {@inheritDoc} */
 			#[\Override]
-			public function generate_queue( array $start_args, RunContext $context ): iterable {
+			public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 				return array();
 			}
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
 		};
 
 		return JobDefinition::chunked_job( $name, $execution );

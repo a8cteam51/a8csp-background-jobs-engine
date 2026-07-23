@@ -7,33 +7,50 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Gives one work invocation controlled access to its own run.
+ * Carries immutable invocation context for one job or chunked job run.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-interface RunContext {
-	// region METHODS
+final class RunContext implements RunContextInterface {
+	// region MAGIC METHODS
 
 	/**
-	 * Returns the identifier the engine assigns when the run starts.
+	 * Constructor.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  RunId
+	 * @param   RunId                   $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 */
-	public function get_run_id(): RunId;
+	public function __construct( private RunId $run_id, private array $start_args ) {}
+
+	// endregion
+
+	// region INHERITED METHODS
 
 	/**
-	 * Returns the arguments supplied when the run started.
+	 * {@inheritDoc}
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
-	 *
-	 * @return  array<array-key, mixed>
 	 */
-	public function get_start_args(): array;
+	#[\Override]
+	public function get_run_id(): RunId {
+		return $this->run_id;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
+	#[\Override]
+	public function get_start_args(): array {
+		return $this->start_args;
+	}
 
 	// endregion
 }

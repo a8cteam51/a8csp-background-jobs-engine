@@ -5,10 +5,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
@@ -20,7 +22,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
@@ -129,14 +130,14 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @param   string        $identity   Complete owner-qualified chunked-job identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
-	 * @throws  \InvalidArgumentException When the execution object does not implement ChunkedJobExecution.
+	 * @throws  \InvalidArgumentException When the execution object does not implement ChunkedJobExecutionInterface.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public function register( string $identity, JobDefinition $definition ): void {
-		if ( ! $definition->execution instanceof ChunkedJobExecution ) {
-			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, ChunkedJobExecution::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+		if ( ! $definition->execution instanceof ChunkedJobExecutionInterface ) {
+			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, ChunkedJobExecutionInterface::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
 
 		$this->work->register( $identity, $definition );
@@ -150,13 +151,13 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 *
 	 * @param   string $identity Complete owner-qualified chunked-job identity.
 	 *
-	 * @return  ChunkedJobExecution|null
+	 * @return  ChunkedJobExecutionInterface|null
 	 */
 	#[\Override]
-	public function execution( string $identity ): ?ChunkedJobExecution {
+	public function execution( string $identity ): ?ChunkedJobExecutionInterface {
 		$execution = $this->work->execution( $identity );
 
-		return self::KIND === $this->work->kind( $identity ) && $execution instanceof ChunkedJobExecution ? $execution : null;
+		return self::KIND === $this->work->kind( $identity ) && $execution instanceof ChunkedJobExecutionInterface ? $execution : null;
 	}
 
 	/**
@@ -420,7 +421,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$context = new RunContext( $run_id, $state->start_args );
+		$context = new RunContext( RunId::from( $run_id ), $state->start_args );
 		try {
 			$queue = $this->materialize_queue( $execution->generate_queue( $state->start_args, $context ) );
 		} catch ( \Throwable $throwable ) {
@@ -573,7 +574,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ChunkedJobExecution           $execution  Registered chunked-job execution.
+	 * @param   ChunkedJobExecutionInterface  $execution  Registered chunked-job execution.
 	 * @param   string                        $identity    Complete owner-qualified chunked-job identity.
 	 * @param   string                        $run_id      Run identifier.
 	 * @param   RunState                      $state       Fenced executing state.
@@ -582,7 +583,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 *
 	 * @return  void
 	 */
-	private function process_chunk( ChunkedJobExecution $execution, string $identity, string $run_id, RunState $state, RunStore $run_store, array $queue ): void {
+	private function process_chunk( ChunkedJobExecutionInterface $execution, string $identity, string $run_id, RunState $state, RunStore $run_store, array $queue ): void {
 		$chunk_args = $queue[0] ?? null;
 		if ( ! \is_array( $chunk_args ) ) {
 			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached chunk execution without a queued chunk; schedule continue only while the authoritative queue has a head.', self::KIND, $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::UnsupportedOperation );
@@ -763,9 +764,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @param   string $run_id   Run identifier.
 	 * @param   string $stage    Internal lifecycle stage.
 	 *
-	 * @return  ChunkedJobExecution|null
+	 * @return  ChunkedJobExecutionInterface|null
 	 */
-	private function execution_for_action( string $identity, string $run_id, string $stage ): ?ChunkedJobExecution {
+	private function execution_for_action( string $identity, string $run_id, string $stage ): ?ChunkedJobExecutionInterface {
 		$execution = $this->execution( $identity );
 		if ( null === $execution ) {
 			$this->logger->warning(
