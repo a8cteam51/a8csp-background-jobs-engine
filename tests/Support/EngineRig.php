@@ -5,31 +5,35 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\EngineFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Inspection;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceSchedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -102,7 +106,7 @@ final class EngineRig {
 		require_once \dirname( __DIR__ ) . '/Unit/wp-hook-stubs.php';
 		require_once \dirname( __DIR__ ) . '/Unit/wp-lock-stubs.php';
 		require_once \dirname( __DIR__ ) . '/Unit/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Unit/Engine/Backends/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__ ) . '/Unit/Runtime/Backends/wp-json-encode-stub.php';
 		require_once \dirname( __DIR__, 2 ) . '/functions.php';
 	}
 
@@ -295,7 +299,7 @@ final class EngineRig {
 		Assert::assertInstanceOf( Client::class, $client );
 		$result = $client->runs()->last_completed_run_id( $parts[1] );
 		Assert::assertInstanceOf( Success::class, $result );
-		Assert::assertSame( $run_id, $result->value );
+		Assert::assertSame( (string) $run_id, $result->value );
 	}
 
 	/**
@@ -401,18 +405,27 @@ final class EngineRig {
 		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade( $this->backends );
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
-		$action_deliveries    = new ActionDeliveries( $work, $scheduler, $stores, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$dispatcher           = new Dispatcher( $work, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $work, $scheduler );
+		$job_handler          = new JobKindHandler( $work, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler  = new ChunkedJobKindHandler( $work, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$handlers             = array(
+			$job_handler->key()         => $job_handler,
+			$chunked_job_handler->key() => $chunked_job_handler,
+		);
+		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions );
+		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
 
 		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$work->register_job( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $this->maintenance_job );
+		$dispatcher->register(
+			JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
+			JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job )
+		);
 		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $work, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
+		$inspection           = new Inspection( $schedules, $work, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 		self::publish_component( $engine, $inspection, $scheduler, $work, $schedule_api, $dispatcher );
@@ -499,7 +512,7 @@ final class EngineRig {
 	 * @param   EngineFacade    $engine     Engine facade.
 	 * @param   Inspection      $inspection Inspection facade.
 	 * @param   SchedulerFacade $scheduler  Scheduler facade.
-	 * @param   JobRegistry    $work       Registered job and chunked job instances.
+	 * @param   JobRegistry     $work       Registered job and chunked job instances.
 	 * @param   Schedules       $schedules  Schedule engine operations.
 	 * @param   Dispatcher      $dispatcher Background-work admission coordinator.
 	 *
@@ -600,10 +613,10 @@ final class EngineRig {
 	 * @return list<mixed>
 	 */
 	private function latest_event( string $event ): array {
-		$events = $this->hooks->fired( 'a8csp_jobs_engine/' . $event );
-		Assert::assertNotEmpty( $events, \sprintf( 'Expected the generic %s lifecycle hook to fire.', $event ) );
+		$latest = \array_last( $this->hooks->fired( 'a8csp_jobs_engine/' . $event ) );
+		Assert::assertNotNull( $latest, \sprintf( 'Expected the generic %s lifecycle hook to fire.', $event ) );
 
-		return $events[ \count( $events ) - 1 ];
+		return $latest;
 	}
 
 	/**
@@ -616,13 +629,13 @@ final class EngineRig {
 	 *
 	 * @param   array $args Generic lifecycle arguments.
 	 *
-	 * @return array{string, string}
+	 * @return array{string, RunId}
 	 */
 	private function identity_and_run_id( array $args ): array {
 		$identity = $args[0] ?? null;
 		$run_id   = $args[1] ?? null;
 		Assert::assertIsString( $identity );
-		Assert::assertIsString( $run_id );
+		Assert::assertInstanceOf( RunId::class, $run_id );
 
 		return array( $identity, $run_id );
 	}

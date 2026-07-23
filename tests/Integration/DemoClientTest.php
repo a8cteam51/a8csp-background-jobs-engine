@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\CommentCountRecountChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\DemoClient;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\SiteHealthPingJob;
@@ -133,10 +134,10 @@ final class DemoClientTest extends IntegrationTestCase {
 
 		\add_action(
 			'a8csp_jobs_engine/started/' . self::JOB_IDENTITY,
-			static function ( string $run_id, array $args ) use ( &$job_started_named, &$scheduled_run_id, $scheduled_args ): void {
-				$job_started_named[] = array( $run_id, $args );
+			static function ( RunId $run_id, array $args ) use ( &$job_started_named, &$scheduled_run_id, $scheduled_args ): void {
+				$job_started_named[] = array( (string) $run_id, $args );
 				if ( $scheduled_args === $args ) {
-					$scheduled_run_id = $run_id;
+					$scheduled_run_id = (string) $run_id;
 				}
 			},
 			10,
@@ -144,9 +145,9 @@ final class DemoClientTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/started',
-			static function ( string $name, string $run_id, array $args ) use ( &$job_started_generic ): void {
+			static function ( string $name, RunId $run_id, array $args ) use ( &$job_started_generic ): void {
 				if ( self::JOB_IDENTITY === $name ) {
-					$job_started_generic[] = array( $name, $run_id, $args );
+					$job_started_generic[] = array( $name, (string) $run_id, $args );
 				}
 			},
 			10,
@@ -154,17 +155,17 @@ final class DemoClientTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::JOB_IDENTITY,
-			static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$job_completed_named ): void {
-				$job_completed_named[] = array( $run_id, $args, $previous_completed_run_id );
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$job_completed_named ): void {
+				$job_completed_named[] = array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			3
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$job_completed_generic ): void {
+			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$job_completed_generic ): void {
 				if ( self::JOB_IDENTITY === $name ) {
-					$job_completed_generic[] = array( $name, $run_id, $args, $previous_completed_run_id );
+					$job_completed_generic[] = array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 				}
 			},
 			10,
@@ -172,8 +173,8 @@ final class DemoClientTest extends IntegrationTestCase {
 		);
 		\add_action(
 			CommentCountRecountChunkedJob::RECOUNTED_HOOK,
-			static function ( int $post_id, string $run_id ) use ( &$recounted ): void {
-				$recounted[] = array( $post_id, $run_id );
+			static function ( int $post_id, RunId $run_id ) use ( &$recounted ): void {
+				$recounted[] = array( $post_id, (string) $run_id );
 			},
 			10,
 			2
@@ -188,17 +189,17 @@ final class DemoClientTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::CHUNKED_JOB_IDENTITY,
-			static function ( string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$chunked_job_completed_named ): void {
-				$chunked_job_completed_named[] = array( $run_id, $args, $previous_completed_run_id );
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$chunked_job_completed_named ): void {
+				$chunked_job_completed_named[] = array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			3
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $args, ?string $previous_completed_run_id ) use ( &$chunked_job_completed_global ): void {
+			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$chunked_job_completed_global ): void {
 				if ( self::CHUNKED_JOB_IDENTITY === $name ) {
-					$chunked_job_completed_global[] = array( $name, $run_id, $args, $previous_completed_run_id );
+					$chunked_job_completed_global[] = array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 				}
 			},
 			10,
@@ -215,7 +216,7 @@ final class DemoClientTest extends IntegrationTestCase {
 		\add_action(
 			'init',
 			static function () use ( &$api ): void {
-				$api = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( DemoClient::OWNER );
+				$api = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( DemoClient::OWNER );
 			},
 			\PHP_INT_MAX
 		);
@@ -232,7 +233,7 @@ final class DemoClientTest extends IntegrationTestCase {
 
 		$schedule_due_before_manual = \did_action( 'a8csp_jobs_engine/schedule_due' );
 		$matches_manual_run         = static fn ( string $hook, array $args ): bool =>
-			'a8csp_jobs_engine/run_job' === $hook
+			'a8csp_jobs_engine/deliver' === $hook
 			&& ( $args[1] ?? null ) === $manual_run_id;
 		$manual_actions_processed   = \class_exists( \ActionScheduler::class )
 			? $this->run_matching_due_action( $matches_manual_run )

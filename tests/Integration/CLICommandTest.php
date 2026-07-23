@@ -5,14 +5,14 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\JobType;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -47,6 +47,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 	/** Background-work identity registered by the engine in every WP-CLI child request. */
 	private const string CANCEL_NAME = 'a8csp-jobs-engine:maintenance';
+
+	/** Failed run retained beside the live canonical run in list coverage. */
+	private const string HISTORY_FAILED_RUN_ID = '00000000001784029999-0000000000000000000';
 
 	/** Background-work identity isolated to real reset state. */
 	private const string RESET_NAME = 'integration-cli-command:integration-cli-command-reset-store';
@@ -778,7 +781,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$args_hash = $builder->args_hash( array() );
 		$now       = \time();
-		$state     = new RunState( RunStatus::Running, JobType::Job, true, array(), $args_hash, array( array() ), 0, 1, $now, $now );
+		$state     = new RunState( RunStatus::Running, 'job', true, array(), $args_hash, array(), 0, 1, $now, $now );
 		$fixtures  = array(
 			$builder->run( self::CANONICAL_RUN_ID, $state ),
 			$builder->history(
@@ -790,13 +793,13 @@ final class CLICommandTest extends IntegrationTestCase {
 				),
 				array(
 					array(
-						'run_id'    => 'integration-cli-history-failed',
+						'run_id'    => self::HISTORY_FAILED_RUN_ID,
 						'args_hash' => 'history-hash',
 						'status'    => RunStatus::Failed,
 					),
 				)
 			),
-			$builder->failed( self::FAILED_AT, array(), new RunFailure( identity: self::CANCEL_NAME, run_id: 'integration-cli-history-failed', attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'CLI history failure.', failed_chunk: null, ), new EngineError( 'CLI history failure.' ) ),
+			$builder->failed( self::FAILED_AT, array(), new RunFailure( identity: self::CANCEL_NAME, run_id: RunId::from( self::HISTORY_FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'CLI history failure.', details: null, ), new EngineError( 'CLI history failure.' ) ),
 		);
 		foreach ( $fixtures as $fixture ) {
 			self::persist_store_fixture( $fixture );
@@ -811,7 +814,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertStringContainsString( 'recent history', $result['stdout'] );
 			self::assertStringContainsString( self::CANONICAL_RUN_ID, $result['stdout'] );
 			self::assertStringContainsString( 'executing', $result['stdout'] );
-			self::assertStringContainsString( 'integration-cli-history-failed', $result['stdout'] );
+			self::assertStringContainsString( self::HISTORY_FAILED_RUN_ID, $result['stdout'] );
 			self::assertStringContainsString( 'failed_store', $result['stdout'] );
 			self::assertStringContainsString( 'failed store', $result['stdout'] );
 			self::assertStringContainsString( '—', $result['stdout'] );
@@ -951,10 +954,10 @@ final class CLICommandTest extends IntegrationTestCase {
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::INSPECTION_OWNER );
+		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::INSPECTION_OWNER );
 		$job            = new RecordingJob( self::INSPECTION_JOB );
 		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
-		$client->jobs()->register( $job );
+		$client->jobs()->register( $job->definition() );
 		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_JOB, array( 'source' => 'schedule' ) );
 		$synced   = $client->schedules()->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );
@@ -1168,7 +1171,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$args    = array( 'source' => 'cli-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, JobType::Job, $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'job', $executing, $args, $builder->args_hash( $args ), array(), 0, 1, $now, $now );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 
@@ -1187,7 +1190,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$args    = array( 'source' => 'cli-completeness-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_CHUNKED_JOB_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, JobType::ChunkedJob, false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'chunked_job', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 
@@ -1218,7 +1221,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	private function seed_failed_run( string $name ): string {
 		$builder = StoreFixtureBuilder::for_identity( $name );
-		$fixture = $builder->failed( self::FAILED_AT, array( 'account_id' => 42 ), new RunFailure( identity: $name, run_id: self::RUN_ID, attempts: 3, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', failed_chunk: null, ), new EngineError( 'CLI boundary failure.', \RuntimeException::class ) );
+		$fixture = $builder->failed( self::FAILED_AT, array( 'account_id' => 42 ), new RunFailure( identity: $name, run_id: RunId::from( self::RUN_ID ), attempts: 3, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'CLI boundary failure.', details: null, ), new EngineError( 'CLI boundary failure.', \RuntimeException::class ) );
 		self::persist_store_fixture( $fixture );
 
 		return $fixture[0];

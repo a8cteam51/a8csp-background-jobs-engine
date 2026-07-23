@@ -5,34 +5,37 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\HeartbeatOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockClaimOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLeaseOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OwnerReplacementOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLeaseOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OwnerReplacementOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use Psr\Log\NullLogger;
 
 /**
@@ -178,15 +181,15 @@ final readonly class StoreFixtureBuilder {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
 				$store   = new RunStore( $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
-				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->queue, $state->pending );
-				if ( null === $created ) {
+				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending );
+				if ( ! $created instanceof RunState ) {
 					throw new \LogicException( 'Production RunStore rejected an isolated active-run fixture.' );
 				}
 
 				$raw = self::same_state( $created, $state )
 					? $this->raw_option( RunIdentity::option_name( $this->identity, $run_id ) )
 					: $store->replace_if_state_matches( $run_id, $created, $state );
-				if ( null === $raw ) {
+				if ( ! \is_string( $raw ) ) {
 					throw new \LogicException( 'Production RunStore could not serialize the requested active-run fixture.' );
 				}
 
@@ -249,7 +252,7 @@ final readonly class StoreFixtureBuilder {
 				foreach ( $entries as $entry ) {
 					$failure = $entry['failure'];
 					$error   = $entry['error'] ?? null;
-					if ( ! $store->record( $failure->run_id, $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
+					if ( ! $store->record( (string) $failure->run_id, $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
 						throw new \LogicException( 'Production FailedRunStore rejected an isolated failed-run fixture.' );
 					}
 				}
@@ -440,14 +443,22 @@ final readonly class StoreFixtureBuilder {
 					}
 				}
 
-				$before         = $this->option_names( $rows, '' );
-				$guard          = new OverlapGuard( $clock, $logger, $rows );
-				$stores         = new StoreFactory( $clock, $rows, $logger );
-				$windows        = new LockWindows( $clock, $logger );
-				$effects        = new LifecycleEffects( $guard, $stores, $logger );
-				$transitions    = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
-				$reconciliation = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, new JobRegistry(), $backend );
-				$intents        = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
+				$before          = $this->option_names( $rows, '' );
+				$guard           = new OverlapGuard( $clock, $logger, $rows );
+				$stores          = new StoreFactory( $clock, $rows, $logger );
+				$windows         = new LockWindows( $clock, $logger );
+				$effects         = new LifecycleEffects( $guard, $stores, $logger );
+				$transitions     = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
+				$work            = new JobRegistry();
+				$failure         = new FailureLifecycle( $backend, $clock, new RecordingRandomizer( 0 ), $logger, $transitions );
+				$job_handler     = new JobKindHandler( $work, $logger, $clock, $windows, $transitions, $effects, $failure );
+				$chunked_handler = new ChunkedJobKindHandler( $work, $backend, $logger, $clock, $windows, $transitions, $effects, $failure );
+				$handlers        = array(
+					$job_handler->key()     => $job_handler,
+					$chunked_handler->key() => $chunked_handler,
+				);
+				$reconciliation  = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, $handlers, $backend );
+				$intents         = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
 
 				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( 'fixture-maintenance-run', array() ) );
 				$added = \array_values( \array_diff( $this->option_names( $rows, '' ), $before ) );
@@ -534,22 +545,23 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
-	 * Returns a production failed-run row whose first member has an unknown failure stage.
+	 * Returns a production failed-run row whose first member uses the supplied failure stage.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   array{string, string} $fixture Complete production failed-run fixture.
+	 * @param   string                $stage   Replacement failure stage.
 	 *
 	 * @return  array{string, string}
 	 */
-	public static function failed_runs_with_unknown_stage( array $fixture ): array {
+	public static function failed_runs_with_stage( array $fixture, string $stage ): array {
 		$entries = RawOptionDecoder::decode( $fixture[1] );
 		if ( ! \is_array( $entries ) || ! \is_array( $entries[0] ?? null ) || ! \is_array( $entries[0]['error'] ?? null ) ) {
 			throw new \InvalidArgumentException( 'The failed-run fixture must contain a complete first entry.' );
 		}
 
-		$entries[0]['error']['stage'] = 'unknown';
+		$entries[0]['error']['stage'] = $stage;
 
 		return array( $fixture[0], self::corrupt_row( $entries ) );
 	}
@@ -789,7 +801,7 @@ final readonly class StoreFixtureBuilder {
 			&& $left->executing === $right->executing
 			&& $left->start_args === $right->start_args
 			&& $left->args_hash === $right->args_hash
-			&& $left->queue === $right->queue
+			&& $left->kind_state === $right->kind_state
 			&& $left->failed_attempts === $right->failed_attempts
 			&& $left->action_sequence === $right->action_sequence
 			&& $left->created_at === $right->created_at

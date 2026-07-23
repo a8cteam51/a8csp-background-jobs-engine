@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Internal\ChunkedJob;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -18,22 +17,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobInterface;
  */
 interface ChunkedJobsEngineInterface {
 	// region METHODS
-
-	/**
-	 * Registers one chunked job under its complete owner-qualified identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string              $identity Complete owner-qualified chunked job identity.
-	 * @param   ChunkedJobInterface $chunked_job    Chunked Job to register.
-	 *
-	 * @throws  \InvalidArgumentException When the identity and chunked job name disagree, or a job owns the identity.
-	 * @throws  \LogicException           When the chunked job identity is already registered.
-	 *
-	 * @return  void
-	 */
-	public function register_chunked_job( string $identity, ChunkedJobInterface $chunked_job ): void;
 
 	/**
 	 * Creates and schedules one run for a registered chunked job.

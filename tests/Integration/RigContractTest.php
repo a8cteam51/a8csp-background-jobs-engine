@@ -3,10 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\ExpectationFailedException;
@@ -53,7 +52,7 @@ final class RigContractTest extends IntegrationTestCase {
 
 		$action_count_before = \did_action( self::NEW_HOOK );
 		$filter_count_before = \did_filter( self::NEW_HOOK );
-		$plugin_listener     = \has_action( self::EXISTING_HOOK, array( Plugin::instance(), 'boot' ) );
+		$plugin_listener     = \has_action( self::EXISTING_HOOK, array( \a8csp_bgje_plugin(), 'boot' ) );
 		self::assertIsInt( $plugin_listener, 'The plugin listener must exist before the hook-restoration probe runs' );
 
 		try {
@@ -64,7 +63,7 @@ final class RigContractTest extends IntegrationTestCase {
 
 			$this->restore_wordpress_hooks();
 
-			self::assertSame( $plugin_listener, \has_action( self::EXISTING_HOOK, array( Plugin::instance(), 'boot' ) ) );
+			self::assertSame( $plugin_listener, \has_action( self::EXISTING_HOOK, array( \a8csp_bgje_plugin(), 'boot' ) ) );
 			self::assertFalse( \has_action( self::EXISTING_HOOK, $existing_hook_listener ) );
 			self::assertFalse( \has_filter( self::NEW_HOOK, $new_hook_listener ) );
 			self::assertSame( $action_count_before, \did_action( self::NEW_HOOK ) );

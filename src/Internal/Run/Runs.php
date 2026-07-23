@@ -48,7 +48,7 @@ final readonly class Runs {
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
 	 *
-	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus|null, ApiError>
+	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus|null, ApiError>
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 	public function inspect( string $name, string $run_id ): AbstractResult {
@@ -61,7 +61,7 @@ final readonly class Runs {
 	 * The lookup covers only the retained history window. Each history buffer retains at most the
 	 * positive `a8csp_jobs_engine/history_size` filter value, 30 by default. A completed run
 	 * older than that window returns `Success(null)` as if absent. Clients needing indefinite
-	 * retention keep their own pointer from `on_completed()` or the completed lifecycle hook. History
+	 * retention keep their own pointer from the completed lifecycle hook. History
 	 * is recorded after those notifications, so a lookup inside either observes the previous retained
 	 * completion.
 	 *

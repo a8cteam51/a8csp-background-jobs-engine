@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\RandomizerInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 
 /**
  * Returns one deterministic integer while recording requested boundaries.

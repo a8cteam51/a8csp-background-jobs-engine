@@ -3,11 +3,12 @@
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -33,7 +34,7 @@ try {
 		case 'schedules-dormant':
 			foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
 				$client = $rig->client( $owner );
-				$client->jobs()->register( new RecordingJob( 'refresh' ) );
+				$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
 				$result = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 				if ( ! $result instanceof Success ) {
 					throw new \LogicException( 'The CLI worker could not register its schedule fixture.' );
@@ -47,7 +48,7 @@ try {
 
 		case 'runs':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+			$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 			$enqueued = $client->jobs()->enqueue( 'email-digest' );
 			if ( ! $enqueued instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not register its run fixture.' );
@@ -57,7 +58,7 @@ try {
 
 		case 'schedules-remove-declined':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->jobs()->register( new RecordingJob( 'refresh' ) );
+			$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			$synced = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 			if ( ! $synced instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not seed schedule-removal fixtures.' );
@@ -98,9 +99,9 @@ try {
 
 		case 'failed-runs':
 			$client = $rig->client( 'consumer-plugin' );
-			$client->jobs()->register( new RecordingJob( 'email-digest' ) );
+			$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 			foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
-				$failure        = new RunFailure( identity: $identity, run_id: 'run-1', attempts: 2, stage: RunFailureStage::Execution, code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', failed_chunk: null );
+				$failure        = new RunFailure( identity: $identity, run_id: RunId::from( '00000000000000086400-0000000000000000001' ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null );
 				[ $name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( $now - 60, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.', \RuntimeException::class ) );
 				$rig->wpdb()->put( $name, $raw );
 			}
@@ -109,14 +110,13 @@ try {
 
 		case 'reset-declined':
 			$client = $rig->client( 'reset-tests' );
-			$client->jobs()->register( new RecordingJob( 'refresh' ) );
+			$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			$enqueued = $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) );
 			$synced   = $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 			if ( ! $enqueued instanceof Success || ! $synced instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not seed reset fixtures.' );
 			}
-			$rig->backend()->pending_actions[ ActionDeliveries::RUN_JOB_HOOK ]  = 2;
-			$rig->backend()->pending_actions[ ActionDeliveries::CONTINUE_HOOK ] = 3;
+			$rig->backend()->pending_actions[ ActionDeliveries::DELIVER_HOOK ] = 5;
 			$before = array(
 				'wpdb'    => $rig->wpdb()->rows,
 				'options' => $GLOBALS['a8csp_bgje_test_options'],

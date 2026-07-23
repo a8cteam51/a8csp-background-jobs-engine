@@ -3,9 +3,12 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -72,8 +75,8 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 41 );
 		$job  = new RecordingJob( self::EXECUTING_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
+		$client->jobs()->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::EXECUTING_IDENTITY );
 
 		$enqueued = $client->jobs()->enqueue( self::EXECUTING_NAME, $args );
@@ -138,13 +141,13 @@ final class CancellationTest extends IntegrationTestCase {
 	 */
 	public function test_cancel_during_backoff_clears_the_retry_and_records_cancelled_history(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$args              = array( 'account_id' => 42 );
-		$job               = new RecordingJob( self::BACKOFF_NAME );
-		$job->throwable    = new \RuntimeException( 'Retry after the upstream recovers.' );
-		$job->retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 );
+		$args           = array( 'account_id' => 42 );
+		$job            = new RecordingJob( self::BACKOFF_NAME );
+		$job->throwable = new \RuntimeException( 'Retry after the upstream recovers.' );
+		$options        = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 ) );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
+		$client->jobs()->register( $job->definition( $options ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::BACKOFF_IDENTITY );
 
 		$enqueued = $client->jobs()->enqueue( self::BACKOFF_NAME, $args );
@@ -158,7 +161,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $initial_action_id ) );
-		$retry_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/run_job', $group, array( self::BACKOFF_IDENTITY, $run_id, 2 ) );
+		$retry_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/deliver', $group, array( self::BACKOFF_IDENTITY, $run_id, 2 ) );
 		$run_state       = \get_option( 'a8csp_bgje_run_' . self::BACKOFF_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		self::assertSame( 'running', $run_state['status'] ?? null );
@@ -202,20 +205,58 @@ final class CancellationTest extends IntegrationTestCase {
 	 * @version 1.0.0
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Cancellation is staged between a processed chunk and the next real queue-advance delivery; public callbacks cannot expose the retained queue head and pending continuation at that instant.
+	 * @pin-rationale Cancellation is staged between a processed chunk and the next real queue-advance delivery; public lifecycle state cannot expose the retained queue head and pending continuation at that instant.
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_between_chunks_preserves_the_retained_head_and_skips_terminal_callbacks(): void {
+	public function test_cancel_between_chunks_preserves_the_retained_head_and_fires_only_cancelled_hooks(): void {
 		$start_args         = array( 'account_id' => 43 );
 		$first_chunk        = array( 'chunk' => 'one' );
 		$next_chunk         = array( 'chunk' => 'two' );
 		$chunked_job        = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
 		$chunked_job->queue = array( $first_chunk, $next_chunk );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
-		$client->chunked_jobs()->register( $chunked_job );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
+		$client->jobs()->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CHUNKED_JOB_IDENTITY );
+
+		$terminal_hooks = array();
+		\add_action(
+			'a8csp_jobs_engine/cancelled/' . self::CHUNKED_JOB_IDENTITY,
+			static function ( RunId $run_id, array $args ) use ( &$terminal_hooks ): void {
+				$terminal_hooks[] = array( 'cancelled-named', (string) $run_id, $args );
+			},
+			10,
+			2
+		);
+		\add_action(
+			'a8csp_jobs_engine/cancelled',
+			static function ( string $name, RunId $run_id, array $args ) use ( &$terminal_hooks ): void {
+				if ( self::CHUNKED_JOB_IDENTITY === $name ) {
+					$terminal_hooks[] = array( 'cancelled-generic', $name, (string) $run_id, $args );
+				}
+			},
+			10,
+			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/completed/' . self::CHUNKED_JOB_IDENTITY,
+			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$terminal_hooks ): void {
+				$terminal_hooks[] = array( 'completed', (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
+			},
+			10,
+			3
+		);
+		\add_action(
+			'a8csp_jobs_engine/failed',
+			static function ( RunFailure $failure ) use ( &$terminal_hooks ): void {
+				if ( self::CHUNKED_JOB_IDENTITY === $failure->identity ) {
+					$terminal_hooks[] = array( 'failed', $failure );
+				}
+			},
+			10,
+			1
+		);
 
 		$started = $client->chunked_jobs()->start( self::CHUNKED_JOB_NAME, $start_args );
 		self::assertInstanceOf( Success::class, $started );
@@ -227,7 +268,7 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$pending_state = \get_option( 'a8csp_bgje_run_' . self::CHUNKED_JOB_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $pending_state );
-		self::assertSame( array( $first_chunk, $next_chunk ), $pending_state['queue'] ?? null );
+		self::assertSame( array( $first_chunk, $next_chunk ), $pending_state['kind_state'] ?? null );
 		self::assertSame( 2, $pending_state['action_sequence'] ?? null );
 		self::assertFalse( $pending_state['executing'] ?? true, 'The queued continuation must retain a cancellable head' );
 		$first_action_id = $this->assert_pending_chunk_continuation( self::CHUNKED_JOB_IDENTITY, $run_id, $group, $first_chunk );
@@ -237,18 +278,24 @@ final class CancellationTest extends IntegrationTestCase {
 
 		$run_state = \get_option( 'a8csp_bgje_run_' . self::CHUNKED_JOB_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
-		self::assertSame( array( $next_chunk ), $run_state['queue'] ?? null );
+		self::assertSame( array( $next_chunk ), $run_state['kind_state'] ?? null );
 		self::assertSame( 3, $run_state['action_sequence'] ?? null );
 		self::assertFalse( $run_state['executing'] ?? true, 'The inter-chunk state must be cancellable' );
-		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/continue_chunked_job', $group, array( self::CHUNKED_JOB_IDENTITY, $run_id, 3 ) );
+		$continue_action_id = $this->assert_sole_pending_action( 'a8csp_jobs_engine/deliver', $group, array( self::CHUNKED_JOB_IDENTITY, $run_id, 3 ) );
 
 		$cancelled = $client->runs()->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
 		self::assertSame( $run_id, $cancelled->value );
 		self::assertSame( array( $first_chunk ), \array_column( $chunked_job->process_calls, 'chunk_args' ) );
-		self::assertSame( array(), $chunked_job->completed_calls, 'Cancellation must not invoke the chunked job on_completed() callback' );
-		self::assertSame( array(), $chunked_job->failed_calls, 'Cancellation must not invoke the chunked job on_failed() callback' );
+		self::assertSame(
+			array(
+				array( 'cancelled-named', $run_id, $start_args ),
+				array( 'cancelled-generic', self::CHUNKED_JOB_IDENTITY, $run_id, $start_args ),
+			),
+			$terminal_hooks,
+			'Cancellation must publish only the identity-specific and generic cancelled hooks in that order'
+		);
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $continue_action_id ) );
 		self::assertSame(
@@ -289,8 +336,8 @@ final class CancellationTest extends IntegrationTestCase {
 		$args_b = array( 'account_id' => 45 );
 		$job    = new RecordingJob( self::SIBLING_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
+		$client->jobs()->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SIBLING_IDENTITY );
 
 		$enqueued_a = $client->jobs()->enqueue( self::SIBLING_NAME, $args_a );
@@ -324,7 +371,7 @@ final class CancellationTest extends IntegrationTestCase {
 			),
 			'The sibling group must retain its pending action'
 		);
-		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $action_args ): bool => 'a8csp_jobs_engine/run_job' === $hook && ( $action_args[1] ?? null ) === $run_b ), 'Action Scheduler must execute the surviving sibling' );
+		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $action_args ): bool => 'a8csp_jobs_engine/deliver' === $hook && ( $action_args[1] ?? null ) === $run_b ), 'Action Scheduler must execute the surviving sibling' );
 
 		self::assertSame( array( $args_b ), $job->calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_b ) );
@@ -379,13 +426,13 @@ final class CancellationTest extends IntegrationTestCase {
 		$args = array( 'account_id' => 46 );
 		$job  = new RecordingJob( self::DEGRADED_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
+		$client->jobs()->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::DEGRADED_IDENTITY );
 
 		$raw_deliveries = array();
 		\add_action(
-			'a8csp_jobs_engine/run_job',
+			'a8csp_jobs_engine/deliver',
 			static function ( string $name, string $run_id, int $action_sequence ) use ( &$raw_deliveries ): void {
 				if ( self::DEGRADED_IDENTITY === $name ) {
 					$raw_deliveries[] = array( $name, $run_id, $action_sequence );
@@ -406,7 +453,7 @@ final class CancellationTest extends IntegrationTestCase {
 		if ( \class_exists( \ActionScheduler::class ) ) {
 			$action_id = $this->assert_pending_job_action( self::DEGRADED_IDENTITY, $run_id, $group );
 		} else {
-			$cron_before = $this->wordpress_cron_events( 'a8csp_jobs_engine/run_job', $action_args );
+			$cron_before = $this->wordpress_cron_events( 'a8csp_jobs_engine/deliver', $action_args );
 			self::assertCount( 1, $cron_before, 'The degraded backend must retain one pending WP-Cron single' );
 			self::assertFalse( $cron_before[0]['schedule'] );
 		}
@@ -419,10 +466,10 @@ final class CancellationTest extends IntegrationTestCase {
 			self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $action_id ) );
 			self::assertSame( array(), $raw_deliveries );
 		} else {
-			self::assertSame( $cron_before, $this->wordpress_cron_events( 'a8csp_jobs_engine/run_job', $action_args ), 'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation' );
-			self::assertSame( 1, $this->run_matching_due_cron_event( static fn ( string $hook, array $event_args ): bool => 'a8csp_jobs_engine/run_job' === $hook && $event_args === $action_args ), 'The surviving WP-Cron single must reach the job run-admission hook once' );
+			self::assertSame( $cron_before, $this->wordpress_cron_events( 'a8csp_jobs_engine/deliver', $action_args ), 'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation' );
+			self::assertSame( 1, $this->run_matching_due_cron_event( static fn ( string $hook, array $event_args ): bool => 'a8csp_jobs_engine/deliver' === $hook && $event_args === $action_args ), 'The surviving WP-Cron single must reach the job run-admission hook once' );
 			self::assertSame( array( $action_args ), $raw_deliveries );
-			self::assertSame( array(), $this->wordpress_cron_events( 'a8csp_jobs_engine/run_job', $action_args ) );
+			self::assertSame( array(), $this->wordpress_cron_events( 'a8csp_jobs_engine/deliver', $action_args ) );
 		}
 
 		self::assertSame( array(), $job->calls, 'A surviving backend delivery must not invoke cancelled user work' );

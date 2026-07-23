@@ -5,6 +5,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
@@ -48,15 +50,16 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 	 */
 	public function test_retry_exhaustion_round_trips_through_the_failed_store(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$args           = array(
+		$args                    = array(
 			'account_id' => 91,
 			'operation'  => 'synchronize',
 		);
-		$job            = new RecordingJob( self::NAME );
-		$job->throwable = new \RuntimeException( 'The upstream service remains unavailable.' );
+		$job                     = new RecordingJob( self::NAME );
+		$job->throwable          = new \RuntimeException( 'The upstream service remains unavailable.' );
+		$definition_retry_policy = new RetryPolicy();
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( self::OWNER );
-		$client->jobs()->register( $job );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
+		$client->jobs()->register( $job->definition( new JobOptions( retry: $definition_retry_policy ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY );
@@ -90,16 +93,16 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$generic_completed = array();
 		\add_action(
 			'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
-				$named_retry_scheduled[] = array( $run_id, $start_args, $attempt, $delay );
+			static function ( RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
+				$named_retry_scheduled[] = array( (string) $run_id, $start_args, $attempt, $delay );
 			},
 			10,
 			4
 		);
 		\add_action(
 			'a8csp_jobs_engine/retry_scheduled',
-			static function ( string $name, string $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
-				$generic_retry_scheduled[] = array( $name, $run_id, $start_args, $attempt, $delay );
+			static function ( string $name, RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
+				$generic_retry_scheduled[] = array( $name, (string) $run_id, $start_args, $attempt, $delay );
 			},
 			10,
 			5
@@ -114,16 +117,16 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
-			static function ( string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$named_completed ): void {
-				$named_completed[] = array( $run_id, $start_args, $previous_completed_run_id );
+			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$named_completed ): void {
+				$named_completed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			3
 		);
 		\add_action(
 			'a8csp_jobs_engine/completed',
-			static function ( string $name, string $run_id, array $start_args, ?string $previous_completed_run_id ) use ( &$generic_completed ): void {
-				$generic_completed[] = array( $name, $run_id, $start_args, $previous_completed_run_id );
+			static function ( string $name, RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$generic_completed ): void {
+				$generic_completed[] = array( $name, (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
 			10,
 			4
@@ -143,7 +146,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		self::assertSame( array( $args ), $job->calls, 'The first runner drive must execute one job attempt' );
 		self::assertCount( 1, $retry_policy_calls, 'The first failure must resolve the filtered retry policy once' );
 		self::assertSame( 1, $retry_policy_calls[0]['arity'] );
-		self::assertSame( $job->retry_policy, $retry_policy_calls[0]['policy'] );
+		self::assertSame( $definition_retry_policy, $retry_policy_calls[0]['policy'] );
 		self::assertCount( 1, $named_retry_scheduled, 'The first failure must fire the identity-specific retry-scheduled hook once' );
 		self::assertCount( 1, $generic_retry_scheduled, 'The first failure must fire the generic retry-scheduled hook once' );
 		self::assertSame( array(), $failed, 'The first failure must remain non-terminal below the retry cap' );
@@ -181,15 +184,15 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			array(
 				array(
 					'arity'  => 1,
-					'policy' => $job->retry_policy,
+					'policy' => $definition_retry_policy,
 				),
 				array(
 					'arity'  => 1,
-					'policy' => $job->retry_policy,
+					'policy' => $definition_retry_policy,
 				),
 			),
 			$retry_policy_calls,
-			'The retry-policy filter must receive only the contract policy on both attempts'
+			'The retry-policy filter must receive only the definition policy on both attempts'
 		);
 		self::assertCount( 1, $named_retry_scheduled, 'Retry exhaustion must not announce a nonexistent third attempt' );
 		self::assertCount( 1, $generic_retry_scheduled, 'Retry exhaustion must not fire the generic retry-scheduled hook again' );
@@ -200,13 +203,13 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$failure = $recorded_failed[0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( self::IDENTITY, $failure->identity );
-		self::assertSame( $failed_run_id, $failure->run_id );
+		self::assertSame( $failed_run_id, (string) $failure->run_id );
 		self::assertSame( 2, $failure->attempts );
-		self::assertSame( RunFailureStage::Execution, $failure->stage );
+		self::assertSame( RunFailureStage::execution(), $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
 		self::assertStringNotContainsString( 'The upstream service remains unavailable.', $failure->summary, 'RunFailure must redact the upstream exception message at the public hook boundary' );
-		self::assertNull( $failure->failed_chunk );
+		self::assertNull( $failure->details );
 		self::assertSame( array( $failure ), $recorded_failed, 'The failed hook must receive only the self-identifying failure value' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $retry_action_id ), 'Action Scheduler must complete the retry action after terminal engine handling' );
 		self::assertSame(
@@ -238,7 +241,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 			array(
 				'class'   => \RuntimeException::class,
 				'message' => 'Background-work execution failed because RuntimeException was thrown.',
-				'stage'   => RunFailureStage::Execution->value,
+				'stage'   => RunFailureStage::execution()->value,
 				'code'    => 'execution_failed',
 			),
 			$failed_entry['error'] ?? null
@@ -353,7 +356,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_jobs_engine/run_job',
+				'hook'     => 'a8csp_jobs_engine/deliver',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -368,7 +371,7 @@ final class RetryRoundTripTest extends IntegrationTestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_jobs_engine/run_job', $action->get_hook() );
+		self::assertSame( 'a8csp_jobs_engine/deliver', $action->get_hook() );
 		self::assertSame( array( self::IDENTITY, $run_id, 2 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );

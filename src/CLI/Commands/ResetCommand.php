@@ -3,19 +3,19 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\FailedRunStore;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\LatestRunPointer;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -61,10 +61,7 @@ final readonly class ResetCommand {
 	 * @var     list<non-empty-string>
 	 */
 	private const array ACTION_HOOKS = array(
-		ActionDeliveries::START_HOOK,
-		ActionDeliveries::CONTINUE_HOOK,
-		ActionDeliveries::RUN_JOB_HOOK,
-		ActionDeliveries::CLEANUP_HOOK,
+		ActionDeliveries::DELIVER_HOOK,
 		OccurrenceDelivery::SCHEDULE_HOOK,
 	);
 

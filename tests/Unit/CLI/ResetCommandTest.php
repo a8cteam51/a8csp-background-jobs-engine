@@ -7,9 +7,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -105,8 +105,7 @@ final class ResetCommandTest extends TestCase {
 		self::assertSame( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_option );
 		$this->rig->wpdb()->put( $cursor_option, $cursor_raw );
 		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
-		$this->rig->backend()->pending_actions[ ActionDeliveries::RUN_JOB_HOOK ]  = 2;
-		$this->rig->backend()->pending_actions[ ActionDeliveries::CONTINUE_HOOK ] = 3;
+		$this->rig->backend()->pending_actions[ ActionDeliveries::DELIVER_HOOK ] = 5;
 		$owned_before = $this->engine_option_names();
 		self::assertNotEmpty( $owned_before );
 
@@ -255,7 +254,7 @@ final class ResetCommandTest extends TestCase {
 	 */
 	private function seed_engine_state(): void {
 		$client = $this->rig->client( 'reset-tests' );
-		$client->jobs()->register( new RecordingJob( 'refresh' ) );
+		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
 		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}

@@ -20,7 +20,8 @@ final class SchedulesTest extends CapabilityManagerTestCase {
 	// region TESTS.
 
 	/**
-	 * Complete schedule values synchronize and immediate dispatch projects the schedule run.
+	 * Complete schedule values synchronize and immediate dispatch projects the run under the
+	 * target job's identity, so the returned handle round-trips through the runs portal.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -48,10 +49,10 @@ final class SchedulesTest extends CapabilityManagerTestCase {
 		self::assertIsInt( $schedule_call['args']['first_run_timestamp'] ?? null );
 		self::assertSame( 50, ( $schedule_call['args']['first_run_timestamp'] ?? 0 ) % 300 );
 
-		$run = self::assert_run( $engine->schedules()->dispatch( 'nightly' ), self::OWNER . ':nightly', RunStatus::Running );
+		$run = self::assert_run( $engine->schedules()->dispatch( 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
+		self::assert_run( $engine->runs()->inspect( 'scheduled-job', $run->id ), self::OWNER . ':scheduled-job', RunStatus::Running, $run->id );
 		$this->rig->run_due();
 
-		self::assertNotSame( '', $run->run_id );
 		self::assertSame( array( $args ), $handled );
 	}
 
@@ -72,8 +73,8 @@ final class SchedulesTest extends CapabilityManagerTestCase {
 		$daily  = new Schedule( 'daily', Recurrence::every( 86_400 ), 'daily-job', array(), CatchUpPolicy::RunOnce, 10 );
 
 		self::assertTrue( $engine->schedules()->sync( $hourly, $daily ) );
-		self::assert_run( $engine->schedules()->dispatch( 'hourly' ), self::OWNER . ':hourly', RunStatus::Running );
-		self::assert_run( $engine->schedules()->dispatch( 'daily' ), self::OWNER . ':daily', RunStatus::Running );
+		self::assert_run( $engine->schedules()->dispatch( 'hourly' ), self::OWNER . ':hourly-job', RunStatus::Running );
+		self::assert_run( $engine->schedules()->dispatch( 'daily' ), self::OWNER . ':daily-job', RunStatus::Running );
 
 		self::assertTrue( $engine->schedules()->sync() );
 		self::assertInstanceOf( \WP_Error::class, $engine->schedules()->dispatch( 'hourly' ), 'A cleared schedule must no longer be dispatchable.' );

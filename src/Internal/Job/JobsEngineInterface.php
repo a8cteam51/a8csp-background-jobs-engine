@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -20,20 +20,20 @@ interface JobsEngineInterface {
 	// region METHODS
 
 	/**
-	 * Registers one job under its complete owner-qualified identity.
+	 * Registers one job definition under its complete owner-qualified identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $identity Complete owner-qualified job identity.
-	 * @param   AbstractJob $job      Job to register.
+	 * @param   string        $identity   Complete owner-qualified job identity.
+	 * @param   JobDefinition $definition Job definition to register.
 	 *
-	 * @throws  \InvalidArgumentException When the identity and job name disagree, or a chunked job owns the identity.
+	 * @throws  \InvalidArgumentException When the identity, kind, or execution role is invalid.
 	 * @throws  \LogicException           When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
-	public function register_job( string $identity, AbstractJob $job ): void;
+	public function register( string $identity, JobDefinition $definition ): void;
 
 	/**
 	 * Creates and schedules one run for a registered job.

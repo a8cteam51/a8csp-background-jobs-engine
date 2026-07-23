@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
@@ -34,10 +34,7 @@ final class MultisiteTest extends IntegrationTestCase {
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
 	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_jobs_engine/start_chunked_job',
-		'a8csp_jobs_engine/continue_chunked_job',
-		'a8csp_jobs_engine/run_job',
-		'a8csp_jobs_engine/cleanup_chunked_job',
+		'a8csp_jobs_engine/deliver',
 		'a8csp_jobs_engine/schedule_due',
 	);
 
@@ -203,8 +200,8 @@ final class MultisiteTest extends IntegrationTestCase {
 
 		\switch_to_blog( $other_site_id );
 		try {
-			$client = \A8C\SpecialProjects\BackgroundJobsEngine\Engine\Component::client( 'multisite-contract' );
-			$client->jobs()->register( new RecordingJob( 'site-bound-job' ) );
+			$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( 'multisite-contract' );
+			$client->jobs()->register( ( new RecordingJob( 'site-bound-job' ) )->definition() );
 
 			$this->expectException( \LogicException::class );
 

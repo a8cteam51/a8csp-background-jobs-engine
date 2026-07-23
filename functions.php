@@ -1,6 +1,7 @@
 <?php declare( strict_types=1 );
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
+use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -23,6 +24,28 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
  */
 function a8csp_bgje( string $owner ): Engine {
 	return new Engine( $owner );
+}
+
+/**
+ * Returns the plugin's composition root.
+ *
+ * Construction only — never boots: a peer calling this at include time would otherwise run the
+ * component gates before every plugin has loaded. Booting stays tied to the `plugins_loaded`
+ * attachment in the main plugin file.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @return  Plugin
+ */
+function a8csp_bgje_plugin(): Plugin {
+	/**
+	 * Retains the request-local composition root.
+	 *
+	 * @var Plugin|null $plugin
+	 */
+	static $plugin   = null;
+	return $plugin ??= new Plugin();
 }
 
 // endregion

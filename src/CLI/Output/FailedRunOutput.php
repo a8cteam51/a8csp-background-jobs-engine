@@ -24,7 +24,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
  *         message: string,
  *         stage: string,
  *         code: string,
- *         failed_chunk?: array<array-key, mixed>
+ *         details?: array<array-key, mixed>
  *     }
  * }
  * @phpstan-type FailedRunRow array{
@@ -124,6 +124,11 @@ final readonly class FailedRunOutput {
 			);
 
 			foreach ( $entries as $entry ) {
+				$details      = $entry['error']['details'] ?? null;
+				$failed_chunk = \is_array( $details ) && \is_array( $details['failed_chunk'] ?? null )
+					? $details['failed_chunk']
+					: null;
+
 				$rows[] = array(
 					'owner'         => $parts[0],
 					'identity'      => $name,
@@ -134,7 +139,7 @@ final readonly class FailedRunOutput {
 					'code'          => $entry['error']['code'],
 					'error_class'   => $entry['error']['class'],
 					'error_message' => $entry['error']['message'],
-					'failed_chunk'  => $entry['error']['failed_chunk'] ?? null,
+					'failed_chunk'  => $failed_chunk,
 				);
 			}
 		}

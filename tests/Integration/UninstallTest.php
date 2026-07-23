@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
@@ -51,10 +51,7 @@ final class UninstallTest extends IntegrationTestCase {
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
 	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_jobs_engine/start_chunked_job',
-		'a8csp_jobs_engine/continue_chunked_job',
-		'a8csp_jobs_engine/run_job',
-		'a8csp_jobs_engine/cleanup_chunked_job',
+		'a8csp_jobs_engine/deliver',
 		'a8csp_jobs_engine/schedule_due',
 	);
 

@@ -183,10 +183,7 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgje_failed_runs_consumer-plugin:email-digest',
 	);
 	private const array LIFECYCLE_HOOKS   = array(
-		'a8csp_jobs_engine/start_chunked_job',
-		'a8csp_jobs_engine/continue_chunked_job',
-		'a8csp_jobs_engine/run_job',
-		'a8csp_jobs_engine/cleanup_chunked_job',
+		'a8csp_jobs_engine/deliver',
 		'a8csp_jobs_engine/schedule_due',
 	);
 	private const array UPDATE_TRANSIENTS = array(
@@ -283,12 +280,12 @@ final class UninstallTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s)',
+					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
 					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
 				),
 			),
 			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),
-			'The action delete must be scoped to exactly the five engine hooks'
+			'The action delete must be scoped to exactly the two engine hooks'
 		);
 		self::assertSame(
 			array(
@@ -497,11 +494,11 @@ final class UninstallTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s)',
+					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
 					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
 				),
 				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s, %s, %s, %s)',
+					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
 					'args'  => array( \array_merge( array( 'wp_2_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
 				),
 			),

@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -19,16 +19,6 @@ final class Plugin {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Request-local composition root retained by the bootstrap callback.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     self|null
-	 */
-	private static ?self $instance = null;
-
-	/**
 	 * Add the plugin's top-level components here; they run through each phase in registration
 	 * order.
 	 *
@@ -38,7 +28,7 @@ final class Plugin {
 	 * @var     array<int, class-string<ComponentInterface>>
 	 */
 	private const array COMPONENTS = array(
-		Engine\Component::class,
+		Runtime\Component::class,
 		CLI\Component::class,
 	);
 
@@ -57,18 +47,6 @@ final class Plugin {
 	// endregion
 
 	// region METHODS
-
-	/**
-	 * Returns the request-local composition root.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  self
-	 */
-	public static function instance(): self {
-		return self::$instance ??= new self();
-	}
 
 	/**
 	 * Whether the boot pipeline completed successfully for this request.

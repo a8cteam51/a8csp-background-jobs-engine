@@ -17,6 +17,7 @@ parameters:
     # explicitly and WPCompat.pluginFile below names it for the same reason.
     paths:
         - %currentWorkingDirectory%/a8csp-background-jobs-engine.php
+        - %currentWorkingDirectory%/portals
         - %currentWorkingDirectory%/tests
     WPCompat:
         # wp-compat's own fallback guesses "{cwd}/{basename(cwd)}.php", which only holds

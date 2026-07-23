@@ -7,23 +7,152 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
 /**
  * Stable terminalization stage exposed by a client-visible run failure.
  *
+ * Engine and third-party stages share the persisted kind and lifecycle-stage key grammar.
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
-enum RunFailureStage: string {
+final readonly class RunFailureStage {
 	// region FIELDS AND CONSTANTS
 
-	/** Client work or a lifecycle effect failed during execution. */
-	case Execution = 'execution';
+	/**
+	 * Lexical grammar for persisted kind and lifecycle stage keys.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     string
+	 */
+	private const string PATTERN = '/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?\z/';
 
-	/** A chunked job queue could not be generated or admitted. */
-	case QueueGeneration = 'queue_generation';
+	// endregion
 
-	/** Maintenance terminalized a run while reclaiming a crash. */
-	case CrashReclaim = 'crash_reclaim';
+	// region MAGIC METHODS
 
-	/** A required lifecycle action could not be prepared or scheduled. */
-	case Scheduling = 'scheduling';
+	/**
+	 * Constructor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $value Persisted terminalization stage.
+	 */
+	private function __construct(
+		public string $value,
+	) {}
+
+	/**
+	 * Prevents copies that would violate identity-stable stage comparisons.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function __clone(): void {}
+
+	// endregion
+
+	// region FACTORIES
+
+	/**
+	 * Returns the client-work execution stage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  self
+	 */
+	public static function execution(): self {
+		return self::from( 'execution' );
+	}
+
+	/**
+	 * Returns the chunked-job queue-generation stage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  self
+	 */
+	public static function queue_generation(): self {
+		return self::from( 'queue_generation' );
+	}
+
+	/**
+	 * Returns the crash-reclamation stage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  self
+	 */
+	public static function crash_reclaim(): self {
+		return self::from( 'crash_reclaim' );
+	}
+
+	/**
+	 * Returns the lifecycle-action scheduling stage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  self
+	 */
+	public static function scheduling(): self {
+		return self::from( 'scheduling' );
+	}
+
+	/**
+	 * Wraps one grammar-valid terminalization stage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $value Terminalization stage candidate.
+	 *
+	 * @throws  \ValueError When the candidate is lexically malformed.
+	 *
+	 * @return  self
+	 */
+	public static function from( string $value ): self {
+		$stage = self::tryFrom( $value );
+		if ( null === $stage ) {
+			throw new \ValueError( 'Run failure stage must use lowercase snake segments with at most one dot qualifier.' );
+		}
+
+		return $stage;
+	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Mirrors the backed-enum API.
+	/**
+	 * Wraps one grammar-valid terminalization stage, or returns null for another shape.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $value Terminalization stage candidate.
+	 *
+	 * @return  self|null
+	 */
+	public static function tryFrom( string $value ): ?self {
+		if ( 1 !== \preg_match( self::PATTERN, $value ) ) {
+			return null;
+		}
+
+		/**
+		 * Interned instances indexed by their exact persisted value.
+		 *
+		 * @var array<string, self> $instances
+		 */
+		static $instances = array();
+
+		// The cache grows one entry per distinct grammar-valid stage read in a process; storage
+		// gates keep those to declared stage values, so growth is bounded by legitimate variety.
+		// Identity comparisons hold within one process — compare ->value across serialization.
+		return $instances[ $value ] ??= new self( $value );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// endregion
 }

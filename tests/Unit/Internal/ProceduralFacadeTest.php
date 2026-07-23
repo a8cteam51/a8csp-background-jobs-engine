@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Internal;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\AbstractChunkedJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -20,10 +20,9 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversFunction( 'a8csp_bgje_register' )]
-#[CoversFunction( 'a8csp_bgje_register_callable' )]
-#[CoversFunction( 'a8csp_bgje_enqueue' )]
-#[CoversFunction( 'a8csp_bgje_start' )]
+#[CoversFunction( 'a8csp_bgje_register_job' )]
+#[CoversFunction( 'a8csp_bgje_enqueue_job' )]
+#[CoversFunction( 'a8csp_bgje_start_chunked_job' )]
 #[CoversFunction( 'a8csp_bgje_sync_schedules' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_schedule' )]
 #[CoversFunction( 'a8csp_bgje_inspect_run' )]
@@ -104,27 +103,9 @@ final class ProceduralFacadeTest extends TestCase {
 		$job         = self::job( 'job' );
 		$chunked_job = self::chunked_job( 'chunked-job' );
 
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, $job ) );
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, $chunked_job ) );
-		self::assertTrue( \a8csp_bgje_register_callable( self::OWNER, 'callable', static function ( array $args, RunContext $context ): void {} ) );
-		self::assert_wp_error( \a8csp_bgje_register( self::OWNER, $job ), 'already_registered' );
-	}
-
-	/**
-	 * Invalid callable options remain inside the stable invalid-argument boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $options Invalid callable-job options.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'invalid_callable_options' )]
-	public function test_register_callable_rejects_invalid_options( array $options ): void {
-		$result = \a8csp_bgje_register_callable( self::OWNER, 'callable', static function ( array $args, RunContext $context ): void {}, $options );
-
-		self::assert_wp_error( $result, 'invalid_argument' );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $job ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $chunked_job ) );
+		self::assert_wp_error( \a8csp_bgje_register_job( self::OWNER, $job ), 'already_registered' );
 	}
 
 	/**
@@ -136,23 +117,23 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_admission_aliases_delegate_every_argument(): void {
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'job' ) ) );
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::chunked_job( 'chunked-job' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'job' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::chunked_job( 'chunked-job' ) ) );
 		$job_args   = array( 'site_id' => 7 );
 		$start_args = array( 'scope' => 'all' );
 
-		$job_run     = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
-		$chunked_run = self::assert_run( \a8csp_bgje_start( self::OWNER, 'chunked-job', $start_args, 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
+		$job_run     = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
+		$chunked_run = self::assert_run( \a8csp_bgje_start_chunked_job( self::OWNER, 'chunked-job', $start_args, 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
 
-		self::assertNotSame( '', $job_run->run_id );
-		self::assertNotSame( '', $chunked_run->run_id );
+		self::assertNotSame( '', (string) $job_run->id );
+		self::assertNotSame( '', (string) $chunked_run->id );
 		self::assertSame( self::NOW + 15, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['timestamp'] ?? null );
 		self::assertSame( 23, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['priority'] ?? null );
 		self::assertSame( 31, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
-		self::assertSame( array( array( $job_run->run_id, $job_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':job' ) );
+		self::assertEquals( array( array( $job_run->id, $job_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':job' ) );
 
 		$this->rig->run_due();
-		self::assertSame( array( array( $chunked_run->run_id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':chunked-job' ) );
+		self::assertEquals( array( array( $chunked_run->id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':chunked-job' ) );
 	}
 
 	/**
@@ -164,7 +145,7 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_aliases_delegate_to_the_bound_engine(): void {
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'scheduled-job' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'scheduled-job' ) ) );
 		$schedules = array(
 			array(
 				'name'     => 'nightly',
@@ -177,9 +158,9 @@ final class ProceduralFacadeTest extends TestCase {
 		);
 
 		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, $schedules ) );
-		$run = self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':nightly', RunStatus::Running );
+		$run = self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
 
-		self::assertNotSame( '', $run->run_id );
+		self::assertNotSame( '', (string) $run->id );
 		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );
 		self::assertSame( 41, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
 	}
@@ -208,14 +189,28 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_inspection_aliases_delegate_to_the_bound_engine(): void {
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'inspect' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'inspect' ) ) );
 		self::assertNull( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ) );
 
-		$admitted = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
-		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', $admitted->run_id ), self::OWNER . ':inspect', RunStatus::Running, $admitted->run_id );
+		$admitted = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
+		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Running, $admitted->id );
 		$this->rig->run_due();
-		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', $admitted->run_id ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->run_id );
-		self::assert_run( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->run_id );
+		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
+		self::assert_run( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
+	}
+
+	/**
+	 * Run aliases retain the invalid-argument boundary for malformed wire identifiers.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_aliases_reject_malformed_identifiers(): void {
+		self::assert_wp_error( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', 'malformed' ), 'invalid_argument' );
+		self::assert_wp_error( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', 'malformed' ), 'invalid_argument' );
+		self::assert_wp_error( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', 'malformed' ), 'invalid_argument' );
 	}
 
 	/**
@@ -233,74 +228,21 @@ final class ProceduralFacadeTest extends TestCase {
 				throw new NonRetryableException( 'Retain this failed run.' );
 			}
 		);
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, $failed_job ) );
-		$failed = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $failed_job ) );
+		$failed = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
 		$this->rig->run_due();
 
 		++$this->rig->clock()->timestamp;
-		$retry = self::assert_run( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', $failed->run_id ), self::OWNER . ':failed', RunStatus::Running );
-		self::assertNotSame( $failed->run_id, $retry->run_id );
+		$retry = self::assert_run( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', (string) $failed->id ), self::OWNER . ':failed', RunStatus::Running );
+		self::assertNotSame( (string) $failed->id, (string) $retry->id );
 
-		self::assertTrue( \a8csp_bgje_register( self::OWNER, self::job( 'cancel' ) ) );
-		$pending   = self::assert_run( \a8csp_bgje_enqueue( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
-		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', $pending->run_id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->run_id );
-		self::assertSame( $pending->run_id, $cancelled->run_id );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'cancel' ) ) );
+		$pending   = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
+		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', (string) $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
+		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 	}
-
-	/**
-	 * All aliases expose the exact capability-manager verb signatures and NoDiscard attributes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_public_function_signatures_and_no_discard_contracts(): void {
-		$signatures = array(
-			'a8csp_bgje_register'           => '(string $owner, A8C\SpecialProjects\BackgroundJobsEngine\Job\JobInterface $job): WP_Error|true',
-			'a8csp_bgje_register_callable'  => '(string $owner, string $name, callable $handler, array $options = array()): WP_Error|true',
-			'a8csp_bgje_enqueue'            => '(string $owner, string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_start'              => '(string $owner, string $name, array $start_args = array(), int $priority = 10): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_sync_schedules'     => '(string $owner, array $schedules): WP_Error|true',
-			'a8csp_bgje_dispatch_schedule'  => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_inspect_run'        => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_last_completed_run' => '(string $owner, string $name): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error|null',
-			'a8csp_bgje_retry_failed_run'   => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-			'a8csp_bgje_cancel_run'         => '(string $owner, string $name, string $run_id): A8C\SpecialProjects\BackgroundJobsEngine\Run\Run|WP_Error',
-		);
-
-		foreach ( $signatures as $function => $signature ) {
-			$reflection = new \ReflectionFunction( $function );
-			self::assertSame( $signature, self::reflection_signature( $reflection ) );
-			self::assertCount( 1, $reflection->getAttributes( \NoDiscard::class ) );
-		}
-	}
-
-	// endregion.
 
 	// region DATA PROVIDERS.
-
-	/**
-	 * Supplies invalid option names, types, and retry fields.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{options: array<array-key, mixed>}>
-	 */
-	public static function invalid_callable_options(): array {
-		return array(
-			'unknown option'      => array( 'options' => array( 'jitter' => 1 ) ),
-			'max runtime type'    => array( 'options' => array( 'max_runtime' => '42' ) ),
-			'retry type'          => array( 'options' => array( 'retry' => 'once' ) ),
-			'retry field type'    => array( 'options' => array( 'retry' => array( 'max_attempts' => '3' ) ) ),
-			'unknown retry field' => array( 'options' => array( 'retry' => array( 'jitter' => 1 ) ) ),
-			'overlap declaration' => array( 'options' => array( 'overlap' => 'parallel' ) ),
-			'overlap key type'    => array( 'options' => array( 'overlap_key' => 7 ) ),
-			'completed callback'  => array( 'options' => array( 'on_completed' => 7 ) ),
-			'failed callback'     => array( 'options' => array( 'on_failed' => 7 ) ),
-		);
-	}
 
 	/**
 	 * Supplies representative malformed schedule shapes and fields.
@@ -359,36 +301,10 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @param   string        $name    Stable owner-local job name.
 	 * @param   \Closure|null $handler Optional invocation behavior.
 	 *
-	 * @return  AbstractJob
+	 * @return  JobDefinition
 	 */
-	private static function job( string $name, ?\Closure $handler = null ): AbstractJob {
-		return new class( $name, $handler ) extends AbstractJob {
-			/**
-			 * Constructor.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string        $name    Stable owner-local job name.
-			 * @param   \Closure|null $handler Optional invocation behavior.
-			 */
-			public function __construct(
-				private string $name,
-				private ?\Closure $handler,
-			) {}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function get_name(): string {
-				return $this->name;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function handle( array $args, RunContext $context ): void {
-				$this->handler?->__invoke( $args, $context );
-			}
-		};
+	private static function job( string $name, ?\Closure $handler = null ): JobDefinition {
+		return JobDefinition::closure( $name, $handler ?? static function ( array $args, RunContext $context ): void {} );
 	}
 
 	/**
@@ -399,38 +315,10 @@ final class ProceduralFacadeTest extends TestCase {
 	 *
 	 * @param   string $name Stable owner-local chunked job name.
 	 *
-	 * @return  AbstractChunkedJob
+	 * @return  JobDefinition
 	 */
-	private static function chunked_job( string $name ): AbstractChunkedJob {
-		return new class( $name ) extends AbstractChunkedJob {
-			/**
-			 * Constructor.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string $name Stable owner-local chunked job name.
-			 */
-			public function __construct(
-				private string $name,
-			) {}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function get_name(): string {
-				return $this->name;
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function generate_queue( array $start_args, RunContext $context ): iterable {
-				return array();
-			}
-
-			/** {@inheritDoc} */
-			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContext $context ): void {}
-		};
+	private static function chunked_job( string $name ): JobDefinition {
+		return ( new RecordingChunkedJob( $name ) )->definition();
 	}
 
 	/**
@@ -439,20 +327,20 @@ final class ProceduralFacadeTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   mixed       $value    Expected run value.
-	 * @param   string      $identity Expected owner-qualified identity.
-	 * @param   RunStatus   $status   Expected public lifecycle state.
-	 * @param   string|null $run_id   Expected run identifier, or null to accept the generated identifier.
+	 * @param   mixed      $value    Expected run value.
+	 * @param   string     $identity Expected owner-qualified identity.
+	 * @param   RunStatus  $status   Expected public lifecycle state.
+	 * @param   RunId|null $id       Expected run identifier, or null to accept the generated identifier.
 	 *
 	 * @return  Run
 	 */
-	private static function assert_run( mixed $value, string $identity, RunStatus $status, ?string $run_id = null ): Run {
+	private static function assert_run( mixed $value, string $identity, RunStatus $status, ?RunId $id = null ): Run {
 		self::assertInstanceOf( Run::class, $value );
 		self::assertSame( $identity, $value->identity );
 		self::assertSame( $status, $value->status );
-		self::assertNotSame( '', $value->run_id );
-		if ( null !== $run_id ) {
-			self::assertSame( $run_id, $value->run_id );
+		self::assertNotSame( '', (string) $value->id );
+		if ( null !== $id ) {
+			self::assertSame( (string) $id, (string) $value->id );
 		}
 
 		return $value;
@@ -495,42 +383,6 @@ final class ProceduralFacadeTest extends TestCase {
 		}
 
 		self::fail( 'Expected a backend call for verb ' . $verb . '.' );
-	}
-
-	/**
-	 * Normalizes one reflected public function signature for an exact contract assertion.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   \ReflectionFunction $reflection Reflected facade function.
-	 *
-	 * @throws  \LogicException When a facade adds an unsupported default-value type.
-	 *
-	 * @return  string
-	 */
-	private static function reflection_signature( \ReflectionFunction $reflection ): string {
-		$parameters = \array_map(
-			static function ( \ReflectionParameter $parameter ): string {
-				$signature = (string) $parameter->getType() . ' $' . $parameter->getName();
-				if ( ! $parameter->isDefaultValueAvailable() ) {
-					return $signature;
-				}
-
-				$default = $parameter->getDefaultValue();
-				if ( \is_array( $default ) ) {
-					return $signature . ' = array()';
-				}
-				if ( \is_int( $default ) ) {
-					return $signature . ' = ' . (string) $default;
-				}
-
-				throw new \LogicException( 'Facade signatures use only array or integer default values.' );
-			},
-			$reflection->getParameters()
-		);
-
-		return '(' . \implode( ', ', $parameters ) . '): ' . (string) $reflection->getReturnType();
 	}
 
 	// endregion.

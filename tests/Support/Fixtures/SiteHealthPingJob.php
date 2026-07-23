@@ -2,15 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\AbstractJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 
 /**
- * Demonstrates a small job that stores one idempotent site-health snapshot.
+ * Demonstrates a small job execution that stores one idempotent site-health snapshot.
  *
  * Repeated delivery overwrites the same client-owned transient key with the same current-site
  * fields, so it cannot append duplicate records or repeat an external command.
@@ -18,7 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class SiteHealthPingJob extends AbstractJob {
+final class SiteHealthPingJob implements JobExecution {
 	// region FIELDS AND CONSTANTS.
 
 	/**
@@ -46,70 +43,16 @@ final class SiteHealthPingJob extends AbstractJob {
 	// region INHERITED METHODS.
 
 	/**
-	 * Returns the stable job identity registered with the engine.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	#[\Override]
-	public function get_name(): string {
-		return self::NAME;
-	}
-
-	/**
-	 * Returns the shared ceiling for one site-health snapshot invocation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  int
-	 */
-	#[\Override]
-	public function max_callback_runtime(): int {
-		return self::DEFAULT_MAX_CALLBACK_RUNTIME;
-	}
-
-	/**
-	 * Refuses a matching live site-health snapshot.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  OverlapPolicy
-	 */
-	#[\Override]
-	public function overlap_policy(): OverlapPolicy {
-		return OverlapPolicy::Reject;
-	}
-
-	/**
-	 * Uses the canonical snapshot arguments as the overlap identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 *
-	 * @return  string|null
-	 */
-	#[\Override]
-	public function overlap_key( array $start_args ): ?string {
-		return null;
-	}
-
-	/**
 	 * Overwrites one client-owned transient with the current site-health snapshot.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $args    Invocation arguments containing `transient`.
-	 * @param   RunContext     $context Controlled access to this run.
+	 * @param   RunContext              $context Controlled access to this run.
 	 *
 	 * @throws  NonRetryableException When `transient` is absent, invalid, or over WordPress's length limit.
-	 * @throws  \RuntimeException         When WordPress cannot persist the snapshot; retryable.
+	 * @throws  \RuntimeException      When WordPress cannot persist the snapshot; retryable.
 	 *
 	 * @return  void
 	 */
@@ -131,27 +74,6 @@ final class SiteHealthPingJob extends AbstractJob {
 		if ( ! $saved && \get_transient( $transient ) !== $snapshot ) {
 			throw new \RuntimeException( \sprintf( 'WordPress could not persist the site-health snapshot in transient "%s".', $transient ) );
 		}
-	}
-
-	/** {@inheritDoc} */
-	#[\Override]
-	public function on_completed( string $run_id, array $start_args, ?string $previous_completed_run_id ): void {}
-
-	/** {@inheritDoc} */
-	#[\Override]
-	public function on_failed( string $run_id, array $start_args, RunFailure $failure ): void {}
-
-	/**
-	 * Returns the bounded retry policy for transient persistence failures.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  RetryPolicy
-	 */
-	#[\Override]
-	public function get_retry_policy(): RetryPolicy {
-		return new RetryPolicy( max_attempts: 3, base_delay: 30, multiplier: 2, max_delay: 5 * \MINUTE_IN_SECONDS );
 	}
 
 	// endregion.

@@ -18,7 +18,7 @@ final class FakeSchedulesEngine implements SchedulesEngineInterface {
 
 	/**
 	 * @phpstan-param AbstractResult<true, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>   $sync_result
-	 * @phpstan-param AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError> $dispatch_now_result
+	 * @phpstan-param AbstractResult<array{identity: string, run_id: string}, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError> $dispatch_now_result
 	 *
 	 * @param   AbstractResult $sync_result         Scripted synchronization result.
 	 * @param   AbstractResult $dispatch_now_result Scripted immediate-dispatch result.
@@ -53,7 +53,7 @@ final class FakeSchedulesEngine implements SchedulesEngineInterface {
 	 *
 	 * @param   string $identity Complete owner-qualified schedule identity.
 	 *
-	 * @phpstan-return AbstractResult<string, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
+	 * @phpstan-return AbstractResult<array{identity: string, run_id: string}, \A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError>
 	 *
 	 * @return  AbstractResult
 	 */

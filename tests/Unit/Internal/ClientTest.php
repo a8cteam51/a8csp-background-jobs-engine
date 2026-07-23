@@ -15,12 +15,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Schedule\Schedules;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\AdmissionValidator;
 use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Engine\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeChunkedJobsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeRunsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeSchedulesEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FakeJobsEngine;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -51,7 +50,7 @@ final class ClientTest extends TestCase {
 		}
 
 		require_once \dirname( __DIR__ ) . '/wp-time-constant-stubs.php';
-		require_once \dirname( __DIR__ ) . '/Engine/Backends/wp-json-encode-stub.php';
+		require_once \dirname( __DIR__ ) . '/Runtime/Backends/wp-json-encode-stub.php';
 	}
 
 	/**
@@ -62,7 +61,18 @@ final class ClientTest extends TestCase {
 	public function test_accessors_return_the_bound_facades(): void {
 		$jobs         = new Jobs( 'consumer-plugin', new FakeJobsEngine( new Success( 'job-run' ) ) );
 		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', new FakeChunkedJobsEngine( new Success( 'chunked-job-run' ) ) );
-		$schedules    = new Schedules( 'consumer-plugin', new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) ) );
+		$schedules    = new Schedules(
+			'consumer-plugin',
+			new FakeSchedulesEngine(
+				new Success( true ),
+				new Success(
+					array(
+						'identity' => 'consumer-plugin:scheduled-job',
+						'run_id'   => 'schedule-run',
+					)
+				)
+			)
+		);
 		$runs         = new Runs( 'consumer-plugin', new FakeRunsEngine( new Success( null ), new Success( null ), new Success( 'retry-run' ), new Success( 'cancelled-run' ) ) );
 		$client       = new Client( 'consumer-plugin', $jobs, $chunked_jobs, $schedules, $runs );
 
@@ -78,18 +88,19 @@ final class ClientTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_jobs_register_and_enqueue_owner_qualified_work(): void {
-		$failure = new Failure( new ApiError( ErrorCode::BackendRejected, 'Scripted failure.' ) );
-		$job     = new RecordingJob( 'sync' );
-		$engine  = new FakeJobsEngine( $failure );
-		$jobs    = new Jobs( 'consumer-plugin', $engine );
+		$failure    = new Failure( new ApiError( ErrorCode::BackendRejected, 'Scripted failure.' ) );
+		$job        = new RecordingJob( 'sync' );
+		$definition = $job->definition();
+		$engine     = new FakeJobsEngine( $failure );
+		$jobs       = new Jobs( 'consumer-plugin', $engine );
 
-		$jobs->register( $job );
+		$jobs->register( $definition );
 		$result = $jobs->enqueue( 'sync', array( 'site_id' => 7 ), delay: 30, priority: 5 );
 
 		self::assertSame( $failure, $result );
 		self::assertSame(
 			array(
-				array( 'register_job', 'consumer-plugin:sync', $job ),
+				array( 'register', 'consumer-plugin:sync', $definition ),
 				array( 'enqueue', 'consumer-plugin:sync', array( 'site_id' => 7 ), 30, 5 ),
 			),
 			$engine->calls
@@ -98,23 +109,20 @@ final class ClientTest extends TestCase {
 	}
 
 	/**
-	 * Chunked Job operations compose once and preserve the delegated result object and arguments.
+	 * Chunked Job operations preserve the delegated result object and arguments.
 	 *
 	 * @return  void
 	 */
-	public function test_chunked_jobs_register_and_start_owner_qualified_work(): void {
+	public function test_chunked_jobs_start_owner_qualified_work(): void {
 		$success      = new Success( 'chunked-job-run' );
-		$chunked_job  = new RecordingChunkedJob( 'sync' );
 		$engine       = new FakeChunkedJobsEngine( $success );
 		$chunked_jobs = new ChunkedJobs( 'consumer-plugin', $engine );
 
-		$chunked_jobs->register( $chunked_job );
 		$result = $chunked_jobs->start( 'sync', array( 'site_id' => 7 ), priority: 5 );
 
 		self::assertSame( $success, $result );
 		self::assertSame(
 			array(
-				array( 'register_chunked_job', 'consumer-plugin:sync', $chunked_job ),
 				array( 'start', 'consumer-plugin:sync', array( 'site_id' => 7 ), 5 ),
 			),
 			$engine->calls
@@ -184,7 +192,15 @@ final class ClientTest extends TestCase {
 	 */
 	public function test_schedules_sync_and_dispatch_now_with_the_bound_owner_only(): void {
 		$schedule  = new Schedule( 'nightly', Recurrence::every( 300 ), 'sync' );
-		$engine    = new FakeSchedulesEngine( new Success( true ), new Success( 'schedule-run' ) );
+		$engine    = new FakeSchedulesEngine(
+			new Success( true ),
+			new Success(
+				array(
+					'identity' => 'consumer-plugin:sync',
+					'run_id'   => 'schedule-run',
+				)
+			)
+		);
 		$schedules = new Schedules( 'consumer-plugin', $engine );
 
 		$sync_result = $schedules->sync( array( $schedule ) );
