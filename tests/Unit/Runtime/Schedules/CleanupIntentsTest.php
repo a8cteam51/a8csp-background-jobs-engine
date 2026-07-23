@@ -149,7 +149,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
 		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
 	}
 
@@ -170,7 +170,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( $option_name, $this->logger->records[0]['context']['option_name'] ?? null );
 		self::assertSame( 'warning', $this->logger->records[1]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[1]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[1]['context']['schedule_identity'] ?? null );
 		$propagated_error = $this->logger->records[1]['context']['error'] ?? null;
 		self::assertIsString( $propagated_error );
 		self::assertStringContainsString(
@@ -196,7 +196,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertSame( array( 'is_ready', 'is_absent' ), \array_column( $dormant->calls, 'verb' ) );
 		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
 		self::assertFalse( $this->logger->records[1]['context']['converged'] ?? null );
 		self::assertTrue( $dormant->is_ready() );
 
@@ -251,7 +251,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
 		self::assertSame( 'Repair the backend before retrying convergence.', $this->logger->records[0]['context']['error'] ?? null );
 	}
 
@@ -383,7 +383,7 @@ final class CleanupIntentsTest extends TestCase {
 
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
 		self::assertSame( $throwable, $this->logger->records[0]['context']['exception'] ?? null );
 	}
 
@@ -588,8 +588,8 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  OccurrenceDelivery
 	 */
 	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
-		$work = new JobRegistry();
-		$work->register( self::JOB_IDENTITY, ( new RecordingJob( self::JOB ) )->definition() );
+		$job_registry = new JobRegistry();
+		$job_registry->register( self::JOB_IDENTITY, ( new RecordingJob( self::JOB ) )->definition() );
 		$guard                 = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores                = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
 		$randomizer            = new RecordingRandomizer( 42 );
@@ -598,13 +598,13 @@ final class CleanupIntentsTest extends TestCase {
 		$terminal_transitions  = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler           ??= new SchedulerFacade( array( $this->backend ) );
 		$failure_lifecycle     = new FailureLifecycle( $scheduler, $this->clock, $randomizer, $this->logger, $terminal_transitions );
-		$job_handler           = new JobKindHandler( $work, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler   = new ChunkedJobKindHandler( $work, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$job_handler           = new JobKindHandler( $job_registry, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler   = new ChunkedJobKindHandler( $job_registry, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers              = array(
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher            = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions );
+		$dispatcher            = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions );
 		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
 
 		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $this->cleanup_intents, $this->clock, $this->logger );

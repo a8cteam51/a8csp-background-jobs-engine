@@ -96,7 +96,7 @@ final class RunTransitionsTest extends TestCase {
 	private RecordingJob $job;
 	private JobOptions $options;
 	private bool $registered;
-	private JobRegistry $work;
+	private JobRegistry $registry;
 	private JobKindHandler $handler;
 	/** @var array<string, KindHandlerInterface> */
 	private array $handlers;
@@ -157,7 +157,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->job                  = new RecordingJob( self::NAME );
 		$this->options              = new JobOptions();
 		$this->registered           = false;
-		$this->work                 = new JobRegistry();
+		$this->registry             = new JobRegistry();
 		$this->wpdb                 = new WpdbLockSpy();
 		$this->rows                 = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
@@ -166,10 +166,10 @@ final class RunTransitionsTest extends TestCase {
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
 		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
-		$this->handler              = new JobKindHandler( $this->work, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
+		$this->handler              = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
 		$this->handlers             = array( $this->handler->key() => $this->handler );
 
-		$this->dispatcher = new Dispatcher( $this->work, $this->handlers, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
+		$this->dispatcher = new Dispatcher( $this->registry, $this->handlers, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
 	}
 
 	// endregion.
@@ -249,7 +249,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_option_calls'] );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'info', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( 2, $this->logger->records[0]['context']['expected'] ?? null );
 		self::assertSame( 1, $this->logger->records[0]['context']['received'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
@@ -284,7 +284,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_lifecycle_events'] );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
+		self::assertSame( 'job', $this->logger->records[0]['context']['kind'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 1, $this->logger->records[0]['context']['action_sequence'] ?? null );
 	}
@@ -400,11 +401,11 @@ final class RunTransitionsTest extends TestCase {
 		self::assertCount( 2, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( $this->lock_option_name(), $this->logger->records[0]['context']['key'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $this->logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'debug', $this->logger->records[1]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[1]['context']['run_id'] ?? null );
 	}
 
@@ -524,10 +525,10 @@ final class RunTransitionsTest extends TestCase {
 		);
 		self::assertCount( 2, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'info', $this->logger->records[1]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[1]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[1]['context']['run_id'] ?? null );
 		self::assertSame( 'run-newer', $this->logger->records[1]['context']['latest_run_id'] ?? null );
 	}
@@ -569,7 +570,7 @@ final class RunTransitionsTest extends TestCase {
 		);
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'info', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'run-newer', $this->logger->records[0]['context']['latest_run_id'] ?? null );
 		self::assertSame(
@@ -638,7 +639,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
@@ -768,7 +769,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array(), $this->lifecycle_labels() );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( $status, $this->logger->records[0]['context']['status'] ?? null );
 	}
@@ -805,7 +806,7 @@ final class RunTransitionsTest extends TestCase {
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );
-		self::assertSame( self::IDENTITY, $error_records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $error_records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $error_records[0]['context']['run_id'] ?? null );
 		self::assertSame( 3, $error_records[0]['context']['attempts'] ?? null );
 		self::assertSame( RunFailureStage::execution()->value, $error_records[0]['context']['stage'] ?? null );
@@ -828,7 +829,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_only_authoritative_run_read( 'missing-run' );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'debug', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( 'missing-run', $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'finished or cancelled', $this->logger->records[0]['message'] ?? '' );
 	}
@@ -848,7 +849,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'corrupt', $this->logger->records[0]['message'] ?? '' );
 	}
@@ -873,7 +874,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_only_authoritative_run_read( self::RUN_ID );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertStringContainsString( 'could not be read', $this->logger->records[0]['message'] ?? '' );
 		$read_error = $this->logger->records[0]['context']['error'] ?? null;
@@ -975,7 +976,7 @@ final class RunTransitionsTest extends TestCase {
 			return;
 		}
 
-		$this->work->register( self::IDENTITY, $this->job->definition( $this->options ) );
+		$this->registry->register( self::IDENTITY, $this->job->definition( $this->options ) );
 		$this->registered = true;
 	}
 

@@ -96,7 +96,7 @@ final readonly class ScheduleOutput {
 			$entries,
 			static function ( array $left, array $right ): int {
 				$owner_order = $left['owner'] <=> $right['owner'];
-				return 0 !== $owner_order ? $owner_order : $left['name'] <=> $right['name'];
+				return 0 !== $owner_order ? $owner_order : $left['identity'] <=> $right['identity'];
 			}
 		);
 
@@ -104,7 +104,7 @@ final readonly class ScheduleOutput {
 		foreach ( $entries as $entry ) {
 			$rows[] = array(
 				'owner'              => $entry['owner'],
-				'identity'           => $entry['name'],
+				'identity'           => $entry['identity'],
 				'recurrence'         => $entry['recurrence'] ?? 'unknown (not declared this request)',
 				'next_due'           => self::due_label( $entry['next_due'], $observed_at ),
 				'last_fired'         => null === $entry['last_fired']

@@ -84,7 +84,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( 'a8csp_bgje_overlap_lock_', OverlapGuard::OPTION_PREFIX );
 		self::assertSame(
 			array(
-				'name'      => 'owner:under_score',
+				'identity'  => 'owner:under_score',
 				'args_hash' => $hash,
 			),
 			OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_owner:under_score_' . $hash )
@@ -106,19 +106,19 @@ final class OverlapGuardTest extends TestCase {
 	}
 
 	/** A fresh foreign owner blocks a claim without changing its raw row. */
-	public function test_claim_returns_held_and_leaves_a_fresh_foreign_lock_untouched(): void {
+	public function test_claim_returns_not_claimed_and_leaves_a_fresh_foreign_lock_untouched(): void {
 		$foreign = self::fixture_lock_row( 'run-live', 1_700_000_000, 1_700_000_090 );
 		$this->store_fixture_lock( 'run-live', 1_700_000_000, 1_700_000_090 );
 
 		$result = $this->guard_at( 1_700_000_100 )->claim( self::NAME, self::ARGS_HASH, 'run-new', 900 );
 
-		self::assertSame( LockClaimOutcome::Held, $result );
+		self::assertSame( LockClaimOutcome::NotClaimed, $result );
 		self::assertSame( $foreign, $this->lock() );
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
 
 	/** A failed claim read leaves the contended row held without attempting reclamation. */
-	public function test_claim_returns_held_without_writing_after_read_failure(): void {
+	public function test_claim_returns_not_claimed_without_writing_after_read_failure(): void {
 		$raw = self::fixture_lock_raw( 'run-owner', 100, 120 );
 		$this->wpdb->put( self::KEY, $raw );
 		$this->wpdb->before_next(
@@ -130,7 +130,7 @@ final class OverlapGuardTest extends TestCase {
 
 		$result = $this->guard_at( 200 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 );
 
-		self::assertSame( LockClaimOutcome::Held, $result );
+		self::assertSame( LockClaimOutcome::NotClaimed, $result );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
@@ -184,14 +184,14 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'insert', 'select', 'delete', 'insert' ), $this->operations() );
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
-		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( 'run-dead', $logger->records[0]['context']['dead_run_id'] ?? null );
 		self::assertSame( 'run-new', $logger->records[0]['context']['run_id'] ?? null );
 	}
 
-	/** A rival that inserts after deletion owns the row and makes the reclaim attempt Held. */
-	public function test_claim_returns_held_when_the_post_delete_insert_race_is_lost(): void {
+	/** A rival that inserts after deletion owns the row and makes the reclaim attempt not claimed. */
+	public function test_claim_returns_not_claimed_when_the_post_delete_insert_race_is_lost(): void {
 		$logger    = new RecordingLogger();
 		$rival_raw = self::fixture_lock_raw( 'run-rival', 1_000, 1_000 );
 		$this->store_fixture_lock( 'run-dead', 100, 100 );
@@ -205,7 +205,7 @@ final class OverlapGuardTest extends TestCase {
 
 		$result = $this->guard_at( 1_000, $logger )->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
 
-		self::assertSame( LockClaimOutcome::Held, $result );
+		self::assertSame( LockClaimOutcome::NotClaimed, $result );
 		self::assertSame( self::fixture_lock_row( 'run-rival', 1_000, 1_000 ), $this->lock() );
 		self::assertSame( array(), $logger->records );
 	}
@@ -224,7 +224,7 @@ final class OverlapGuardTest extends TestCase {
 
 		$result = $this->guard_at( 1_000 )->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
 
-		self::assertSame( LockClaimOutcome::Held, $result );
+		self::assertSame( LockClaimOutcome::NotClaimed, $result );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'insert', 'select', 'delete' ), $this->operations() );
 	}
@@ -245,7 +245,7 @@ final class OverlapGuardTest extends TestCase {
 		$b_result = $guard_b->claim( self::NAME, self::ARGS_HASH, 'run-b', 100 );
 
 		self::assertSame( LockClaimOutcome::Reclaimed, $a_result );
-		self::assertSame( LockClaimOutcome::Held, $b_result );
+		self::assertSame( LockClaimOutcome::NotClaimed, $b_result );
 		self::assertSame( self::expected_lock_row( 'run-a', 1_000, 1_000 ), $this->lock() );
 		self::assertSame( array( 'insert', 'select', 'insert', 'select', 'delete', 'insert', 'delete' ), $this->operations() );
 	}
@@ -276,7 +276,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( self::expected_lock_row( 'run-new', 1_000, 1_000 ), $this->lock() );
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
-		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
 		self::assertTrue( $logger->records[0]['context']['malformed'] ?? false );
 		self::assertSame( \strlen( $raw ), $logger->records[0]['context']['raw_length'] ?? null );
@@ -323,8 +323,8 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( HeartbeatOutcome::Owned, $guard->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner', 1_000 ) );
 		self::assertSame( 0, $clock->calls );
 		self::assertSame( self::expected_lock_row( 'run-owner', 100, 1_000 ), $this->lock() );
-		self::assertSame( LockClaimOutcome::Held, $this->guard_at( 500 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 ) );
-		self::assertSame( LockClaimOutcome::Held, $this->guard_at( 1_100 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 ) );
+		self::assertSame( LockClaimOutcome::NotClaimed, $this->guard_at( 500 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 ) );
+		self::assertSame( LockClaimOutcome::NotClaimed, $this->guard_at( 1_100 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 ) );
 		self::assertSame( LockClaimOutcome::Reclaimed, $this->guard_at( 1_101 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 ) );
 	}
 
@@ -395,7 +395,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
 		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
-		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
@@ -415,7 +415,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
 		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
-		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
@@ -506,7 +506,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
 		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
-		self::assertSame( self::NAME, $logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::NAME, $logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
@@ -767,7 +767,7 @@ final class OverlapGuardTest extends TestCase {
 		$guard = $this->guard_at( 1_000 );
 
 		self::assertTrue( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
-		self::assertSame( LockClaimOutcome::Held, $guard->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 ) );
+		self::assertSame( LockClaimOutcome::NotClaimed, $guard->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 ) );
 		self::assertSame( $boundary, $this->lock() );
 		self::assertFalse( $this->guard_at( 1_001 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
 	}

@@ -84,7 +84,7 @@ final class Component extends AbstractComponent {
 	 *
 	 * @var     JobRegistry|null
 	 */
-	private static ?JobRegistry $work = null;
+	private static ?JobRegistry $registry = null;
 
 	/**
 	 * Schedule operations published by the initialized component.
@@ -176,7 +176,7 @@ final class Component extends AbstractComponent {
 			 * @var \wpdb $wpdb
 			 */
 			$option_rows          = new OptionRows( $wpdb );
-			$work                 = new JobRegistry();
+			$registry             = new JobRegistry();
 			$logger               = new HookLogger();
 			$schedules            = new ScheduleRegistry( $option_rows, $logger );
 			$clock                = new SystemClock();
@@ -193,14 +193,14 @@ final class Component extends AbstractComponent {
 				)
 			);
 			$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
-			$job_handler          = new JobKindHandler( $work, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-			$chunked_job_handler  = new ChunkedJobKindHandler( $work, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+			$job_handler          = new JobKindHandler( $registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+			$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 			$handlers             = array(
 				$job_handler->key()         => $job_handler,
 				$chunked_job_handler->key() => $chunked_job_handler,
 			);
 			$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-			$dispatcher           = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+			$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
 			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
@@ -211,7 +211,7 @@ final class Component extends AbstractComponent {
 			);
 			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
-			$inspection           = new Inspection( $schedules, $work, $handlers, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
+			$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
 			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 			$this->action_deliveries    = $action_deliveries;
@@ -221,7 +221,7 @@ final class Component extends AbstractComponent {
 			self::$engine     = $engine;
 			self::$inspection = $inspection;
 			self::$scheduler  = $scheduler;
-			self::$work       = $work;
+			self::$registry   = $registry;
 			self::$schedules  = $schedule_api;
 			self::$dispatcher = $dispatcher;
 		} finally {
@@ -276,11 +276,11 @@ final class Component extends AbstractComponent {
 	 */
 	public static function operations( string $owner ): OwnerOperations {
 		JobIdentity::validate_owner( $owner );
-		$work       = self::$work;
+		$registry   = self::$registry;
 		$schedules  = self::$schedules;
 		$dispatcher = self::$dispatcher;
 		$inspection = self::$inspection;
-		if ( null === self::$engine || null === $work || null === $schedules || null === $dispatcher || null === $inspection ) {
+		if ( null === self::$engine || null === $registry || null === $schedules || null === $dispatcher || null === $inspection ) {
 			throw new \LogicException( 'The background jobs engine graph is unavailable after engine boot.' );
 		}
 

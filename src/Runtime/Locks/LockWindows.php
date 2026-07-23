@@ -122,7 +122,7 @@ final readonly class LockWindows {
 		$this->logger->warning(
 			'Continue-delay filter returned an invalid value; return a non-negative integer to override the default delay.',
 			array(
-				'name'          => $identity,
+				'identity'      => $identity,
 				'run_id'        => $run_id,
 				'returned_type' => \get_debug_type( $delay ),
 				'default_delay' => self::CONTINUE_DELAY,
@@ -174,7 +174,7 @@ final readonly class LockWindows {
 			$this->logger->warning(
 				'Lock-staleness filter returned an invalid value; return a positive integer to override the default staleness window.',
 				array(
-					'name'              => $identity,
+					'identity'          => $identity,
 					'run_id'            => $run_id,
 					'returned_type'     => \get_debug_type( $staleness ),
 					'default_staleness' => $default_staleness,

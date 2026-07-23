@@ -132,7 +132,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertCount( 2, $this->rig->logger()->records );
 		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( $terminal_run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'warning', $this->rig->logger()->records[1]['level'] ?? null );
 		self::assertSame( self::IDENTITY, $this->rig->logger()->records[1]['context']['identity'] ?? null );
@@ -149,7 +149,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( $run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
 	}
 

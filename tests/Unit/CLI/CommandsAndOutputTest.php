@@ -180,7 +180,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertNotNull( $removed );
 		self::assertNotNull( $sibling );
 		self::assertSame( array(), $removed['entries'] );
-		self::assertSame( array( 'other-plugin:nightly' ), \array_column( $sibling['entries'], 'name' ) );
+		self::assertSame( array( 'other-plugin:nightly' ), \array_column( $sibling['entries'], 'identity' ) );
 		$this->rig->assert_no_delivery( 'consumer-plugin:nightly' );
 		$this->rig->backend()->assert_scheduled( 'other-plugin:nightly' );
 
@@ -264,7 +264,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
-		self::assertSame( array( 'consumer-plugin:nightly' ), \array_column( $snapshot['entries'], 'name' ) );
+		self::assertSame( array( 'consumer-plugin:nightly' ), \array_column( $snapshot['entries'], 'identity' ) );
 		$this->rig->backend()->assert_scheduled( 'consumer-plugin:nightly' );
 	}
 
@@ -336,7 +336,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $failed->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
-		self::assertSame( array( 'consumer-plugin:beta' ), \array_column( $snapshot['entries'], 'name' ) );
+		self::assertSame( array( 'consumer-plugin:beta' ), \array_column( $snapshot['entries'], 'identity' ) );
 		$this->rig->assert_no_delivery( 'consumer-plugin:alpha' );
 		$this->rig->backend()->assert_scheduled( 'consumer-plugin:beta' );
 

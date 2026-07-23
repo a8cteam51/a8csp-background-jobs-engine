@@ -302,7 +302,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertIsArray( $registry_snapshot );
 		$logical_snapshot = $this->schedule_entries( self::DUPLICATE_OWNER );
 		self::assertCount( 1, $logical_snapshot );
-		self::assertSame( self::DUPLICATE_IDENTITY, $logical_snapshot[0]['name'] ?? null );
+		self::assertSame( self::DUPLICATE_IDENTITY, $logical_snapshot[0]['identity'] ?? null );
 
 		$this->assert_sync_succeeds( self::DUPLICATE_OWNER, array( $schedule ) );
 
@@ -402,7 +402,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @return  array<string, mixed>|null
 	 */
 	private function schedule_entry( array $entries, string $identity ): ?array {
-		return \array_find( $entries, static fn ( array $entry ): bool => ( $entry['name'] ?? null ) === $identity );
+		return \array_find( $entries, static fn ( array $entry ): bool => ( $entry['identity'] ?? null ) === $identity );
 	}
 
 	/**

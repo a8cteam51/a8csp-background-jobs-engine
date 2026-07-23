@@ -36,7 +36,7 @@ use Psr\Clock\ClockInterface;
  *
  * @phpstan-type ScheduleEntry array{
  *     owner: string,
- *     name: string,
+ *     identity: string,
  *     recurrence: int|null,
  *     next_due: int,
  *     last_fired: int|null,
@@ -99,7 +99,7 @@ final readonly class Inspection {
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
 	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
-	 * @param   JobRegistry      $work         Registered Job instances.
+	 * @param   JobRegistry      $registry     Registered Job instances.
 	 * @param   array            $handlers     Kind handlers keyed by their persisted keys.
 	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
 	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
@@ -110,7 +110,7 @@ final readonly class Inspection {
 	 */
 	public function __construct(
 		private ScheduleRegistry $schedules,
-		private JobRegistry $work,
+		private JobRegistry $registry,
 		private array $handlers,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
@@ -224,7 +224,7 @@ final readonly class Inspection {
 			$declaration = $this->schedules->declaration( $registration_key );
 			$entries[]   = array(
 				'owner'              => $registration_owner,
-				'name'               => $registration_key,
+				'identity'           => $registration_key,
 				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval,
 				'next_due'           => $registration['next_due'],
 				'last_fired'         => $registration['last_fired'],
@@ -397,8 +397,8 @@ final readonly class Inspection {
 		}
 
 		$schedule = $declaration['schedule'];
-		$options  = $this->work->options( $declaration['job'] );
-		if ( JobKindHandler::KIND !== $this->work->kind( $declaration['job'] ) || null === $this->work->execution( $declaration['job'] ) || null === $options ) {
+		$options  = $this->registry->options( $declaration['job'] );
+		if ( JobKindHandler::KIND !== $this->registry->kind( $declaration['job'] ) || null === $this->registry->execution( $declaration['job'] ) || null === $options ) {
 			return array( 'state' => 'invalid' );
 		}
 		if ( OverlapPolicy::Allow === ( $options->overlap ?? OverlapPolicy::Reject ) ) {

@@ -114,8 +114,8 @@ final class ScheduleOperationsTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $this->client_b->sync( array( $owner_b ) ) );
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $owner_a ) ) );
-		self::assertSame( array( 'owner-a:nightly' ), \array_column( $this->owner_entries( 'owner-a' ), 'name' ) );
-		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'name' ) );
+		self::assertSame( array( 'owner-a:nightly' ), \array_column( $this->owner_entries( 'owner-a' ), 'identity' ) );
+		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'identity' ) );
 
 		$this->rig->backend()->scheduled = true;
 		$this->reset_backend_observations();
@@ -132,7 +132,7 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array() ) );
 		self::assertSame( array( 'owner-a:nightly' ), \array_map( static fn ( array $call ): mixed => $call['args']['group'] ?? null, $this->write_calls() ) );
 		self::assertSame( array(), $this->owner_entries( 'owner-a' ) );
-		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'name' ) );
+		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'identity' ) );
 	}
 
 	/**
@@ -205,7 +205,7 @@ final class ScheduleOperationsTest extends TestCase {
 		$result = $this->client_a->sync( array( $phase, $boundary, $zero, $future ) );
 
 		self::assertInstanceOf( Success::class, $result );
-		$entries = \array_column( $this->owner_entries( 'owner-a' ), null, 'name' );
+		$entries = \array_column( $this->owner_entries( 'owner-a' ), null, 'identity' );
 		self::assertSame( 1_700_000_150, $entries['owner-a:phase']['next_due'] ?? null );
 		self::assertSame( self::NOW + 300, $entries['owner-a:boundary']['next_due'] ?? null );
 		self::assertSame( 1_700_000_100, $entries['owner-a:zero']['next_due'] ?? null );
@@ -444,7 +444,7 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( BoundaryError::class, $failed->error );
 		self::assertSame( ErrorCode::BackendRejected, $failed->error->code );
-		self::assertSame( array( 'owner-a:nightly' ), \array_column( $this->owner_entries( 'owner-a' ), 'name' ) );
+		self::assertSame( array( 'owner-a:nightly' ), \array_column( $this->owner_entries( 'owner-a' ), 'identity' ) );
 
 		unset( $this->rig->backend()->results['schedule_recurring'] );
 		$this->reset_backend_observations();

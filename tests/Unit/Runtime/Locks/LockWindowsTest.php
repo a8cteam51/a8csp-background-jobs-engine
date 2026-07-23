@@ -116,7 +116,7 @@ final class LockWindowsTest extends TestCase {
 		self::assertSame( 60, $this->lock_windows->continue_delay( self::NAME, self::RUN_ID ) );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::NAME, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::NAME, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'string', $this->logger->records[0]['context']['returned_type'] ?? null );
 		self::assertSame( 60, $this->logger->records[0]['context']['default_delay'] ?? null );
@@ -183,7 +183,7 @@ final class LockWindowsTest extends TestCase {
 		self::assertSame( 15 * \MINUTE_IN_SECONDS, $this->lock_windows->lock_staleness( self::NAME, self::RUN_ID ) );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::NAME, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::NAME, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'int', $this->logger->records[0]['context']['returned_type'] ?? null );
 		self::assertSame( 15 * \MINUTE_IN_SECONDS, $this->logger->records[0]['context']['default_staleness'] ?? null );

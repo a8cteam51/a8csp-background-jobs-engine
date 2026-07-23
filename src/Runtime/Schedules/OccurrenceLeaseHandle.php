@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class ClaimedLease {
+final class OccurrenceLeaseHandle {
 	// region FIELDS AND CONSTANTS
 
 	/**

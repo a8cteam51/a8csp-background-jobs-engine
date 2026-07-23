@@ -53,7 +53,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	private ?ScheduleRegistry $deterministic_registry = null;
 
 	/** Registered work used by the deterministic graph. */
-	private ?JobRegistry $deterministic_work = null;
+	private ?JobRegistry $deterministic_job_registry = null;
 
 	/** Fixed interval shared by deterministic recurrence probes. */
 	private const int INTERVAL = 300;
@@ -273,10 +273,10 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		self::assertSame( 'info', $logger->records[0]['level'] ?? null );
 		self::assertSame(
 			array(
-				'owner'    => self::SKIP_OWNER,
-				'name'     => self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE,
-				'next_due' => $expected_due,
-				'fired_at' => $now,
+				'owner'             => self::SKIP_OWNER,
+				'schedule_identity' => self::SKIP_OWNER . ':' . self::SKIP_SCHEDULE,
+				'next_due'          => $expected_due,
+				'fired_at'          => $now,
 			),
 			$logger->records[0]['context'] ?? null,
 			'The Skip misfire log must carry the dropped occurrence and aligned successor as structured context'
@@ -353,9 +353,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function register_deterministic_job( string $identity, RecordingJob $job ): void {
-		$work = $this->deterministic_work;
-		self::assertNotNull( $work );
-		$work->register( $identity, $job->definition() );
+		$job_registry = $this->deterministic_job_registry;
+		self::assertNotNull( $job_registry );
+		$job_registry->register( $identity, $job->definition() );
 	}
 
 	/**
@@ -374,7 +374,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 		$rows                 = new OptionRows( $wpdb );
-		$work                 = new JobRegistry();
+		$job_registry         = new JobRegistry();
 		$schedule_registry    = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$locks                = new OptionRows( $wpdb );
@@ -390,25 +390,25 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			)
 		);
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
-		$job_handler          = new JobKindHandler( $work, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler  = new ChunkedJobKindHandler( $work, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$job_handler          = new JobKindHandler( $job_registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler  = new ChunkedJobKindHandler( $job_registry, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new ScheduleOperations( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
-		$inspection           = new Inspection( $schedule_registry, $work, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
+		$inspection           = new Inspection( $schedule_registry, $job_registry, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
 
-		$this->deterministic_inspection = $inspection;
-		$this->deterministic_registry   = $schedule_registry;
-		$this->deterministic_work       = $work;
+		$this->deterministic_inspection   = $inspection;
+		$this->deterministic_registry     = $schedule_registry;
+		$this->deterministic_job_registry = $job_registry;
 
 		\remove_all_actions( 'a8csp_bgje/internal/deliver' );
 		\remove_all_actions( 'a8csp_bgje/internal/schedule_due' );
@@ -499,7 +499,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 *
 	 * @return  array{
 	 *     owner: string,
-	 *     name: string,
+	 *     identity: string,
 	 *     recurrence: int|null,
 	 *     next_due: int,
 	 *     last_fired: int|null,
@@ -517,7 +517,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 
 		$observed = $inspection->schedules( $owner );
 		self::assertIsArray( $observed );
-		$registration = \array_find( $observed['entries'], static fn ( array $entry ): bool => $owner . ':' . $name === $entry['name'] );
+		$registration = \array_find( $observed['entries'], static fn ( array $entry ): bool => $owner . ':' . $name === $entry['identity'] );
 		self::assertIsArray( $registration );
 		self::assertIsInt( $registration['next_due'] ?? null );
 		self::assertTrue( null === ( $registration['last_fired'] ?? null ) || \is_int( $registration['last_fired'] ) );

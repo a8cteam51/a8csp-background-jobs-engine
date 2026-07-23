@@ -198,7 +198,7 @@ final readonly class LifecycleEffects {
 			}
 
 			try {
-				$landed = $this->execute_terminal_effect( $effect, $identity, $run_id, $current, $handler, $failure_detail );
+				$landed = $this->execute_terminal_effect( $effect, $identity, $run_id, $current, $failure_detail );
 			} catch ( \Throwable $throwable ) {
 				$effect_failure ??= $throwable;
 				$refreshed        = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
@@ -297,21 +297,20 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string               $effect         Terminal effect key.
-	 * @param   string               $identity       Complete owner-qualified job or chunked job identity.
-	 * @param   string               $run_id         Run identifier.
-	 * @param   RunState             $state          Current terminal state.
-	 * @param   KindHandlerInterface $handler        Resolved kind handler.
-	 * @param   array|null           $failure_detail Reconstructed internal and client failure detail.
+	 * @param   string     $effect         Terminal effect key.
+	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   string     $run_id         Run identifier.
+	 * @param   RunState   $state          Current terminal state.
+	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @throws  \LogicException When the effect table contains an unsupported key.
 	 * @throws  \Throwable      When an effect cannot complete.
 	 *
 	 * @return  bool Whether the effect landed and may be marked complete.
 	 */
-	private function execute_terminal_effect( string $effect, string $identity, string $run_id, RunState $state, KindHandlerInterface $handler, ?array $failure_detail ): bool {
+	private function execute_terminal_effect( string $effect, string $identity, string $run_id, RunState $state, ?array $failure_detail ): bool {
 		return match ( $effect ) {
-			'retention' => $this->record_failed_run( $identity, $run_id, $state, $handler, $failure_detail ),
+			'retention' => $this->record_failed_run( $identity, $run_id, $state, $failure_detail ),
 			'hooks'     => $this->fire_terminal_hooks( $identity, $run_id, $state, $failure_detail['failure'] ?? null ),
 			'history'   => $this->record_terminal_history( $identity, $run_id, $state ),
 			default     => throw new \LogicException( 'The terminal effect table contains an unsupported effect key.' ),
@@ -326,17 +325,16 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string               $identity       Complete owner-qualified job or chunked job identity.
-	 * @param   string               $run_id         Run identifier.
-	 * @param   RunState             $state          Failed terminal state.
-	 * @param   KindHandlerInterface $handler        Resolved kind handler.
-	 * @param   array|null           $failure_detail Reconstructed internal and client failure detail.
+	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   string     $run_id         Run identifier.
+	 * @param   RunState   $state          Failed terminal state.
+	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @throws  \LogicException When failure detail is absent.
 	 *
 	 * @return  bool Whether the failed-run entry is confirmed persisted.
 	 */
-	private function record_failed_run( string $identity, string $run_id, RunState $state, KindHandlerInterface $handler, ?array $failure_detail ): bool {
+	private function record_failed_run( string $identity, string $run_id, RunState $state, ?array $failure_detail ): bool {
 		if ( null === $failure_detail ) {
 			throw new \LogicException( 'Failed-run retention requires persisted terminal failure detail.' );
 		}
@@ -346,12 +344,12 @@ final readonly class LifecycleEffects {
 			return true;
 		}
 
-		$context_name = $handler->key() . '_name';
 		$this->logger->warning(
 			\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
 			array(
-				$context_name => $identity,
-				'run_id'      => $run_id,
+				'identity' => $identity,
+				'run_id'   => $run_id,
+				'kind'     => $state->kind,
 			)
 		);
 
@@ -407,8 +405,8 @@ final readonly class LifecycleEffects {
 		$this->logger->warning(
 			'Terminal run history could not be persisted; inspection data may be incomplete.',
 			array(
-				'name'   => $identity,
-				'run_id' => $run_id,
+				'identity' => $identity,
+				'run_id'   => $run_id,
 			)
 		);
 
@@ -442,8 +440,8 @@ final readonly class LifecycleEffects {
 		$this->logger->warning(
 			'Failed terminal run has no persisted failure detail; replay uses a generic failure.',
 			array(
-				'name'   => $identity,
-				'run_id' => $run_id,
+				'identity' => $identity,
+				'run_id'   => $run_id,
 			)
 		);
 
@@ -493,9 +491,9 @@ final readonly class LifecycleEffects {
 		$this->logger->error(
 			'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
 			array(
-				'name'   => $identity,
-				'run_id' => $run_id,
-				'status' => $state->status->value,
+				'identity' => $identity,
+				'run_id'   => $run_id,
+				'status'   => $state->status->value,
 			)
 		);
 

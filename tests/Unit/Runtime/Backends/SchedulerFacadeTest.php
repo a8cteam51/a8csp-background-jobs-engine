@@ -577,7 +577,7 @@ final class SchedulerFacadeTest extends TestCase {
 	private function schedule_registration(): array {
 		$snapshot = $this->rig->inspection()->schedules( self::OWNER );
 		self::assertNotNull( $snapshot );
-		$registration = \array_find( $snapshot['entries'], static fn ( array $entry ): bool => 'scheduler-tests:nightly' === ( $entry['name'] ?? null ) );
+		$registration = \array_find( $snapshot['entries'], static fn ( array $entry ): bool => 'scheduler-tests:nightly' === ( $entry['identity'] ?? null ) );
 		self::assertIsArray( $registration );
 
 		return $registration;

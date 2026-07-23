@@ -190,7 +190,7 @@ final readonly class FailureLifecycle {
 		$this->logger->warning(
 			'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the registered policy.',
 			array(
-				'name'          => $identity,
+				'identity'      => $identity,
 				'returned_type' => \get_debug_type( $filtered_policy ),
 			)
 		);
@@ -258,12 +258,12 @@ final readonly class FailureLifecycle {
 		try {
 			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 		} catch ( \Throwable $throwable ) {
-			$context_name = $kind . '_name';
 			$this->logger->warning(
 				'Retry state could not be persisted; the reconciliation sweep retains the run until storage recovers.',
 				array(
-					$context_name     => $identity,
+					'identity'        => $identity,
 					'run_id'          => $run_id,
+					'kind'            => $kind,
 					'exception_class' => \get_debug_type( $throwable ),
 				)
 			);
@@ -304,7 +304,7 @@ final readonly class FailureLifecycle {
 			$this->logger->warning(
 				'Run attempt failed and was scheduled for retry; correct recurring failures before the retry policy is exhausted.',
 				array(
-					'name'         => $identity,
+					'identity'     => $identity,
 					'run_id'       => $run_id,
 					'attempt'      => $attempt,
 					'max_attempts' => $policy->max_attempts,

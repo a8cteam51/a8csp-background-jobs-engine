@@ -450,10 +450,10 @@ final readonly class StoreFixtureBuilder {
 				$windows         = new LockWindows( $clock, $logger );
 				$effects         = new LifecycleEffects( $guard, $stores, $logger );
 				$transitions     = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
-				$work            = new JobRegistry();
+				$registry        = new JobRegistry();
 				$failure         = new FailureLifecycle( $backend, $clock, new RecordingRandomizer( 0 ), $logger, $transitions );
-				$job_handler     = new JobKindHandler( $work, $logger, $clock, $windows, $transitions, $effects, $failure );
-				$chunked_handler = new ChunkedJobKindHandler( $work, $backend, $logger, $clock, $windows, $transitions, $effects, $failure );
+				$job_handler     = new JobKindHandler( $registry, $logger, $clock, $windows, $transitions, $effects, $failure );
+				$chunked_handler = new ChunkedJobKindHandler( $registry, $backend, $logger, $clock, $windows, $transitions, $effects, $failure );
 				$handlers        = array(
 					$job_handler->key()     => $job_handler,
 					$chunked_handler->key() => $chunked_handler,

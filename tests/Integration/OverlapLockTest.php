@@ -334,7 +334,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame( 'warning', $log_records[0][0] ?? null );
 		self::assertSame(
 			array(
-				'name'        => self::RECLAIM_IDENTITY,
+				'identity'    => self::RECLAIM_IDENTITY,
 				'args_hash'   => $args_hash,
 				'dead_run_id' => $run_a,
 				'run_id'      => $run_b,
@@ -376,9 +376,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 		self::assertSame( array( 'warning', 'info' ), \array_column( $log_records, 0 ) );
 		self::assertSame(
 			array(
-				'chunked_job_name' => self::RECLAIM_IDENTITY,
-				'run_id'           => $run_a,
-				'latest_run_id'    => $run_b,
+				'identity'      => self::RECLAIM_IDENTITY,
+				'run_id'        => $run_a,
+				'latest_run_id' => $run_b,
 			),
 			$log_records[1][2] ?? null,
 			'Orphan cleanup must expose the superseded and current owners as structured context'

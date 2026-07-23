@@ -33,8 +33,8 @@ final class MultisiteTest extends IntegrationTestCase {
 		'a8csp_bgje_cleanup_sweep_cursor',
 	);
 
-	/** Internal lifecycle hooks that may retain scheduled work. */
-	private const array LIFECYCLE_HOOKS = array(
+	/** Internal delivery hooks that may retain scheduled work. */
+	private const array DELIVERY_HOOKS = array(
 		'a8csp_bgje/internal/deliver',
 		'a8csp_bgje/internal/schedule_due',
 	);
@@ -147,7 +147,7 @@ final class MultisiteTest extends IntegrationTestCase {
 					self::assertTrue( \update_option( $option, 'sentinel', false ), "Site {$site_id} must persist the '{$option}' uninstall sentinel" );
 				}
 
-				foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+				foreach ( self::DELIVERY_HOOKS as $hook ) {
 					self::assertInstanceOf( Success::class, $wp_cron->schedule_single( $hook, $scheduled_at, $schedule_args ) );
 					self::assertInstanceOf( Success::class, $action_scheduler->schedule_single( $hook, $scheduled_at, $schedule_args, $schedule_group ) );
 					self::assertSame( $scheduled_at, $wp_cron->get_next_scheduled( $hook, $schedule_args ), "Site {$site_id} must persist the '{$hook}' WP-Cron uninstall sentinel" );
@@ -172,7 +172,7 @@ final class MultisiteTest extends IntegrationTestCase {
 				$schedule_group   = \sprintf( 'multisite-uninstall|site-%d', $site_id );
 				$wp_cron          = new WPCronBackend();
 				$action_scheduler = new ActionSchedulerBackend();
-				foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+				foreach ( self::DELIVERY_HOOKS as $hook ) {
 					self::assertFalse( $wp_cron->is_scheduled( $hook, $schedule_args ), "Network uninstall must remove every '{$hook}' WP-Cron event from site {$site_id}" );
 					self::assertFalse( $action_scheduler->is_scheduled( $hook, $schedule_args, $schedule_group ), "Network uninstall must remove every pending '{$hook}' Action Scheduler action from site {$site_id}" );
 				}
@@ -244,7 +244,7 @@ final class MultisiteTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private static function clear_scheduled_work(): void {
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			\wp_unschedule_hook( $hook );
 			if ( \function_exists( 'as_unschedule_all_actions' ) ) {
 				\as_unschedule_all_actions( $hook );

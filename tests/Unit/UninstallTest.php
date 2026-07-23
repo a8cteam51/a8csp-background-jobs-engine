@@ -183,7 +183,7 @@ final class UninstallTest extends TestCase {
 		'a8csp_bgje_cleanup_sweep_cursor',
 		'a8csp_bgje_failed_runs_consumer-plugin:email-digest',
 	);
-	private const array LIFECYCLE_HOOKS   = array(
+	private const array DELIVERY_HOOKS    = array(
 		'a8csp_bgje/internal/deliver',
 		'a8csp_bgje/internal/schedule_due',
 	);
@@ -234,7 +234,7 @@ final class UninstallTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_uninstall_group_ids']    = array( '7' );
 		$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
 
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			\a8csp_bgje_test_store_cron_event( 1_700_000_000, $hook, array( $hook ), false );
 		}
 
@@ -257,7 +257,7 @@ final class UninstallTest extends TestCase {
 		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgje_test_options'][ self::BYTE_NEAR_MISS ] );
 		self::assertArrayHasKey( self::LIKE_NEAR_MISS, $GLOBALS['a8csp_bgje_test_options'] );
 		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgje_test_options'][ self::LIKE_NEAR_MISS ] );
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			self::assertFalse( \wp_next_scheduled( $hook, array( $hook ) ) );
 		}
 
@@ -282,7 +282,7 @@ final class UninstallTest extends TestCase {
 			array(
 				array(
 					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
-					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
+					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::DELIVERY_HOOKS ) ),
 				),
 			),
 			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),
@@ -443,7 +443,7 @@ final class UninstallTest extends TestCase {
 		$expected_cron_calls      = array();
 		$expected_cron_site_calls = array();
 		foreach ( array( 1, 2 ) as $site_id ) {
-			foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+			foreach ( self::DELIVERY_HOOKS as $hook ) {
 				$cron_call = array(
 					'function' => 'wp_unschedule_hook',
 					'args'     => array( $hook, false ),
@@ -496,11 +496,11 @@ final class UninstallTest extends TestCase {
 			array(
 				array(
 					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
-					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
+					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::DELIVERY_HOOKS ) ),
 				),
 				array(
 					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
-					'args'  => array( \array_merge( array( 'wp_2_actionscheduler_actions' ), self::LIFECYCLE_HOOKS ) ),
+					'args'  => array( \array_merge( array( 'wp_2_actionscheduler_actions' ), self::DELIVERY_HOOKS ) ),
 				),
 			),
 			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),

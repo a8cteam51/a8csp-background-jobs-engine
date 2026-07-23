@@ -469,7 +469,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
 		$record = $this->scheduling_rollback_warning();
 		self::assertSame( 'warning', $record['level'] ?? null );
-		self::assertSame( self::IDENTITY, $record['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $record['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $record['context']['run_id'] ?? null );
 		self::assertSame( 'lock_release' !== $failure, $record['context']['lock_release_confirmed'] ?? null );
 		self::assertSame( 'run_delete' !== $failure, $record['context']['run_deleted'] ?? null );

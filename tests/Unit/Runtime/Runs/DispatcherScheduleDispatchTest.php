@@ -327,7 +327,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_reject_dispatch_returns_a_typed_held_outcome(): void {
+	public function test_reject_dispatch_returns_a_typed_not_claimed_outcome(): void {
 		$this->sync_schedule( OverlapPolicy::Reject );
 		$this->seed_held_lock();
 		$latest_pointer = 'a8csp_bgje_latest_run_' . self::IDENTITY;
@@ -355,7 +355,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_reject_dispatch_does_not_consume_an_unconfirmed_held_outcome(): void {
+	public function test_reject_dispatch_does_not_consume_an_unconfirmed_not_claimed_outcome(): void {
 		$this->sync_schedule( OverlapPolicy::Reject );
 		// Two insert interceptions are required because the overlap-lock claim follows the provisional run-row insert.
 		$this->rig->wpdb()->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );

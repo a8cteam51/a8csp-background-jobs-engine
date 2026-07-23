@@ -55,7 +55,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobRegistry      $work                 Registered work definitions.
+	 * @param   JobRegistry      $registry             Registered work definitions.
 	 * @param   LoggerInterface  $logger               Log event sink.
 	 * @param   ClockInterface   $clock                Timestamp source.
 	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
@@ -64,7 +64,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @param   FailureLifecycle $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
-		private JobRegistry $work,
+		private JobRegistry $registry,
 		LoggerInterface $logger,
 		ClockInterface $clock,
 		LockWindows $lock_windows,
@@ -111,7 +111,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, JobExecutionInterface::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
 
-		$this->work->register( $identity, $definition );
+		$this->registry->register( $identity, $definition );
 	}
 
 	/**
@@ -126,9 +126,9 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function execution( string $identity ): ?JobExecutionInterface {
-		$execution = $this->work->execution( $identity );
+		$execution = $this->registry->execution( $identity );
 
-		return self::KIND === $this->work->kind( $identity ) && $execution instanceof JobExecutionInterface ? $execution : null;
+		return self::KIND === $this->registry->kind( $identity ) && $execution instanceof JobExecutionInterface ? $execution : null;
 	}
 
 	/**
@@ -143,7 +143,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function options( string $identity ): ?JobOptions {
-		return self::KIND === $this->work->kind( $identity ) ? $this->work->options( $identity ) : null;
+		return self::KIND === $this->registry->kind( $identity ) ? $this->registry->options( $identity ) : null;
 	}
 
 	/**
@@ -305,7 +305,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 			$this->logger->warning(
 				'job delivery references an unregistered execution; register the job before dispatching its run action.',
 				array(
-					'job_name' => $identity,
+					'identity' => $identity,
 					'run_id'   => $run_id,
 				)
 			);

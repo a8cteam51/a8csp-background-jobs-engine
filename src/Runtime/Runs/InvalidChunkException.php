@@ -53,7 +53,7 @@ final class InvalidChunkException extends \InvalidArgumentException {
 	 *
 	 * @return  self
 	 */
-	public static function nonPortable(): self {
+	public static function non_portable(): self {
 		return new self( self::MESSAGE );
 	}
 
@@ -68,7 +68,7 @@ final class InvalidChunkException extends \InvalidArgumentException {
 	 *
 	 * @return  self
 	 */
-	public static function chunkTooLarge( int $actual, int $limit ): self {
+	public static function chunk_too_large( int $actual, int $limit ): self {
 		return new self( \sprintf( 'Chunked Job chunk arguments contain %1$d JSON bytes; the limit is %2$d bytes.', $actual, $limit ) );
 	}
 
@@ -83,7 +83,7 @@ final class InvalidChunkException extends \InvalidArgumentException {
 	 *
 	 * @return  self
 	 */
-	public static function queueTooLarge( int $actual, int $limit ): self {
+	public static function queue_too_large( int $actual, int $limit ): self {
 		return new self( \sprintf( 'Chunked Job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $actual, $limit ) );
 	}
 

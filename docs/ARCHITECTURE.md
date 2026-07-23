@@ -77,6 +77,8 @@ Carry a unit suffix only where a value could plausibly be mistaken for a timesta
 `$delay_seconds` keeps its suffix, while `Recurrence::every()`, `max_runtime`, `base_delay`, and
 `max_delay` remain unsuffixed.
 
+Every interface ends in `Interface`; every abstract class begins with `Abstract`.
+
 ## Delivery and degradation
 
 The engine writes through the first ready backend in preference order, with Action Scheduler

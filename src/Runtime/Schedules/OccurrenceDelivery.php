@@ -100,8 +100,8 @@ final readonly class OccurrenceDelivery {
 	 */
 	public function handle_schedule_due( string $registration_key ): void {
 		$lease_claim = $this->lease->claim( $registration_key );
-		if ( OccurrenceLeaseOutcome::Held === $lease_claim->outcome ) {
-			$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'registration_key' => $registration_key ) );
+		if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim->outcome ) {
+			$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'schedule_identity' => $registration_key ) );
 
 			return;
 		}
@@ -113,7 +113,7 @@ final readonly class OccurrenceDelivery {
 			$this->logger->warning(
 				$message,
 				array(
-					'registration_key'  => $registration_key,
+					'schedule_identity' => $registration_key,
 					'storage_operation' => $operation,
 				)
 			);
@@ -151,7 +151,7 @@ final readonly class OccurrenceDelivery {
 
 		[ $owner, $name ] = $parts;
 		$lease_claim      = $this->lease->claim( $registration_key );
-		if ( OccurrenceLeaseOutcome::Held === $lease_claim->outcome ) {
+		if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim->outcome ) {
 			return new Failure(
 				new EngineError(
 					\sprintf( 'Schedule "%1$s" for owner "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $owner ),
@@ -213,8 +213,8 @@ final readonly class OccurrenceDelivery {
 			$this->logger->debug(
 				'Schedule registration pruned concurrently; delivery state discarded.',
 				array(
-					'owner'            => $owner,
-					'registration_key' => $registration_key,
+					'owner'             => $owner,
+					'schedule_identity' => $registration_key,
 				)
 			);
 
@@ -224,8 +224,8 @@ final readonly class OccurrenceDelivery {
 			$this->logger->debug(
 				'Schedule registration superseded concurrently; delivery state discarded.',
 				array(
-					'owner'            => $owner,
-					'registration_key' => $registration_key,
+					'owner'             => $owner,
+					'schedule_identity' => $registration_key,
 				)
 			);
 
@@ -287,19 +287,19 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string       $registration_key `{owner}:{name}` schedule identity.
-	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
+	 * @param   string                $registration_key `{owner}:{name}` schedule identity.
+	 * @param   OccurrenceLeaseHandle $lease_handle     Claimed occurrence-lease handle.
 	 *
 	 * @return  void
 	 */
-	private function handle_occurrence( string $registration_key, ClaimedLease $lease_handle ): void {
+	private function handle_occurrence( string $registration_key, OccurrenceLeaseHandle $lease_handle ): void {
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
 			$this->logger->warning(
 				'Schedule occurrence registration could not be read: {error}',
 				array(
-					'registration_key' => $registration_key,
-					'error'            => $registration_read->error->message,
+					'schedule_identity' => $registration_key,
+					'error'             => $registration_read->error->message,
 				)
 			);
 
@@ -311,8 +311,8 @@ final readonly class OccurrenceDelivery {
 			$this->cleanup_intents->record_intent( $registration_key );
 			$converged = $this->cleanup_intents->converge_unknown_chain( $registration_key );
 			$context   = array(
-				'registration_key' => $registration_key,
-				'converged'        => $converged,
+				'schedule_identity' => $registration_key,
+				'converged'         => $converged,
 			);
 
 			$this->logger->warning( \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key ), $context );
@@ -322,7 +322,7 @@ final readonly class OccurrenceDelivery {
 
 		$declaration = $this->registry->declaration( $registration_key );
 		if ( null === $declaration ) {
-			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'registration_key' => $registration_key ) );
+			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'schedule_identity' => $registration_key ) );
 			// Aging is best-effort because a lost fenced increment never affects delivery and a later occurrence retries it.
 			$aging = $this->registry->record_undeclared_occurrence( $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
 			if ( UndeclaredOccurrenceOutcome::Escalated === $aging ) {
@@ -337,7 +337,7 @@ final readonly class OccurrenceDelivery {
 						),
 						array(
 							'owner'                  => $parts[0],
-							'registration_key'       => $registration_key,
+							'schedule_identity'      => $registration_key,
 							'undeclared_occurrences' => self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
 						)
 					);
@@ -349,7 +349,7 @@ final readonly class OccurrenceDelivery {
 		$schedule = $declaration['schedule'];
 
 		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
-			$this->logger->debug( 'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.', array( 'registration_key' => $registration_key ) );
+			$this->logger->debug( 'Stale request schedule declaration does not match the persisted registration; leave the occurrence for a current request.', array( 'schedule_identity' => $registration_key ) );
 
 			return;
 		}
@@ -365,10 +365,10 @@ final readonly class OccurrenceDelivery {
 			$this->logger->debug(
 				'Stale schedule occurrence redelivery dropped after its next-due token advanced.',
 				array(
-					'owner'    => $owner,
-					'name'     => $registration_key,
-					'next_due' => $registration['next_due'],
-					'fired_at' => $now,
+					'owner'             => $owner,
+					'schedule_identity' => $registration_key,
+					'next_due'          => $registration['next_due'],
+					'fired_at'          => $now,
 				)
 			);
 
@@ -407,10 +407,10 @@ final readonly class OccurrenceDelivery {
 			$this->logger->warning(
 				'Misfire grace filter returned an invalid value; return a non-negative integer to override the recurrence interval.',
 				array(
-					'owner'         => $owner,
-					'name'          => $registration_key,
-					'returned_type' => \get_debug_type( $grace ),
-					'default_grace' => $interval,
+					'owner'             => $owner,
+					'schedule_identity' => $registration_key,
+					'returned_type'     => \get_debug_type( $grace ),
+					'default_grace'     => $interval,
 				)
 			);
 			$grace = $interval;
@@ -423,10 +423,10 @@ final readonly class OccurrenceDelivery {
 			$this->logger->error(
 				'Schedule recurrence cannot advance beyond the current timestamp; correct the system clock or synchronize a smaller interval.',
 				array(
-					'owner'    => $owner,
-					'name'     => $registration_key,
-					'next_due' => $registration['next_due'],
-					'fired_at' => $now,
+					'owner'             => $owner,
+					'schedule_identity' => $registration_key,
+					'next_due'          => $registration['next_due'],
+					'fired_at'          => $now,
 				)
 			);
 
@@ -472,19 +472,19 @@ final readonly class OccurrenceDelivery {
 				$this->logger->error(
 					'Misfire-skipped schedule listener failed after the occurrence state was persisted; fix the hook listener.',
 					array(
-						'owner'     => $owner,
-						'name'      => $registration_key,
-						'exception' => $throwable,
+						'owner'             => $owner,
+						'schedule_identity' => $registration_key,
+						'exception'         => $throwable,
 					)
 				);
 			}
 			$this->logger->info(
 				'Misfired schedule occurrence skipped and realigned to its recurrence.',
 				array(
-					'owner'    => $owner,
-					'name'     => $registration_key,
-					'next_due' => $next_due,
-					'fired_at' => $now,
+					'owner'             => $owner,
+					'schedule_identity' => $registration_key,
+					'next_due'          => $next_due,
+					'fired_at'          => $now,
 				)
 			);
 
@@ -510,9 +510,9 @@ final readonly class OccurrenceDelivery {
 			$this->logger->error(
 				'Schedule occurrence could not enqueue its target job: {error}',
 				array(
-					'owner' => $owner,
-					'name'  => $registration_key,
-					'error' => $dispatched->error->message,
+					'owner'             => $owner,
+					'schedule_identity' => $registration_key,
+					'error'             => $dispatched->error->message,
 				)
 			);
 
@@ -527,9 +527,9 @@ final readonly class OccurrenceDelivery {
 			$this->logger->info(
 				'Schedule occurrence skipped because the target job lock is held.',
 				array(
-					'owner'          => $owner,
-					'name'           => $registration_key,
-					'running_run_id' => $dispatched->value->running_run_id,
+					'owner'             => $owner,
+					'schedule_identity' => $registration_key,
+					'running_run_id'    => $dispatched->value->running_run_id,
 				)
 			);
 
@@ -543,14 +543,14 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string       $registration_key Complete owner-qualified schedule identity.
-	 * @param   string       $owner            Stable client identifier.
-	 * @param   string       $name             Stable schedule name.
-	 * @param   ClaimedLease $lease_handle     Claimed occurrence-lease handle.
+	 * @param   string                $registration_key Complete owner-qualified schedule identity.
+	 * @param   string                $owner            Stable client identifier.
+	 * @param   string                $name             Stable schedule name.
+	 * @param   OccurrenceLeaseHandle $lease_handle     Claimed occurrence-lease handle.
 	 *
 	 * @return  AbstractResult<array{identity: string, run_id: string}, EngineError|SchedulingError>
 	 */
-	private function dispatch_now( string $registration_key, string $owner, string $name, ClaimedLease $lease_handle ): AbstractResult {
+	private function dispatch_now( string $registration_key, string $owner, string $name, OccurrenceLeaseHandle $lease_handle ): AbstractResult {
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
 			return new Failure( $registration_read->error );

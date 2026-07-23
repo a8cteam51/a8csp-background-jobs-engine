@@ -305,7 +305,7 @@ final readonly class RunHistory {
 		$this->logger->warning(
 			'Run-history-size filter returned an invalid value; return a positive integer to override the default retention size.',
 			array(
-				'name'          => $this->identity,
+				'identity'      => $this->identity,
 				'returned_type' => \get_debug_type( $size ),
 				'default_size'  => self::DEFAULT_SIZE,
 			)

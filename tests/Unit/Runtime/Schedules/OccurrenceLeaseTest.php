@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ClaimedLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLeaseHandle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLeaseClaim;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLeaseOutcome;
@@ -29,7 +29,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( OccurrenceLease::class )]
 #[CoversClass( OccurrenceLeaseClaim::class )]
 #[CoversClass( OccurrenceLeaseOutcome::class )]
-#[CoversClass( ClaimedLease::class )]
+#[CoversClass( OccurrenceLeaseHandle::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class OccurrenceLeaseTest extends TestCase {
@@ -68,7 +68,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		$claim = $this->lease->claim( self::KEY );
 
 		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
-		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
+		self::assertInstanceOf( OccurrenceLeaseHandle::class, $claim->lease );
 		self::assertArrayHasKey( self::option_name(), $this->wpdb->rows );
 		$claim->lease->release();
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
@@ -78,7 +78,7 @@ final class OccurrenceLeaseTest extends TestCase {
 	public function test_claimed_lease_release_is_idempotent(): void {
 		$claim = $this->lease->claim( self::KEY );
 		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
-		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
+		self::assertInstanceOf( OccurrenceLeaseHandle::class, $claim->lease );
 
 		$claim->lease->release();
 		$claim->lease->release();
@@ -90,7 +90,7 @@ final class OccurrenceLeaseTest extends TestCase {
 	public function test_claimed_lease_release_preserves_a_newer_generation(): void {
 		$claim = $this->lease->claim( self::KEY );
 		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
-		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
+		self::assertInstanceOf( OccurrenceLeaseHandle::class, $claim->lease );
 		$winner = self::raw_lease( 43, self::NOW + 1 );
 		$this->wpdb->put( self::option_name(), $winner );
 
@@ -119,7 +119,7 @@ final class OccurrenceLeaseTest extends TestCase {
 	}
 
 	/** A successful insert whose confirmation observes a rival is classified as a lost race. */
-	public function test_insert_confirmation_changed_by_a_rival_is_held(): void {
+	public function test_insert_confirmation_changed_by_a_rival_is_not_claimed(): void {
 		$winner = self::raw_lease( 44, self::NOW );
 		$this->wpdb->before_next(
 			'select',
@@ -130,7 +130,7 @@ final class OccurrenceLeaseTest extends TestCase {
 
 		$claim = $this->lease->claim( self::KEY );
 
-		self::assertSame( OccurrenceLeaseOutcome::Held, $claim->outcome );
+		self::assertSame( OccurrenceLeaseOutcome::NotClaimed, $claim->outcome );
 		self::assertNull( $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertSame( $winner, $this->wpdb->rows[ self::option_name() ] ?? null );
@@ -154,7 +154,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		$this->put_lease( self::NOW - 60 );
 
 		$claim = $this->lease->claim( self::KEY );
-		self::assertSame( OccurrenceLeaseOutcome::Held, $claim->outcome );
+		self::assertSame( OccurrenceLeaseOutcome::NotClaimed, $claim->outcome );
 		self::assertNull( $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertSame( self::NOW - 60, $this->stored_lease()['claimed_at'] ?? null );
@@ -167,7 +167,7 @@ final class OccurrenceLeaseTest extends TestCase {
 
 		$claim = $this->lease->claim( self::KEY );
 		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
-		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
+		self::assertInstanceOf( OccurrenceLeaseHandle::class, $claim->lease );
 		self::assertSame( self::NOW, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
@@ -199,7 +199,7 @@ final class OccurrenceLeaseTest extends TestCase {
 
 		$claim = $this->lease->claim( self::KEY );
 		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
-		self::assertInstanceOf( ClaimedLease::class, $claim->lease );
+		self::assertInstanceOf( OccurrenceLeaseHandle::class, $claim->lease );
 		self::assertSame( self::NOW, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
@@ -215,7 +215,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		);
 
 		$claim = $this->lease->claim( self::KEY );
-		self::assertSame( OccurrenceLeaseOutcome::Held, $claim->outcome );
+		self::assertSame( OccurrenceLeaseOutcome::NotClaimed, $claim->outcome );
 		self::assertNull( $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertSame( $winner, $this->wpdb->rows[ self::option_name() ] );
@@ -223,7 +223,7 @@ final class OccurrenceLeaseTest extends TestCase {
 	}
 
 	/** A stale reclaim that loses to row removal is classified as a lost race. */
-	public function test_lost_reclaim_cas_after_row_removal_is_held(): void {
+	public function test_lost_reclaim_cas_after_row_removal_is_not_claimed(): void {
 		$this->put_lease( self::NOW - 61 );
 		$this->wpdb->before_next(
 			'update',
@@ -234,7 +234,7 @@ final class OccurrenceLeaseTest extends TestCase {
 
 		$claim = $this->lease->claim( self::KEY );
 
-		self::assertSame( OccurrenceLeaseOutcome::Held, $claim->outcome );
+		self::assertSame( OccurrenceLeaseOutcome::NotClaimed, $claim->outcome );
 		self::assertNull( $claim->storage_operation );
 		self::assertNull( $claim->lease );
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );

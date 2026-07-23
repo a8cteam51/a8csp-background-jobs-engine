@@ -353,7 +353,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertArrayNotHasKey( CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 		$read_error = $this->rig->logger()->records[0]['context']['error'] ?? null;
 		self::assertIsString( $read_error );
 		self::assertStringContainsString( 'read failed', $read_error );
@@ -383,7 +383,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array(), $this->rig->backend()->calls );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 	}
 
 	/**
@@ -403,7 +403,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array(), $this->rig->backend()->calls );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 		self::assertSame( 'write', $this->rig->logger()->records[0]['context']['storage_operation'] ?? null );
 	}
 
@@ -429,7 +429,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( array(), $this->rig->backend()->calls );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 		self::assertSame( 'read', $this->rig->logger()->records[0]['context']['storage_operation'] ?? null );
 	}
 
@@ -452,7 +452,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertNotEmpty( $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 		self::assertSame( 'string', $this->rig->logger()->records[0]['context']['returned_type'] ?? null );
 		self::assertSame( self::INTERVAL, $this->rig->logger()->records[0]['context']['default_grace'] ?? null );
 	}
@@ -550,7 +550,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
 		self::assertSame( self::OWNER, $this->rig->logger()->records[0]['context']['owner'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 	}
 
 	/**
@@ -579,7 +579,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['registration_key'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 	}
 
 	/**
@@ -616,7 +616,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( 1, $this->registration()['overlap_skips'] ?? null );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( 'info', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 	}
 
 	/**
@@ -657,7 +657,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( 1, $this->registration()['overlap_skips'] ?? null );
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
 		self::assertSame( 'info', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 	}
 
 	/**

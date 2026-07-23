@@ -101,8 +101,8 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Deleted corrupt run option while reconciling its execution-overlap lock.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 		}
@@ -114,7 +114,7 @@ final readonly class RunReconciliation {
 		$this->logger->warning(
 			'Reclaimed stale execution-overlap lock without a valid matching run option.',
 			array(
-				'name'      => $identity,
+				'identity'  => $identity,
 				'args_hash' => $args_hash,
 				'run_id'    => $run_id,
 			)
@@ -152,8 +152,8 @@ final readonly class RunReconciliation {
 				$this->logger->warning(
 					'Deleted corrupt run option during maintenance sweep.',
 					array(
-						'name'   => $identity,
-						'run_id' => $run_id,
+						'identity' => $identity,
+						'run_id'   => $run_id,
 					)
 				);
 			}
@@ -166,9 +166,9 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Background-work run kind has no registered handler; maintenance left the run untouched.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
-					'kind'   => $state->kind,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'kind'     => $state->kind,
 				)
 			);
 
@@ -232,8 +232,8 @@ final readonly class RunReconciliation {
 		$this->logger->warning(
 			'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
 			array(
-				'name'   => $identity,
-				'run_id' => $run_id,
+				'identity' => $identity,
+				'run_id'   => $run_id,
 			)
 		);
 
@@ -277,8 +277,8 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Reclaimed stale running run that carries no pending-action descriptor.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 		} else {
@@ -300,7 +300,7 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Pending-action redelivery was rejected by the scheduler; restore scheduler availability so maintenance can retry the pending action.',
 				array(
-					'name'         => $identity,
+					'identity'     => $identity,
 					'run_id'       => $run_id,
 					'error_class'  => $scheduled->error::class,
 					'error_reason' => $scheduled->error->reason->value,
@@ -342,9 +342,9 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
-					'status' => $state->status->value,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'status'   => $state->status->value,
 				)
 			);
 		}

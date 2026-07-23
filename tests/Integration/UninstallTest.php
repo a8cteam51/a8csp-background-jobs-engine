@@ -50,8 +50,8 @@ final class UninstallTest extends IntegrationTestCase {
 		'a8csp_bgje_cleanup_sweep_cursor',
 	);
 
-	/** Internal lifecycle hooks that may retain scheduled work. */
-	private const array LIFECYCLE_HOOKS = array(
+	/** Internal delivery hooks that may retain scheduled work. */
+	private const array DELIVERY_HOOKS = array(
 		'a8csp_bgje/internal/deliver',
 		'a8csp_bgje/internal/schedule_due',
 	);
@@ -117,7 +117,7 @@ final class UninstallTest extends IntegrationTestCase {
 		$scheduled_at     = \time() + \HOUR_IN_SECONDS;
 		$wp_cron          = new WPCronBackend();
 		$action_scheduler = new ActionSchedulerBackend();
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			self::assertInstanceOf( Success::class, $wp_cron->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS ) );
 			self::assertInstanceOf( Success::class, $action_scheduler->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ) );
 			self::assertSame( $scheduled_at, $wp_cron->get_next_scheduled( $hook, self::SCHEDULE_ARGS ) );
@@ -128,7 +128,7 @@ final class UninstallTest extends IntegrationTestCase {
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
 		self::assertSame( array(), self::engine_option_names(), 'uninstall.php must leave no option inside the documented a8csp_bgje_ ownership prefix' );
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			self::assertFalse( $wp_cron->is_scheduled( $hook, self::SCHEDULE_ARGS ), "uninstall.php must remove every WP-Cron event for '{$hook}'" );
 			self::assertFalse( $action_scheduler->is_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
 		}
@@ -150,7 +150,7 @@ final class UninstallTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private static function clear_scheduled_work(): void {
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			\wp_unschedule_hook( $hook );
 			if ( \function_exists( 'as_unschedule_all_actions' ) ) {
 				\as_unschedule_all_actions( $hook );

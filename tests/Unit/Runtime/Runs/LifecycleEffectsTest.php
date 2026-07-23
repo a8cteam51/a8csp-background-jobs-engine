@@ -186,7 +186,8 @@ final class LifecycleEffectsTest extends TestCase {
 		$this->assert_terminal_history( 'failed' );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['job_name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
+		self::assertSame( 'job', $this->logger->records[0]['context']['kind'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
@@ -237,7 +238,7 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( $named_previous_run_id, $actions[1]['args'][3] ?? null );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 

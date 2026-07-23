@@ -173,9 +173,9 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( 'info', $log_records[0][0] ?? null );
 		self::assertSame(
 			array(
-				'chunked_job_name' => self::IDENTITY,
-				'run_id'           => $run_a,
-				'latest_run_id'    => $run_b,
+				'identity'      => self::IDENTITY,
+				'run_id'        => $run_a,
+				'latest_run_id' => $run_b,
 			),
 			$log_records[0][2],
 			'Supersession must expose stale and current ownership as structured context'

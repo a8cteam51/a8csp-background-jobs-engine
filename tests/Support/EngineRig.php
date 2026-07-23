@@ -396,7 +396,7 @@ final class EngineRig {
 	private function build_graph(): void {
 		// This graph mirrors Component's two phases because the component has no injection seam; wiring changes require lockstep updates here.
 		$rows                 = new OptionRows( $this->wpdb );
-		$work                 = new JobRegistry();
+		$registry             = new JobRegistry();
 		$schedules            = new ScheduleRegistry( $rows, $this->logger );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $rows );
 		$stores               = new StoreFactory( $this->clock, $rows, $this->logger );
@@ -405,14 +405,14 @@ final class EngineRig {
 		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade( $this->backends );
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
-		$job_handler          = new JobKindHandler( $work, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler  = new ChunkedJobKindHandler( $work, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$job_handler          = new JobKindHandler( $registry, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions );
 		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
@@ -425,10 +425,10 @@ final class EngineRig {
 		);
 		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $work, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
+		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
-		self::publish_component( $engine, $inspection, $scheduler, $work, $schedule_api, $dispatcher );
+		self::publish_component( $engine, $inspection, $scheduler, $registry, $schedule_api, $dispatcher );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
@@ -512,17 +512,17 @@ final class EngineRig {
 	 * @param   EngineFacade       $engine     Engine facade.
 	 * @param   Inspection         $inspection Inspection facade.
 	 * @param   SchedulerFacade    $scheduler  Scheduler facade.
-	 * @param   JobRegistry        $work       Registered job and chunked job instances.
+	 * @param   JobRegistry        $registry   Registered job and chunked job instances.
 	 * @param   ScheduleOperations $schedules  Schedule engine operations.
 	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
 	 *
 	 * @return  void
 	 */
-	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, JobRegistry $work, ScheduleOperations $schedules, Dispatcher $dispatcher ): void {
+	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, JobRegistry $registry, ScheduleOperations $schedules, Dispatcher $dispatcher ): void {
 		self::set_component_property( 'engine', $engine );
 		self::set_component_property( 'inspection', $inspection );
 		self::set_component_property( 'scheduler', $scheduler );
-		self::set_component_property( 'work', $work );
+		self::set_component_property( 'registry', $registry );
 		self::set_component_property( 'schedules', $schedules );
 		self::set_component_property( 'dispatcher', $dispatcher );
 		self::set_component_property( 'booting', false );
@@ -540,7 +540,7 @@ final class EngineRig {
 		self::set_component_property( 'engine', null );
 		self::set_component_property( 'inspection', null );
 		self::set_component_property( 'scheduler', null );
-		self::set_component_property( 'work', null );
+		self::set_component_property( 'registry', null );
 		self::set_component_property( 'schedules', null );
 		self::set_component_property( 'dispatcher', null );
 		self::set_component_property( 'booting', false );

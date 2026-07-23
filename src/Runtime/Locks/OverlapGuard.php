@@ -109,12 +109,12 @@ final readonly class OverlapGuard {
 
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
-			return LockClaimOutcome::Held;
+			return LockClaimOutcome::NotClaimed;
 		}
 
 		$raw = $selected->value;
 		if ( null === $raw ) {
-			return LockClaimOutcome::Held;
+			return LockClaimOutcome::NotClaimed;
 		}
 
 		$lock = self::parse( $raw );
@@ -127,14 +127,14 @@ final readonly class OverlapGuard {
 		}
 
 		if ( $run_id !== $lock['run_id'] ) {
-			return LockClaimOutcome::Held;
+			return LockClaimOutcome::NotClaimed;
 		}
 
 		$lock['heartbeat_at'] = $now;
 
 		return RowWriteOutcome::Won === $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) )
 			? LockClaimOutcome::Claimed
-			: LockClaimOutcome::Held;
+			: LockClaimOutcome::NotClaimed;
 	}
 
 	/**
@@ -218,7 +218,7 @@ final readonly class OverlapGuard {
 				'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
 				array(
 					'key'       => $key,
-					'name'      => $identity,
+					'identity'  => $identity,
 					'args_hash' => $args_hash,
 					'run_id'    => $run_id,
 				)
@@ -251,7 +251,7 @@ final readonly class OverlapGuard {
 				'Execution-overlap lock heartbeat could not write the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
 				array(
 					'key'       => $key,
-					'name'      => $identity,
+					'identity'  => $identity,
 					'args_hash' => $args_hash,
 					'run_id'    => $run_id,
 				)
@@ -284,7 +284,7 @@ final readonly class OverlapGuard {
 				'Execution-overlap lock release could not read the lock row; the staleness sweep reclaims the leaked key.',
 				array(
 					'key'       => $key,
-					'name'      => $identity,
+					'identity'  => $identity,
 					'args_hash' => $args_hash,
 					'run_id'    => $run_id,
 				)
@@ -414,16 +414,16 @@ final readonly class OverlapGuard {
 	 *
 	 * @param   string $option_name Complete option name.
 	 *
-	 * @return  array{name: string, args_hash: string}|null
+	 * @return  array{identity: string, args_hash: string}|null
 	 */
 	public static function identity_from_option_name( string $option_name ): ?array {
-		$matched = \preg_match( '/\A' . \preg_quote( self::OPTION_PREFIX, '/' ) . '(?<name>.+)_(?<args_hash>[a-f0-9]{64})\z/D', $option_name, $matches );
-		if ( 1 !== $matched || null === JobIdentity::parts( $matches['name'] ) ) {
+		$matched = \preg_match( '/\A' . \preg_quote( self::OPTION_PREFIX, '/' ) . '(?<identity>.+)_(?<args_hash>[a-f0-9]{64})\z/D', $option_name, $matches );
+		if ( 1 !== $matched || null === JobIdentity::parts( $matches['identity'] ) ) {
 			return null;
 		}
 
 		return array(
-			'name'      => $matches['name'],
+			'identity'  => $matches['identity'],
 			'args_hash' => $matches['args_hash'],
 		);
 	}
@@ -683,14 +683,14 @@ final readonly class OverlapGuard {
 	 */
 	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $identity, string $args_hash, string $run_id ): LockClaimOutcome {
 		if ( RowDeleteOutcome::Deleted !== $this->rows->delete_if_value_matches( $key, $raw ) || RowWriteOutcome::Won !== $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
-			return LockClaimOutcome::Held;
+			return LockClaimOutcome::NotClaimed;
 		}
 
 		if ( null === $old_lock ) {
 			$this->logger->warning(
 				'Reclaimed malformed execution-overlap lock.',
 				array(
-					'name'       => $identity,
+					'identity'   => $identity,
 					'args_hash'  => $args_hash,
 					'malformed'  => true,
 					'raw_length' => \strlen( $raw ),
@@ -702,7 +702,7 @@ final readonly class OverlapGuard {
 			$this->logger->warning(
 				'Reclaimed stale execution-overlap lock.',
 				array(
-					'name'        => $identity,
+					'identity'    => $identity,
 					'args_hash'   => $args_hash,
 					'dead_run_id' => $old_lock['run_id'],
 					'run_id'      => $run_id,

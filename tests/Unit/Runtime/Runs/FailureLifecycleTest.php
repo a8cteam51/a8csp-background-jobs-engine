@@ -232,12 +232,45 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 1, $this->rig->logger()->records[0]['context']['attempt'] ?? null );
 		self::assertSame( 2, $this->rig->logger()->records[0]['context']['max_attempts'] ?? null );
 		self::assertSame( 17, $this->rig->logger()->records[0]['context']['delay'] ?? null );
 		self::assertSame( \RuntimeException::class, $this->rig->logger()->records[0]['context']['error_class'] ?? null );
+	}
+
+	/**
+	 * A throwing retry-state write records the persisted job kind for reconciliation diagnostics.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_state_persistence_failure_logs_the_job_kind(): void {
+		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 7;
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
+		for ( $attempt = 0; 6 > $attempt; ++$attempt ) {
+			$this->rig->wpdb()->before_next( 'update', static function (): void {} );
+		}
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function (): never {
+				throw new \RuntimeException( 'Retry state write exploded.' );
+			}
+		);
+
+		$this->rig->run_due();
+
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( 'Retry state could not be persisted; the reconciliation sweep retains the run until storage recovers.', $this->rig->logger()->records[0]['message'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
+		self::assertSame( self::RUN_ID, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+		self::assertSame( 'job', $this->rig->logger()->records[0]['context']['kind'] ?? null );
+		self::assertSame( \RuntimeException::class, $this->rig->logger()->records[0]['context']['exception_class'] ?? null );
 	}
 
 	/**
@@ -450,7 +483,7 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertSame( 7, $this->latest_retry()[4] ?? null );
 		self::assertNotEmpty( $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( 'string', $this->rig->logger()->records[0]['context']['returned_type'] ?? null );
 	}
 
@@ -619,7 +652,7 @@ final class FailureLifecycleTest extends TestCase {
 	 */
 	public function test_chunked_job_validation_exception_is_not_reclassified_on_the_job_path(): void {
 		$this->assert_terminal_job_failure(
-			InvalidChunkException::nonPortable(),
+			InvalidChunkException::non_portable(),
 			new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) )
 		);
 	}
@@ -635,7 +668,7 @@ final class FailureLifecycleTest extends TestCase {
 	public function test_chunked_job_validation_exception_retains_its_engine_authored_diagnostic(): void {
 		$chunked_job                    = new RecordingChunkedJob( 'bounded-chunked-job' );
 		$chunked_job->queue             = array( array( 'chunk' => 'current' ) );
-		$chunked_job->process_throwable = InvalidChunkException::chunkTooLarge( 8_193, 8_192 );
+		$chunked_job->process_throwable = InvalidChunkException::chunk_too_large( 8_193, 8_192 );
 		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
 		$result = $this->client->dispatch( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );

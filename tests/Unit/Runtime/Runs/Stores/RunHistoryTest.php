@@ -187,7 +187,7 @@ final class RunHistoryTest extends TestCase {
 		self::assertTrue( $this->store()->record_started( self::run_id( 1 ), 'hash-a' ) );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( 'string', $this->rig->logger()->records[0]['context']['returned_type'] ?? null );
 		self::assertSame( 30, $this->rig->logger()->records[0]['context']['default_size'] ?? null );
 	}

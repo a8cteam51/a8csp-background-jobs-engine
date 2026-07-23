@@ -195,7 +195,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 					$this->logger->warning(
 						'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
 						array(
-							'name'      => $identity['identity'],
+							'identity'  => $identity['identity'],
 							'run_id'    => $identity['run_id'],
 							'exception' => $throwable,
 						)
@@ -209,8 +209,8 @@ final class MaintenanceJob implements JobExecutionInterface {
 						'run-reconciliation',
 						$reconciled->error,
 						array(
-							'name'   => $identity['identity'],
-							'run_id' => $identity['run_id'],
+							'identity' => $identity['identity'],
+							'run_id'   => $identity['run_id'],
 						)
 					);
 
@@ -250,7 +250,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 					continue;
 				}
 
-				$identity  = $lock_identity['name'];
+				$identity  = $lock_identity['identity'];
 				$args_hash = $lock_identity['args_hash'];
 				if ( isset( $deferred_lock_names[ $identity ] ) ) {
 					// An unclassified run can still depend on every same-name lock as authoritative fence evidence.
@@ -270,7 +270,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 						$this->logger->warning(
 							'Reclaimed schema-invalid execution-overlap lock during maintenance sweep.',
 							array(
-								'name'      => $identity,
+								'identity'  => $identity,
 								'args_hash' => $args_hash,
 								'run_id'    => null,
 							)
@@ -286,7 +286,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 					$this->logger->warning(
 						'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',
 						array(
-							'name'      => $identity,
+							'identity'  => $identity,
 							'args_hash' => $args_hash,
 							'run_id'    => $run_id,
 							'exception' => $throwable,

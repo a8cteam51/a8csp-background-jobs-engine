@@ -143,7 +143,7 @@ final class InspectionTest extends TestCase {
 		$snapshot = $this->rig->inspection()->schedules();
 
 		self::assertNotNull( $snapshot );
-		self::assertSame( array( 'owner-a:nightly', 'owner-b:orphaned' ), \array_column( $snapshot['entries'], 'name' ) );
+		self::assertSame( array( 'owner-a:nightly', 'owner-b:orphaned' ), \array_column( $snapshot['entries'], 'identity' ) );
 		self::assertSame( 300, $snapshot['entries'][0]['recurrence'] );
 		self::assertSame(
 			array(
@@ -209,7 +209,7 @@ final class InspectionTest extends TestCase {
 
 		$snapshot = $this->rig->inspection()->schedules();
 		self::assertNotNull( $snapshot );
-		$locks = \array_column( $snapshot['entries'], 'lock', 'name' );
+		$locks = \array_column( $snapshot['entries'], 'lock', 'identity' );
 
 		self::assertSame( array( 'state' => 'overlap_allowed' ), $locks['owner:allow'] );
 		self::assertSame( array( 'state' => 'read_failed' ), $locks['owner:failed'] );

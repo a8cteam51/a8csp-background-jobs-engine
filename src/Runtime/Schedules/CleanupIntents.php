@@ -186,8 +186,8 @@ final readonly class CleanupIntents {
 						$this->log_pending_intent(
 							'Unknown schedule cleanup intent could not converge during maintenance; retry on the next sweep.',
 							array(
-								'registration_key' => $intent['registration_key'],
-								'exception'        => $throwable,
+								'schedule_identity' => $intent['registration_key'],
+								'exception'         => $throwable,
 							)
 						);
 					}
@@ -252,8 +252,8 @@ final readonly class CleanupIntents {
 			$this->log_pending_intent(
 				'Unknown schedule cleanup intent remains pending because verified clearance failed.',
 				array(
-					'registration_key' => $registration_key,
-					'error'            => $removed->error->message,
+					'schedule_identity' => $registration_key,
+					'error'             => $removed->error->message,
 				)
 			);
 
@@ -261,7 +261,7 @@ final readonly class CleanupIntents {
 		}
 
 		if ( ! $clearance->authoritative ) {
-			$this->log_pending_intent( 'Unknown schedule cleanup intent remains pending until every scheduler backend is ready or absent.', array( 'registration_key' => $registration_key ), LogLevel::DEBUG );
+			$this->log_pending_intent( 'Unknown schedule cleanup intent remains pending until every scheduler backend is ready or absent.', array( 'schedule_identity' => $registration_key ), LogLevel::DEBUG );
 
 			return false;
 		}

@@ -71,7 +71,7 @@ final readonly class Dispatcher {
 	 *
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
-	 * @param   JobRegistry         $work                 Registered work definitions.
+	 * @param   JobRegistry         $registry             Registered work definitions.
 	 * @param   array               $handlers             Kind handlers keyed by their persisted keys.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
@@ -83,7 +83,7 @@ final readonly class Dispatcher {
 	 * @param   RunTransitions      $terminal_transitions Fenced terminal-write coordinator.
 	 */
 	public function __construct(
-		private JobRegistry $work,
+		private JobRegistry $registry,
 		private array $handlers,
 		private BackendInterface $scheduler,
 		private OverlapGuard $overlap_guard,
@@ -137,7 +137,7 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
 	public function dispatch( string $identity, array $args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
-		$kind = $this->work->kind( $identity );
+		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
@@ -166,7 +166,7 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
 	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
-		$kind = $this->work->kind( $identity );
+		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
@@ -198,7 +198,7 @@ final readonly class Dispatcher {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
 
-		$kind = $this->work->kind( $identity );
+		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
@@ -243,8 +243,8 @@ final readonly class Dispatcher {
 			$this->logger->warning(
 				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 		}
@@ -271,7 +271,7 @@ final readonly class Dispatcher {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
 
-		$kind = $this->work->kind( $identity );
+		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
 		}
@@ -391,13 +391,13 @@ final readonly class Dispatcher {
 		$scheduled_at = $now + $delay;
 		$run_id       = RunIdentity::generate( $now, $this->randomizer );
 		if ( OverlapPolicy::Allow === $overlap ) {
-			// Allow gets a per-run lock identity so concurrent occurrences never contend; Held can then only mean run-id collision.
+			// Allow gets a per-run lock identity so concurrent occurrences never contend; NotClaimed can then only mean run-id collision.
 			$args_hash = $this->salted_args_hash( $args_hash, $run_id );
 		}
 
 		$latest_pointer = $this->stores->latest_run_pointer( $identity );
 		$claim          = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ) );
-		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Reject === $overlap ) {
+		if ( LockClaimOutcome::NotClaimed === $claim && OverlapPolicy::Reject === $overlap ) {
 			$owner = $this->overlap_guard->owner_run_id( $identity, $args_hash );
 			if ( $owner->is_failure() ) {
 				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; repair database reads and retry the dispatch.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $identity ), ) );
@@ -409,12 +409,12 @@ final readonly class Dispatcher {
 
 			return new Success( new SkippedJobDispatch( $running_run_id, EngineError::held( $kind, $identity, $running_run_id ) ) );
 		}
-		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Allow === $overlap ) {
+		if ( LockClaimOutcome::NotClaimed === $claim && OverlapPolicy::Allow === $overlap ) {
 			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $identity ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $identity );
-		$state     = $this->create_run_state_and_replace_if_held( $handler, $identity, $run_id, $args, $args_hash, $claim, $run_store, $scheduled_at, $delay, $priority );
+		$state     = $this->create_run_state_and_replace_if_not_claimed( $handler, $identity, $run_id, $args, $args_hash, $claim, $run_store, $scheduled_at, $delay, $priority );
 		if ( $state instanceof Failure ) {
 			return $state;
 		}
@@ -459,8 +459,8 @@ final readonly class Dispatcher {
 			$this->logger->warning(
 				'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 		}
@@ -480,8 +480,8 @@ final readonly class Dispatcher {
 			$this->logger->warning(
 				'Started run history could not be persisted; inspection data may be incomplete.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 		}
@@ -494,7 +494,7 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Persists provisional run state and transfers a held lock before returning ownership.
+	 * Persists provisional run state and transfers a contended lock before returning ownership.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -512,18 +512,18 @@ final readonly class Dispatcher {
 	 *
 	 * @return  RunState|Failure<EngineError>
 	 */
-	private function create_run_state_and_replace_if_held( KindHandlerInterface $handler, string $identity, string $run_id, array $args, string $args_hash, LockClaimOutcome $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): RunState|Failure {
+	private function create_run_state_and_replace_if_not_claimed( KindHandlerInterface $handler, string $identity, string $run_id, array $args, string $args_hash, LockClaimOutcome $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): RunState|Failure {
 		$kind  = $handler->key();
 		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $scheduled_at, $delay, $priority ) );
 		if ( $state instanceof Failure ) {
-			if ( LockClaimOutcome::Held !== $claim ) {
+			if ( LockClaimOutcome::NotClaimed !== $claim ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );
 			}
 
 			return $state;
 		}
 		if ( null === $state ) {
-			if ( LockClaimOutcome::Held !== $claim ) {
+			if ( LockClaimOutcome::NotClaimed !== $claim ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );
 			}
 
@@ -539,7 +539,7 @@ final readonly class Dispatcher {
 				)
 			);
 		}
-		if ( LockClaimOutcome::Held !== $claim ) {
+		if ( LockClaimOutcome::NotClaimed !== $claim ) {
 			return $state;
 		}
 		if ( $this->overlap_guard->replace( $identity, $args_hash, $run_id ) ) {
@@ -673,7 +673,7 @@ final readonly class Dispatcher {
 			$this->logger->warning(
 				'Scheduling rollback could not confirm complete cleanup; the run row may be redelivered by maintenance. Repair storage reads and writes before retrying.',
 				array(
-					'name'                   => $identity,
+					'identity'               => $identity,
 					'run_id'                 => $run_id,
 					'lock_release_confirmed' => $lock_release_confirmed,
 					'run_deleted'            => $run_deleted,

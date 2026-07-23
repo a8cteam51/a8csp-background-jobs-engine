@@ -95,8 +95,8 @@ final readonly class OccurrenceLease {
 			}
 
 			return $raw === $selected->value
-				? OccurrenceLeaseClaim::claimed( new ClaimedLease( $this->rows, $key, $raw ) )
-				: OccurrenceLeaseClaim::held();
+				? OccurrenceLeaseClaim::claimed( new OccurrenceLeaseHandle( $this->rows, $key, $raw ) )
+				: OccurrenceLeaseClaim::not_claimed();
 		}
 		if ( RowWriteOutcome::WriteFailed === $insert ) {
 			return OccurrenceLeaseClaim::indeterminate_write();
@@ -114,12 +114,12 @@ final readonly class OccurrenceLease {
 
 		$incumbent = self::parse( $expected_raw );
 		if ( null !== $incumbent && ! self::is_stale( $incumbent['claimed_at'], $now ) ) {
-			return OccurrenceLeaseClaim::held();
+			return OccurrenceLeaseClaim::not_claimed();
 		}
 
 		$write = $this->rows->compare_and_swap( $key, $expected_raw, $raw );
 		if ( RowWriteOutcome::Won === $write ) {
-			return OccurrenceLeaseClaim::claimed( new ClaimedLease( $this->rows, $key, $raw ) );
+			return OccurrenceLeaseClaim::claimed( new OccurrenceLeaseHandle( $this->rows, $key, $raw ) );
 		}
 		if ( RowWriteOutcome::WriteFailed === $write ) {
 			return OccurrenceLeaseClaim::indeterminate_write();
@@ -132,7 +132,7 @@ final readonly class OccurrenceLease {
 
 		return $expected_raw === $current->value
 			? OccurrenceLeaseClaim::indeterminate_write()
-			: OccurrenceLeaseClaim::held();
+			: OccurrenceLeaseClaim::not_claimed();
 	}
 
 	// endregion

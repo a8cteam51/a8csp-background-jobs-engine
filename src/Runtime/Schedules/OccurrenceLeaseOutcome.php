@@ -16,7 +16,7 @@ enum OccurrenceLeaseOutcome: string {
 	// region FIELDS AND CONSTANTS
 
 	case Claimed       = 'claimed';
-	case Held          = 'held';
+	case NotClaimed    = 'not_claimed';
 	case Indeterminate = 'indeterminate';
 
 	// endregion

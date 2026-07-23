@@ -23,13 +23,13 @@ final readonly class OccurrenceLeaseClaim {
 	 *
 	 * @phpstan-param 'read'|'write'|null $storage_operation
 	 *
-	 * @param   OccurrenceLeaseOutcome $outcome           Claim classification.
-	 * @param   ClaimedLease|null      $lease             Claimed lease handle, or null without ownership.
-	 * @param   string|null            $storage_operation Unconfirmed storage operation, or null for a determinate outcome.
+	 * @param   OccurrenceLeaseOutcome     $outcome           Claim classification.
+	 * @param   OccurrenceLeaseHandle|null $lease             Claimed lease handle, or null without ownership.
+	 * @param   string|null                $storage_operation Unconfirmed storage operation, or null for a determinate outcome.
 	 */
 	private function __construct(
 		public OccurrenceLeaseOutcome $outcome,
-		public ?ClaimedLease $lease,
+		public ?OccurrenceLeaseHandle $lease,
 		public ?string $storage_operation,
 	) {}
 
@@ -43,24 +43,24 @@ final readonly class OccurrenceLeaseClaim {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ClaimedLease $lease Claimed lease handle.
+	 * @param   OccurrenceLeaseHandle $lease Claimed lease handle.
 	 *
 	 * @return  self
 	 */
-	public static function claimed( ClaimedLease $lease ): self {
+	public static function claimed( OccurrenceLeaseHandle $lease ): self {
 		return new self( OccurrenceLeaseOutcome::Claimed, $lease, null );
 	}
 
 	/**
-	 * Returns one confirmed concurrent-holder outcome.
+	 * Returns one confirmed not-claimed outcome.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  self
 	 */
-	public static function held(): self {
-		return new self( OccurrenceLeaseOutcome::Held, null, null );
+	public static function not_claimed(): self {
+		return new self( OccurrenceLeaseOutcome::NotClaimed, null, null );
 	}
 
 	/**
@@ -95,9 +95,9 @@ final readonly class OccurrenceLeaseClaim {
 	 *
 	 * @throws  \LogicException When the claim outcome does not carry ownership.
 	 *
-	 * @return  ClaimedLease
+	 * @return  OccurrenceLeaseHandle
 	 */
-	public function claimed_lease(): ClaimedLease {
+	public function claimed_lease(): OccurrenceLeaseHandle {
 		if ( null === $this->lease ) {
 			throw new \LogicException( 'Only a claimed occurrence-lease outcome carries a lease handle.' );
 		}

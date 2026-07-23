@@ -79,9 +79,9 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Background-work run state could not be read; repair WordPress option reads and retry the delivery.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
-					'error'  => $inspection->error->message,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'error'    => $inspection->error->message,
 				)
 			);
 
@@ -93,8 +93,8 @@ final readonly class RunTransitions {
 			$this->logger->debug(
 				'Stale delivery for a finished or cancelled run was dropped.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 
@@ -106,8 +106,8 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Background-work run state is corrupt; repair or remove the row so the reconciliation sweep can release any remaining lock.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 
@@ -120,9 +120,9 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Persisted run kind has no registered handler; the delivery was dropped without changing the run.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
-					'kind'   => $kind,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'kind'     => $kind,
 				)
 			);
 
@@ -132,23 +132,21 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Persisted lifecycle stage is not owned by the resolved kind handler; the delivery was dropped without changing the run.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
-					'kind'   => $kind,
-					'stage'  => $state->pending?->stage,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'kind'     => $kind,
+					'stage'    => $state->pending?->stage,
 				)
 			);
 
 			return null;
 		}
 
-		$context_name = $kind . '_name';
-
 		if ( $action_sequence !== $state->action_sequence ) {
 			$this->logger->info(
 				'Stale lifecycle action delivery dropped.',
 				array(
-					'name'     => $identity,
+					'identity' => $identity,
 					'expected' => $state->action_sequence,
 					'received' => $action_sequence,
 					'run_id'   => $run_id,
@@ -162,9 +160,9 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				$kind . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
 				array(
-					$context_name => $identity,
-					'run_id'      => $run_id,
-					'status'      => $state->status->value,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'status'   => $state->status->value,
 				)
 			);
 
@@ -178,8 +176,9 @@ final readonly class RunTransitions {
 			$this->logger->debug(
 				'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
 				array(
-					$context_name     => $identity,
+					'identity'        => $identity,
 					'run_id'          => $run_id,
+					'kind'            => $kind,
 					'action_sequence' => $state->action_sequence,
 				)
 			);
@@ -207,8 +206,8 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Latest-run pointer repair failed; discovery metadata may remain stale.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 		}
@@ -279,7 +278,7 @@ final readonly class RunTransitions {
 				$this->logger->error(
 					'Cancelled-run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
 					array(
-						'name'      => $identity,
+						'identity'  => $identity,
 						'run_id'    => $run_id,
 						'exception' => $throwable,
 					)
@@ -377,13 +376,12 @@ final readonly class RunTransitions {
 		}
 
 		if ( HeartbeatOutcome::Indeterminate === $outcome ) {
-			$kind         = $handler->key();
-			$context_name = $kind . '_name';
+			$kind = $handler->key();
 			$this->logger->debug(
 				$kind . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
 				array(
-					$context_name => $identity,
-					'run_id'      => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 
@@ -418,12 +416,11 @@ final readonly class RunTransitions {
 		if ( null === $terminal_raw ) {
 			return;
 		}
-		$kind         = $handler->key();
-		$context_name = $kind . '_name';
+		$kind = $handler->key();
 		$this->logger->info(
 			'Superseded ' . $kind . ' run after its ownership fence failed.',
 			array(
-				$context_name   => $identity,
+				'identity'      => $identity,
 				'run_id'        => $run_id,
 				'latest_run_id' => $latest_run_id,
 			)
@@ -461,7 +458,7 @@ final readonly class RunTransitions {
 			$this->logger->error(
 				'Run failed permanently; correct the cause, then use failed-runs retry to start a fresh run.',
 				array(
-					'name'        => $identity,
+					'identity'    => $identity,
 					'run_id'      => $run_id,
 					'attempts'    => $replacement->failed_attempts,
 					'stage'       => $replacement->error['stage'] ?? null,
@@ -512,7 +509,7 @@ final readonly class RunTransitions {
 		if ( null === $entries ) {
 			$this->logger->warning(
 				'Previous completed run could not be read while freezing completion hook state.',
-				array( 'name' => $identity )
+				array( 'identity' => $identity )
 			);
 
 			return null;

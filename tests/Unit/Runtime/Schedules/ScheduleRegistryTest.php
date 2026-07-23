@@ -129,10 +129,10 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$owner_a = $this->owner_entries( 'owner-a' );
 		$owner_b = $this->owner_entries( 'owner-b' );
-		self::assertSame( array( 'owner-a:nightly' ), \array_column( $owner_a, 'name' ) );
+		self::assertSame( array( 'owner-a:nightly' ), \array_column( $owner_a, 'identity' ) );
 		self::assertSame( 300, $owner_a[0]['recurrence'] );
 		self::assertSame( self::NOW + 300, $owner_a[0]['next_due'] );
-		self::assertSame( array( 'owner-b:hourly' ), \array_column( $owner_b, 'name' ) );
+		self::assertSame( array( 'owner-b:hourly' ), \array_column( $owner_b, 'identity' ) );
 		self::assertSame( 3_600, $owner_b[0]['recurrence'] );
 
 		$replacement = self::schedule( 'nightly', 600 );
@@ -143,7 +143,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array() ) );
 		self::assertSame( array(), $this->owner_entries( 'owner-a' ) );
-		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'name' ) );
+		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'identity' ) );
 	}
 
 	/**
@@ -296,7 +296,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		self::assertInstanceOf( Success::class, $client->sync( array( self::schedule( '456', 300 ) ) ) );
 
-		self::assertSame( array( '123:456' ), \array_column( $this->owner_entries( '123' ), 'name' ) );
+		self::assertSame( array( '123:456' ), \array_column( $this->owner_entries( '123' ), 'identity' ) );
 	}
 
 	/**
@@ -326,7 +326,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$entries = $this->owner_entries( 'owner-a' );
 
-		self::assertSame( array( 'owner-a:nightly' ), \array_column( $entries, 'name' ) );
+		self::assertSame( array( 'owner-a:nightly' ), \array_column( $entries, 'identity' ) );
 		self::assertSame( 0, ScheduleRegistryWakeupProbe::$wakeups );
 	}
 

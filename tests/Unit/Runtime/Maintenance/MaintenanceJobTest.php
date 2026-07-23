@@ -133,7 +133,7 @@ final class MaintenanceJobTest extends TestCase {
 		[ $this->cursor_option, $this->cursor_raw ] = self::cursor_fixture();
 
 		$backend              = new RecordingBackend();
-		$work                 = new JobRegistry();
+		$registry             = new JobRegistry();
 		$rows                 = new OptionRows( $this->wpdb );
 		$guard                = new OverlapGuard( $clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $clock, $rows, $this->logger );
@@ -142,8 +142,8 @@ final class MaintenanceJobTest extends TestCase {
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $this->logger, $terminal_effects );
 		$failure_lifecycle    = new FailureLifecycle( $backend, $clock, $randomizer, $this->logger, $terminal_transitions );
-		$job_handler          = new JobKindHandler( $work, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler  = new ChunkedJobKindHandler( $work, $backend, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$job_handler          = new JobKindHandler( $registry, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $backend, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
@@ -570,7 +570,7 @@ final class MaintenanceJobTest extends TestCase {
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
-		self::assertSame( 'sweep-tests:read-failure', $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( 'sweep-tests:read-failure', $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
 		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
