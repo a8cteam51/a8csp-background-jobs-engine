@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDeliver
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -27,7 +27,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class CLICommandTest extends IntegrationTestCase {
+final class CLICommandTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** WordPress root shared by the wp-env CLI and web containers. */

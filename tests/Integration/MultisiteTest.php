@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
  * @version 1.0.0
  */
 #[Group( 'multisite' )]
-final class MultisiteTest extends IntegrationTestCase {
+final class MultisiteTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** One sentinel from every option family documented for operators. */

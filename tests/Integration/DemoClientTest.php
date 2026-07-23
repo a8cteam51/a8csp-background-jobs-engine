@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\CommentCountRecountChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\DemoClient;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\SiteHealthPingJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @version 1.0.0
  */
 #[Group( 'degraded' )]
-final class DemoClientTest extends IntegrationTestCase {
+final class DemoClientTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Post type isolated to this client's comment-count queue. */

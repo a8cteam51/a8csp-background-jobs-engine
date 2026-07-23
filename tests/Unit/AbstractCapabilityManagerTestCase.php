@@ -18,7 +18,7 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-abstract class CapabilityManagerTestCase extends TestCase {
+abstract class AbstractCapabilityManagerTestCase extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	protected const string MISSING_RUN_ID = '00000000001700000001-0000000000000000043';

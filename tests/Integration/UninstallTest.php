@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 /**
@@ -20,7 +20,7 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class UninstallTest extends IntegrationTestCase {
+final class UninstallTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/**

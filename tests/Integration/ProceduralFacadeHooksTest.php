@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\CoversFunction;
 
 /**
@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\CoversFunction;
  */
 #[CoversFunction( 'a8csp_bgje_register_job' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_job' )]
-final class ProceduralFacadeHooksTest extends IntegrationTestCase {
+final class ProceduralFacadeHooksTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const string OWNER = 'procedural-listeners';

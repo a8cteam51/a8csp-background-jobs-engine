@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @version 1.0.0
  */
 #[Group( 'degraded' )]
-final class PluginBootTest extends IntegrationTestCase {
+final class PluginBootTest extends AbstractIntegrationTestCase {
 	// region TESTS.
 
 	/**

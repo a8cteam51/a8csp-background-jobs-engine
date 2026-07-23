@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @version 1.0.0
  */
 #[Group( 'degraded' )]
-final class OptionsHygieneTest extends IntegrationTestCase {
+final class OptionsHygieneTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Public owner unique to this integration-test graph. */

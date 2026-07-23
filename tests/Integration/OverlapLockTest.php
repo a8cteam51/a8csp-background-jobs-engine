@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 
 /**
@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class OverlapLockTest extends IntegrationTestCase {
+final class OverlapLockTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Client owner isolated to overlap integration coverage. */

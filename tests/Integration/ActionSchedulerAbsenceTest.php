@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @version 1.0.0
  */
 #[Group( 'degraded' )]
-final class ActionSchedulerAbsenceTest extends IntegrationTestCase {
+final class ActionSchedulerAbsenceTest extends AbstractIntegrationTestCase {
 	// region LIFECYCLE.
 
 	/**

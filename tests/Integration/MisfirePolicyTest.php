@@ -31,7 +31,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBac
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -43,7 +43,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class MisfirePolicyTest extends IntegrationTestCase {
+final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Read-only inspection published by the deterministic graph. */

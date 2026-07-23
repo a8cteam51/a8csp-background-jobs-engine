@@ -27,7 +27,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperation
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ReadinessControlledBackend;
 
 /**
@@ -36,7 +36,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ReadinessControlledBa
  * @since   1.0.0
  * @version 1.0.0
  */
-final class BackendFailoverTest extends IntegrationTestCase {
+final class BackendFailoverTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook isolated to the backend-readiness transition. */

@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
 /**
@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class RetryRoundTripTest extends IntegrationTestCase {
+final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Client owner isolated to retry round-trip coverage. */

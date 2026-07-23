@@ -25,7 +25,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
  * @version 1.0.0
  */
 #[CoversClass( Jobs::class )]
-final class JobsTest extends CapabilityManagerTestCase {
+final class JobsTest extends AbstractCapabilityManagerTestCase {
 	// region TESTS.
 
 	/**

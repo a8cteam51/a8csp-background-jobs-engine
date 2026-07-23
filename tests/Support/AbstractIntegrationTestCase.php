@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-abstract class IntegrationTestCase extends TestCase {
+abstract class AbstractIntegrationTestCase extends TestCase {
 	// region TRAITS.
 
 	use ActionSchedulerIsolationTrait;

@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\ExpectationFailedException;
 
@@ -16,7 +16,7 @@ use PHPUnit\Framework\ExpectationFailedException;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class RigContractTest extends IntegrationTestCase {
+final class RigContractTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook populated by the plugin before the parent fixture captures its snapshot. */

@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 
 /**
  * Pins Action Scheduler 4.0 unique-action semantics for pending and in-progress rows.
  *
  * The engine composes its pending-only idempotent skip with AS-unique as a second layer.
  */
-final class ActionSchedulerUniquePinTest extends IntegrationTestCase {
+final class ActionSchedulerUniquePinTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Action hook isolated to this Action Scheduler drift detector. */

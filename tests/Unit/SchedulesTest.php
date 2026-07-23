@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
  * @version 1.0.0
  */
 #[CoversClass( Schedules::class )]
-final class SchedulesTest extends CapabilityManagerTestCase {
+final class SchedulesTest extends AbstractCapabilityManagerTestCase {
 	// region TESTS.
 
 	/**

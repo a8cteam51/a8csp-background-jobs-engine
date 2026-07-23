@@ -16,7 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDeliver
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
@@ -30,7 +30,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class UnknownScheduleCleanupTest extends IntegrationTestCase {
+final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Schedule-delivery hook shared with the live engine. */

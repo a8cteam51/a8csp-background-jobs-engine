@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBac
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 
 /**
  * Verifies declarative sync mutates only one owner's engine registration identities.
@@ -18,7 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class DeclarativeSyncTest extends IntegrationTestCase {
+final class DeclarativeSyncTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Internal occurrence hook owned by the engine. */
