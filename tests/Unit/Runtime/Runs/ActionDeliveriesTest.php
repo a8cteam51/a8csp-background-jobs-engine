@@ -118,7 +118,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$chunked_job        = new RecordingChunkedJob( 'hook-registration-probe' );
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
 		$this->client->register( $chunked_job->definition() );
-		$result = $this->client->start( 'hook-registration-probe', self::ARGS );
+		$result = $this->client->dispatch( 'hook-registration-probe', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
@@ -150,18 +150,18 @@ final class ActionDeliveriesTest extends TestCase {
 			'site_id' => 8,
 			'mode'    => 'delta',
 		);
-		$first          = $this->client->enqueue( self::NAME, self::ARGS );
+		$first          = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$duplicate                     = $this->client->enqueue( self::NAME, $successor_args );
+		$duplicate                     = $this->client->dispatch( self::NAME, $successor_args );
 		$this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
 		self::assertCount( 1, $this->run_delivery_calls() );
 
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->clock()->timestamp = self::NOW + 2;
-		$reused                        = $this->client->enqueue( self::NAME, $successor_args );
+		$reused                        = $this->client->dispatch( self::NAME, $successor_args );
 		self::assertInstanceOf( Success::class, $reused );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS, $successor_args ), $this->job->calls );
@@ -561,7 +561,7 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$result = $this->client->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 

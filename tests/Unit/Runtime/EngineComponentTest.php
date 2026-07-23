@@ -328,8 +328,8 @@ final class EngineComponentTest extends TestCase {
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		$client->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
 
-		self::assertInstanceOf( Success::class, $client->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'catalog-sync', array( 'site_id' => 7 ) ) );
 		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 
 		$cron = \get_option( 'cron', array() );
@@ -361,7 +361,7 @@ final class EngineComponentTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_as_calls']   = array();
 		$GLOBALS['a8csp_bgje_test_cron_calls'] = array();
 
-		$result = $client->enqueue( 'preferred' );
+		$result = $client->dispatch( 'preferred' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $GLOBALS['a8csp_bgje_test_as_calls'], 'function' ) );

@@ -224,7 +224,7 @@ final class DemoClientTest extends IntegrationTestCase {
 		self::assertInstanceOf( OwnerOperations::class, $api );
 
 		$manual_args = array( 'transient' => self::MANUAL_SNAPSHOT_TRANSIENT );
-		$manual      = $api->enqueue( SiteHealthPingJob::NAME, $manual_args );
+		$manual      = $api->dispatch( SiteHealthPingJob::NAME, $manual_args );
 		self::assertInstanceOf( Success::class, $manual, 'The demo job must enqueue through the owner-bound facade' );
 		self::assertIsString( $manual->value );
 		$manual_run_id = $manual->value;
@@ -286,7 +286,7 @@ final class DemoClientTest extends IntegrationTestCase {
 		}
 
 		$chunked_job_args = array( 'post_type' => self::POST_TYPE );
-		$chunked_job      = $api->start( CommentCountRecountChunkedJob::NAME, $chunked_job_args );
+		$chunked_job      = $api->dispatch( CommentCountRecountChunkedJob::NAME, $chunked_job_args );
 		self::assertInstanceOf( Success::class, $chunked_job, 'The demo chunked job must start through the owner-bound facade' );
 		self::assertIsString( $chunked_job->value );
 		$chunked_job_run_id = $chunked_job->value;

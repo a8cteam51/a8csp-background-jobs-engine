@@ -52,12 +52,11 @@ final readonly class EngineError implements ErrorInterface {
 	 * @param   string $kind           Persisted kind key.
 	 * @param   string $identity       Complete owner-qualified work identity.
 	 * @param   string $running_run_id Discoverable incumbent run identifier.
-	 * @param   string $admission_verb Kind-appropriate admission verb.
 	 *
 	 * @return  self
 	 */
-	public static function held( string $kind, string $identity, string $running_run_id, string $admission_verb ): self {
-		return new self( \sprintf( '%1$s "%2$s" is already running as run "%3$s"; wait for that run to finish before %4$sing the same arguments or overlap key.', $kind, $identity, $running_run_id, $admission_verb ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
+	public static function held( string $kind, string $identity, string $running_run_id ): self {
+		return new self( \sprintf( '%1$s "%2$s" is already running as run "%3$s"; wait for that run to finish before dispatching the same arguments or overlap key.', $kind, $identity, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
 	}
 
 	/**

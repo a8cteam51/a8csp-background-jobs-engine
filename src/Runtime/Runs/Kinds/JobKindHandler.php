@@ -195,19 +195,6 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Returns the job admission verb used in corrective diagnostics.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	#[\Override]
-	public function dispatch_verb(): string {
-		return 'dispatch';
-	}
-
-	/**
 	 * Fires started hooks after scheduler acceptance and terminalizes listener failure.
 	 *
 	 * @since   1.0.0
@@ -227,7 +214,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 		} catch ( \Throwable $throwable ) {
 			$exception_type = \get_debug_type( $throwable );
 			$error          = new EngineError(
-				\sprintf( '%1$s "%2$s" started listener failed because %3$s was thrown. Fix the started-hook listener before enqueueing the job again.', self::KIND, $identity, $exception_type ),
+				\sprintf( '%1$s "%2$s" started listener failed because %3$s was thrown. Fix the started-hook listener before dispatching the job again.', self::KIND, $identity, $exception_type ),
 				$exception_type,
 				reason: EngineErrorReason::ExecutionFailed,
 				context: array(

@@ -69,50 +69,22 @@ final readonly class Jobs {
 	}
 
 	/**
-	 * Creates and schedules one run for a registered job.
+	 * Creates and schedules one run for registered background work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name          Owner-local job name.
-	 * @param   array<array-key, mixed> $args          Job arguments.
+	 * @param   string                  $name          Owner-local background-work name.
+	 * @param   array<array-key, mixed> $start_args    Arguments supplied when the run starts.
 	 * @param   int                     $delay_seconds Scheduling delay in seconds.
-	 * @param   int                     $priority      Advisory priority from 0 through 255.
+	 * @param   int|null                $priority      Advisory priority from 0 through 255, or null for the engine default.
 	 *
 	 * @return  Run|\WP_Error
 	 */
-	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $name, array $args = array(), int $delay_seconds = 0, int $priority = 10 ): Run|\WP_Error {
+	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
+	public function dispatch( string $name, array $start_args = array(), int $delay_seconds = 0, ?int $priority = null ): Run|\WP_Error {
 		try {
-			$result = $this->operations()->enqueue( $name, $args, $delay_seconds, $priority );
-			if ( $result->is_failure() ) {
-				return self::wp_error( $result->error );
-			}
-
-			return $this->run( $name, $result->value, RunStatus::Running );
-		} catch ( \InvalidArgumentException $exception ) {
-			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
-			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
-		}
-	}
-
-	/**
-	 * Creates and schedules one run for a registered chunked job.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $name       Owner-local chunked job name.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   int                     $priority   Advisory priority from 0 through 255.
-	 *
-	 * @return  Run|\WP_Error
-	 */
-	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
-	public function start( string $name, array $start_args = array(), int $priority = 10 ): Run|\WP_Error {
-		try {
-			$result = $this->operations()->start( $name, $start_args, $priority );
+			$result = $this->operations()->dispatch( $name, $start_args, $delay_seconds, $priority );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}

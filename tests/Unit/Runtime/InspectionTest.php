@@ -258,7 +258,7 @@ final class InspectionTest extends TestCase {
 			$during = $this->rig->inspection()->runs( $identity )['live'][0] ?? null;
 		};
 		$client->register( $job->definition() );
-		self::assertInstanceOf( Success::class, $client->enqueue( 'email-digest' ) );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'email-digest' ) );
 
 		$waiting = $this->rig->inspection()->runs( $identity )['live'][0];
 		self::assertFalse( $waiting['executing'] );

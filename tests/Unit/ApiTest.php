@@ -131,8 +131,8 @@ final class ApiTest extends TestCase {
 		$left->register( $left_job->definition() );
 		$right->register( $right_job->definition() );
 
-		self::assertInstanceOf( Success::class, $left->enqueue( 'sync', array( 'owner' => 'left' ) ) );
-		self::assertInstanceOf( Success::class, $right->enqueue( 'sync', array( 'owner' => 'right' ) ) );
+		self::assertInstanceOf( Success::class, $left->dispatch( 'sync', array( 'owner' => 'left' ) ) );
+		self::assertInstanceOf( Success::class, $right->dispatch( 'sync', array( 'owner' => 'right' ) ) );
 		$this->rig->run_due();
 		$this->rig->run_due();
 
@@ -154,7 +154,7 @@ final class ApiTest extends TestCase {
 	 */
 	#[DataProvider( 'invalid_owners' )]
 	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner ): void {
-		$result = \a8csp_bgje( $owner )->jobs()->enqueue( 'sync' );
+		$result = \a8csp_bgje( $owner )->jobs()->dispatch( 'sync' );
 
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( 'invalid_argument', $result->get_error_code() );
@@ -171,8 +171,8 @@ final class ApiTest extends TestCase {
 	public function test_concept_facades_map_internal_failures_to_public_codes(): void {
 		$client = $this->rig->operations( 'consumer-plugin' );
 
-		self::assert_api_failure( $client->enqueue( 'missing-job' ), ErrorCode::UnknownWork, array( 'name' ) );
-		self::assert_api_failure( $client->start( 'missing-chunked-job' ), ErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->dispatch( 'missing-job' ), ErrorCode::UnknownWork, array( 'name' ) );
+		self::assert_api_failure( $client->dispatch( 'missing-chunked-job' ), ErrorCode::UnknownWork, array( 'name' ) );
 		self::assert_api_failure( $client->dispatch_now( 'missing-schedule' ), ErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
 	}
 
@@ -250,7 +250,7 @@ final class ApiTest extends TestCase {
 		$seed_run_id = $this->enqueue_and_run( $client, array( 'sequence' => 'seed' ) );
 
 		++$this->rig->clock()->timestamp;
-		$target = $client->enqueue( 'sync', array( 'sequence' => 'target' ) );
+		$target = $client->dispatch( 'sync', array( 'sequence' => 'target' ) );
 		self::assertInstanceOf( Success::class, $target );
 		self::assertIsString( $target->value );
 		$target_run_id      = $target->value;
@@ -269,7 +269,7 @@ final class ApiTest extends TestCase {
 			}
 
 			++$this->rig->clock()->timestamp;
-			$intervening = $client->enqueue( 'sync', array( 'sequence' => 'intervening' ) );
+			$intervening = $client->dispatch( 'sync', array( 'sequence' => 'intervening' ) );
 			self::assertInstanceOf( Success::class, $intervening );
 			self::assertIsString( $intervening->value );
 			$intervening_run_id = $intervening->value;
@@ -359,7 +359,7 @@ final class ApiTest extends TestCase {
 	 */
 	private function enqueue_and_run( OwnerOperations $client, array $args ): string {
 		++$this->rig->clock()->timestamp;
-		$result = $client->enqueue( 'sync', $args );
+		$result = $client->dispatch( 'sync', $args );
 		self::assertInstanceOf( Success::class, $result );
 		if ( ! \is_string( $result->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );

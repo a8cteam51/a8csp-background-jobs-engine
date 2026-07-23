@@ -150,7 +150,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->chunked_job->queue = array();
 		$this->register_chunked_job();
 		$first_args = array( 'sequence' => 'first' );
-		$first      = $this->client->start( self::NAME, $first_args );
+		$first      = $this->client->dispatch( self::NAME, $first_args );
 		self::assertInstanceOf( Success::class, $first );
 		self::assertIsString( $first->value );
 
@@ -160,7 +160,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		++$this->rig->clock()->timestamp;
 		$second_args = array( 'sequence' => 'second' );
-		$second      = $this->client->start( self::NAME, $second_args );
+		$second      = $this->client->dispatch( self::NAME, $second_args );
 		self::assertInstanceOf( Success::class, $second );
 		self::assertIsString( $second->value );
 
@@ -1727,7 +1727,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->observe_action(
 			'a8csp_jobs_engine/completed/' . self::IDENTITY,
 			function () use ( &$replacement ): void {
-				$replacement = $this->client->start( self::NAME, self::ARGS );
+				$replacement = $this->client->dispatch( self::NAME, self::ARGS );
 			}
 		);
 
@@ -1886,7 +1886,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	private function start(): string {
 		$this->register_chunked_job();
-		$result = $this->client->start( self::NAME, self::ARGS );
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 

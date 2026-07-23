@@ -205,7 +205,7 @@ final class MultisiteTest extends IntegrationTestCase {
 
 			$this->expectException( \LogicException::class );
 
-			$result = $client->enqueue( 'site-bound-job' );
+			$result = $client->dispatch( 'site-bound-job' );
 			self::fail( \sprintf( 'Expected storage access to fail after switch_to_blog(); got %s.', \get_debug_type( $result ) ) );
 		} finally {
 			\restore_current_blog();

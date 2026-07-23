@@ -146,6 +146,28 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
+	 * An unregistered schedule target is rejected without assuming a fallback kind.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_now_rejects_an_unregistered_target_without_a_kind_fallback(): void {
+		$result = $this->client->sync( array( new Schedule( 'missing-target-schedule', Recurrence::every( 300 ), 'missing-target', self::ARGS ) ) );
+		self::assertInstanceOf( Success::class, $result );
+		$this->rig->backend()->calls = array();
+
+		$result = $this->client->dispatch_now( 'missing-target-schedule' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		$error = $this->boundary_error( $result );
+		self::assertSame( ErrorCode::UnknownWork, $error->code );
+		self::assertSame( 'Background-work "runs-tests:missing-target" is not registered; register it before dispatching.', $error->message );
+		self::assertSame( array(), $this->rig->backend()->calls );
+	}
+
+	/**
 	 * Supplies every Job overlap policy.
 	 *
 	 * @return array<string, array{policy_value: string}>

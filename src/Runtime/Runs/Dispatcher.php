@@ -20,8 +20,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
@@ -125,27 +123,32 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Creates and schedules one run for a registered job.
+	 * Creates and schedules one run through its registered kind handler.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $job_name Complete owner-qualified job identity.
-	 * @param   array<array-key, mixed> $args      Job arguments.
-	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   int                     $priority  Scheduler priority from 0 through 255.
+	 * @param   string                  $identity Complete owner-qualified work identity.
+	 * @param   array<array-key, mixed> $args     Start arguments.
+	 * @param   int                     $delay    Scheduling delay in seconds.
+	 * @param   int|null                $priority Scheduler priority from 0 through 255, or null for the engine default.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
-	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $job_name, array $args = array(), int $delay = 0, int $priority = 10 ): AbstractResult {
-		$handler = $this->handler( JobKindHandler::KIND );
-		$options = $handler->options( $job_name );
-		if ( null === $handler->execution( $job_name ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" is not registered; register it before enqueueing.', $handler->key(), $job_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $job_name ), ) );
+	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
+	public function dispatch( string $identity, array $args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
+		$kind = $this->work->kind( $identity );
+		if ( null === $kind ) {
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
 		}
+		$handler = $this->handler( $kind );
+		$options = $handler->options( $identity );
+		if ( null === $handler->execution( $identity ) || null === $options ) {
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+		}
+		$priority ??= 10;
 
-		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $job_name, $args, $delay, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
+		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $args, $delay, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
 	}
 
 	/**
@@ -163,37 +166,17 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
 	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
-		$kind    = $this->work->kind( $identity ) ?? JobKindHandler::KIND;
+		$kind = $this->work->kind( $identity );
+		if ( null === $kind ) {
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" is not registered; register it before dispatching.', $handler->key(), $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $identity ), ) );
 		}
 
 		return $this->dispatch_resolved( $handler, $options, $identity, $args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted );
-	}
-
-	/**
-	 * Creates and schedules one run for a registered chunked job.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $chunked_job_name Complete owner-qualified chunked-job identity.
-	 * @param   array<array-key, mixed> $start_args      Arguments supplied when the run starts.
-	 * @param   int                     $priority        Scheduler priority from 0 through 255.
-	 *
-	 * @return  AbstractResult<string, EngineError|SchedulingError>
-	 */
-	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
-	public function start( string $chunked_job_name, array $start_args = array(), int $priority = 10 ): AbstractResult {
-		$handler = $this->handler( ChunkedJobKindHandler::KIND );
-		$options = $handler->options( $chunked_job_name );
-		if ( null === $handler->execution( $chunked_job_name ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" is not registered; register it before starting it.', $handler->key(), $chunked_job_name ), reason: EngineErrorReason::UnknownWork, context: array( 'name' => $chunked_job_name ), ) );
-		}
-
-		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $chunked_job_name, $start_args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
 	}
 
 	/**
@@ -417,14 +400,14 @@ final readonly class Dispatcher {
 		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Reject === $overlap ) {
 			$owner = $this->overlap_guard->owner_run_id( $identity, $args_hash );
 			if ( $owner->is_failure() ) {
-				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; repair database reads and retry the %3$s.', $kind, $identity, $handler->dispatch_verb() ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; repair database reads and retry the dispatch.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $identity ), ) );
 			}
 			$running_run_id = $owner->value;
 			if ( null === $running_run_id ) {
-				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; retry the %3$s against the current lock state.', $kind, $identity, $handler->dispatch_verb() ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; retry the dispatch against the current lock state.', $kind, $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $identity ), ) );
 			}
 
-			return new Success( new SkippedJobDispatch( $running_run_id, EngineError::held( $kind, $identity, $running_run_id, $handler->dispatch_verb() ) ) );
+			return new Success( new SkippedJobDispatch( $running_run_id, EngineError::held( $kind, $identity, $running_run_id ) ) );
 		}
 		if ( LockClaimOutcome::Held === $claim && OverlapPolicy::Allow === $overlap ) {
 			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $identity ), ) );
@@ -567,7 +550,7 @@ final readonly class Dispatcher {
 
 		return new Failure(
 			new EngineError(
-				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the %3$s against the current owner.', $kind, $identity, $handler->dispatch_verb() ),
+				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', $kind, $identity ),
 				reason: EngineErrorReason::OverlapHeld,
 				context: array(
 					'name' => $identity,

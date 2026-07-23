@@ -124,16 +124,6 @@ interface KindHandlerInterface {
 	public function initial_pending( int $scheduled_at, int $delay, int $priority ): PendingAction;
 
 	/**
-	 * Returns the admission verb rendered in corrective diagnostics.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	public function dispatch_verb(): string;
-
-	/**
 	 * Runs kind-owned effects after the first scheduler action is accepted.
 	 *
 	 * @since   1.0.0

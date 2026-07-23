@@ -14,6 +14,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
@@ -37,12 +39,12 @@ final class JobsTest extends CapabilityManagerTestCase {
 	public function test_accessor_is_lazy_and_infallible(): void {
 		$malformed = \a8csp_bgje( 'Invalid Owner' );
 		self::assertInstanceOf( Engine::class, $malformed );
-		self::assert_wp_error( $malformed->jobs()->enqueue( 'job' ), 'invalid_argument' );
+		self::assert_wp_error( $malformed->jobs()->dispatch( 'job' ), 'invalid_argument' );
 
 		$this->rig->tear_down();
 		$not_ready = \a8csp_bgje( self::OWNER );
 		self::assertInstanceOf( Engine::class, $not_ready );
-		self::assert_wp_error( $not_ready->jobs()->enqueue( 'job' ), ErrorCode::EngineUnavailable->value );
+		self::assert_wp_error( $not_ready->jobs()->dispatch( 'job' ), ErrorCode::EngineUnavailable->value );
 	}
 
 	/**
@@ -61,8 +63,8 @@ final class JobsTest extends CapabilityManagerTestCase {
 		self::assertTrue( $jobs->register( $job ) );
 		self::assertTrue( $jobs->register( $chunked_job ) );
 
-		$job_run     = self::assert_run( $jobs->enqueue( 'job', array( 'site_id' => 7 ), 15, 23 ), self::OWNER . ':job', RunStatus::Running );
-		$chunked_run = self::assert_run( $jobs->start( 'chunked-job', array( 'scope' => 'all' ), 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
+		$job_run     = self::assert_run( $jobs->dispatch( 'job', array( 'site_id' => 7 ), 15, 23 ), self::OWNER . ':job', RunStatus::Running );
+		$chunked_run = self::assert_run( $jobs->dispatch( 'chunked-job', array( 'scope' => 'all' ), priority: 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
 
 		self::assertNotSame( '', (string) $job_run->id );
 		self::assertNotSame( '', (string) $chunked_run->id );
@@ -70,6 +72,36 @@ final class JobsTest extends CapabilityManagerTestCase {
 		self::assertSame( 31, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
 		self::assert_wp_error( $jobs->register( $job ), 'already_registered' );
 		self::assert_wp_error( $jobs->register( $chunked_job ), 'already_registered' );
+	}
+
+	/**
+	 * One portal dispatch verb executes registered plain and chunked jobs through their resolved kinds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_executes_registered_plain_and_chunked_jobs_through_the_portal(): void {
+		$jobs               = \a8csp_bgje( self::OWNER )->jobs();
+		$job                = new RecordingJob( 'plain-job' );
+		$chunked_job        = new RecordingChunkedJob( 'chunked-job' );
+		$chunked_job->queue = array( array( 'page' => 1 ) );
+
+		self::assertTrue( $jobs->register( $job->definition() ) );
+		self::assertTrue( $jobs->register( $chunked_job->definition() ) );
+		$job_args     = array( 'site_id' => 7 );
+		$chunked_args = array( 'scope' => 'all' );
+
+		self::assert_run( $jobs->dispatch( 'plain-job', $job_args ), self::OWNER . ':plain-job', RunStatus::Running );
+		self::assert_run( $jobs->dispatch( 'chunked-job', $chunked_args ), self::OWNER . ':chunked-job', RunStatus::Running );
+		for ( $delivery = 0; 5 > $delivery; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		self::assertSame( array( $job_args ), $job->calls );
+		self::assertSame( array( $chunked_args ), $chunked_job->generate_calls );
+		self::assertSame( array( array( 'page' => 1 ) ), \array_column( $chunked_job->process_calls, 'chunk_args' ) );
 	}
 
 	/**
@@ -112,7 +144,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_closure_definition_registers_enqueues_and_executes_with_engine_defaults(): void {
+	public function test_closure_definition_registers_dispatches_and_executes_with_engine_defaults(): void {
 		$handled            = array();
 		$observed_heartbeat = null;
 		$jobs               = \a8csp_bgje( self::OWNER )->jobs();
@@ -127,9 +159,9 @@ final class JobsTest extends CapabilityManagerTestCase {
 
 		self::assertTrue( $jobs->register( $definition ) );
 		$args = array( 'site_id' => 7 );
-		$run  = self::assert_run( $jobs->enqueue( 'closure-defaults', $args ), self::OWNER . ':closure-defaults', RunStatus::Running );
+		$run  = self::assert_run( $jobs->dispatch( 'closure-defaults', $args ), self::OWNER . ':closure-defaults', RunStatus::Running );
 		++$this->rig->randomizer()->value;
-		self::assert_wp_error( $jobs->enqueue( 'closure-defaults', $args ), ErrorCode::OverlapHeld->value );
+		self::assert_wp_error( $jobs->dispatch( 'closure-defaults', $args ), ErrorCode::OverlapHeld->value );
 
 		$this->rig->run_due();
 
@@ -201,9 +233,9 @@ final class JobsTest extends CapabilityManagerTestCase {
 
 		self::assertTrue( $jobs->register( JobDefinition::job( 'configured', $execution, $options ) ) );
 		$completed_args = array( 'site_id' => 7 );
-		$completed_run  = self::assert_run( $jobs->enqueue( 'configured', $completed_args ), self::OWNER . ':configured', RunStatus::Running );
+		$completed_run  = self::assert_run( $jobs->dispatch( 'configured', $completed_args ), self::OWNER . ':configured', RunStatus::Running );
 		++$this->rig->clock()->timestamp;
-		$overlap_error = self::assert_wp_error( $jobs->enqueue( 'configured', $completed_args ), ErrorCode::OverlapHeld->value );
+		$overlap_error = self::assert_wp_error( $jobs->dispatch( 'configured', $completed_args ), ErrorCode::OverlapHeld->value );
 		self::assertSame( array( 'run_id' => (string) $completed_run->id ), $overlap_error->get_error_data() );
 
 		$this->rig->run_due();
@@ -212,7 +244,7 @@ final class JobsTest extends CapabilityManagerTestCase {
 			'site_id' => 8,
 			'fail'    => true,
 		);
-		$failed_run  = self::assert_run( $jobs->enqueue( 'configured', $failed_args ), self::OWNER . ':configured', RunStatus::Running );
+		$failed_run  = self::assert_run( $jobs->dispatch( 'configured', $failed_args ), self::OWNER . ':configured', RunStatus::Running );
 
 		$this->rig->randomizer()->calls = array();
 		for ( $attempt = 0; 3 > $attempt; ++$attempt ) {
@@ -256,9 +288,9 @@ final class JobsTest extends CapabilityManagerTestCase {
 	 * @return  void
 	 */
 	public function test_internal_failure_maps_every_boundary_error_field(): void {
-		$error = self::assert_wp_error( \a8csp_bgje( self::OWNER )->jobs()->enqueue( 'missing' ), ErrorCode::UnknownWork->value );
+		$error = self::assert_wp_error( \a8csp_bgje( self::OWNER )->jobs()->dispatch( 'missing' ), ErrorCode::UnknownWork->value );
 
-		self::assertSame( 'job "engine-test:missing" is not registered; register it before enqueueing.', $error->get_error_message() );
+		self::assertSame( 'Background-work "engine-test:missing" is not registered; register it before dispatching.', $error->get_error_message() );
 		self::assertSame( array( 'name' => self::OWNER . ':missing' ), $error->get_error_data() );
 	}
 

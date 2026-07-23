@@ -91,69 +91,39 @@ final readonly class OwnerOperations {
 	}
 
 	/**
-	 * Creates and schedules one run for a registered job.
+	 * Creates and schedules one run for registered background work.
 	 *
 	 * The registered definition supplies its overlap policy and argument-aware collision identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name      Owner-local job name.
-	 * @param   array<array-key, mixed> $args      Job arguments.
-	 * @param   int                     $delay     Scheduling delay in seconds.
-	 * @param   int                     $priority  Advisory priority from 0 through 255.
+	 * @param   string                  $name       Owner-local background-work name.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   int                     $delay      Scheduling delay in seconds.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity, delay, or priority is invalid, or arguments are not portable.
 	 *
 	 * @return  AbstractResult<string, BoundaryError>
 	 */
-	#[\NoDiscard( 'an enqueue failure must be handled, not dropped' )]
-	public function enqueue( string $name, array $args = array(), int $delay = 0, int $priority = 10 ): AbstractResult {
+	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
+	public function dispatch( string $name, array $start_args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
 		$identity = JobIdentity::compose( $this->owner, $name );
-		self::assert_priority( $priority, \sprintf( 'Job "%s"', $name ) );
-
 		if ( 0 > $delay ) {
 			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( 'Job "%1$s" delay %2$d is invalid; pass a non-negative number of seconds.', $name, $delay ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new \InvalidArgumentException( \sprintf( 'Background-work "%1$s" delay %2$d is invalid; pass a non-negative number of seconds.', $name, $delay ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+		if ( null !== $priority ) {
+			self::assert_priority( $priority, \sprintf( 'Background-work "%s"', $name ) );
 		}
 
-		$payload_error = self::assert_portable_args( $args, \sprintf( 'Job "%s"', $name ) );
+		$payload_error = self::assert_portable_args( $start_args, \sprintf( 'Background-work "%s"', $name ) );
 		if ( null !== $payload_error ) {
 			return new Failure( $payload_error );
 		}
 
-		return BoundaryErrorMapper::map( $this->dispatcher->enqueue( $identity, $args, $delay, $priority ) );
-	}
-
-	/**
-	 * Creates and schedules one run for a registered chunked job.
-	 *
-	 * The registered definition supplies its overlap policy and argument-aware collision identity.
-	 *
-	 * A scheduling failure after replacement ownership transfers leaves the incumbent fenced; a
-	 * caller handles the returned failure by starting the chunked job again.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $name       Owner-local chunked job name.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   int                     $priority   Advisory priority from 0 through 255.
-	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity or priority is invalid, or arguments are not portable.
-	 *
-	 * @return  AbstractResult<string, BoundaryError>
-	 */
-	#[\NoDiscard( 'a chunked-job-start failure must be handled, not dropped' )]
-	public function start( string $name, array $start_args = array(), int $priority = 10 ): AbstractResult {
-		$identity = JobIdentity::compose( $this->owner, $name );
-		self::assert_priority( $priority, \sprintf( 'Chunked Job "%s"', $name ) );
-		$payload_error = self::assert_portable_args( $start_args, \sprintf( 'Chunked Job "%s"', $name ) );
-		if ( null !== $payload_error ) {
-			return new Failure( $payload_error );
-		}
-
-		return BoundaryErrorMapper::map( $this->dispatcher->start( $identity, $start_args, $priority ) );
+		return BoundaryErrorMapper::map( $this->dispatcher->dispatch( $identity, $start_args, $delay, $priority ) );
 	}
 
 	/**

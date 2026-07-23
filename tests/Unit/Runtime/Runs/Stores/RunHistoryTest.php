@@ -410,11 +410,11 @@ final class RunHistoryTest extends TestCase {
 		if ( 'superseded' === $status ) {
 			$name     = self::NAME . '-chunked-job';
 			$identity = self::OWNER . ':' . $name;
-			$first    = $this->client->start( $name, array( 'scope' => 'all' ) );
+			$first    = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $first );
 			self::assertIsString( $first->value );
 			$this->rig->randomizer()->value = 8;
-			$second                         = $this->client->start( $name, array( 'scope' => 'all' ) );
+			$second                         = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $second );
 			$this->rig->run_due();
 
@@ -424,7 +424,7 @@ final class RunHistoryTest extends TestCase {
 		if ( 'failed' === $status ) {
 			$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		}
-		$result = $this->client->enqueue( self::NAME, array( 'scope' => $status ) );
+		$result = $this->client->dispatch( self::NAME, array( 'scope' => $status ) );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		if ( 'cancelled' === $status ) {
@@ -452,7 +452,7 @@ final class RunHistoryTest extends TestCase {
 		$run_ids = array();
 		foreach ( \range( 1, $count ) as $index ) {
 			$this->rig->randomizer()->value = $offset + $index;
-			$result                         = $this->client->enqueue( self::NAME, array( 'index' => $offset + $index ) );
+			$result                         = $this->client->dispatch( self::NAME, array( 'index' => $offset + $index ) );
 			self::assertInstanceOf( Success::class, $result );
 			self::assertIsString( $result->value );
 			$run_ids[] = $result->value;

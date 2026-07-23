@@ -126,7 +126,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 
-		$run_a_result = $client->start( self::NAME, $start_args );
+		$run_a_result = $client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_a_result, 'The incumbent chunked job must start through the public API' );
 		self::assertIsString( $run_a_result->value );
 		$run_a      = $run_a_result->value;
@@ -140,7 +140,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 
 		$run_a_action_id = $this->assert_pending_chunk_continuation( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
-		$run_b_result = $client->start( self::NAME, $start_args );
+		$run_b_result = $client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
 		self::assertIsString( $run_b_result->value );
 		$run_b      = $run_b_result->value;

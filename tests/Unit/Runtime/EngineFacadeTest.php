@@ -103,7 +103,7 @@ final class EngineFacadeTest extends TestCase {
 		$job    = new RecordingJob( 'email-digest' );
 		$client->register( $job->definition() );
 
-		$result = $client->enqueue( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
+		$result = $client->dispatch( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->backend()->assert_scheduled( 'facade-tests:email-digest' );
@@ -125,7 +125,7 @@ final class EngineFacadeTest extends TestCase {
 		$chunked_job = new RecordingChunkedJob( 'catalog-sync' );
 		$client->register( $chunked_job->definition() );
 
-		$result = $client->start( 'catalog-sync', array( 'site_id' => 7 ), priority: 23 );
+		$result = $client->dispatch( 'catalog-sync', array( 'site_id' => 7 ), priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
@@ -146,7 +146,7 @@ final class EngineFacadeTest extends TestCase {
 	public function test_facade_rejects_unknown_and_ambiguous_work_before_scheduling(): void {
 		$client                      = $this->rig->operations( 'facade-tests' );
 		$this->rig->backend()->calls = array();
-		$unknown                     = $client->enqueue( 'missing' );
+		$unknown                     = $client->dispatch( 'missing' );
 		self::assertInstanceOf( Failure::class, $unknown );
 		if ( ! $unknown->error instanceof BoundaryError ) {
 			throw new \LogicException( 'Unknown work must produce a public API error.' );
@@ -202,7 +202,7 @@ final class EngineFacadeTest extends TestCase {
 	public function test_cancel_terminalizes_a_waiting_public_run(): void {
 		$client = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-		$enqueued = $client->enqueue( 'email-digest' );
+		$enqueued = $client->dispatch( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
 		if ( ! \is_string( $enqueued->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );

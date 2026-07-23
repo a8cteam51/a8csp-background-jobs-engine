@@ -613,7 +613,7 @@ final class RunTransitionsTest extends TestCase {
 			);
 		}
 
-		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->dispatch( self::IDENTITY, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -635,7 +635,7 @@ final class RunTransitionsTest extends TestCase {
 		for ( $index = 0; 21 > $index; ++$index ) {
 			$this->randomizer->value = 100 + $index;
 
-			$result = $this->dispatcher->enqueue( self::IDENTITY, array( 'identity' => $index ) );
+			$result = $this->dispatcher->dispatch( self::IDENTITY, array( 'identity' => $index ) );
 			self::assertInstanceOf( Success::class, $result );
 			$run_id = $result->value;
 			self::assertIsString( $run_id );
@@ -914,7 +914,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	private function prepare_run_action(): void {
 		$this->register_job();
-		$result = $this->dispatcher->enqueue( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->dispatch( self::IDENTITY, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->clock->timestamp       = self::NOW + 90;

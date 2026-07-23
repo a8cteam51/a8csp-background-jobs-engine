@@ -433,7 +433,7 @@ final class CommandsAndOutputTest extends TestCase {
 		} else {
 			$client = $this->rig->operations( 'consumer-plugin' );
 			$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->enqueue( 'email-digest' ) );
+			self::assertInstanceOf( Success::class, $client->dispatch( 'email-digest' ) );
 			$result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), $assoc_args );
 		}
 
@@ -554,7 +554,7 @@ final class CommandsAndOutputTest extends TestCase {
 	public function test_registered_runs_cancel_action_terminalizes_a_real_run(): void {
 		$client = $this->rig->operations( 'consumer-plugin' );
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-		$enqueued = $client->enqueue( 'email-digest' );
+		$enqueued = $client->dispatch( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
 		if ( ! \is_string( $enqueued->value ) ) {
 			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
@@ -739,7 +739,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$this->rig->clock()->timestamp = $heartbeat_at;
 		$client                        = $this->rig->operations( 'clock-tests' );
 		$client->register( ( new RecordingJob( 'heartbeat' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->enqueue( 'heartbeat' ) );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'heartbeat' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$result = CliHarness::run( 'runs', array( 'list', 'clock-tests:heartbeat' ) );
@@ -760,7 +760,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$this->rig->clock()->timestamp = self::NOW + 1;
 		$client                        = $this->rig->operations( 'clock-skew' );
 		$client->register( ( new RecordingJob( 'future' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->enqueue( 'future' ) );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'future' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$future = CliHarness::run( 'runs', array( 'list', 'clock-skew:future' ) );

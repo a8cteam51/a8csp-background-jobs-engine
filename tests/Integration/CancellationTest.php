@@ -79,7 +79,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$client->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::EXECUTING_IDENTITY );
 
-		$enqueued = $client->enqueue( self::EXECUTING_NAME, $args );
+		$enqueued = $client->dispatch( self::EXECUTING_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id    = $enqueued->value;
@@ -150,7 +150,7 @@ final class CancellationTest extends IntegrationTestCase {
 		$client->register( $job->definition( $options ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::BACKOFF_IDENTITY );
 
-		$enqueued = $client->enqueue( self::BACKOFF_NAME, $args );
+		$enqueued = $client->dispatch( self::BACKOFF_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id            = $enqueued->value;
@@ -258,7 +258,7 @@ final class CancellationTest extends IntegrationTestCase {
 			1
 		);
 
-		$started = $client->start( self::CHUNKED_JOB_NAME, $start_args );
+		$started = $client->dispatch( self::CHUNKED_JOB_NAME, $start_args );
 		self::assertInstanceOf( Success::class, $started );
 		self::assertIsString( $started->value );
 		$run_id = $started->value;
@@ -340,8 +340,8 @@ final class CancellationTest extends IntegrationTestCase {
 		$client->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SIBLING_IDENTITY );
 
-		$enqueued_a = $client->enqueue( self::SIBLING_NAME, $args_a );
-		$enqueued_b = $client->enqueue( self::SIBLING_NAME, $args_b );
+		$enqueued_a = $client->dispatch( self::SIBLING_NAME, $args_a );
+		$enqueued_b = $client->dispatch( self::SIBLING_NAME, $args_b );
 		self::assertInstanceOf( Success::class, $enqueued_a );
 		self::assertInstanceOf( Success::class, $enqueued_b );
 		self::assertIsString( $enqueued_a->value );
@@ -442,7 +442,7 @@ final class CancellationTest extends IntegrationTestCase {
 			3
 		);
 
-		$enqueued = $client->enqueue( self::DEGRADED_NAME, $args );
+		$enqueued = $client->dispatch( self::DEGRADED_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id      = $enqueued->value;

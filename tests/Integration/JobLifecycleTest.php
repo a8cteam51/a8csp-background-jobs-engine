@@ -80,7 +80,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = $client->enqueue( self::SUCCESS_NAME, $args );
+		$result = $client->dispatch( self::SUCCESS_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The registered job must enqueue through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
@@ -150,7 +150,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 			1
 		);
 
-		$result = $client->enqueue( self::FAILURE_NAME, $args );
+		$result = $client->dispatch( self::FAILURE_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The failing job must enqueue before its handler executes' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;

@@ -94,7 +94,7 @@ final class JobIdentityTest extends TestCase {
 		$client        = $this->rig->operations( $owner );
 		$client->register( ( new RecordingJob( $job_name ) )->definition() );
 
-		$enqueued = $client->enqueue( $job_name, array( 'site_id' => 7 ) );
+		$enqueued = $client->dispatch( $job_name, array( 'site_id' => 7 ) );
 		$synced   = $client->sync( array( new Schedule( $schedule_name, Recurrence::every( 300 ), $job_name ) ) );
 
 		self::assertInstanceOf( Success::class, $enqueued );

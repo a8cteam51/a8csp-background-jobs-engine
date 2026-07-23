@@ -226,7 +226,7 @@ final class KindDeliveryTest extends TestCase {
 	private function enqueue_job(): string {
 		$client = $this->rig->operations( self::OWNER );
 		$client->register( ( new RecordingJob( self::NAME ) )->definition() );
-		$result = $client->enqueue( self::NAME );
+		$result = $client->dispatch( self::NAME );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 

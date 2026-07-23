@@ -528,7 +528,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$result = $this->client->enqueue( self::JOB_NAME, self::ARGS );
+		$result = $this->client->dispatch( self::JOB_NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -544,7 +544,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function start(): string {
-		$result = $this->client->start( self::CHUNKED_JOB_NAME, self::ARGS );
+		$result = $this->client->dispatch( self::CHUNKED_JOB_NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 

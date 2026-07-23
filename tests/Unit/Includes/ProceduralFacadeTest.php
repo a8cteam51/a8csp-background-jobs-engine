@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversFunction;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -21,8 +22,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversFunction( 'a8csp_bgje_register_job' )]
-#[CoversFunction( 'a8csp_bgje_enqueue_job' )]
-#[CoversFunction( 'a8csp_bgje_start_chunked_job' )]
+#[CoversFunction( 'a8csp_bgje_dispatch_job' )]
 #[CoversFunction( 'a8csp_bgje_sync_schedules' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_schedule' )]
 #[CoversFunction( 'a8csp_bgje_inspect_run' )]
@@ -122,8 +122,8 @@ final class ProceduralFacadeTest extends TestCase {
 		$job_args   = array( 'site_id' => 7 );
 		$start_args = array( 'scope' => 'all' );
 
-		$job_run     = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
-		$chunked_run = self::assert_run( \a8csp_bgje_start_chunked_job( self::OWNER, 'chunked-job', $start_args, 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
+		$job_run     = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
+		$chunked_run = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'chunked-job', $start_args, priority: 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
 
 		self::assertNotSame( '', (string) $job_run->id );
 		self::assertNotSame( '', (string) $chunked_run->id );
@@ -134,6 +134,35 @@ final class ProceduralFacadeTest extends TestCase {
 
 		$this->rig->run_due();
 		self::assertEquals( array( array( $chunked_run->id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':chunked-job' ) );
+	}
+
+	/**
+	 * One procedural dispatch verb executes registered plain and chunked jobs through their resolved kinds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_executes_registered_plain_and_chunked_jobs_through_the_procedural_facade(): void {
+		$job                = new RecordingJob( 'plain-job' );
+		$chunked_job        = new RecordingChunkedJob( 'chunked-job' );
+		$chunked_job->queue = array( array( 'page' => 1 ) );
+
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $job->definition() ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $chunked_job->definition() ) );
+		$job_args     = array( 'site_id' => 7 );
+		$chunked_args = array( 'scope' => 'all' );
+
+		self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'plain-job', $job_args ), self::OWNER . ':plain-job', RunStatus::Running );
+		self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'chunked-job', $chunked_args ), self::OWNER . ':chunked-job', RunStatus::Running );
+		for ( $delivery = 0; 5 > $delivery; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		self::assertSame( array( $job_args ), $job->calls );
+		self::assertSame( array( $chunked_args ), $chunked_job->generate_calls );
+		self::assertSame( array( array( 'page' => 1 ) ), \array_column( $chunked_job->process_calls, 'chunk_args' ) );
 	}
 
 	/**
@@ -192,7 +221,7 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'inspect' ) ) );
 		self::assertNull( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ) );
 
-		$admitted = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
+		$admitted = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
 		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Running, $admitted->id );
 		$this->rig->run_due();
 		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
@@ -229,7 +258,7 @@ final class ProceduralFacadeTest extends TestCase {
 			}
 		);
 		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $failed_job ) );
-		$failed = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
+		$failed = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
 		$this->rig->run_due();
 
 		++$this->rig->clock()->timestamp;
@@ -237,7 +266,7 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertNotSame( (string) $failed->id, (string) $retry->id );
 
 		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'cancel' ) ) );
-		$pending   = self::assert_run( \a8csp_bgje_enqueue_job( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
+		$pending   = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
 		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', (string) $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
 		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 	}

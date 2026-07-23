@@ -130,7 +130,7 @@ final class RunStoreTest extends TestCase {
 		$this->job->on_handle = function () use ( &$during_execution ): void {
 			$during_execution = $this->single_live_run();
 		};
-		$result               = $this->client->enqueue( self::NAME, self::ARGS );
+		$result               = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$queued = $this->single_live_run();
@@ -161,7 +161,7 @@ final class RunStoreTest extends TestCase {
 	public function test_retry_transition_is_visible_through_live_run_inspection(): void {
 		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
-		$result                         = $this->client->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->rig->run_due();

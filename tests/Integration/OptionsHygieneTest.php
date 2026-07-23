@@ -71,13 +71,13 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 			3
 		);
 
-		$job_result = $client->enqueue( self::JOB_NAME, $job_args );
+		$job_result = $client->dispatch( self::JOB_NAME, $job_args );
 		self::assertInstanceOf( Success::class, $job_result, 'The census job must enqueue through the public API' );
 		self::assertIsString( $job_result->value );
 		$job_run_id = $job_result->value;
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must complete the census job' );
 
-		$chunked_job_result = $client->start( self::CHUNKED_JOB_NAME, $chunked_job_args );
+		$chunked_job_result = $client->dispatch( self::CHUNKED_JOB_NAME, $chunked_job_args );
 		self::assertInstanceOf( Success::class, $chunked_job_result, 'The census chunked job must start through the public API' );
 		self::assertIsString( $chunked_job_result->value );
 		$chunked_job_run_id = $chunked_job_result->value;

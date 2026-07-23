@@ -205,7 +205,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Returns the asynchronous start delivery for an admitted chunked job.
+	 * Returns the initial start delivery for an admitted chunked job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -218,20 +218,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function initial_pending( int $scheduled_at, int $delay, int $priority ): PendingAction {
-		return PendingAction::async( 'start', $priority );
-	}
-
-	/**
-	 * Returns the chunked-job admission verb used in corrective diagnostics.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string
-	 */
-	#[\Override]
-	public function dispatch_verb(): string {
-		return 'start';
+		return 0 === $delay
+			? PendingAction::async( 'start', $priority )
+			: PendingAction::single( 'start', $scheduled_at, $priority );
 	}
 
 	/**

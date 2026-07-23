@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\CoversFunction;
  * @version 1.0.0
  */
 #[CoversFunction( 'a8csp_bgje_register_job' )]
-#[CoversFunction( 'a8csp_bgje_enqueue_job' )]
+#[CoversFunction( 'a8csp_bgje_dispatch_job' )]
 final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -51,7 +51,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, JobDefinition::closure( $name, static function ( array $handler_args, RunContext $context ): void {} ) ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 
-		$run = \a8csp_bgje_enqueue_job( self::OWNER, $name, $args );
+		$run = \a8csp_bgje_dispatch_job( self::OWNER, $name, $args );
 		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
@@ -98,7 +98,7 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . $identity );
 
-		$run = \a8csp_bgje_enqueue_job( self::OWNER, $name, $args );
+		$run = \a8csp_bgje_dispatch_job( self::OWNER, $name, $args );
 		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 

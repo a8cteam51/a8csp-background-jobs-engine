@@ -103,7 +103,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_ready_preferred_backend_accepts_public_job_admission(): void {
-		$result = $this->client->enqueue( self::JOB_NAME, array( 'site_id' => 7 ) );
+		$result = $this->client->dispatch( self::JOB_NAME, array( 'site_id' => 7 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->verbs( $this->preferred() ) );
@@ -123,7 +123,7 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_unready_preferred_backend_falls_back_for_public_job_admission(): void {
 		$this->preferred()->ready = false;
 
-		$result = $this->client->enqueue( self::JOB_NAME, array( 'site_id' => 7 ) );
+		$result = $this->client->dispatch( self::JOB_NAME, array( 'site_id' => 7 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'is_ready' ), $this->verbs( $this->preferred() ) );
@@ -143,7 +143,7 @@ final class SchedulerFacadeTest extends TestCase {
 	public function test_mid_write_readiness_loss_falls_through_without_losing_the_run(): void {
 		$this->preferred()->readiness_results = array( true, false );
 
-		$result = $this->client->enqueue( self::JOB_NAME, array( 'site_id' => 7 ) );
+		$result = $this->client->dispatch( self::JOB_NAME, array( 'site_id' => 7 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'is_ready', 'enqueue_async', 'is_ready' ), $this->verbs( $this->preferred() ) );

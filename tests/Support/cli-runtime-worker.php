@@ -49,7 +49,7 @@ try {
 		case 'runs':
 			$operations = $rig->operations( 'consumer-plugin' );
 			$operations->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-			$enqueued = $operations->enqueue( 'email-digest' );
+			$enqueued = $operations->dispatch( 'email-digest' );
 			if ( ! $enqueued instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not register its run fixture.' );
 			}
@@ -111,7 +111,7 @@ try {
 		case 'reset-declined':
 			$operations = $rig->operations( 'reset-tests' );
 			$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
-			$enqueued = $operations->enqueue( 'refresh', array( 'site_id' => 7 ) );
+			$enqueued = $operations->dispatch( 'refresh', array( 'site_id' => 7 ) );
 			$synced   = $operations->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 			if ( ! $enqueued instanceof Success || ! $synced instanceof Success ) {
 				throw new \LogicException( 'The CLI worker could not seed reset fixtures.' );

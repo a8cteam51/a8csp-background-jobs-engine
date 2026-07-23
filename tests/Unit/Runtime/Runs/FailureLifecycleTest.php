@@ -256,7 +256,7 @@ final class FailureLifecycleTest extends TestCase {
 		$identity = self::OWNER . ':' . $name;
 		$this->client->register( $this->dual_kind_job( $name ) );
 		$this->rig->randomizer()->value = 42;
-		$result                         = $this->client->enqueue( $name, self::ARGS );
+		$result                         = $this->client->dispatch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		$this->rig->randomizer()->value = 7;
@@ -637,7 +637,7 @@ final class FailureLifecycleTest extends TestCase {
 		$chunked_job->queue             = array( array( 'chunk' => 'current' ) );
 		$chunked_job->process_throwable = InvalidChunkException::chunkTooLarge( 8_193, 8_192 );
 		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
-		$result = $this->client->start( 'bounded-chunked-job', self::ARGS );
+		$result = $this->client->dispatch( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 2; ++$delivery ) {
@@ -666,7 +666,7 @@ final class FailureLifecycleTest extends TestCase {
 		$this->client->register( $this->job->definition( $options ) );
 		$retry_value                    = $this->rig->randomizer()->value;
 		$this->rig->randomizer()->value = 42;
-		$result                         = $this->client->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->rig->randomizer()->value = $retry_value;

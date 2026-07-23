@@ -105,7 +105,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = $client->start( self::NAME, $start_args );
+		$result = $client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The registered chunked job must start through the public API' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
@@ -212,7 +212,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			1
 		);
 
-		$result = $client->start( self::FIDELITY_NAME, array() );
+		$result = $client->dispatch( self::FIDELITY_NAME, array() );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;

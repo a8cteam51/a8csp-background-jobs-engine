@@ -23,9 +23,9 @@ every surviving component is initialized before any hook can fire.
   composition-root accessor `a8csp_bgje_plugin(): Plugin`, and a deterministic loader for the
   procedural facade files; handle and manager construction is lazy, while capability readiness
   starts at `init`.
-- `includes/` groups the procedural facade by concept: `job.php` provides registration and
-  enqueueing, `chunked-job.php` provides chunked-job starts, `schedule.php` provides schedule
-  synchronization and dispatch, and `run.php` provides run inspection, retry, and cancellation.
+- `includes/` groups the procedural facade by concept: `job.php` provides background-work
+  registration and kind-agnostic dispatch, `schedule.php` provides schedule synchronization and
+  dispatch, and `run.php` provides run inspection, retry, and cancellation.
 - `portals/` holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services; `src/` root holds
   the bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
   `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the

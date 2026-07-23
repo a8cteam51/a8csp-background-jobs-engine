@@ -91,13 +91,13 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		$store               = $this->action_scheduler_store();
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
-		$result              = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->start( self::REJECT_NAME, $start_args );
+		$result              = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->dispatch( self::REJECT_NAME, $start_args );
 
 		self::assertInstanceOf( Failure::class, $result, 'Reject must refuse a second start under the fresh lock' );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::OverlapHeld, $result->error->code );
 		self::assertSame( array( 'run_id' => $run_a ), $result->error->context );
-		self::assertSame( \sprintf( 'chunked_job "%1$s" is already running as run "%2$s"; wait for that run to finish before starting the same arguments or overlap key.', self::REJECT_IDENTITY, $run_a ), $result->error->message, 'The rejected held-lock failure must identify the incumbent run exactly' );
+		self::assertSame( \sprintf( 'chunked_job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', self::REJECT_IDENTITY, $run_a ), $result->error->message, 'The rejected held-lock failure must identify the incumbent run exactly' );
 		self::assertSame( $action_count_before, (int) $store->query_actions( array(), 'count' ), 'A rejected start must not create an Action Scheduler row' );
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
@@ -391,7 +391,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private function start( string $name, array $start_args ): string {
-		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->start( $name, $start_args );
+		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->dispatch( $name, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The chunked job must start through the public API' );
 		self::assertIsString( $result->value );
 

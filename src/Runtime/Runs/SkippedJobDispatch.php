@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 /**
  * Typed held-lock outcome for an internal scheduled-job dispatch.
  *
- * @internal Dispatcher outcome consumed by public enqueue and schedule APIs.
+ * @internal Dispatcher outcome consumed by public imperative and schedule APIs.
  *
  * @since   1.0.0
  * @version 1.0.0

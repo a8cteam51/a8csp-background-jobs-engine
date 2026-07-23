@@ -964,7 +964,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
 		\add_filter( 'a8csp_jobs_engine/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
-		$enqueued = $client->enqueue( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
+		$enqueued = $client->dispatch( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertIsString( $enqueued->value );
 		$run_id = $enqueued->value;

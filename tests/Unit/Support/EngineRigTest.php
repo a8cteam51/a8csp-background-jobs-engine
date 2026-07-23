@@ -58,7 +58,7 @@ final class EngineRigTest extends TestCase {
 			$client = $rig->operations( 'rig-tests' );
 			$job    = new RecordingJob( 'job' );
 			$client->register( $job->definition() );
-			$result = $client->enqueue( 'job', self::ARGS );
+			$result = $client->dispatch( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -86,7 +86,7 @@ final class EngineRigTest extends TestCase {
 
 			$job->throwable = new NonRetryableException( 'Permanent failure.' );
 			$client->register( $job->definition() );
-			$result = $client->enqueue( 'job', self::ARGS );
+			$result = $client->dispatch( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -107,7 +107,7 @@ final class EngineRigTest extends TestCase {
 
 			$job->throwable = new \RuntimeException( 'Transient failure.' );
 			$client->register( $job->definition() );
-			$result = $client->enqueue( 'job', self::ARGS );
+			$result = $client->dispatch( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $result );
 
 			$rig->run_due();
@@ -124,7 +124,7 @@ final class EngineRigTest extends TestCase {
 		try {
 			$client = $rig->operations( 'rig-tests' );
 			$client->register( ( new RecordingJob( 'job' ) )->definition() );
-			$enqueued = $client->enqueue( 'job', self::ARGS );
+			$enqueued = $client->dispatch( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $enqueued );
 			self::assertIsString( $enqueued->value );
 
@@ -143,11 +143,11 @@ final class EngineRigTest extends TestCase {
 			$client      = $rig->operations( 'rig-tests' );
 			$chunked_job = new RecordingChunkedJob( 'chunked_job' );
 			$client->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
-			$first = $client->start( 'chunked_job', self::ARGS );
+			$first = $client->dispatch( 'chunked_job', self::ARGS );
 			self::assertInstanceOf( Success::class, $first );
 			++$rig->clock()->timestamp;
 
-			$replacement = $client->start( 'chunked_job', self::ARGS );
+			$replacement = $client->dispatch( 'chunked_job', self::ARGS );
 			self::assertInstanceOf( Success::class, $replacement );
 			$rig->run_due();
 			$rig->assert_superseded();

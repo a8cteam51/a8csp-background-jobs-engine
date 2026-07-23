@@ -651,7 +651,7 @@ final class FailedRunStoreTest extends TestCase {
 	 */
 	private function fail_job( array $args, int $randomness ): string {
 		$this->rig->randomizer()->value = $randomness;
-		$result                         = $this->client->enqueue( self::NAME, $args );
+		$result                         = $this->client->dispatch( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertIsString( $result->value );
 		$this->rig->run_due();

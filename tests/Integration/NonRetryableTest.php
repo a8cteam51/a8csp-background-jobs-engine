@@ -87,7 +87,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			1
 		);
 
-		$result = $client->enqueue( self::NAME, $args );
+		$result = $client->dispatch( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The non-retryable job must enqueue before its handler fails' );
 		self::assertIsString( $result->value );
 		$run_id = $result->value;
