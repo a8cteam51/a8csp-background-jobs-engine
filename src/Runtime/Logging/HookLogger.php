@@ -70,11 +70,11 @@ final class HookLogger extends AbstractLogger {
 			 * @param   string                  $message The interpolated log message.
 			 * @param   array<array-key, mixed> $context The structured context.
 			 */
-			\do_action( 'a8csp_jobs_engine/log', $rendered_level, $rendered_message, $rendered_context );
+			\do_action( 'a8csp_bgje/log', $rendered_level, $rendered_message, $rendered_context );
 		} catch ( \Throwable $throwable ) {
 			try {
 				$breadcrumb = \strtr(
-					\sprintf( 'a8csp-background-jobs-engine: log dispatch failed [hook=%s] [level=%s] [exception=%s]', 'a8csp_jobs_engine/log', $rendered_level, \get_debug_type( $throwable ) ),
+					\sprintf( 'a8csp-background-jobs-engine: log dispatch failed [hook=%s] [level=%s] [exception=%s]', 'a8csp_bgje/log', $rendered_level, \get_debug_type( $throwable ) ),
 					array(
 						"\0" => '\\0',
 						"\r" => '\\r',

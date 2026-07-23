@@ -36,9 +36,88 @@ final class OverlapLockTest extends IntegrationTestCase {
 	/** Owner-qualified identity isolated to the stale crash reclaim case. */
 	private const string RECLAIM_IDENTITY = self::OWNER . ':' . self::RECLAIM_NAME;
 
+	/** Chunked Job identity isolated to lock-staleness filter ordering. */
+	private const string FILTER_NAME = 'integration-overlap-filter-order';
+
+	/** Owner-qualified identity isolated to lock-staleness filter ordering. */
+	private const string FILTER_IDENTITY = self::OWNER . ':' . self::FILTER_NAME;
+
 	// endregion.
 
 	// region TESTS.
+
+	/**
+	 * Lock-staleness filters compose generic then identity-specific during dispatch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_lock_staleness_filters_run_generic_then_identity_specific_during_dispatch(): void {
+		$start_args         = array( 'scope' => 'filter-order' );
+		$chunked_job        = new RecordingChunkedJob( self::FILTER_NAME );
+		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
+
+		$this->register_chunked_job( $chunked_job );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FILTER_IDENTITY );
+		$this->filter_continue_delay_to_zero();
+
+		$run_id    = $this->start( self::FILTER_NAME, $start_args );
+		$args_hash = self::args_hash( $start_args );
+		$lock_name = 'a8csp_bgje_overlap_lock_' . self::FILTER_IDENTITY . '_' . $args_hash;
+		$aged_lock = \get_option( $lock_name, null );
+		self::assertIsArray( $aged_lock );
+		$aged_lock['heartbeat_at'] = \time() - \HOUR_IN_SECONDS;
+		self::assertTrue( \update_option( $lock_name, $aged_lock, false ), 'The lock fixture must be older than the generic window and younger than the identity-specific window' );
+
+		$observations    = array();
+		$generic_filter  = static function ( int $seconds, string $identity ) use ( &$observations ): int {
+			$observations[] = array( 'generic', $seconds, $identity );
+
+			return \MINUTE_IN_SECONDS;
+		};
+		$specific_filter = static function ( int $seconds ) use ( &$observations ): int {
+			$observations[] = array( 'specific', $seconds );
+
+			return \DAY_IN_SECONDS;
+		};
+		\add_filter( 'a8csp_bgje/lock_staleness', $generic_filter, 10, 2 );
+		\add_filter( 'a8csp_bgje/lock_staleness/' . self::FILTER_IDENTITY, $specific_filter, 10, 1 );
+
+		try {
+			$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->dispatch( self::FILTER_NAME, $start_args );
+		} finally {
+			\remove_filter( 'a8csp_bgje/lock_staleness', $generic_filter, 10 );
+			\remove_filter( 'a8csp_bgje/lock_staleness/' . self::FILTER_IDENTITY, $specific_filter, 10 );
+		}
+
+		self::assertInstanceOf( Failure::class, $result, 'The identity-specific day-long window must keep the hour-old incumbent lock held' );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
+		self::assertSame( ErrorCode::OverlapHeld, $result->error->code );
+		self::assertSame(
+			array(
+				array( 'generic', 15 * \MINUTE_IN_SECONDS, self::FILTER_IDENTITY ),
+				array( 'specific', \MINUTE_IN_SECONDS ),
+			),
+			$observations,
+			'The identity-specific filter must receive and override the generic filter result'
+		);
+		$held_lock = \get_option( $lock_name, null );
+		self::assertIsArray( $held_lock );
+		self::assertSame( $run_id, $held_lock['run_id'] ?? null, 'The final identity-specific window must preserve the incumbent lock owner' );
+
+		$held_lock['heartbeat_at'] = \time();
+		self::assertTrue( \update_option( $lock_name, $held_lock, false ), 'The accepted incumbent must regain a current heartbeat before its queued delivery runs' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the accepted incumbent queue' );
+		$this->drive_generated_chunked_job_to_completion(
+			$chunked_job,
+			self::FILTER_IDENTITY,
+			$run_id,
+			self::FILTER_IDENTITY . '|' . $run_id,
+			array( array( 'chunk' => 'only' ) )
+		);
+	}
 
 	/**
 	 * Reject under a fresh held lock returns the exact already-running failure.
@@ -65,7 +144,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 
 		$completion_observations = array();
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::REJECT_IDENTITY,
+			'a8csp_bgje/completed/' . self::REJECT_IDENTITY,
 			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$completion_observations ): void {
 				$completion_observations[] = array( 'named', (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -73,7 +152,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed',
+			'a8csp_bgje/completed',
 			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$completion_observations ): void {
 				$completion_observations[] = array( 'generic', $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -121,7 +200,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgje_history_' . self::REJECT_IDENTITY, null ),
+			\get_option( 'a8csp_bgje_run_history_' . self::REJECT_IDENTITY, null ),
 			'A rejected start must not create a second history entry'
 		);
 
@@ -143,11 +222,11 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'The accepted incumbent must publish its identity-specific and generic completion payloads in order'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Incumbent completion must release the overlap lock' );
-		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::REJECT_IDENTITY . '_' . $run_a, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::REJECT_IDENTITY . '_' . $run_a, false ) );
 		self::assertSame(
 			array(
-				'a8csp_bgje_history_' . self::REJECT_IDENTITY,
 				'a8csp_bgje_latest_run_' . self::REJECT_IDENTITY,
+				'a8csp_bgje_run_history_' . self::REJECT_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Reject-policy completion must retain only history and latest pointer state'
@@ -181,9 +260,9 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$generic_superseded = array();
 		$terminal_hooks     = array();
 		$log_records        = array();
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_jobs_engine/superseded/' . self::RECLAIM_IDENTITY,
+			'a8csp_bgje/superseded/' . self::RECLAIM_IDENTITY,
 			static function ( RunId $run_id, array $args ) use ( &$named_superseded ): void {
 				$named_superseded[] = array( (string) $run_id, $args );
 			},
@@ -191,7 +270,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp_jobs_engine/superseded',
+			'a8csp_bgje/superseded',
 			static function ( string $name, RunId $run_id, array $args ) use ( &$generic_superseded ): void {
 				$generic_superseded[] = array( $name, (string) $run_id, $args );
 			},
@@ -199,7 +278,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::RECLAIM_IDENTITY,
+			'a8csp_bgje/completed/' . self::RECLAIM_IDENTITY,
 			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$terminal_hooks ): void {
 				$terminal_hooks[] = array( 'completed-named', (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -207,7 +286,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed',
+			'a8csp_bgje/completed',
 			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$terminal_hooks ): void {
 				if ( self::RECLAIM_IDENTITY === $name ) {
 					$terminal_hooks[] = array( 'completed-generic', $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
@@ -217,7 +296,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			4
 		);
 		\add_action(
-			'a8csp_jobs_engine/failed',
+			'a8csp_bgje/failed',
 			static function ( RunFailure $failure ) use ( &$terminal_hooks ): void {
 				if ( self::RECLAIM_IDENTITY === $failure->identity ) {
 					$terminal_hooks[] = array( 'failed', $failure );
@@ -227,7 +306,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			1
 		);
 		\add_action(
-			'a8csp_jobs_engine/log',
+			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -266,14 +345,14 @@ final class OverlapLockTest extends IntegrationTestCase {
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'The reclaimed lock must belong to the fresh run' );
-		self::assertIsArray( \get_option( 'a8csp_bgje_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, null ) );
-		self::assertIsArray( \get_option( 'a8csp_bgje_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, null ) );
+		self::assertIsArray( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, null ) );
+		self::assertIsArray( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, null ) );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the orphaned incumbent chunk after reclaim' );
 		self::assertSame( array(), $chunked_job->process_calls, 'The orphaned incumbent must stop before chunk execution' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The identity-specific superseded hook must receive the reclaimed incumbent payload once' );
 		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The generic superseded hook must prepend the reclaimed chunked job name once' );
-		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, false ), 'The orphaned incumbent delivery must delete its active run option' );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, false ), 'The orphaned incumbent delivery must delete its active run option' );
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'Orphan cleanup must preserve the reclaimed lock owner' );
@@ -305,7 +384,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 			'Orphan cleanup must expose the superseded and current owners as structured context'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Reclaimed run completion must release the overlap lock' );
-		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, false ) );
 		self::assertFalse( \get_option( 'a8csp_bgje_failed_runs_' . self::RECLAIM_IDENTITY, false ) );
 		self::assertSame(
 			array(
@@ -336,13 +415,13 @@ final class OverlapLockTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgje_history_' . self::RECLAIM_IDENTITY, null ),
+			\get_option( 'a8csp_bgje_run_history_' . self::RECLAIM_IDENTITY, null ),
 			'Reclaim history must retain the superseded orphan and completed replacement'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgje_history_' . self::RECLAIM_IDENTITY,
 				'a8csp_bgje_latest_run_' . self::RECLAIM_IDENTITY,
+				'a8csp_bgje_run_history_' . self::RECLAIM_IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Reclaim completion must retain only history and latest pointer state'
@@ -376,7 +455,7 @@ final class OverlapLockTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private function filter_continue_delay_to_zero(): void {
-		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
+		\add_filter( 'a8csp_bgje/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 	}
 
 	/**

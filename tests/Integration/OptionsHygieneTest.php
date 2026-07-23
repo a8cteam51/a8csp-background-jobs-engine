@@ -59,11 +59,11 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::JOB_IDENTITY );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CHUNKED_JOB_IDENTITY );
-		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
+		\add_filter( 'a8csp_bgje/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
 		$chunked_completed = array();
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::CHUNKED_JOB_IDENTITY,
+			'a8csp_bgje/completed/' . self::CHUNKED_JOB_IDENTITY,
 			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$chunked_completed ): void {
 				$chunked_completed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},

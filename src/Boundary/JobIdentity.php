@@ -55,7 +55,7 @@ final class JobIdentity {
 	 *
 	 * @var     string
 	 */
-	public const string ENGINE_OWNER = 'a8csp-jobs-engine';
+	public const string ENGINE_OWNER = 'a8csp-bgje';
 
 	// endregion
 
@@ -109,7 +109,7 @@ final class JobIdentity {
 		}
 
 		if ( ! $allow_engine_reserved && \str_starts_with( $owner, self::ENGINE_OWNER ) ) {
-			throw new \InvalidArgumentException( 'Background-work owner uses the engine-reserved "a8csp-jobs-engine" prefix; use the client plugin slug.' );
+			throw new \InvalidArgumentException( 'Background-work owner uses the engine-reserved "a8csp-bgje" prefix; use the client plugin slug.' );
 		}
 	}
 

@@ -115,9 +115,82 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	/** Owner-qualified beyond-boundary target identity. */
 	private const string BEYOND_JOB_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_JOB;
 
+	/** Owner isolated to misfire-grace filter ordering. */
+	private const string FILTER_OWNER = 'integration-misfire-filter-order';
+
+	/** Schedule isolated to misfire-grace filter ordering. */
+	private const string FILTER_SCHEDULE = 'filter-order';
+
+	/** Owner-qualified schedule identity isolated to misfire-grace filter ordering. */
+	private const string FILTER_SCHEDULE_IDENTITY = self::FILTER_OWNER . ':' . self::FILTER_SCHEDULE;
+
+	/** Job isolated to misfire-grace filter ordering. */
+	private const string FILTER_JOB = 'integration-misfire-filter-order-job';
+
+	/** Owner-qualified target identity isolated to misfire-grace filter ordering. */
+	private const string FILTER_JOB_IDENTITY = self::FILTER_OWNER . ':' . self::FILTER_JOB;
+
 	// endregion.
 
 	// region TESTS.
+
+	/**
+	 * Misfire-grace filters compose generic then schedule-specific before classification.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_misfire_grace_filters_run_generic_then_schedule_specific_before_classification(): void {
+		$now    = \time();
+		$clock  = new FixedClock( $now );
+		$logger = new RecordingLogger();
+		$this->expect_option( ScheduleRegistry::option_name( self::FILTER_OWNER ) );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FILTER_JOB_IDENTITY );
+		$engine = $this->build_engine( $clock, $logger );
+		$job    = new RecordingJob( self::FILTER_JOB );
+		$this->register_deterministic_job( self::FILTER_JOB_IDENTITY, $job );
+		$schedule = new Schedule( self::FILTER_SCHEDULE, Recurrence::every( self::INTERVAL ), self::FILTER_JOB, catch_up: CatchUpPolicy::Skip );
+		$this->assert_sync_success( $engine->schedules, self::FILTER_OWNER, array( $schedule ) );
+
+		$due = $now - 2 * \MINUTE_IN_SECONDS;
+		$this->set_next_due( self::FILTER_OWNER, self::FILTER_SCHEDULE, $due );
+		$observations    = array();
+		$generic_filter  = static function ( int $grace, string $owner, string $identity ) use ( &$observations ): int {
+			$observations[] = array( 'generic', $grace, $owner, $identity );
+
+			return 0;
+		};
+		$specific_filter = static function ( int $grace, string $owner, string $identity ) use ( &$observations ): int {
+			$observations[] = array( 'specific', $grace, $owner, $identity );
+
+			return self::INTERVAL;
+		};
+		\add_filter( 'a8csp_bgje/misfire_grace', $generic_filter, 10, 3 );
+		\add_filter( 'a8csp_bgje/misfire_grace/' . self::FILTER_SCHEDULE_IDENTITY, $specific_filter, 10, 3 );
+
+		try {
+			\do_action( 'a8csp_bgje/internal/schedule_due', self::FILTER_SCHEDULE_IDENTITY );
+		} finally {
+			\remove_filter( 'a8csp_bgje/misfire_grace', $generic_filter, 10 );
+			\remove_filter( 'a8csp_bgje/misfire_grace/' . self::FILTER_SCHEDULE_IDENTITY, $specific_filter, 10 );
+		}
+
+		self::assertSame(
+			array(
+				array( 'generic', self::INTERVAL, self::FILTER_OWNER, self::FILTER_SCHEDULE_IDENTITY ),
+				array( 'specific', 0, self::FILTER_OWNER, self::FILTER_SCHEDULE_IDENTITY ),
+			),
+			$observations,
+			'The schedule-specific filter must receive and override the generic filter result'
+		);
+		self::assertSame( 1, $this->run_next_due_action(), 'The final schedule-specific grace must admit the occurrence that the generic zero grace would skip' );
+		self::assertSame( array( array() ), $job->calls, 'The schedule-specific grace result must decide misfire classification' );
+		$registration = $this->registration( self::FILTER_OWNER, self::FILTER_SCHEDULE );
+		self::assertSame( $now, $registration['last_fired'] );
+		self::assertSame( 0, $registration['misfire_skips'] );
+	}
 
 	/**
 	 * RunOnce dispatches one late occurrence and realigns its next due instant to the recurrence.
@@ -145,7 +218,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$generic_misfire_skips = array();
 		$this->record_misfire_skipped_hooks( self::RUN_ONCE_SCHEDULE_IDENTITY, $dynamic_misfire_skips, $generic_misfire_skips );
 
-		\do_action( 'a8csp_jobs_engine/schedule_due', self::RUN_ONCE_SCHEDULE_IDENTITY );
+		\do_action( 'a8csp_bgje/internal/schedule_due', self::RUN_ONCE_SCHEDULE_IDENTITY );
 		self::assertSame( array(), $job->calls, 'RunOnce must enqueue the make-up occurrence instead of invoking the job inline' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the single RunOnce make-up occurrence' );
 
@@ -184,7 +257,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$generic_misfire_skips = array();
 		$this->record_misfire_skipped_hooks( self::SKIP_SCHEDULE_IDENTITY, $dynamic_misfire_skips, $generic_misfire_skips );
 
-		\do_action( 'a8csp_jobs_engine/schedule_due', self::SKIP_SCHEDULE_IDENTITY );
+		\do_action( 'a8csp_bgje/internal/schedule_due', self::SKIP_SCHEDULE_IDENTITY );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'Skip must not enqueue a target-job action for the dropped occurrence' );
 		self::assertSame( array(), $job->calls, 'Skip must not execute a job for the dropped occurrence' );
@@ -244,9 +317,9 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->record_misfire_skipped_hooks( self::EXACT_SCHEDULE_IDENTITY, $exact_dynamic, $exact_generic );
 		$this->record_misfire_skipped_hooks( self::BEYOND_SCHEDULE_IDENTITY, $beyond_dynamic, $beyond_generic );
 
-		\do_action( 'a8csp_jobs_engine/schedule_due', self::EXACT_SCHEDULE_IDENTITY );
+		\do_action( 'a8csp_bgje/internal/schedule_due', self::EXACT_SCHEDULE_IDENTITY );
 		self::assertSame( 1, $this->run_next_due_action(), 'An occurrence exactly at grace must execute normally' );
-		\do_action( 'a8csp_jobs_engine/schedule_due', self::BEYOND_SCHEDULE_IDENTITY );
+		\do_action( 'a8csp_bgje/internal/schedule_due', self::BEYOND_SCHEDULE_IDENTITY );
 		self::assertSame( 0, $this->run_next_due_action(), 'An occurrence one second beyond grace must be dropped' );
 
 		self::assertSame( array( array() ), $exact_job->calls, 'Exactly-at-grace must remain a due job occurrence' );
@@ -337,8 +410,8 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 		$this->deterministic_registry   = $schedule_registry;
 		$this->deterministic_work       = $work;
 
-		\remove_all_actions( 'a8csp_jobs_engine/deliver' );
-		\remove_all_actions( 'a8csp_jobs_engine/schedule_due' );
+		\remove_all_actions( 'a8csp_bgje/internal/deliver' );
+		\remove_all_actions( 'a8csp_bgje/internal/schedule_due' );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
@@ -468,7 +541,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 	 */
 	private function record_misfire_skipped_hooks( string $identity, array &$dynamic, array &$generic ): void {
 		\add_action(
-			'a8csp_jobs_engine/misfire_skipped/' . $identity,
+			'a8csp_bgje/misfire_skipped/' . $identity,
 			static function ( string $owner, int $due, int $fired_at ) use ( &$dynamic ): void {
 				$dynamic[] = array( $owner, $due, $fired_at );
 			},
@@ -476,7 +549,7 @@ final class MisfirePolicyTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/misfire_skipped',
+			'a8csp_bgje/misfire_skipped',
 			static function ( string $schedule, string $owner, int $due, int $fired_at ) use ( $identity, &$generic ): void {
 				if ( $schedule === $identity ) {
 					$generic[] = array( $schedule, $owner, $due, $fired_at );

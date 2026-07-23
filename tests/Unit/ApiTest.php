@@ -214,7 +214,7 @@ final class ApiTest extends TestCase {
 		$observed  = array();
 		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
-		$callbacks['a8csp_jobs_engine/completed/consumer-plugin:sync'] = static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $client, &$observed ): void {
+		$callbacks['a8csp_bgje/completed/consumer-plugin:sync'] = static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $client, &$observed ): void {
 			$result = $client->last_completed_run_id( 'sync' );
 			self::assertInstanceOf( Success::class, $result );
 			$observed[] = array( null === $previous_completed_run_id ? null : (string) $previous_completed_run_id, $result->value );
@@ -259,7 +259,7 @@ final class ApiTest extends TestCase {
 		$completed_calls    = array();
 		$callbacks          = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
-		$callbacks[ 'a8csp_jobs_engine/completed/' . $identity ] = function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $client, $target_run_id, &$intervening_run_id, &$target_hook_runs, &$completed_calls ): void {
+		$callbacks[ 'a8csp_bgje/completed/' . $identity ] = function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $client, $target_run_id, &$intervening_run_id, &$target_hook_runs, &$completed_calls ): void {
 			$completed_calls[] = array(
 				'run_id'                    => (string) $run_id,
 				'previous_completed_run_id' => null === $previous_completed_run_id ? null : (string) $previous_completed_run_id,
@@ -284,7 +284,7 @@ final class ApiTest extends TestCase {
 				);
 			}
 		};
-		$GLOBALS['a8csp_bgje_test_action_callbacks']             = $callbacks;
+		$GLOBALS['a8csp_bgje_test_action_callbacks']      = $callbacks;
 
 		$this->rig->run_due();
 
@@ -409,8 +409,8 @@ final class ApiTest extends TestCase {
 			'uppercase'       => array( 'owner' => 'Consumer' ),
 			'colon'           => array( 'owner' => 'consumer:plugin' ),
 			'33 bytes'        => array( 'owner' => \str_repeat( 'o', 33 ) ),
-			'reserved owner'  => array( 'owner' => 'a8csp-jobs-engine' ),
-			'reserved prefix' => array( 'owner' => 'a8csp-jobs-engine-addon' ),
+			'reserved owner'  => array( 'owner' => 'a8csp-bgje' ),
+			'reserved prefix' => array( 'owner' => 'a8csp-bgje-addon' ),
 		);
 	}
 

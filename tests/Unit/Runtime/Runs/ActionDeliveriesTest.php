@@ -184,7 +184,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertCount( 1, $this->job->contexts );
 		self::assertSame( $run_id, (string) $this->job->contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $this->job->contexts[0]->get_start_args() );
-		$named_completed = $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY );
+		$named_completed = $this->rig->hooks()->fired( 'a8csp_bgje/completed/' . self::IDENTITY );
 		$public_run_id   = $named_completed[0][0] ?? null;
 		self::assertInstanceOf( RunId::class, $public_run_id );
 		self::assertSame( $run_id, (string) $public_run_id );
@@ -198,7 +198,7 @@ final class ActionDeliveriesTest extends TestCase {
 			array(
 				array( self::IDENTITY, $public_run_id, self::ARGS, null ),
 			),
-			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' )
+			$this->rig->hooks()->fired( 'a8csp_bgje/completed' )
 		);
 		$this->rig->assert_completed();
 	}
@@ -218,7 +218,7 @@ final class ActionDeliveriesTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failed = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
+		$failed = $this->rig->hooks()->fired( 'a8csp_bgje/failed' );
 		self::assertCount( 1, $failed );
 		$failure = $failed[0][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
@@ -293,8 +293,8 @@ final class ActionDeliveriesTest extends TestCase {
 
 		self::assertSame( array(), $this->job->calls );
 		self::assertSame( $before, $this->relevant_rows() );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/completed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
 		foreach ( $this->rig->wpdb()->recorded_queries as $query ) {
 			self::assertStringStartsWith( 'SELECT ', $query );
 		}
@@ -405,7 +405,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->enqueue_job();
 		$this->job->throwable = new \RuntimeException( 'Attempt failed before retry-policy resolution.' );
 		$this->set_filter_value(
-			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
+			'a8csp_bgje/retry_policy/' . self::IDENTITY,
 			function ( RetryPolicy $policy ): RetryPolicy {
 				$this->install_replacement_generation();
 
@@ -644,7 +644,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertIsArray( $lock );
 		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
 		self::assertSame( $credit, $lock['heartbeat_at'] ?? null );
-		$run = $this->decoded_row( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->decoded_row( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertTrue( $run['executing'] ?? false );
 		self::assertSame( $credit, $run['heartbeat_at'] ?? null );

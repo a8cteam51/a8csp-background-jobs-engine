@@ -11,7 +11,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 final class HookRecorder {
 	// region FIELDS AND CONSTANTS.
 
-	private const string PREFIX = 'a8csp_jobs_engine/';
+	private const string PREFIX = 'a8csp_bgje/';
 
 	/**
 	 * Engine actions in fire order.

@@ -176,7 +176,7 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		$actions = $this->fired_actions();
 		self::assertSame(
-			array( 'a8csp_jobs_engine/failed' ),
+			array( 'a8csp_bgje/failed/' . self::IDENTITY, 'a8csp_bgje/failed' ),
 			\array_column( $actions, 'hook_name' )
 		);
 		$failure = $actions[0]['args'][0] ?? null;
@@ -222,8 +222,8 @@ final class LifecycleEffectsTest extends TestCase {
 		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $actions, 'hook_name' )
 		);
@@ -307,7 +307,7 @@ final class LifecycleEffectsTest extends TestCase {
 
 		$actions = $this->fired_actions();
 		if ( 'failed' === $status ) {
-			self::assertSame( array( 'a8csp_jobs_engine/failed' ), \array_column( $actions, 'hook_name' ) );
+			self::assertSame( array( 'a8csp_bgje/failed/' . self::IDENTITY, 'a8csp_bgje/failed' ), \array_column( $actions, 'hook_name' ) );
 			$failure = $actions[0]['args'][0] ?? null;
 			self::assertInstanceOf( RunFailure::class, $failure );
 			self::assertSame( self::IDENTITY, $failure->identity );
@@ -316,7 +316,7 @@ final class LifecycleEffectsTest extends TestCase {
 			return;
 		}
 
-		$hook = 'a8csp_jobs_engine/' . $status;
+		$hook = 'a8csp_bgje/' . $status;
 		self::assertSame( array( $hook . '/' . self::IDENTITY, $hook ), \array_column( $actions, 'hook_name' ) );
 		$run_id = $actions[0]['args'][0] ?? null;
 		self::assertInstanceOf( RunId::class, $run_id );
@@ -455,7 +455,7 @@ final class LifecycleEffectsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgje_history_' . self::IDENTITY )
+			$this->option( 'a8csp_bgje_run_history_' . self::IDENTITY )
 		);
 	}
 
@@ -516,7 +516,7 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID;
+		return 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**

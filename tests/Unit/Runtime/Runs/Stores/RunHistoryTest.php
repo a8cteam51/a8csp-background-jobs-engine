@@ -490,8 +490,8 @@ final class RunHistoryTest extends TestCase {
 	private function set_history_size( mixed $size ): void {
 		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
-		$filters['a8csp_jobs_engine/history_size'] = $size;
-		$GLOBALS['a8csp_bgje_test_filter_values']  = $filters;
+		$filters['a8csp_bgje/history_size']       = $size;
+		$GLOBALS['a8csp_bgje_test_filter_values'] = $filters;
 	}
 
 	/**

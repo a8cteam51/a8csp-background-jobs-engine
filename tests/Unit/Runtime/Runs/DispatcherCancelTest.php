@@ -162,7 +162,7 @@ final class DispatcherCancelTest extends TestCase {
 		$throwable = new \RuntimeException( 'Cancelled listener exploded.' );
 		$this->put_job_state( RunStatus::Running, false, 0, 1, self::NOW, PendingAction::async( 'run', 10 ) );
 		$this->reset_backend_observations();
-		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_jobs_engine/cancelled/' . self::JOB_IDENTITY => $throwable );
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_bgje/cancelled/' . self::JOB_IDENTITY => $throwable );
 
 		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
@@ -271,7 +271,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ) );
 	}
 
 	/**
@@ -587,12 +587,12 @@ final class DispatcherCancelTest extends TestCase {
 	private function assert_successful_cancel( mixed $result, string $identity, string $run_id ): void {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( $run_id, $result->value );
-		$named_cancelled = $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled/' . $identity );
+		$named_cancelled = $this->rig->hooks()->fired( 'a8csp_bgje/cancelled/' . $identity );
 		$public_run_id   = $named_cancelled[0][0] ?? null;
 		self::assertInstanceOf( RunId::class, $public_run_id );
 		self::assertSame( $run_id, (string) $public_run_id );
 		self::assertSame( array( array( $public_run_id, self::ARGS ) ), $named_cancelled );
-		self::assertSame( array( array( $identity, $public_run_id, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled' ) );
+		self::assertSame( array( array( $identity, $public_run_id, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ) );
 		$this->assert_group_clear( $identity . '|' . $run_id );
 		$this->rig->assert_cancelled();
 	}
@@ -644,7 +644,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name( string $identity, string $run_id ): string {
-		return 'a8csp_bgje_run_' . $identity . '_' . $run_id;
+		return 'a8csp_bgje_active_run_' . $identity . '_' . $run_id;
 	}
 
 	/**
@@ -677,7 +677,7 @@ final class DispatcherCancelTest extends TestCase {
 	private function cancellation_effects(): array {
 		return array(
 			'backend' => \array_map( static fn ( $backend ): array => $backend->calls, $this->rig->backends() ),
-			'hooks'   => $this->rig->hooks()->fired( 'a8csp_jobs_engine/cancelled' ),
+			'hooks'   => $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ),
 		);
 	}
 

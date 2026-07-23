@@ -133,7 +133,7 @@ final class DemoClientTest extends IntegrationTestCase {
 		$chunked_job_completed_global = array();
 
 		\add_action(
-			'a8csp_jobs_engine/started/' . self::JOB_IDENTITY,
+			'a8csp_bgje/started/' . self::JOB_IDENTITY,
 			static function ( RunId $run_id, array $args ) use ( &$job_started_named, &$scheduled_run_id, $scheduled_args ): void {
 				$job_started_named[] = array( (string) $run_id, $args );
 				if ( $scheduled_args === $args ) {
@@ -144,7 +144,7 @@ final class DemoClientTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp_jobs_engine/started',
+			'a8csp_bgje/started',
 			static function ( string $name, RunId $run_id, array $args ) use ( &$job_started_generic ): void {
 				if ( self::JOB_IDENTITY === $name ) {
 					$job_started_generic[] = array( $name, (string) $run_id, $args );
@@ -154,7 +154,7 @@ final class DemoClientTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::JOB_IDENTITY,
+			'a8csp_bgje/completed/' . self::JOB_IDENTITY,
 			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$job_completed_named ): void {
 				$job_completed_named[] = array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -162,7 +162,7 @@ final class DemoClientTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed',
+			'a8csp_bgje/completed',
 			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$job_completed_generic ): void {
 				if ( self::JOB_IDENTITY === $name ) {
 					$job_completed_generic[] = array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
@@ -188,7 +188,7 @@ final class DemoClientTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::CHUNKED_JOB_IDENTITY,
+			'a8csp_bgje/completed/' . self::CHUNKED_JOB_IDENTITY,
 			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$chunked_job_completed_named ): void {
 				$chunked_job_completed_named[] = array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -196,7 +196,7 @@ final class DemoClientTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed',
+			'a8csp_bgje/completed',
 			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$chunked_job_completed_global ): void {
 				if ( self::CHUNKED_JOB_IDENTITY === $name ) {
 					$chunked_job_completed_global[] = array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
@@ -205,7 +205,7 @@ final class DemoClientTest extends IntegrationTestCase {
 			10,
 			4
 		);
-		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name ): int => self::CHUNKED_JOB_IDENTITY === $name ? 0 : $delay, 10, 2 );
+		\add_filter( 'a8csp_bgje/continue_delay', static fn ( int $delay, string $name ): int => self::CHUNKED_JOB_IDENTITY === $name ? 0 : $delay, 10, 2 );
 
 		// WordPress booted before PHPUnit, so isolate this callback instead of rerunning every init subscriber.
 		\remove_all_actions( 'init' );
@@ -231,23 +231,23 @@ final class DemoClientTest extends IntegrationTestCase {
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $job_started_named );
 		self::assertSame( array( array( self::JOB_IDENTITY, $manual_run_id, $manual_args ) ), $job_started_generic );
 
-		$schedule_due_before_manual = \did_action( 'a8csp_jobs_engine/schedule_due' );
+		$schedule_due_before_manual = \did_action( 'a8csp_bgje/internal/schedule_due' );
 		$matches_manual_run         = static fn ( string $hook, array $args ): bool =>
-			'a8csp_jobs_engine/deliver' === $hook
+			'a8csp_bgje/internal/deliver' === $hook
 			&& ( $args[1] ?? null ) === $manual_run_id;
 		$manual_actions_processed   = \class_exists( \ActionScheduler::class )
 			? $this->run_matching_due_action( $matches_manual_run )
 			: $this->run_matching_due_cron_event( $matches_manual_run );
 		self::assertSame( 1, $manual_actions_processed, 'The scheduler must execute the direct demo job' );
-		self::assertSame( $schedule_due_before_manual, \did_action( 'a8csp_jobs_engine/schedule_due' ), 'The direct job drive must not consume the recurring schedule occurrence' );
+		self::assertSame( $schedule_due_before_manual, \did_action( 'a8csp_bgje/internal/schedule_due' ), 'The direct job drive must not consume the recurring schedule occurrence' );
 		$this->assert_site_health_snapshot( self::MANUAL_SNAPSHOT_TRANSIENT );
 		self::assertSame( array( array( $manual_run_id, $manual_args, null ) ), $job_completed_named );
 		self::assertSame( array( array( self::JOB_IDENTITY, $manual_run_id, $manual_args, null ) ), $job_completed_generic );
 
 		$this->make_demo_schedule_due();
-		$schedule_due_before = \did_action( 'a8csp_jobs_engine/schedule_due' );
-		self::assertSame( 1, \class_exists( \ActionScheduler::class ) ? $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_jobs_engine/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ) : $this->run_matching_due_cron_event( static fn ( string $hook, array $args ): bool => 'a8csp_jobs_engine/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ), 'The scheduler must execute the demo client recurring occurrence' );
-		self::assertSame( $schedule_due_before + 1, \did_action( 'a8csp_jobs_engine/schedule_due' ), 'The registered recurring occurrence must fire the engine schedule-due action' );
+		$schedule_due_before = \did_action( 'a8csp_bgje/internal/schedule_due' );
+		self::assertSame( 1, \class_exists( \ActionScheduler::class ) ? $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_bgje/internal/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ) : $this->run_matching_due_cron_event( static fn ( string $hook, array $args ): bool => 'a8csp_bgje/internal/schedule_due' === $hook && array( self::SCHEDULE_IDENTITY ) === $args ), 'The scheduler must execute the demo client recurring occurrence' );
+		self::assertSame( $schedule_due_before + 1, \did_action( 'a8csp_bgje/internal/schedule_due' ), 'The registered recurring occurrence must fire the engine schedule-due action' );
 		self::assertCount( 2, $job_started_named, 'Schedule delivery must enqueue one additional job run' );
 		self::assertCount( 2, $job_started_generic, 'Schedule delivery must publish the generic started hook' );
 		self::assertFalse( \get_transient( SiteHealthPingJob::SNAPSHOT_TRANSIENT ), 'Schedule delivery must enqueue instead of running the job inline' );
@@ -338,21 +338,21 @@ final class DemoClientTest extends IntegrationTestCase {
 
 		$args = array( self::SCHEDULE_IDENTITY );
 		if ( \class_exists( \ActionScheduler::class ) ) {
-			\as_unschedule_all_actions( 'a8csp_jobs_engine/schedule_due', $args, self::SCHEDULE_IDENTITY );
-			$action_id = \as_schedule_recurring_action( $due, 1, 'a8csp_jobs_engine/schedule_due', $args, self::SCHEDULE_IDENTITY, true, 10 );
+			\as_unschedule_all_actions( 'a8csp_bgje/internal/schedule_due', $args, self::SCHEDULE_IDENTITY );
+			$action_id = \as_schedule_recurring_action( $due, 1, 'a8csp_bgje/internal/schedule_due', $args, self::SCHEDULE_IDENTITY, true, 10 );
 			self::assertGreaterThan( 0, $action_id, 'Action Scheduler must persist the advanced demo occurrence' );
 
 			return;
 		}
 
-		$events = $this->wordpress_cron_events( 'a8csp_jobs_engine/schedule_due', $args );
+		$events = $this->wordpress_cron_events( 'a8csp_bgje/internal/schedule_due', $args );
 		self::assertCount( 1, $events );
 		$event = $events[0];
 		self::assertSame( $next_due, $event['timestamp'] );
 		self::assertIsString( $event['schedule'] );
 		self::assertSame( 1, $event['interval'] );
-		self::assertTrue( true === \wp_unschedule_event( $event['timestamp'], 'a8csp_jobs_engine/schedule_due', $args, true ), 'WP-Cron must remove the future demo occurrence before advancing it' );
-		self::assertTrue( true === \wp_schedule_event( $due, $event['schedule'], 'a8csp_jobs_engine/schedule_due', $args, true ), 'WP-Cron must persist the advanced demo occurrence' );
+		self::assertTrue( true === \wp_unschedule_event( $event['timestamp'], 'a8csp_bgje/internal/schedule_due', $args, true ), 'WP-Cron must remove the future demo occurrence before advancing it' );
+		self::assertTrue( true === \wp_schedule_event( $due, $event['schedule'], 'a8csp_bgje/internal/schedule_due', $args, true ), 'WP-Cron must persist the advanced demo occurrence' );
 	}
 
 	/**

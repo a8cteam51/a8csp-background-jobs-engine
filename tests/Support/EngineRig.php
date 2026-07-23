@@ -352,7 +352,7 @@ final class EngineRig {
 	 * @version 1.0.0
 	 */
 	public function assert_no_retry(): void {
-		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
+		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_bgje/retry_scheduled' ) );
 	}
 
 	/**
@@ -613,7 +613,7 @@ final class EngineRig {
 	 * @return list<mixed>
 	 */
 	private function latest_event( string $event ): array {
-		$latest = \array_last( $this->hooks->fired( 'a8csp_jobs_engine/' . $event ) );
+		$latest = \array_last( $this->hooks->fired( 'a8csp_bgje/' . $event ) );
 		Assert::assertNotNull( $latest, \sprintf( 'Expected the generic %s lifecycle hook to fire.', $event ) );
 
 		return $latest;

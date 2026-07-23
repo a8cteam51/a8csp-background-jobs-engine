@@ -502,7 +502,7 @@ final class CommandsAndOutputTest extends TestCase {
 				)
 			)
 		);
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgje' ) ] );
 		$this->rig->wpdb()->put( 'a8csp_bgje_overlap_lock_lock-tests:invalid-job_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
@@ -1107,7 +1107,7 @@ final class CommandsAndOutputTest extends TestCase {
 				'message'    => 'Schedule removal owner is invalid; pass a canonical client owner.',
 			),
 			'remove reserved owner'  => array(
-				'args'       => array( 'remove', 'a8csp-jobs-engine' ),
+				'args'       => array( 'remove', 'a8csp-bgje' ),
 				'assoc_args' => array( 'yes' => true ),
 				'message'    => 'Schedule removal owner is invalid; pass a canonical client owner.',
 			),

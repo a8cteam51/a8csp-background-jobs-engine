@@ -23,19 +23,20 @@ final class MultisiteTest extends IntegrationTestCase {
 	/** One sentinel from every option family documented for operators. */
 	private const array DOCUMENTED_OPTION_TEMPLATES = array(
 		'a8csp_bgje_schedule_registrations_multisite-%d',
-		'a8csp_bgje_run_multisite-%d:job_run-1',
+		'a8csp_bgje_active_run_multisite-%d:job_run-1',
 		'a8csp_bgje_failed_runs_multisite-%d:job',
 		'a8csp_bgje_latest_run_multisite-%d:job',
-		'a8csp_bgje_history_multisite-%d:job',
+		'a8csp_bgje_run_history_multisite-%d:job',
 		'a8csp_bgje_overlap_lock_multisite-%d:job_args-hash',
 		'a8csp_bgje_occurrence_lease_multisite-%d-registration-hash',
 		'a8csp_bgje_cleanup_intent_multisite-%d-registration-hash',
+		'a8csp_bgje_cleanup_sweep_cursor',
 	);
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
 	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_jobs_engine/deliver',
-		'a8csp_jobs_engine/schedule_due',
+		'a8csp_bgje/internal/deliver',
+		'a8csp_bgje/internal/schedule_due',
 	);
 
 	/**

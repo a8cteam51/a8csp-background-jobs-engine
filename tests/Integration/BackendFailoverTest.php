@@ -43,10 +43,10 @@ final class BackendFailoverTest extends IntegrationTestCase {
 	private const string HOOK = 'a8csp_bgje/integration/backend_failover';
 
 	/** Action Scheduler group isolated to the dormant occurrence. */
-	private const string ACTION_SCHEDULER_GROUP = 'a8csp-jobs-engine-integration-backend-failover-as';
+	private const string ACTION_SCHEDULER_GROUP = 'a8csp-bgje-integration-backend-failover-as';
 
 	/** Advisory group isolated to the WP-Cron fallback occurrence. */
-	private const string WP_CRON_GROUP = 'a8csp-jobs-engine-integration-backend-failover-cron';
+	private const string WP_CRON_GROUP = 'a8csp-bgje-integration-backend-failover-cron';
 
 	/** Owner isolated to recurring-chain convergence. */
 	private const string CONVERGENCE_OWNER = 'integration-backend-convergence';

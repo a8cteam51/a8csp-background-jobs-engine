@@ -92,8 +92,7 @@ final readonly class LockWindows {
 	 */
 	public function continue_delay( string $identity, string $run_id ): int {
 		/**
-		 * Filters the inter-chunk delay; twice the resolved value floors every run's lock staleness,
-		 * including one-off jobs.
+		 * Filters the inter-chunk delay before work-identity-specific filtering.
 		 *
 		 * @since   1.0.0
 		 * @version 1.0.0
@@ -102,7 +101,20 @@ final readonly class LockWindows {
 		 * @param   string $identity Complete owner-qualified job or chunked job identity.
 		 * @param   string $run_id   Run identifier.
 		 */
-		$delay = \apply_filters( 'a8csp_jobs_engine/continue_delay', self::CONTINUE_DELAY, $identity, $run_id );
+		$delay = \apply_filters( 'a8csp_bgje/continue_delay', self::CONTINUE_DELAY, $identity, $run_id );
+
+		/**
+		 * Filters the inter-chunk delay for one work identity.
+		 *
+		 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int    $delay  Generic-filtered continuation delay in seconds.
+		 * @param   string $run_id Run identifier.
+		 */
+		$delay = \apply_filters( 'a8csp_bgje/continue_delay/' . $identity, $delay, $run_id );
 		if ( \is_int( $delay ) && 0 <= $delay ) {
 			return $delay;
 		}
@@ -137,6 +149,17 @@ final readonly class LockWindows {
 		$default_staleness = 15 * \MINUTE_IN_SECONDS;
 
 		/**
+		 * Filters the lock-staleness window before work-identity-specific filtering.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int    $default_staleness Default lock-staleness window in seconds.
+		 * @param   string $identity          Complete owner-qualified work identity.
+		 */
+		$staleness = \apply_filters( 'a8csp_bgje/lock_staleness', $default_staleness, $identity );
+
+		/**
 		 * Filters the lock-staleness window in seconds.
 		 *
 		 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
@@ -144,9 +167,9 @@ final readonly class LockWindows {
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
-		 * @param   int $default_staleness Default lock-staleness window in seconds.
+		 * @param   int $staleness Generic-filtered lock-staleness window in seconds.
 		 */
-		$staleness = \apply_filters( 'a8csp_jobs_engine/lock_staleness/' . $identity, $default_staleness );
+		$staleness = \apply_filters( 'a8csp_bgje/lock_staleness/' . $identity, $staleness );
 		if ( ! \is_int( $staleness ) || 1 > $staleness ) {
 			$this->logger->warning(
 				'Lock-staleness filter returned an invalid value; return a positive integer to override the default staleness window.',

@@ -130,10 +130,10 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame( self::NOW + 15, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['timestamp'] ?? null );
 		self::assertSame( 23, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['priority'] ?? null );
 		self::assertSame( 31, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
-		self::assertEquals( array( array( $job_run->id, $job_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':job' ) );
+		self::assertEquals( array( array( $job_run->id, $job_args ) ), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::OWNER . ':job' ) );
 
 		$this->rig->run_due();
-		self::assertEquals( array( array( $chunked_run->id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::OWNER . ':chunked-job' ) );
+		self::assertEquals( array( array( $chunked_run->id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::OWNER . ':chunked-job' ) );
 	}
 
 	/**

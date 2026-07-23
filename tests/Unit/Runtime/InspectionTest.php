@@ -136,7 +136,7 @@ final class InspectionTest extends TestCase {
 				)
 			)
 		);
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgje' ) ] );
 		$this->put( $fixture->lock( \hash( 'sha256', 'dedup:scope:all' ), 'run-lock', self::NOW, self::NOW ) );
 		$this->rig->backend()->scheduled = true;
 
@@ -197,7 +197,7 @@ final class InspectionTest extends TestCase {
 				)
 			)
 		);
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgje' ) ] );
 		$this->rig->wpdb()->put( 'a8csp_bgje_overlap_lock_owner:invalid-job_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(

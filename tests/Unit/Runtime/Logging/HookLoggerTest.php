@@ -68,7 +68,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_jobs_engine/log',
+					'hook_name' => 'a8csp_bgje/log',
 					'args'      => array(
 						'300',
 						'Job 42: printable; {missing}; {metadata}.',
@@ -116,7 +116,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_jobs_engine/log',
+					'hook_name' => 'a8csp_bgje/log',
 					'args'      => array(
 						'error',
 						'Job email-digest failed with {exception}.',
@@ -163,7 +163,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_jobs_engine/log',
+					'hook_name' => 'a8csp_bgje/log',
 					'args'      => array(
 						'info',
 						'Job {label} failed.',
@@ -186,7 +186,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_jobs_engine/log',
+					'hook_name' => 'a8csp_bgje/log',
 					'args'      => array( 'warning', 'Job failed.', array() ),
 				),
 			),
@@ -207,7 +207,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_jobs_engine/log',
+					'hook_name' => 'a8csp_bgje/log',
 					'args'      => array( 'info', 'Running email-digest.', $context ),
 				),
 			),
@@ -228,7 +228,7 @@ final class HookLoggerTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_jobs_engine/log',
+					'hook_name' => 'a8csp_bgje/log',
 					'args'      => array( 'info', 'Running {job}.', $context ),
 				),
 			),
@@ -246,7 +246,7 @@ final class HookLoggerTest extends TestCase {
 	 */
 	public function test_throwing_subscriber_is_contained_and_reported_to_error_log(): void {
 		$GLOBALS['a8csp_bgje_test_action_throwables'] = array(
-			'a8csp_jobs_engine/log' => new \RuntimeException( "Subscriber failed.\nRetry is unsafe." ),
+			'a8csp_bgje/log' => new \RuntimeException( "Subscriber failed.\nRetry is unsafe." ),
 		);
 
 		$output = $this->capture_error_log(
@@ -255,7 +255,7 @@ final class HookLoggerTest extends TestCase {
 			}
 		);
 
-		$this->assert_error_log_line( 'a8csp-background-jobs-engine: log dispatch failed [hook=a8csp_jobs_engine/log] [level=warning] [exception=RuntimeException]', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine: log dispatch failed [hook=a8csp_bgje/log] [level=warning] [exception=RuntimeException]', $output );
 		self::assertStringNotContainsString( 'do-not-log', $output );
 		self::assertStringNotContainsString( 'Subscriber failed', $output );
 		self::assertStringNotContainsString( 'Retry is unsafe', $output );
@@ -287,7 +287,7 @@ final class HookLoggerTest extends TestCase {
 			}
 		);
 
-		$this->assert_error_log_line( 'a8csp-background-jobs-engine: log dispatch failed [hook=a8csp_jobs_engine/log] [level=error] [exception=RuntimeException@anonymous]', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine: log dispatch failed [hook=a8csp_bgje/log] [level=error] [exception=RuntimeException@anonymous]', $output );
 		self::assertStringNotContainsString( 'Message conversion failed', $output );
 		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_fired_actions'] );
 	}
@@ -315,7 +315,7 @@ final class HookLoggerTest extends TestCase {
 			}
 		);
 
-		$this->assert_error_log_line( 'a8csp-background-jobs-engine: log dispatch failed [hook=a8csp_jobs_engine/log] [level=<unrenderable:Stringable@anonymous>] [exception=RuntimeException]', $output );
+		$this->assert_error_log_line( 'a8csp-background-jobs-engine: log dispatch failed [hook=a8csp_bgje/log] [level=<unrenderable:Stringable@anonymous>] [exception=RuntimeException]', $output );
 		self::assertStringNotContainsString( 'Level conversion failed', $output );
 		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_fired_actions'] );
 	}
@@ -327,7 +327,7 @@ final class HookLoggerTest extends TestCase {
 	 */
 	public function test_non_representable_level_still_throws_invalid_argument_exception(): void {
 		$GLOBALS['a8csp_bgje_test_action_throwables'] = array(
-			'a8csp_jobs_engine/log' => new \RuntimeException( 'Subscriber must not run.' ),
+			'a8csp_bgje/log' => new \RuntimeException( 'Subscriber must not run.' ),
 		);
 
 		$this->expectException( InvalidArgumentException::class );
@@ -344,7 +344,7 @@ final class HookLoggerTest extends TestCase {
 	 * @return  string
 	 */
 	private function capture_error_log( callable $operation ): string {
-		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-jobs-engine-hook-log-' );
+		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-bgje-hook-log-' );
 		if ( false === $temp_file ) {
 			self::fail( 'Unable to create the error-log capture file; make the system temporary directory writable.' );
 		}

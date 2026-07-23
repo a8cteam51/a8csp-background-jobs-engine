@@ -700,7 +700,7 @@ final class MaintenanceJobTest extends TestCase {
 	 */
 	private function put_case_colliding_run_names( int $count ): void {
 		for ( $index = 0; $index < $count; ++$index ) {
-			$this->wpdb->put( 'A8CSP_BGJE_RUN_!foreign-' . \sprintf( '%03d', $index ), 'foreign-prefix-row' );
+			$this->wpdb->put( 'A8CSP_BGJE_ACTIVE_RUN_!foreign-' . \sprintf( '%03d', $index ), 'foreign-prefix-row' );
 		}
 	}
 

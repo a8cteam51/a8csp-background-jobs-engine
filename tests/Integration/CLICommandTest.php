@@ -46,7 +46,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const string UNREGISTERED_NAME = 'integration-cli-command:integration-cli-command-unregistered';
 
 	/** Background-work identity registered by the engine in every WP-CLI child request. */
-	private const string CANCEL_NAME = 'a8csp-jobs-engine:maintenance';
+	private const string CANCEL_NAME = 'a8csp-bgje:maintenance';
 
 	/** Failed run retained beside the live canonical run in list coverage. */
 	private const string HISTORY_FAILED_RUN_ID = '00000000001784029999-0000000000000000000';
@@ -117,7 +117,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->expect_option( 'a8csp_bgje_schedule_registrations_a8csp-jobs-engine' );
+		$this->expect_option( 'a8csp_bgje_schedule_registrations_a8csp-bgje' );
 		$this->expect_option( 'a8csp_bgje_schedule_registrations_' . self::INSPECTION_OWNER );
 	}
 
@@ -139,7 +139,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame( 'Success: Cancelled run ' . self::RUN_ID . ' of "a8csp-jobs-engine:maintenance".' . "\n", $result['stdout'] );
+		self::assertSame( 'Success: Cancelled run ' . self::RUN_ID . ' of "a8csp-bgje:maintenance".' . "\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 		$inspection = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=json' );
 		self::assertSame( 0, $inspection['exit_code'] );
@@ -216,7 +216,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( 'Error: Run "' . self::RUN_ID . '" for background-work ' . "\"a8csp-jobs-engine:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
+		self::assertSame( 'Error: Run "' . self::RUN_ID . '" for background-work ' . "\"a8csp-bgje:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
 	}
 
 	/**
@@ -493,7 +493,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 0, $next_boot['exit_code'] );
 		self::assertSame( "No failed runs are retained.\n", $next_boot['stdout'] );
 		self::assertSame( '', $next_boot['stderr'] );
-		self::assertSame( array( 'a8csp_bgje_schedule_registrations_a8csp-jobs-engine' ), \array_column( $this->engine_option_rows(), 'option_name' ) );
+		self::assertSame( array( 'a8csp_bgje_schedule_registrations_a8csp-bgje' ), \array_column( $this->engine_option_rows(), 'option_name' ) );
 		self::assertTrue( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
 
 		$cleanup = self::run_command( 'reset', '--yes' );
@@ -631,9 +631,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_jobs_engine/log',
+			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -962,7 +962,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$synced   = $client->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
-		\add_filter( 'a8csp_jobs_engine/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
+		\add_filter( 'a8csp_bgje/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
 		$enqueued = $client->dispatch( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
@@ -1206,7 +1206,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private static function cancel_chunked_job_run_option_name(): string {
-		return 'a8csp_bgje_run_' . self::CANCEL_CHUNKED_JOB_NAME . '_' . self::RUN_ID;
+		return 'a8csp_bgje_active_run_' . self::CANCEL_CHUNKED_JOB_NAME . '_' . self::RUN_ID;
 	}
 
 	/**

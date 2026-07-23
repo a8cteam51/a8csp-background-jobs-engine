@@ -46,8 +46,8 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 			$observed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 		};
 
-		\add_action( 'a8csp_jobs_engine/completed/' . $identity, $listener, 10, 3 );
-		self::assertSame( 10, \has_action( 'a8csp_jobs_engine/completed/' . $identity, $listener ) );
+		\add_action( 'a8csp_bgje/completed/' . $identity, $listener, 10, 3 );
+		self::assertSame( 10, \has_action( 'a8csp_bgje/completed/' . $identity, $listener ) );
 		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, JobDefinition::closure( $name, static function ( array $start_args, RunContextInterface $context ): void {} ) ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 
@@ -59,31 +59,43 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * The failed listener receives one self-identifying failure value through the generic hook.
+	 * Failed listeners receive one shared failure value in identity-specific-to-generic order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_failed_hook_registers_and_fires_with_the_run_failure_object(): void {
+	public function test_failed_hooks_fire_identity_specific_then_generic_with_the_same_run_failure(): void {
 		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
 		$name     = 'failed-job';
 		$identity = self::OWNER . ':' . $name;
 		$args     = array( 'site_id' => 8 );
 		/** @var list<RunFailure> $observed */
 		$observed = array();
+		/** @var list<string> $observed_hooks */
+		$observed_hooks = array();
 		/** @var list<list<mixed>> $observed_extra_args */
 		$observed_extra_args = array();
-		$observed_arity      = null;
-		$listener            = static function ( RunFailure $failure, mixed ...$extra_args ) use ( &$observed, &$observed_extra_args, &$observed_arity ): void {
+		/** @var list<int> $observed_arities */
+		$observed_arities  = array();
+		$specific_listener = static function ( RunFailure $failure, mixed ...$extra_args ) use ( &$observed, &$observed_hooks, &$observed_extra_args, &$observed_arities ): void {
 			$observed[]            = $failure;
+			$observed_hooks[]      = 'specific';
 			$observed_extra_args[] = $extra_args;
-			$observed_arity        = \func_num_args();
+			$observed_arities[]    = \func_num_args();
+		};
+		$generic_listener  = static function ( RunFailure $failure, mixed ...$extra_args ) use ( &$observed, &$observed_hooks, &$observed_extra_args, &$observed_arities ): void {
+			$observed[]            = $failure;
+			$observed_hooks[]      = 'generic';
+			$observed_extra_args[] = $extra_args;
+			$observed_arities[]    = \func_num_args();
 		};
 
-		\add_action( 'a8csp_jobs_engine/failed', $listener, 10, 4 );
-		self::assertSame( 10, \has_action( 'a8csp_jobs_engine/failed', $listener ) );
+		\add_action( 'a8csp_bgje/failed/' . $identity, $specific_listener, 10, 4 );
+		\add_action( 'a8csp_bgje/failed', $generic_listener, 10, 4 );
+		self::assertSame( 10, \has_action( 'a8csp_bgje/failed/' . $identity, $specific_listener ) );
+		self::assertSame( 10, \has_action( 'a8csp_bgje/failed', $generic_listener ) );
 		self::assertTrue(
 			\a8csp_bgje_register_job(
 				self::OWNER,
@@ -102,9 +114,11 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertInstanceOf( Run::class, $run );
 		self::assertSame( 1, $this->run_next_engine_action() );
 
-		self::assertCount( 1, $observed );
-		self::assertSame( 1, $observed_arity );
-		self::assertSame( array( array() ), $observed_extra_args );
+		self::assertSame( array( 'specific', 'generic' ), $observed_hooks );
+		self::assertCount( 2, $observed );
+		self::assertSame( $observed[0], $observed[1], 'Both failed hooks must receive the same RunFailure instance' );
+		self::assertSame( array( 1, 1 ), $observed_arities );
+		self::assertSame( array( array(), array() ), $observed_extra_args );
 		self::assertSame( $identity, $observed[0]->identity );
 		self::assertSame( (string) $run->id, (string) $observed[0]->run_id );
 		self::assertSame( 1, $observed[0]->attempts );
@@ -112,7 +126,8 @@ final class ProceduralFacadeHooksTest extends IntegrationTestCase {
 		self::assertSame( 'execution_failed', $observed[0]->code->value );
 		self::assertSame( \sprintf( 'Background-work execution failed because %s was thrown.', NonRetryableException::class ), $observed[0]->summary );
 		self::assertNull( $observed[0]->details );
-		self::assertSame( 0, \did_action( 'a8csp_jobs_engine/failed/' . $identity ) );
+		self::assertSame( 1, \did_action( 'a8csp_bgje/failed/' . $identity ) );
+		self::assertSame( 1, \did_action( 'a8csp_bgje/failed' ) );
 	}
 
 	// endregion.

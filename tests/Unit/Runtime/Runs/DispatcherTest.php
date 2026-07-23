@@ -126,7 +126,7 @@ final class DispatcherTest extends TestCase {
 		self::assertIsArray( $run );
 		self::assertSame( 'job', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
-		$started = $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::IDENTITY );
+		$started = $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::IDENTITY );
 		$run_id  = $started[0][0] ?? null;
 		self::assertInstanceOf( RunId::class, $run_id );
 		self::assertSame( self::RUN_ID, (string) $run_id );
@@ -279,7 +279,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_dispatch_terminalizes_when_a_started_listener_throws(): void {
-		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_jobs_engine/started/' . self::IDENTITY => new \RuntimeException( 'Started listener exploded.' ) );
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_bgje/started/' . self::IDENTITY => new \RuntimeException( 'Started listener exploded.' ) );
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
@@ -288,9 +288,10 @@ final class DispatcherTest extends TestCase {
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/started/' . self::IDENTITY,
-				'a8csp_jobs_engine/started',
-				'a8csp_jobs_engine/failed',
+				'a8csp_bgje/started/' . self::IDENTITY,
+				'a8csp_bgje/started',
+				'a8csp_bgje/failed/' . self::IDENTITY,
+				'a8csp_bgje/failed',
 			),
 			$this->rig->hooks()->sequence()
 		);
@@ -316,10 +317,10 @@ final class DispatcherTest extends TestCase {
 	#[DataProvider( 'lock_window_boundaries' )]
 	public function test_dispatch_resolves_the_exact_lock_staleness_window( ?int $staleness_filter, ?int $continue_filter, int $heartbeat_age, bool $is_reclaimed ): void {
 		if ( null !== $staleness_filter ) {
-			$this->set_filter_value( 'a8csp_jobs_engine/lock_staleness/' . self::IDENTITY, $staleness_filter );
+			$this->set_filter_value( 'a8csp_bgje/lock_staleness/' . self::IDENTITY, $staleness_filter );
 		}
 		if ( null !== $continue_filter ) {
-			$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', $continue_filter );
+			$this->set_filter_value( 'a8csp_bgje/continue_delay', $continue_filter );
 		}
 		$this->seed_running_lock( $heartbeat_age );
 
@@ -378,7 +379,7 @@ final class DispatcherTest extends TestCase {
 	public function test_dispatch_passes_the_documented_lock_staleness_filter_arguments(): void {
 		$filter_args = null;
 		$this->set_filter_value(
-			'a8csp_jobs_engine/lock_staleness/' . self::IDENTITY,
+			'a8csp_bgje/lock_staleness/' . self::IDENTITY,
 			static function ( int $default_staleness ) use ( &$filter_args ): int {
 				$filter_args = array(
 					'arity' => \func_num_args(),
@@ -415,7 +416,7 @@ final class DispatcherTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		$calls = $this->backend_calls( 'schedule_single' );
 		self::assertCount( 1, $calls );
-		self::assertSame( 'a8csp_jobs_engine/deliver', $calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $calls[0]['args']['hook'] ?? null );
 		self::assertSame( self::NOW + 120, $calls[0]['args']['timestamp'] ?? null );
 		self::assertSame( 31, $calls[0]['args']['priority'] ?? null );
 		$this->rig->run_due();
@@ -1212,7 +1213,7 @@ final class DispatcherTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID;
+		return 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -1265,7 +1266,7 @@ final class DispatcherTest extends TestCase {
 
 					return \is_array( $args )
 						&& \in_array( $call['verb'], array( 'enqueue_async', 'schedule_single' ), true )
-						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& 'a8csp_bgje/internal/deliver' === ( $call['args']['hook'] ?? null )
 						&& self::IDENTITY === ( $args[0] ?? null );
 				}
 			)

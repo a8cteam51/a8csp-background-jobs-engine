@@ -55,7 +55,7 @@ final readonly class CleanupIntents {
 	 *
 	 * @var     string
 	 */
-	public const string SWEEP_CURSOR_OPTION = 'a8csp_bgje_cleanup_intents_sweep';
+	public const string SWEEP_CURSOR_OPTION = 'a8csp_bgje_cleanup_sweep_cursor';
 
 	/**
 	 * Maximum option names returned by one cleanup-intent enumeration query.
@@ -110,8 +110,8 @@ final readonly class CleanupIntents {
 	public function record_intent( string $registration_key ): void {
 		$raw = \maybe_serialize(
 			array(
-				'key'        => $registration_key,
-				'created_at' => $this->clock->now()->getTimestamp(),
+				'schedule_identity' => $registration_key,
+				'created_at'        => $this->clock->now()->getTimestamp(),
 			)
 		);
 		if ( ! \is_string( $raw ) ) {
@@ -341,7 +341,7 @@ final readonly class CleanupIntents {
 			}
 
 			$value            = RawOptionDecoder::decode( $raw );
-			$registration_key = \is_array( $value ) ? ( $value['key'] ?? null ) : null;
+			$registration_key = \is_array( $value ) ? ( $value['schedule_identity'] ?? null ) : null;
 			if (
 				! \is_array( $value )
 				|| 2 !== \count( $value )

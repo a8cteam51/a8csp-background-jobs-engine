@@ -331,7 +331,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_jobs_engine/deliver',
+						'hook'     => 'a8csp_bgje/internal/deliver',
 						'args'     => array( $name, self::RUN_ID, 2 ),
 						'group'    => $name . '|' . self::RUN_ID,
 						'priority' => 10,
@@ -386,7 +386,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_jobs_engine/deliver',
+						'hook'     => 'a8csp_bgje/internal/deliver',
 						'args'     => array( $name, self::RUN_ID, 1 ),
 						'group'    => $name . '|' . self::RUN_ID,
 						'priority' => 23,
@@ -435,7 +435,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'enqueue_async',
 					'args' => array(
-						'hook'     => 'a8csp_jobs_engine/deliver',
+						'hook'     => 'a8csp_bgje/internal/deliver',
 						'args'     => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'    => self::IDENTITY . '|' . self::RUN_ID,
 						'priority' => 23,
@@ -505,8 +505,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->assert_history_status( $options, 'completed' );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -541,7 +541,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp_jobs_engine/deliver',
+						'hook'      => 'a8csp_bgje/internal/deliver',
 						'timestamp' => self::NOW + 2_101,
 						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'     => self::IDENTITY . '|' . self::RUN_ID,
@@ -597,7 +597,7 @@ final class RunReconciliationTest extends TestCase {
 				array(
 					'verb' => 'schedule_single',
 					'args' => array(
-						'hook'      => 'a8csp_jobs_engine/deliver',
+						'hook'      => 'a8csp_bgje/internal/deliver',
 						'timestamp' => $expected_fire_at,
 						'args'      => array( self::IDENTITY, self::RUN_ID, 1 ),
 						'group'     => self::IDENTITY . '|' . self::RUN_ID,
@@ -725,8 +725,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-				'a8csp_jobs_engine/superseded',
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -855,7 +855,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertCount( 2, $this->backend->calls );
 		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
 		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
-		self::assertSame( 'a8csp_jobs_engine/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( $name, self::RUN_ID, 2 ), $this->backend->calls[0]['args']['args'] ?? null );
 
 		$this->lifecycle_deliveries->handle_deliver_action( $name, self::RUN_ID, 2 );
@@ -879,7 +879,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( 'a8csp_jobs_engine/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
 
 		$this->lifecycle_deliveries->handle_deliver_action( self::IDENTITY, self::RUN_ID, 1 );
@@ -922,7 +922,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( 'a8csp_jobs_engine/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( $name, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
 
 		$this->lifecycle_deliveries->handle_deliver_action( $name, self::RUN_ID, 1 );
@@ -968,7 +968,7 @@ final class RunReconciliationTest extends TestCase {
 		$throwable = new \RuntimeException( 'Run staleness filter exploded.' );
 
 		$GLOBALS['a8csp_bgje_test_filter_values'] = array(
-			'a8csp_jobs_engine/lock_staleness/' . self::IDENTITY => static function () use ( $throwable ): int {
+			'a8csp_bgje/lock_staleness/' . self::IDENTITY => static function () use ( $throwable ): int {
 				throw $throwable;
 			},
 		);
@@ -1014,7 +1014,7 @@ final class RunReconciliationTest extends TestCase {
 		$throwable = new \RuntimeException( 'Run continue-delay filter exploded.' );
 
 		$GLOBALS['a8csp_bgje_test_filter_values'] = array(
-			'a8csp_jobs_engine/continue_delay' => static function ( int $delay, string $name, string $run_id ) use ( $throwable ): int {
+			'a8csp_bgje/continue_delay' => static function ( int $delay, string $name, string $run_id ) use ( $throwable ): int {
 				if ( self::IDENTITY === $name && self::RUN_ID === $run_id ) {
 					throw $throwable;
 				}
@@ -1157,12 +1157,12 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-				'a8csp_jobs_engine/superseded',
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1209,12 +1209,12 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-				'a8csp_jobs_engine/superseded',
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1255,7 +1255,7 @@ final class RunReconciliationTest extends TestCase {
 		$replacement_run_id = '00000000001700000001-0000000000000000043';
 		$this->put_lock( $this->lock_option_name(), $replacement_run_id, self::NOW );
 		$GLOBALS['a8csp_bgje_test_filter_values'] = array(
-			'a8csp_jobs_engine/continue_delay' => static function (
+			'a8csp_bgje/continue_delay' => static function (
 				int $delay,
 				string $name,
 				string $run_id
@@ -1280,8 +1280,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-				'a8csp_jobs_engine/superseded',
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -1316,7 +1316,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $state );
 		self::assertSame( $this->clock->timestamp, $state['heartbeat_at'] ?? null );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
-		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame( array(), $history['terminal'] ?? null );
 		self::assertSame( array(), $this->fired_actions() );
@@ -1349,7 +1349,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $name, $failure->identity );
 		self::assertSame( self::RUN_ID, (string) $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
-		self::assertSame( RunFailureStage::crash_reclaim(), $failure->stage );
+		self::assertSame( RunFailureStage::crash_reclamation(), $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertStringContainsString( 'maintenance crash reclaim path', $failure->summary );
 		self::assertNull( $failure->details );
@@ -1357,7 +1357,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID, $options );
 		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . $name, $options );
 		self::assertSame(
-			array( 'a8csp_jobs_engine/failed' ),
+			array( 'a8csp_bgje/failed/' . $name, 'a8csp_bgje/failed' ),
 			\array_column( $actions, 'hook_name' )
 		);
 		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
@@ -1415,7 +1415,7 @@ final class RunReconciliationTest extends TestCase {
 		$throwable = new \RuntimeException( 'Chunked job failed hook exploded.' );
 
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = array(
-			'a8csp_jobs_engine/failed' => static function ( RunFailure $failure ) use ( $throwable, $throwing_name ): void {
+			'a8csp_bgje/failed' => static function ( RunFailure $failure ) use ( $throwable, $throwing_name ): void {
 				if ( $throwing_name === $failure->identity ) {
 					throw $throwable;
 				}
@@ -1430,7 +1430,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array( 'retention', 'history' ), $throwing_state['effects'] ?? null );
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
 		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $options );
-		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1653,7 +1653,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->work->register( $name, $chunked_job->definition() );
 		$result = $this->dispatcher->dispatch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
-		$run_name = 'a8csp_bgje_run_' . $name . '_' . self::RUN_ID;
+		$run_name = 'a8csp_bgje_active_run_' . $name . '_' . self::RUN_ID;
 		$this->set_run_fields( $name, array( 'executing' => true ) );
 		$this->set_run_failed_attempts( $run_name, \PHP_INT_MAX );
 		unset( $this->wpdb->rows[ 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH ] );
@@ -1688,13 +1688,13 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-				'a8csp_jobs_engine/superseded',
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
-		$history = $this->options()[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
+		$history = $this->options()[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -1767,7 +1767,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( 'Persisted chunked job failure.', $failure->summary );
 		self::assertNull( $failure->details );
 		self::assertSame(
-			array( 'a8csp_jobs_engine/failed' ),
+			array( 'a8csp_bgje/failed/' . $name, 'a8csp_bgje/failed' ),
 			\array_column( $actions, 'hook_name' )
 		);
 		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
@@ -1802,7 +1802,7 @@ final class RunReconciliationTest extends TestCase {
 					'error'      => array(
 						'class'   => null,
 						'message' => $expected_summary,
-						'stage'   => RunFailureStage::crash_reclaim()->value,
+						'stage'   => RunFailureStage::crash_reclamation()->value,
 						'code'    => ErrorCode::StorageFailure->value,
 						'details' => array( 'failed_chunk' => $chunk ),
 					),
@@ -1816,7 +1816,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( $name, $failure->identity );
 		self::assertSame( self::RUN_ID, (string) $failure->run_id );
 		self::assertSame( 3, $failure->attempts );
-		self::assertSame( RunFailureStage::crash_reclaim(), $failure->stage );
+		self::assertSame( RunFailureStage::crash_reclamation(), $failure->stage );
 		self::assertSame( ErrorCode::StorageFailure, $failure->code );
 		self::assertSame( $expected_summary, $failure->summary );
 		self::assertSame( array( 'failed_chunk' => $chunk ), $failure->details );
@@ -1883,7 +1883,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->run_maintenance();
 
 		$actions = $this->fired_actions();
-		self::assertSame( array( 'a8csp_jobs_engine/failed' ), \array_column( $actions, 'hook_name' ) );
+		self::assertSame( array( 'a8csp_bgje/failed/' . self::IDENTITY, 'a8csp_bgje/failed' ), \array_column( $actions, 'hook_name' ) );
 		$emitted_failure = $actions[0]['args'][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $emitted_failure );
 		self::assertSame( self::IDENTITY, $emitted_failure->identity );
@@ -1917,7 +1917,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->store_terminal_run( self::IDENTITY, 'failed', array( 'retention' ), $error, 2 );
 		$throwable = new \RuntimeException( 'Failed hook exploded.' );
 
-		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_jobs_engine/failed' => $throwable );
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_bgje/failed' => $throwable );
 
 		$this->run_maintenance();
 
@@ -1925,14 +1925,14 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsArray( $state );
 		self::assertSame( array( 'retention', 'history' ), $state['effects'] ?? null );
 		$actions = $this->fired_actions();
-		self::assertSame( array( 'a8csp_jobs_engine/failed' ), \array_column( $actions, 'hook_name' ) );
+		self::assertSame( array( 'a8csp_bgje/failed/' . self::IDENTITY, 'a8csp_bgje/failed' ), \array_column( $actions, 'hook_name' ) );
 		self::assertEquals( $failure, $actions[0]['args'][0] ?? null );
 
 		$GLOBALS['a8csp_bgje_test_action_throwables'] = array();
 		$GLOBALS['a8csp_bgje_test_fired_actions']     = array();
 		$this->run_maintenance();
 
-		self::assertSame( array( 'a8csp_jobs_engine/failed' ), \array_column( $this->fired_actions(), 'hook_name' ) );
+		self::assertSame( array( 'a8csp_bgje/failed/' . self::IDENTITY, 'a8csp_bgje/failed' ), \array_column( $this->fired_actions(), 'hook_name' ) );
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		$this->assert_history_status( $this->options(), 'failed' );
 	}
@@ -1946,7 +1946,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
 		$throwable = new \RuntimeException( 'Completed hook exploded.' );
 
-		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_jobs_engine/completed/' . self::IDENTITY => $throwable );
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_bgje/completed/' . self::IDENTITY => $throwable );
 
 		$this->run_maintenance();
 
@@ -1955,8 +1955,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array( 'history' ), $state['effects'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -1967,8 +1967,8 @@ final class RunReconciliationTest extends TestCase {
 
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -1994,8 +1994,8 @@ final class RunReconciliationTest extends TestCase {
 		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . $name,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . $name,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $actions, 'hook_name' )
 		);
@@ -2035,8 +2035,8 @@ final class RunReconciliationTest extends TestCase {
 		$actions = $this->fired_actions();
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $actions, 'hook_name' )
 		);
@@ -2073,8 +2073,8 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->options() );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -2106,8 +2106,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->assert_history_status( $options, 'completed', $name );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . $name,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . $name,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -2139,8 +2139,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->assert_history_status( $options, 'completed', $name );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . $name,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . $name,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -2190,7 +2190,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
 		$options = $this->options();
 		// A retained pre-bucket row exercises normalization; current history writes also populate by_hash.
-		$options[ 'a8csp_bgje_history_' . self::IDENTITY ] = array(
+		$options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] = array(
 			'started'  => array( 'existing-run' ),
 			'terminal' => array(
 				array(
@@ -2200,7 +2200,7 @@ final class RunReconciliationTest extends TestCase {
 			),
 			'by_hash'  => array(),
 		);
-		$GLOBALS['a8csp_bgje_test_options']                = $options;
+		$GLOBALS['a8csp_bgje_test_options']                    = $options;
 		$this->wpdb->script_result( 'delete', false );
 
 		$this->run_maintenance();
@@ -2209,7 +2209,7 @@ final class RunReconciliationTest extends TestCase {
 		$state   = $options[ $this->run_option_name() ] ?? null;
 		self::assertIsArray( $state );
 		self::assertSame( array( 'hooks', 'history' ), $state['effects'] ?? null );
-		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -2234,7 +2234,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$options = $this->options();
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
-		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		$terminal = $history['terminal'] ?? null;
 		self::assertIsArray( $terminal );
@@ -2293,7 +2293,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_history_status( array $options, string $status, string $name = self::IDENTITY ): void {
-		$history = $options[ 'a8csp_bgje_history_' . $name ] ?? null;
+		$history = $options[ 'a8csp_bgje_run_history_' . $name ] ?? null;
 		self::assertIsArray( $history );
 		$terminal = $history['terminal'] ?? null;
 		self::assertIsArray( $terminal );
@@ -2381,12 +2381,12 @@ final class RunReconciliationTest extends TestCase {
 		self::assertIsString( $message );
 		self::assertStringContainsString( 'maintenance crash reclaim path', $message );
 		self::assertNull( $error['class'] ?? null );
-		self::assertSame( RunFailureStage::crash_reclaim()->value, $error['stage'] ?? null );
+		self::assertSame( RunFailureStage::crash_reclamation()->value, $error['stage'] ?? null );
 		self::assertSame( ErrorCode::ExecutionFailed->value, $error['code'] ?? null );
 		self::assertArrayNotHasKey( 'details', $error );
 		$actions = $this->fired_actions();
 		self::assertSame(
-			array( 'a8csp_jobs_engine/failed' ),
+			array( 'a8csp_bgje/failed/' . self::IDENTITY, 'a8csp_bgje/failed' ),
 			\array_column( $actions, 'hook_name' )
 		);
 		$failure = $actions[0]['args'][0] ?? null;
@@ -2394,12 +2394,12 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::IDENTITY, $failure->identity );
 		self::assertSame( self::RUN_ID, (string) $failure->run_id );
 		self::assertSame( 1, $failure->attempts );
-		self::assertSame( RunFailureStage::crash_reclaim(), $failure->stage );
+		self::assertSame( RunFailureStage::crash_reclamation(), $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( $message, $failure->summary );
 		self::assertNull( $failure->details );
 		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
-		$history = $options[ 'a8csp_bgje_history_' . self::IDENTITY ] ?? null;
+		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
 		self::assertSame(
 			array(
@@ -2589,7 +2589,7 @@ final class RunReconciliationTest extends TestCase {
 			self::assertIsString( $raw );
 			if (
 				\str_starts_with( $name, 'a8csp_bgje_failed_runs_' )
-				|| \str_starts_with( $name, 'a8csp_bgje_history_' )
+				|| \str_starts_with( $name, 'a8csp_bgje_run_history_' )
 			) {
 				$options[ $name ] = RawOptionDecoder::decode( $raw );
 			}

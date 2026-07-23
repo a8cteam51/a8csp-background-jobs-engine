@@ -193,7 +193,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
 				$observed = true;
 				self::assertArrayNotHasKey( RunHistory::OPTION_PREFIX . self::IDENTITY, $wpdb->rows );
-				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started' ) );
+				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started' ) );
 			}
 		);
 
@@ -203,8 +203,8 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertTrue( $observed );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/started/' . self::IDENTITY,
-				'a8csp_jobs_engine/started',
+				'a8csp_bgje/started/' . self::IDENTITY,
+				'a8csp_bgje/started',
 			),
 			$this->rig->hooks()->sequence()
 		);
@@ -229,7 +229,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
 				$observed = true;
 				self::assertArrayNotHasKey( RunHistory::OPTION_PREFIX . self::CHUNKED_IDENTITY, $wpdb->rows );
-				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
+				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::CHUNKED_IDENTITY ) );
 			}
 		);
 
@@ -238,12 +238,12 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $observed );
 		self::assertArrayHasKey( RunHistory::OPTION_PREFIX . self::CHUNKED_IDENTITY, $this->rig->wpdb()->rows );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::CHUNKED_IDENTITY ) );
 
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
-		$started = $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY );
+		$started = $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::CHUNKED_IDENTITY );
 		$run_id  = $started[0][0] ?? null;
 		self::assertInstanceOf( RunId::class, $run_id );
 		self::assertSame( self::RUN_ID, (string) $run_id );
@@ -270,7 +270,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			$result->value
 		);
 		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
-		$run = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
 		self::assertSame( array(), $run['kind_state'] ?? null );
@@ -289,7 +289,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$this->sync_schedule( OverlapPolicy::Allow );
 		$first = $this->client->dispatch_now( self::SCHEDULE );
 		self::assertInstanceOf( Success::class, $first );
-		$run = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		$salted_hash = $run['args_hash'] ?? null;
 		self::assertIsString( $salted_hash );
@@ -538,7 +538,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 					return \is_array( $args )
 						&& 'enqueue_async' === $call['verb']
-						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& 'a8csp_bgje/internal/deliver' === ( $call['args']['hook'] ?? null )
 						&& self::IDENTITY === ( $args[0] ?? null );
 				}
 			)
@@ -562,7 +562,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 					return \is_array( $args )
 						&& 'enqueue_async' === $call['verb']
-						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& 'a8csp_bgje/internal/deliver' === ( $call['args']['hook'] ?? null )
 						&& self::CHUNKED_IDENTITY === ( $args[0] ?? null );
 				}
 			)

@@ -87,8 +87,8 @@ final readonly class RunFailureStage {
 	 *
 	 * @return  self
 	 */
-	public static function crash_reclaim(): self {
-		return self::from( 'crash_reclaim' );
+	public static function crash_reclamation(): self {
+		return self::from( 'crash_reclamation' );
 	}
 
 	/**

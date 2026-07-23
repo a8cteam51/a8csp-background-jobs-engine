@@ -162,6 +162,17 @@ final readonly class FailureLifecycle {
 	 */
 	private function retry_policy( string $identity, RetryPolicy $base_policy ): RetryPolicy {
 		/**
+		 * Filters the retry policy before work-identity-specific filtering.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   RetryPolicy $base_policy Registered or engine-default retry policy.
+		 * @param   string      $identity    Complete owner-qualified work identity.
+		 */
+		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy', $base_policy, $identity );
+
+		/**
 		 * Filters the retry policy for one work identity.
 		 *
 		 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
@@ -169,9 +180,9 @@ final readonly class FailureLifecycle {
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
-		 * @param   RetryPolicy $base_policy Registered or engine-default retry policy.
+		 * @param   RetryPolicy $filtered_policy Generic-filtered retry policy.
 		 */
-		$filtered_policy = \apply_filters( 'a8csp_jobs_engine/retry_policy/' . $identity, $base_policy );
+		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy/' . $identity, $filtered_policy );
 		if ( $filtered_policy instanceof RetryPolicy ) {
 			return $filtered_policy;
 		}
@@ -346,7 +357,7 @@ final readonly class FailureLifecycle {
 			 * @param   int                     $attempt    One-indexed number of the failed attempt.
 			 * @param   int                     $delay      Delay before the next attempt in seconds.
 			 */
-			\do_action( 'a8csp_jobs_engine/retry_scheduled/' . $identity, $public_run_id, $start_args, $attempt, $delay );
+			\do_action( 'a8csp_bgje/retry_scheduled/' . $identity, $public_run_id, $start_args, $attempt, $delay );
 		} finally {
 			/**
 			 * Fires after the identity-specific retry-scheduled hook.
@@ -360,7 +371,7 @@ final readonly class FailureLifecycle {
 			 * @param   int                     $attempt    One-indexed number of the failed attempt.
 			 * @param   int                     $delay      Delay before the next attempt in seconds.
 			 */
-			\do_action( 'a8csp_jobs_engine/retry_scheduled', $identity, $public_run_id, $start_args, $attempt, $delay );
+			\do_action( 'a8csp_bgje/retry_scheduled', $identity, $public_run_id, $start_args, $attempt, $delay );
 		}
 	}
 

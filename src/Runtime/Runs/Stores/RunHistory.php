@@ -49,7 +49,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgje_history_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_run_history_';
 
 	/**
 	 * Distinct single-flight identities are evicted least-recently-recorded past this count; without
@@ -296,7 +296,7 @@ final readonly class RunHistory {
 		 *
 		 * @param   int $size Default per-buffer history cap.
 		 */
-		$size = \apply_filters( 'a8csp_jobs_engine/history_size', self::DEFAULT_SIZE );
+		$size = \apply_filters( 'a8csp_bgje/history_size', self::DEFAULT_SIZE );
 		if ( \is_int( $size ) && 0 < $size ) {
 			return $size;
 		}

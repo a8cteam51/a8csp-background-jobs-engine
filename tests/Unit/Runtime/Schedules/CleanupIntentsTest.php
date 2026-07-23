@@ -286,6 +286,8 @@ final class CleanupIntentsTest extends TestCase {
 		$first_unschedules = \array_values( \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
 		self::assertCount( 500, $first_unschedules );
 		self::assertCount( 501, \array_filter( \array_keys( $this->wpdb->rows ), static fn ( string $option_name ): bool => \str_starts_with( $option_name, CleanupIntents::OPTION_PREFIX ) ) );
+		self::assertArrayHasKey( 'a8csp_bgje_cleanup_sweep_cursor', $this->wpdb->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgje_cleanup_intents_sweep', $this->wpdb->rows );
 		self::assertCount( 502, $this->wpdb->rows );
 
 		unset( $this->backend->results['unschedule'] );
@@ -303,6 +305,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertIsArray( $second_args );
 		self::assertSame( array( $expected_key ), $second_args['args'] ?? null );
 		self::assertArrayNotHasKey( $expected_option, $this->wpdb->rows );
+		self::assertArrayNotHasKey( 'a8csp_bgje_cleanup_sweep_cursor', $this->wpdb->rows );
 		self::assertCount( 500, $this->wpdb->rows );
 	}
 

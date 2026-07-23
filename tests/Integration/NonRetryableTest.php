@@ -63,7 +63,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$generic_retry_scheduled = array();
 		$failed                  = array();
 		\add_action(
-			'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY,
+			'a8csp_bgje/retry_scheduled/' . self::IDENTITY,
 			static function ( RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
 				$named_retry_scheduled[] = array( (string) $run_id, $start_args, $attempt, $delay );
 			},
@@ -71,7 +71,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			4
 		);
 		\add_action(
-			'a8csp_jobs_engine/retry_scheduled',
+			'a8csp_bgje/retry_scheduled',
 			static function ( string $name, RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
 				$generic_retry_scheduled[] = array( $name, (string) $run_id, $start_args, $attempt, $delay );
 			},
@@ -79,7 +79,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			5
 		);
 		\add_action(
-			'a8csp_jobs_engine/failed',
+			'a8csp_bgje/failed',
 			static function ( RunFailure $failure ) use ( &$failed ): void {
 				$failed[] = $failure;
 			},

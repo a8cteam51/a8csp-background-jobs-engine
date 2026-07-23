@@ -64,7 +64,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 		$named_completed   = array();
 		$generic_completed = array();
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::SUCCESS_IDENTITY,
+			'a8csp_bgje/completed/' . self::SUCCESS_IDENTITY,
 			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$named_completed ): void {
 				$named_completed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -72,7 +72,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed',
+			'a8csp_bgje/completed',
 			static function ( string $name, RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$generic_completed ): void {
 				$generic_completed[] = array( $name, (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -142,7 +142,7 @@ final class JobLifecycleTest extends IntegrationTestCase {
 
 		$failed = array();
 		\add_action(
-			'a8csp_jobs_engine/failed',
+			'a8csp_bgje/failed',
 			static function ( RunFailure $failure ) use ( &$failed ): void {
 				$failed[] = $failure;
 			},

@@ -199,7 +199,7 @@ final readonly class OwnerOperations {
 	 * Returns the most recently recorded completed run ID retained for one background-work name.
 	 *
 	 * The lookup covers only the retained history window. Each history buffer retains at most the
-	 * positive `a8csp_jobs_engine/history_size` filter value, 30 by default. A completed run
+	 * positive `a8csp_bgje/history_size` filter value, 30 by default. A completed run
 	 * older than that window returns `Success(null)` as if absent. Clients needing indefinite
 	 * retention keep their own pointer from the completed lifecycle hook. History
 	 * is recorded after those notifications, so a lookup inside either observes the previous retained

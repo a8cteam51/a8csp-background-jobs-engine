@@ -23,8 +23,8 @@ $a8csp_bgje_footprint = array(
 );
 
 $a8csp_bgje_lifecycle_hooks = array(
-	'a8csp_jobs_engine/deliver',
-	'a8csp_jobs_engine/schedule_due',
+	'a8csp_bgje/internal/deliver',
+	'a8csp_bgje/internal/schedule_due',
 );
 
 /*

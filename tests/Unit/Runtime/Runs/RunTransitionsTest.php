@@ -215,8 +215,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array(), $this->logger->records );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -362,7 +362,7 @@ final class RunTransitionsTest extends TestCase {
 		$state            = $before_snapshot['state'];
 		$expected_run_raw = $before_snapshot['raw'];
 		$expected_lock    = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
-		$expected_history = $this->option( 'a8csp_bgje_history_' . self::IDENTITY );
+		$expected_history = $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY );
 		self::assertIsString( $expected_lock );
 
 		$this->logger->records                       = array();
@@ -391,7 +391,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( RunStatus::Running, $after_state->status );
 		self::assertSame( self::NOW, $after_state->heartbeat_at );
 		self::assertSame( $expected_lock, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
-		self::assertSame( $expected_history, $this->option( 'a8csp_bgje_history_' . self::IDENTITY ) );
+		self::assertSame( $expected_history, $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY ) );
 		self::assertSame( array(), $this->fired_actions() );
 		self::assertSame( array(), $this->lifecycle_labels() );
 		foreach ( $this->wpdb->recorded_queries as $query ) {
@@ -455,11 +455,11 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_jobs_engine/cancelled/' . self::IDENTITY,
+					'hook_name' => 'a8csp_bgje/cancelled/' . self::IDENTITY,
 					'args'      => array( $public_run_id, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp_jobs_engine/cancelled',
+					'hook_name' => 'a8csp_bgje/cancelled',
 					'args'      => array( self::IDENTITY, $public_run_id, self::ARGS ),
 				),
 			),
@@ -517,8 +517,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-				'a8csp_jobs_engine/superseded',
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -557,11 +557,11 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name' => 'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+					'hook_name' => 'a8csp_bgje/superseded/' . self::IDENTITY,
 					'args'      => array( $public_run_id, self::ARGS ),
 				),
 				array(
-					'hook_name' => 'a8csp_jobs_engine/superseded',
+					'hook_name' => 'a8csp_bgje/superseded',
 					'args'      => array( self::IDENTITY, $public_run_id, self::ARGS ),
 				),
 			),
@@ -601,8 +601,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -675,8 +675,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array( array( 'identity' => 0 ) ), $this->job->calls );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/completed/' . self::IDENTITY,
-				'a8csp_jobs_engine/completed',
+				'a8csp_bgje/completed/' . self::IDENTITY,
+				'a8csp_bgje/completed',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -706,8 +706,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-				'a8csp_jobs_engine/superseded',
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -735,8 +735,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( 'superseded', $this->recorded_run_state( 'superseded' )['status'] );
 		self::assertSame(
 			array(
-				'a8csp_jobs_engine/superseded/' . self::IDENTITY,
-				'a8csp_jobs_engine/superseded',
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
@@ -906,7 +906,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertCount( 1, $this->wpdb->recorded_queries );
 		$query = $this->wpdb->recorded_queries[0];
 		self::assertStringStartsWith( 'SELECT `option_value` FROM ', $query );
-		self::assertStringContainsString( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_id, $query );
+		self::assertStringContainsString( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_id, $query );
 		self::assertStringEndsWith( ' LIMIT 1', $query );
 	}
 
@@ -918,7 +918,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  int
 	 */
 	private function action_sequence( string $run_id = self::RUN_ID ): int {
-		$state = $this->option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_id );
+		$state = $this->option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_id );
 		self::assertIsArray( $state );
 		$action_sequence = $state['action_sequence'] ?? null;
 		self::assertIsInt( $action_sequence );
@@ -1027,7 +1027,7 @@ final class RunTransitionsTest extends TestCase {
 					),
 				),
 			),
-			$this->option( 'a8csp_bgje_history_' . self::IDENTITY )
+			$this->option( 'a8csp_bgje_run_history_' . self::IDENTITY )
 		);
 	}
 
@@ -1143,7 +1143,7 @@ final class RunTransitionsTest extends TestCase {
 					$labels[] = 'failed-store';
 					continue;
 				}
-				if ( 'delete' !== $operation && 'a8csp_bgje_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
+				if ( 'delete' !== $operation && 'a8csp_bgje_run_history_' . self::IDENTITY === ( $event['key'] ?? null ) ) {
 					$labels[] = 'history';
 					continue;
 				}
@@ -1159,7 +1159,7 @@ final class RunTransitionsTest extends TestCase {
 			if ( 'action' === $type ) {
 				$hook_name = $event['hook_name'];
 				self::assertIsString( $hook_name );
-				$labels[] = 'hook:' . \str_replace( 'a8csp_jobs_engine/', '', $hook_name );
+				$labels[] = 'hook:' . \str_replace( 'a8csp_bgje/', '', $hook_name );
 				continue;
 			}
 
@@ -1187,7 +1187,7 @@ final class RunTransitionsTest extends TestCase {
 				$labels[] = self::run_state_label( $value );
 			} elseif ( 'a8csp_bgje_failed_runs_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'failed-store';
-			} elseif ( 'a8csp_bgje_history_' . self::IDENTITY === $option_name ) {
+			} elseif ( 'a8csp_bgje_run_history_' . self::IDENTITY === $option_name ) {
 				$labels[] = 'history';
 			}
 		}

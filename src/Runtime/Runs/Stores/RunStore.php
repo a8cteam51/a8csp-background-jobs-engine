@@ -47,7 +47,7 @@ final readonly class RunStore {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgje_run_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_active_run_';
 
 	/**
 	 * Maximum persisted serialization bytes accepted for one kind-owned state payload.

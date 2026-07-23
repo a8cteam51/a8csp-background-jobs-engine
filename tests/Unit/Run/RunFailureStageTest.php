@@ -71,7 +71,7 @@ final class RunFailureStageTest extends TestCase {
 	public static function valid_stage_provider(): iterable {
 		yield 'execution' => array( 'execution' );
 		yield 'queue_generation' => array( 'queue_generation' );
-		yield 'crash_reclaim' => array( 'crash_reclaim' );
+		yield 'crash_reclamation' => array( 'crash_reclamation' );
 		yield 'scheduling' => array( 'scheduling' );
 		yield 'vendor-qualified' => array( 'acme.export_sync' );
 	}

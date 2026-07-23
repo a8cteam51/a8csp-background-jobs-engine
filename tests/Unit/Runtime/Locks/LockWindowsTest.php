@@ -71,7 +71,7 @@ final class LockWindowsTest extends TestCase {
 	 */
 	#[DataProvider( 'continue_delay_filter_values' )]
 	public function test_continue_delay_resolves_filter_values( mixed $filtered_delay, int $expected_delay ): void {
-		$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', $filtered_delay );
+		$this->set_filter_value( 'a8csp_bgje/continue_delay', $filtered_delay );
 
 		self::assertSame( $expected_delay, $this->lock_windows->continue_delay( self::NAME, self::RUN_ID ) );
 	}
@@ -84,7 +84,7 @@ final class LockWindowsTest extends TestCase {
 	public function test_continue_delay_passes_all_documented_filter_arguments(): void {
 		$filter_call = null;
 		$this->set_filter_value(
-			'a8csp_jobs_engine/continue_delay',
+			'a8csp_bgje/continue_delay',
 			static function ( int $default_delay, string $identity, string $run_id ) use ( &$filter_call ): int {
 				$filter_call = array(
 					'arity' => \func_num_args(),
@@ -111,7 +111,7 @@ final class LockWindowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_invalid_continue_delay_filter_result_logs_a_warning(): void {
-		$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', '75' );
+		$this->set_filter_value( 'a8csp_bgje/continue_delay', '75' );
 
 		self::assertSame( 60, $this->lock_windows->continue_delay( self::NAME, self::RUN_ID ) );
 		self::assertCount( 1, $this->logger->records );
@@ -134,10 +134,10 @@ final class LockWindowsTest extends TestCase {
 		int $expected_staleness
 	): void {
 		if ( null !== $staleness_filter ) {
-			$this->set_filter_value( 'a8csp_jobs_engine/lock_staleness/' . self::NAME, $staleness_filter );
+			$this->set_filter_value( 'a8csp_bgje/lock_staleness/' . self::NAME, $staleness_filter );
 		}
 		if ( null !== $continue_filter ) {
-			$this->set_filter_value( 'a8csp_jobs_engine/continue_delay', $continue_filter );
+			$this->set_filter_value( 'a8csp_bgje/continue_delay', $continue_filter );
 		}
 
 		self::assertSame( $expected_staleness, $this->lock_windows->lock_staleness( self::NAME, self::RUN_ID ) );
@@ -151,7 +151,7 @@ final class LockWindowsTest extends TestCase {
 	public function test_lock_staleness_passes_all_documented_filter_arguments(): void {
 		$filter_call = null;
 		$this->set_filter_value(
-			'a8csp_jobs_engine/lock_staleness/' . self::NAME,
+			'a8csp_bgje/lock_staleness/' . self::NAME,
 			static function ( int $default_staleness ) use ( &$filter_call ): int {
 				$filter_call = array(
 					'arity' => \func_num_args(),
@@ -178,7 +178,7 @@ final class LockWindowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_invalid_lock_staleness_filter_result_logs_a_warning(): void {
-		$this->set_filter_value( 'a8csp_jobs_engine/lock_staleness/' . self::NAME, 0 );
+		$this->set_filter_value( 'a8csp_bgje/lock_staleness/' . self::NAME, 0 );
 
 		self::assertSame( 15 * \MINUTE_IN_SECONDS, $this->lock_windows->lock_staleness( self::NAME, self::RUN_ID ) );
 		self::assertCount( 1, $this->logger->records );

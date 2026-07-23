@@ -29,7 +29,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	public const string DELIVER_HOOK = 'a8csp_jobs_engine/deliver';
+	public const string DELIVER_HOOK = 'a8csp_bgje/internal/deliver';
 
 	// endregion
 

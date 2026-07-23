@@ -254,10 +254,10 @@ final class JobsTest extends CapabilityManagerTestCase {
 		self::assertSame( self::NOW + 43, $observed_heartbeat );
 		self::assertEquals( array( $completed_run->id, $failed_run->id, $failed_run->id, $failed_run->id ), $observed_run_ids );
 		self::assertSame( array( $completed_args, $completed_args, $failed_args ), $overlap_args );
-		$completed_hooks = $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' );
+		$completed_hooks = $this->rig->hooks()->fired( 'a8csp_bgje/completed' );
 		self::assertCount( 1, $completed_hooks );
 		self::assertSame( self::OWNER . ':configured', $completed_hooks[0][0] ?? null );
-		$failed_hooks = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
+		$failed_hooks = $this->rig->hooks()->fired( 'a8csp_bgje/failed' );
 		self::assertCount( 1, $failed_hooks );
 		$failure = $failed_hooks[0][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );

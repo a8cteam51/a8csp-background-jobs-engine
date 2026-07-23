@@ -22,7 +22,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Internal occurrence hook owned by the engine. */
-	private const string SCHEDULE_HOOK = 'a8csp_jobs_engine/schedule_due';
+	private const string SCHEDULE_HOOK = 'a8csp_bgje/internal/schedule_due';
 
 	/** Foreign WP-Cron hook outside the engine namespace. */
 	private const string FOREIGN_CRON_HOOK = 'third_party/integration/declarative_sync/foreign_cron';
@@ -37,7 +37,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	private const array FOREIGN_ACTION_ARGS = array( 'declarative-sync-foreign-action' );
 
 	/** Foreign Action Scheduler group outside every engine registration identity. */
-	private const string FOREIGN_ACTION_GROUP = 'a8csp-jobs-engine-integration-declarative-sync-foreign';
+	private const string FOREIGN_ACTION_GROUP = 'a8csp-bgje-integration-declarative-sync-foreign';
 
 	/** Owner isolated to orphan pruning. */
 	private const string ORPHAN_OWNER = 'integration-declarative-orphan';
@@ -252,7 +252,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$gap_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY, true, 37 );
 		self::assertGreaterThan( 0, $gap_action_id );
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		$gap_callback_calls  = 0;
 		$gap_status          = null;
 		$gap_visible         = null;

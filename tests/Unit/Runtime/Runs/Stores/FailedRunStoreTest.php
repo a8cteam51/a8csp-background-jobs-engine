@@ -210,7 +210,7 @@ final class FailedRunStoreTest extends TestCase {
 		$nested         = null;
 		$callbacks      = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
-		$callbacks['a8csp_jobs_engine/log']          = function () use ( &$listener_calls, &$nested ): void {
+		$callbacks['a8csp_bgje/log']                 = function () use ( &$listener_calls, &$nested ): void {
 			++$listener_calls;
 			if ( 1 === $listener_calls ) {
 				$nested = new FailedRunStore( self::IDENTITY, $this->rows, new HookLogger() )->all();
@@ -233,7 +233,7 @@ final class FailedRunStoreTest extends TestCase {
 			1,
 			\array_filter(
 				$fired,
-				static fn ( mixed $action ): bool => \is_array( $action ) && 'a8csp_jobs_engine/log' === ( $action['hook_name'] ?? null )
+				static fn ( mixed $action ): bool => \is_array( $action ) && 'a8csp_bgje/log' === ( $action['hook_name'] ?? null )
 			)
 		);
 	}

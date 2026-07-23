@@ -26,7 +26,7 @@ use PHPUnit\Framework\TestCase;
 final class KindDeliveryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string DELIVER_HOOK = 'a8csp_jobs_engine/deliver';
+	private const string DELIVER_HOOK = 'a8csp_bgje/internal/deliver';
 	private const string IDENTITY     = self::OWNER . ':' . self::NAME;
 	private const string NAME         = 'export';
 	private const int NOW             = 1_700_000_000;
@@ -176,7 +176,7 @@ final class KindDeliveryTest extends TestCase {
 	public function test_one_deliver_hook_is_registered_and_enqueued_with_the_run_group(): void {
 		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'] ?? null;
 		self::assertIsArray( $registrations );
-		$lifecycle_hooks = array( self::DELIVER_HOOK, 'a8csp_jobs_engine/run_job', 'a8csp_jobs_engine/start_chunked_job', 'a8csp_jobs_engine/continue_chunked_job', 'a8csp_jobs_engine/cleanup_chunked_job' );
+		$lifecycle_hooks = array( self::DELIVER_HOOK, 'a8csp_bgje/run_job', 'a8csp_bgje/start_chunked_job', 'a8csp_bgje/continue_chunked_job', 'a8csp_bgje/cleanup_chunked_job' );
 		$registered      = \array_values( \array_filter( $registrations, static fn ( mixed $registration ): bool => \is_array( $registration ) && \in_array( $registration['hook_name'] ?? null, $lifecycle_hooks, true ) ) );
 
 		self::assertCount( 1, $registered );

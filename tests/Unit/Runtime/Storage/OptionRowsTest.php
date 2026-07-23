@@ -26,7 +26,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RowDeleteOutcome::class )]
 #[UsesClass( RowWriteOutcome::class )]
 final class OptionRowsTest extends TestCase {
-	private const string KEY = 'a8csp_bgje_run_email-digest_run-123';
+	private const string KEY = 'a8csp_bgje_active_run_email-digest_run-123';
 
 	/** Loads the guarded WordPress cache and site functions. */
 	#[\Override]
@@ -149,7 +149,7 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_excludes_the_cursor_and_orders_by_binary_name(): void {
-		$prefix = 'a8csp_bgje_run_';
+		$prefix = 'a8csp_bgje_active_run_';
 		$wpdb   = new WpdbLockSpy();
 		$wpdb->put( $prefix . 'B', 'second' );
 		$wpdb->put( $prefix . 'a', 'third' );
@@ -177,7 +177,7 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_applies_the_limit_and_returns_a_short_final_page(): void {
-		$prefix = 'a8csp_bgje_run_';
+		$prefix = 'a8csp_bgje_active_run_';
 		$wpdb   = new WpdbLockSpy();
 		$wpdb->put( $prefix . '1', 'first' );
 		$wpdb->put( $prefix . '2', 'second' );
@@ -219,8 +219,8 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_pages_by_raw_case_colliding_candidates(): void {
-		$prefix    = 'a8csp_bgje_run_';
-		$collision = 'A8CSP_BGJE_RUN_collision';
+		$prefix    = 'a8csp_bgje_active_run_';
+		$collision = 'A8CSP_BGJE_ACTIVE_RUN_collision';
 		$wpdb      = new WpdbLockSpy();
 		$wpdb->put( $collision, 'foreign' );
 		$wpdb->put( $prefix . '1', 'first' );
@@ -259,11 +259,11 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_rejects_a_non_advancing_raw_cursor(): void {
-		$cursor                    = 'a8csp_bgje_run_cursor';
+		$cursor                    = 'a8csp_bgje_active_run_cursor';
 		$wpdb                      = new WpdbLockSpy();
 		$wpdb->option_name_results = array( $cursor );
 
-		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgje_run_', $cursor, 1 );
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgje_active_run_', $cursor, 1 );
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -311,7 +311,7 @@ final class OptionRowsTest extends TestCase {
 
 	/** A bounded page keysets past rejected candidates and counts only accepted names. */
 	public function test_option_names_page_applies_the_limit_after_validation(): void {
-		$prefix       = 'a8csp_bgje_run_owner:email-digest_';
+		$prefix       = 'a8csp_bgje_active_run_owner:email-digest_';
 		$first_valid  = $prefix . \sprintf( '%020d-%019d', 1, 1 );
 		$second_valid = $prefix . \sprintf( '%020d-%019d', 2, 2 );
 		$wpdb         = new WpdbLockSpy();

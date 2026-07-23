@@ -130,7 +130,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
-		$started = $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::IDENTITY );
+		$started = $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::IDENTITY );
 		$run_id  = $started[0][0] ?? null;
 		self::assertInstanceOf( RunId::class, $run_id );
 		self::assertSame( self::RUN_ID, (string) $run_id );
@@ -445,7 +445,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$readmitted = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $readmitted );
 		self::assertSame( array(), $this->chunked_job->generate_calls );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
 	}
 
 	/**
@@ -858,7 +858,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID;
+		return 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -926,7 +926,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 					return \is_array( $args )
 						&& 'enqueue_async' === $call['verb']
-						&& 'a8csp_jobs_engine/deliver' === ( $call['args']['hook'] ?? null )
+						&& 'a8csp_bgje/internal/deliver' === ( $call['args']['hook'] ?? null )
 						&& self::IDENTITY === ( $args[0] ?? null );
 				}
 			)

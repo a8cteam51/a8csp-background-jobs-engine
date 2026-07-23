@@ -38,7 +38,7 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @var     string
 	 */
-	public const string SCHEDULE_HOOK = 'a8csp_jobs_engine/schedule_due';
+	public const string SCHEDULE_HOOK = 'a8csp_bgje/internal/schedule_due';
 
 	/** Three consecutive gaps tolerate two transient occurrence-time declaration misses. */
 	private const int INACTIVE_WARNING_DELIVERY_THRESHOLD = 3;
@@ -378,6 +378,18 @@ final readonly class OccurrenceDelivery {
 		$interval = $schedule->recurrence->interval;
 
 		/**
+		 * Filters the schedule-occurrence grace window before schedule-specific filtering.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   int    $interval Default grace window in seconds.
+		 * @param   string $owner    Stable client identifier.
+		 * @param   string $identity Complete owner-qualified schedule identity.
+		 */
+		$grace = \apply_filters( 'a8csp_bgje/misfire_grace', $interval, $owner, $registration_key );
+
+		/**
 		 * Filters the grace window for one schedule occurrence.
 		 *
 		 * The dynamic portion of the hook name, `$identity`, is the complete owner-qualified
@@ -386,11 +398,11 @@ final readonly class OccurrenceDelivery {
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
-		 * @param   int    $interval         Default grace window in seconds.
+		 * @param   int    $grace            Generic-filtered grace window in seconds.
 		 * @param   string $owner            Stable client identifier.
 		 * @param   string $identity         Complete owner-qualified schedule identity.
 		 */
-		$grace = \apply_filters( 'a8csp_jobs_engine/misfire_grace/' . $registration_key, $interval, $owner, $registration_key );
+		$grace = \apply_filters( 'a8csp_bgje/misfire_grace/' . $registration_key, $grace, $owner, $registration_key );
 		if ( ! \is_int( $grace ) || 0 > $grace ) {
 			$this->logger->warning(
 				'Misfire grace filter returned an invalid value; return a non-negative integer to override the recurrence interval.',
@@ -441,7 +453,7 @@ final readonly class OccurrenceDelivery {
 					 * @param   int    $misfired_due Dropped occurrence due timestamp.
 					 * @param   int    $now          Occurrence observation timestamp.
 					 */
-					\do_action( 'a8csp_jobs_engine/misfire_skipped/' . $registration_key, $owner, $misfired_due, $now );
+					\do_action( 'a8csp_bgje/misfire_skipped/' . $registration_key, $owner, $misfired_due, $now );
 				} finally {
 					/**
 					 * Fires after the identity-specific misfire-skipped schedule hook.
@@ -454,7 +466,7 @@ final readonly class OccurrenceDelivery {
 					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
 					 * @param   int    $now              Occurrence observation timestamp.
 					 */
-					\do_action( 'a8csp_jobs_engine/misfire_skipped', $registration_key, $owner, $misfired_due, $now );
+					\do_action( 'a8csp_bgje/misfire_skipped', $registration_key, $owner, $misfired_due, $now );
 				}
 			} catch ( \Throwable $throwable ) {
 				$this->logger->error(

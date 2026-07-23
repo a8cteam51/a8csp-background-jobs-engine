@@ -36,11 +36,11 @@ final readonly class LifecycleEffects {
 	 * @var     array<string, string>
 	 */
 	private const array LIFECYCLE_HOOKS = array(
-		'started'    => 'a8csp_jobs_engine/started',
-		'completed'  => 'a8csp_jobs_engine/completed',
-		'failed'     => 'a8csp_jobs_engine/failed',
-		'cancelled'  => 'a8csp_jobs_engine/cancelled',
-		'superseded' => 'a8csp_jobs_engine/superseded',
+		'started'    => 'a8csp_bgje/started',
+		'completed'  => 'a8csp_bgje/completed',
+		'failed'     => 'a8csp_bgje/failed',
+		'cancelled'  => 'a8csp_bgje/cancelled',
+		'superseded' => 'a8csp_bgje/superseded',
 	);
 
 	/**
@@ -451,7 +451,7 @@ final readonly class LifecycleEffects {
 
 		return array(
 			'error'   => $error,
-			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::crash_reclaim(), code: ErrorCode::StorageFailure, summary: $error->message, details: $handler->failure_details( $state ), ),
+			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::crash_reclamation(), code: ErrorCode::StorageFailure, summary: $error->message, details: $handler->failure_details( $state ), ),
 		);
 	}
 
@@ -594,18 +594,29 @@ final readonly class LifecycleEffects {
 			return;
 		}
 
-		/**
-		 * Fires when a work run fails.
-		 *
-		 * The failure value carries the owner-qualified identity and run identifier, so a consumer
-		 * scoping to one work item filters on the failure's identity.
-		 *
-		 * @since   1.0.0
-		 * @version 1.0.0
-		 *
-		 * @param   RunFailure $failure Reconstructed client failure value.
-		 */
-		\do_action( $hook, $failure );
+		try {
+			/**
+			 * Fires when one work identity's run fails.
+			 *
+			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   RunFailure $failure Reconstructed client failure value.
+			 */
+			\do_action( $hook . '/' . $identity, $failure );
+		} finally {
+			/**
+			 * Fires after the identity-specific failed lifecycle hook.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   RunFailure $failure Reconstructed client failure value.
+			 */
+			\do_action( $hook, $failure );
+		}
 		// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound
 	}
 

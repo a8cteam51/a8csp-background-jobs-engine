@@ -390,7 +390,7 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertInstanceOf( SchedulerFacade::class, $scheduler );
 
 		$accepted = $scheduler->enqueue_async(
-			'a8csp_jobs_engine/payload_boundary',
+			'a8csp_bgje/payload_boundary',
 			self::args_with_json_length( 8_000 ),
 			'scheduler-tests:payload-boundary'
 		);
@@ -402,7 +402,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$this->reset_backend_observations();
 
 		$rejected = $scheduler->enqueue_async(
-			'a8csp_jobs_engine/payload_boundary',
+			'a8csp_bgje/payload_boundary',
 			self::args_with_json_length( 8_001 ),
 			'scheduler-tests:payload-boundary'
 		);
@@ -447,9 +447,9 @@ final class SchedulerFacadeTest extends TestCase {
 		);
 
 		$result = match ( $verb ) {
-			'enqueue_async'     => $scheduler->enqueue_async( 'a8csp_jobs_engine/throwable_barrier', array( 'run-17' ), 'scheduler-tests:throwable-barrier' ),
-			'schedule_single'   => $scheduler->schedule_single( 'a8csp_jobs_engine/throwable_barrier', self::NOW + 300, array( 'run-17' ), 'scheduler-tests:throwable-barrier' ),
-			'schedule_recurring' => $scheduler->schedule_recurring( 'a8csp_jobs_engine/throwable_barrier', 300, array( 'run-17' ), self::NOW + 300, 'scheduler-tests:throwable-barrier' ),
+			'enqueue_async'     => $scheduler->enqueue_async( 'a8csp_bgje/throwable_barrier', array( 'run-17' ), 'scheduler-tests:throwable-barrier' ),
+			'schedule_single'   => $scheduler->schedule_single( 'a8csp_bgje/throwable_barrier', self::NOW + 300, array( 'run-17' ), 'scheduler-tests:throwable-barrier' ),
+			'schedule_recurring' => $scheduler->schedule_recurring( 'a8csp_bgje/throwable_barrier', 300, array( 'run-17' ), self::NOW + 300, 'scheduler-tests:throwable-barrier' ),
 		};
 
 		self::assertTrue( $result->is_failure() );

@@ -20,7 +20,7 @@ Consumers use four connected surfaces:
 - **The Engine handle** — `a8csp_bgje( $owner )` returns an owner-bound `Engine` with `jobs()`, `schedules()`, and `runs()` portals to capability managers.
 - **The public models and execution roles** — compose work with `Job\JobDefinition`, `Job\JobKind`, and `Job\JobOptions`; implement `Job\JobExecutionInterface` or `Job\Chunked\ChunkedJobExecutionInterface`; declare schedules with `Schedule\Schedule`, `Schedule\Recurrence`, and `Schedule\CatchUpPolicy`; callbacks depend on `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`; run-producing commands return `Run\Run` snapshots, terminal failures use `Run\RunFailure`, and verb failures return `WP_Error`.
 - **The procedural aliases** — eight verb-noun `a8csp_bgje_*()` functions take `$owner` first, accept the same `Job\JobDefinition` registration value as the Jobs manager, preserve an import-free array dialect for schedule specifications, and invoke the capability-manager verbs.
-- **The lifecycle hooks** — observe runs through the `a8csp_jobs_engine/*` actions.
+- **The lifecycle hooks** — observe runs through the `a8csp_bgje/*` actions.
 
 The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run\Run`, `Job\RunContext`, and `Run\RunFailure`; execution callbacks depend on `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`. The procedural schedule alias preserves arrays and scalars as an import-free schedule dialect.
 
@@ -49,7 +49,7 @@ Action Scheduler is optional and preferred when ready; when absent, the engine r
 
 Register work and synchronize schedules from `init` **on every request**: registration is per-request, and schedule synchronization treats the supplied schedules as the owner's complete declaration. Prefer `init` priority `2` or later so Action Scheduler's `init:1` store initialization has run; synchronizing before it routes that request's occurrences to WP-Cron.
 
-Pass your plugin's lowercase slug as the owner (matching `[a-z0-9][a-z0-9-]*`, at most 32 bytes, never starting with the reserved `a8csp-jobs-engine` prefix). Job, Chunked Job, and Schedule names match `[a-z0-9_-]+` and are at most 64 bytes.
+Pass your plugin's lowercase slug as the owner (matching `[a-z0-9][a-z0-9-]*`, at most 32 bytes, never starting with the reserved `a8csp-bgje` prefix). Job, Chunked Job, and Schedule names match `[a-z0-9_-]+` and are at most 64 bytes.
 
 ## Quick start
 
@@ -357,7 +357,7 @@ wp background-jobs schedules remove my-plugin --yes
 
 ### 5. Handling failures
 
-The generic `a8csp_jobs_engine/failed` hook receives one `Run\RunFailure` object. Crash-recovery replay can reconstruct an equivalent value. A listener for one item filters on `$failure->identity`. Throw `Job\NonRetryableException` from `handle()`, `generate_queue()`, or `process_chunk()` to fail permanently without consuming the remaining automatic attempts.
+The identity-specific `a8csp_bgje/failed/{identity}` hook fires before the generic `a8csp_bgje/failed` hook; both receive the same `Run\RunFailure` object. Crash-recovery replay can reconstruct an equivalent value. Throw `Job\NonRetryableException` from `handle()`, `generate_queue()`, or `process_chunk()` to fail permanently without consuming the remaining automatic attempts.
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
@@ -388,12 +388,8 @@ add_action( 'init', static function (): void {
 	}
 
 	add_action(
-		'a8csp_jobs_engine/failed',
+		'a8csp_bgje/failed/my-plugin:' . PublishWebhookExecution::NAME,
 		static function ( RunFailure $failure ): void {
-			if ( 'my-plugin:' . PublishWebhookExecution::NAME !== $failure->identity ) {
-				return;
-			}
-
 			error_log( sprintf( 'Run %s consumed %d attempt(s).', $failure->run_id, $failure->attempts ) );
 		},
 		10,
@@ -469,7 +465,7 @@ The backed enums are:
 | `Schedule\CatchUpPolicy` | `RunOnce = 'run_once'`, `Skip = 'skip'` |
 | `Error\ErrorCode` | `InvalidArgument = 'invalid_argument'`, `AlreadyRegistered = 'already_registered'`, `EngineUnavailable = 'engine_unavailable'`, `MissingAutoloader = 'missing_autoloader'`, `UnknownWork = 'unknown_work'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailure = 'storage_failure'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
 
-`Run\RunFailureStage` is a final, interned, open string-backed value. `from( string )` wraps a lowercase snake key with at most one dot qualifier and throws `ValueError` for malformed input; `tryFrom( string )` returns null instead. Engine stages are available through `execution()`, `queue_generation()`, `crash_reclaim()`, and `scheduling()`. Grammar-valid third-party stages such as `acme.export_sync` remain intact.
+`Run\RunFailureStage` is a final, interned, open string-backed value. `from( string )` wraps a lowercase snake key with at most one dot qualifier and throws `ValueError` for malformed input; `tryFrom( string )` returns null instead. Engine stages are available through `execution()`, `queue_generation()`, `crash_reclamation()`, and `scheduling()`. Grammar-valid third-party stages such as `acme.export_sync` remain intact.
 
 ## Authoring work
 
@@ -490,7 +486,7 @@ The `job()` and `chunked_job()` constructors bind the built-in kind to its typed
 
 `Job\JobExecutionInterface` requires exactly `handle( array $start_args, Job\RunContextInterface $context ): void`. The definition supplies the name and policy, so the execution role carries no naming, policy, or lifecycle-reaction methods. A normal return succeeds. A throwable fails the attempt and follows the retry policy, except `Job\NonRetryableException`, which fails permanently.
 
-`Job\JobOptions` carries four independent optional policies: `max_runtime`, `retry`, `overlap`, and `overlap_key`. Null selects the engine default for that field. The defaults are a 300-second execution-invocation ceiling, a `Job\RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `Job\OverlapPolicy::Reject`, and a null overlap-key resolver. A null resolver uses the canonical argument hash. The `a8csp_jobs_engine/retry_policy/{identity}` filter receives the resolved retry policy before an attempt is scheduled.
+`Job\JobOptions` carries four independent optional policies: `max_runtime`, `retry`, `overlap`, and `overlap_key`. Null selects the engine default for that field. The defaults are a 300-second execution-invocation ceiling, a `Job\RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `Job\OverlapPolicy::Reject`, and a null overlap-key resolver. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
 
 A handler that exceeds its credited window becomes eligible for crash reclamation, and a reclaimed run can overlap its replacement, so handlers remain idempotent.
 
@@ -503,7 +499,7 @@ A handler that exceeds its credited window becomes eligible for crash reclamatio
 
 The resolved `JobOptions::$max_runtime` ceiling applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution; the complete queue is capped at 1,048,576 bytes and each chunk at 8,192 bytes.
 
-Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `Run\RunFailureStage::crash_reclaim()`, preserving the in-flight chunk in `Run\RunFailure::$details['failed_chunk']`; `runs()->retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
+Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `Run\RunFailureStage::crash_reclamation()`, preserving the in-flight chunk in `Run\RunFailure::$details['failed_chunk']`; `runs()->retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
 
 ### Schedule
 
@@ -551,42 +547,44 @@ An occurrence is a misfire only when observed strictly after `next_due + grace`;
 
 ## Hooks and filters
 
-Lifecycle reactions are hooks-only. The `started`, `completed`, `cancelled`, `superseded`, and `retry_scheduled` events fire the identity-specific hook first and the generic hook second with the identity prepended. The `failed` event is the exception: it uses only `a8csp_jobs_engine/failed` and dispatches one `Run\RunFailure` argument. Terminal hooks (`completed`, `failed`, `cancelled`, and `superseded`) are durable under Action Scheduler and best-effort under WP-Cron; `started` is inline and non-durable.
+Lifecycle reactions are hooks-only. Every event with an identity fires its identity-specific hook first and its generic hook second. Generic lifecycle hooks prepend the identity except `failed`, whose specific and generic variants receive the same self-identifying `Run\RunFailure` object. Terminal hooks (`completed`, `failed`, `cancelled`, and `superseded`) are durable under Action Scheduler and best-effort under WP-Cron; `started` is inline and non-durable.
 
 | Event | Hooks and arguments |
 | --- | --- |
-| Started | `a8csp_jobs_engine/started/{identity}`: `(Run\RunId $run_id, array $start_args)` · `a8csp_jobs_engine/started`: `(string $identity, Run\RunId $run_id, array $start_args)` |
-| Completed | `a8csp_jobs_engine/completed/{identity}`: `(Run\RunId $run_id, array $start_args, ?Run\RunId $previous_completed_run_id)` · generic prepends `$identity` |
-| Failed | `a8csp_jobs_engine/failed`: `(Run\RunFailure $failure)`; filter per work item on `$failure->identity` |
-| Cancelled | `a8csp_jobs_engine/cancelled/{identity}`: `(Run\RunId $run_id, array $start_args)` · generic prepends `string $identity` |
-| Superseded | `a8csp_jobs_engine/superseded/{identity}`: `(Run\RunId $run_id, array $start_args)` · generic prepends `string $identity` |
-| Retry scheduled | `a8csp_jobs_engine/retry_scheduled/{identity}`: `(Run\RunId $run_id, array $start_args, int $attempt, int $delay)` · generic prepends `string $identity`; attempt is the one-indexed failed-attempt count and delay is the chosen delay in seconds |
-| Misfire skipped | `a8csp_jobs_engine/misfire_skipped/{schedule_identity}`: `(string $owner, int $due_at, int $observed_at)` · generic prepends `string $schedule_identity` |
-| Log | `a8csp_jobs_engine/log`: `(string $level, string $message, array $context)` |
+| Started | `a8csp_bgje/started/{identity}`: `(Run\RunId $run_id, array $start_args)` · `a8csp_bgje/started`: `(string $identity, Run\RunId $run_id, array $start_args)` |
+| Completed | `a8csp_bgje/completed/{identity}`: `(Run\RunId $run_id, array $start_args, ?Run\RunId $previous_completed_run_id)` · generic prepends `$identity` |
+| Failed | `a8csp_bgje/failed/{identity}` · `a8csp_bgje/failed`: `(Run\RunFailure $failure)` |
+| Cancelled | `a8csp_bgje/cancelled/{identity}`: `(Run\RunId $run_id, array $start_args)` · generic prepends `string $identity` |
+| Superseded | `a8csp_bgje/superseded/{identity}`: `(Run\RunId $run_id, array $start_args)` · generic prepends `string $identity` |
+| Retry scheduled | `a8csp_bgje/retry_scheduled/{identity}`: `(Run\RunId $run_id, array $start_args, int $attempt, int $delay)` · generic prepends `string $identity`; attempt is the one-indexed failed-attempt count and delay is the chosen delay in seconds |
+| Misfire skipped | `a8csp_bgje/misfire_skipped/{schedule_identity}`: `(string $owner, int $due_at, int $observed_at)` · generic prepends `string $schedule_identity` |
+| Log | `a8csp_bgje/log`: `(string $level, string $message, array $context)` |
 
 A `started` or `retry_scheduled` listener that throws terminally fails the admitted run with `execution_failed`; when retention succeeds, the failed run is available for manual retry. Do not hook the engine's internal delivery actions.
 
+Filters with an identity apply the generic hook first and the identity-specific hook second. Each result feeds the next hook, so the identity-specific return is authoritative. Filters without an identity remain global.
+
 | Filter | Input and required return |
 | --- | --- |
-| `a8csp_jobs_engine/retry_policy/{identity}` | `(Job\RetryPolicy $policy): Job\RetryPolicy`; a foreign return leaves the resolved definition/default policy in effect. |
-| `a8csp_jobs_engine/queue/{identity}` | `(array $queue, array $start_args, string $run_id): array`; return an array list containing the complete set of chunk argument arrays. |
-| `a8csp_jobs_engine/misfire_grace/{schedule_identity}` | `(int $interval, string $owner, string $schedule_identity): int`; return a non-negative grace in seconds, defaulting to one interval. |
-| `a8csp_jobs_engine/continue_delay` | `(int $delay, string $identity, string $run_id): int`; return a non-negative delay in seconds, defaulting to 60. It also floors lock staleness at twice the delay. |
-| `a8csp_jobs_engine/lock_staleness/{identity}` | `(int $seconds): int`; return a positive lock window, defaulting to 900 and at least twice the continue delay. |
-| `a8csp_jobs_engine/history_size` | `(int $size): int`; return a positive per-buffer history cap, defaulting to 30. |
-| `a8csp_jobs_engine/log_to_error_log` | `(bool $enabled): bool`; return whether to register the default PHP error-log sink, defaulting to `true`. |
+| `a8csp_bgje/retry_policy` · `a8csp_bgje/retry_policy/{identity}` | Generic: `(Job\RetryPolicy $policy, string $identity)` · specific: `(Job\RetryPolicy $policy)`; return a `Job\RetryPolicy`. A foreign final return leaves the resolved definition/default policy in effect. |
+| `a8csp_bgje/queue` · `a8csp_bgje/queue/{identity}` | Generic: `(array $queue, string $identity, array $start_args, string $run_id)` · specific: `(array $queue, array $start_args, string $run_id)`; return an array list containing the complete set of chunk argument arrays. |
+| `a8csp_bgje/misfire_grace` · `a8csp_bgje/misfire_grace/{schedule_identity}` | Both: `(int $grace, string $owner, string $schedule_identity)`; return a non-negative grace in seconds, defaulting to one interval. |
+| `a8csp_bgje/continue_delay` · `a8csp_bgje/continue_delay/{identity}` | Generic: `(int $delay, string $identity, string $run_id)` · specific: `(int $delay, string $run_id)`; return a non-negative delay in seconds, defaulting to 60. It also floors lock staleness at twice the delay. |
+| `a8csp_bgje/lock_staleness` · `a8csp_bgje/lock_staleness/{identity}` | Generic: `(int $seconds, string $identity)` · specific: `(int $seconds)`; return a positive lock window, defaulting to 900 and at least twice the continue delay. |
+| `a8csp_bgje/history_size` | `(int $size): int`; return a positive per-buffer history cap, defaulting to 30. |
+| `a8csp_bgje/log_to_error_log` | `(bool $enabled): bool`; return whether to register the default PHP error-log sink, defaulting to `true`. |
 
 ## Bring your own PSR-3 logger
 
-The engine writes `a8csp_jobs_engine/log` events to PHP's error log by default. To route them to a `Psr\Log\LoggerInterface`, disable the default sink and attach a three-argument listener:
+The engine writes `a8csp_bgje/log` events to PHP's error log by default. To route them to a `Psr\Log\LoggerInterface`, disable the default sink and attach a three-argument listener:
 
 ```php
 use Psr\Log\LoggerInterface;
 
 /** @var LoggerInterface $logger */
-add_filter( 'a8csp_jobs_engine/log_to_error_log', static fn ( bool $enabled ): bool => false );
+add_filter( 'a8csp_bgje/log_to_error_log', static fn ( bool $enabled ): bool => false );
 add_action(
-	'a8csp_jobs_engine/log',
+	'a8csp_bgje/log',
 	static function ( string $level, string $message, array $context ) use ( $logger ): void {
 		$logger->log( $level, $message, $context );
 	},

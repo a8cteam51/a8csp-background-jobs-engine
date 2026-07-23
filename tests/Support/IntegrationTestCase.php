@@ -222,7 +222,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_jobs_engine/deliver',
+				'hook'     => 'a8csp_bgje/internal/deliver',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -237,7 +237,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_jobs_engine/deliver', $action->get_hook() );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $action->get_hook() );
 		self::assertSame( array( $name, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
@@ -259,7 +259,7 @@ abstract class IntegrationTestCase extends TestCase {
 	 * @return  string
 	 */
 	protected function assert_pending_chunk_continuation( string $name, string $run_id, string $group, array $expected_chunk ): string {
-		$run_state = \get_option( 'a8csp_bgje_run_' . $name . '_' . $run_id, null );
+		$run_state = \get_option( 'a8csp_bgje_active_run_' . $name . '_' . $run_id, null );
 		self::assertIsArray( $run_state, 'A pending chunked job continuation must retain its authoritative run row' );
 		$queue = $run_state['kind_state'] ?? null;
 		self::assertIsArray( $queue, 'A pending chunked job continuation must retain its authoritative queue' );
@@ -270,7 +270,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_jobs_engine/deliver',
+				'hook'     => 'a8csp_bgje/internal/deliver',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -285,7 +285,7 @@ abstract class IntegrationTestCase extends TestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_jobs_engine/deliver', $action->get_hook() );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $action->get_hook() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( array( $name, $run_id, $action_sequence ), $action->get_args(), 'A chunked job continuation must carry only its fenced delivery token' );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );

@@ -100,7 +100,7 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_registered_reset_purges_real_engine_state_and_reports_counts(): void {
 		$this->seed_engine_state();
-		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-jobs-engine:maintenance' );
+		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-bgje:maintenance' );
 		[ $cursor_option, $cursor_raw ] = StoreFixtureBuilder::for_identity( 'reset-tests:cleanup-cursor' )->cleanup_intent_sweep_cursor( 1_700_000_000 );
 		self::assertSame( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_option );
 		$this->rig->wpdb()->put( $cursor_option, $cursor_raw );
@@ -180,7 +180,7 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_registered_reset_reports_a_row_changed_during_reset(): void {
 		$this->seed_engine_state();
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgje' ) ] );
 		$option_name = ScheduleRegistry::option_name( 'reset-tests' );
 		$before      = $this->rig->wpdb()->rows;
 		$this->rig->wpdb()->before_next(

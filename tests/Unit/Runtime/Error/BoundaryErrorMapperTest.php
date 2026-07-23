@@ -91,13 +91,13 @@ final class BoundaryErrorMapperTest extends TestCase {
 	 */
 	#[DataProvider( 'scheduling_failure_codes' )]
 	public function test_scheduling_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_jobs_engine/deliver' ) ) ) );
+		$result = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_bgje/internal/deliver' ) ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
 		self::assertSame( 'Engine-authored scheduling detail.', $result->error->message );
-		self::assertSame( array( 'hook' => 'a8csp_jobs_engine/deliver' ), $result->error->context );
+		self::assertSame( array( 'hook' => 'a8csp_bgje/internal/deliver' ), $result->error->context );
 	}
 
 	/**

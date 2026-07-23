@@ -228,7 +228,7 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		$error = $this->crash_reclaim_error( $identity, $run_id );
+		$error = $this->crash_reclamation_error( $identity, $run_id );
 		$this->logger->warning(
 			'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
 			array(
@@ -273,7 +273,7 @@ final readonly class RunReconciliation {
 				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $handler, $expected_raw );
 			}
 
-			$error = $this->crash_reclaim_error( $identity, $run_id );
+			$error = $this->crash_reclamation_error( $identity, $run_id );
 			$this->logger->warning(
 				'Reclaimed stale running run that carries no pending-action descriptor.',
 				array(
@@ -370,7 +370,7 @@ final readonly class RunReconciliation {
 	 */
 	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, KindHandlerInterface $handler, string $expected_raw ): AbstractResult {
 		$attempts = RunState::increment_attempts_safely( $state->failed_attempts );
-		$this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::crash_reclaim(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ), $expected_raw );
+		$this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::crash_reclamation(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ), $expected_raw );
 
 		return new Success( null );
 	}
@@ -445,7 +445,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @return  EngineError
 	 */
-	private function crash_reclaim_error( string $identity, string $run_id ): EngineError {
+	private function crash_reclamation_error( string $identity, string $run_id ): EngineError {
 		return new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash reclaim path because its owned lock was stale or missing.', $run_id, $identity ) );
 	}
 

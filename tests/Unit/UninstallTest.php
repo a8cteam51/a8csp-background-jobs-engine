@@ -173,18 +173,19 @@ final class UninstallTest extends TestCase {
 
 	private const array DYNAMIC_OPTIONS   = array(
 		'a8csp_bgje_schedule_registrations_consumer-plugin',
-		'a8csp_bgje_schedule_registrations_a8csp-jobs-engine',
-		'a8csp_bgje_run_consumer-plugin:email-digest_00000000001700000000-0000000000000000042',
+		'a8csp_bgje_schedule_registrations_a8csp-bgje',
+		'a8csp_bgje_active_run_consumer-plugin:email-digest_00000000001700000000-0000000000000000042',
 		'a8csp_bgje_latest_run_consumer-plugin:email-digest',
-		'a8csp_bgje_history_consumer-plugin:email-digest',
+		'a8csp_bgje_run_history_consumer-plugin:email-digest',
 		'a8csp_bgje_overlap_lock_consumer-plugin:email-digest_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
 		'a8csp_bgje_occurrence_lease_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
 		'a8csp_bgje_cleanup_intent_4c1c43efb4ee9ce5c477b82ee52f4938b572d623a0d7c412f1f5e2f116dde7a4',
+		'a8csp_bgje_cleanup_sweep_cursor',
 		'a8csp_bgje_failed_runs_consumer-plugin:email-digest',
 	);
 	private const array LIFECYCLE_HOOKS   = array(
-		'a8csp_jobs_engine/deliver',
-		'a8csp_jobs_engine/schedule_due',
+		'a8csp_bgje/internal/deliver',
+		'a8csp_bgje/internal/schedule_due',
 	);
 	private const array UPDATE_TRANSIENTS = array(
 		'a8csp_bgje_github_latest_release_stable',
@@ -591,7 +592,7 @@ final class UninstallTest extends TestCase {
 	 * @return  string
 	 */
 	private function capture_error_log( callable $operation ): string {
-		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-jobs-engine-uninstall-' );
+		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-bgje-uninstall-' );
 		if ( false === $temp_file ) {
 			self::fail( 'Unable to create the uninstall error-log capture file; make the system temporary directory writable.' );
 		}

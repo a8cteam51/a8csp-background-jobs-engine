@@ -160,8 +160,8 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/misfire_skipped' ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::JOB_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/misfire_skipped' ) );
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( 0, $registration['misfire_skips'] ?? null );
@@ -182,8 +182,8 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/misfire_skipped' ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::JOB_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/misfire_skipped' ) );
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( $fired_at, $registration['last_fired'] ?? null );
@@ -205,14 +205,14 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::JOB_IDENTITY ) );
 		self::assertSame(
 			array( array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
-			$this->rig->hooks()->fired( 'a8csp_jobs_engine/misfire_skipped/' . self::REGISTRATION_KEY )
+			$this->rig->hooks()->fired( 'a8csp_bgje/misfire_skipped/' . self::REGISTRATION_KEY )
 		);
 		self::assertSame(
 			array( array( self::REGISTRATION_KEY, self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
-			$this->rig->hooks()->fired( 'a8csp_jobs_engine/misfire_skipped' )
+			$this->rig->hooks()->fired( 'a8csp_bgje/misfire_skipped' )
 		);
 		$registration = $this->registration();
 		self::assertSame( self::NOW + 5 * self::INTERVAL, $registration['next_due'] ?? null );
@@ -249,7 +249,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertIsInt( $next_due );
 		self::assertSame( $first_due + 4 * self::INTERVAL, $next_due );
 		self::assertSame( self::ANCHOR, $next_due % self::INTERVAL );
-		self::assertCount( $expected_started, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
+		self::assertCount( $expected_started, $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::JOB_IDENTITY ) );
 		self::assertSame( $expected_misfire_skips, $registration['misfire_skips'] ?? null );
 	}
 
@@ -279,7 +279,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( self::ANCHOR, $next_due % self::INTERVAL );
 		$start_calls = $this->calls( 'enqueue_async' );
 		self::assertCount( 1, $start_calls );
-		self::assertSame( 'a8csp_jobs_engine/deliver', $start_calls[0]['args']['hook'] ?? null );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $start_calls[0]['args']['hook'] ?? null );
 		$action_args = $start_calls[0]['args']['args'] ?? null;
 		self::assertIsArray( $action_args );
 		$run_id = $action_args[1] ?? null;
@@ -292,7 +292,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
-		$started       = $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::CHUNKED_IDENTITY );
+		$started       = $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::CHUNKED_IDENTITY );
 		$public_run_id = $started[0][0] ?? null;
 		self::assertInstanceOf( RunId::class, $public_run_id );
 		self::assertSame( $run_id, (string) $public_run_id );
@@ -444,7 +444,7 @@ final class ScheduleExecutionTest extends TestCase {
 	public function test_invalid_misfire_grace_filter_logs_warning(): void {
 		$this->sync_schedule( self::schedule() );
 		self::assertIsArray( $GLOBALS['a8csp_bgje_test_filter_values'] ?? null );
-		$GLOBALS['a8csp_bgje_test_filter_values'][ 'a8csp_jobs_engine/misfire_grace/' . self::REGISTRATION_KEY ] = '300';
+		$GLOBALS['a8csp_bgje_test_filter_values'][ 'a8csp_bgje/misfire_grace/' . self::REGISTRATION_KEY ] = '300';
 
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 
@@ -685,7 +685,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( 0, ScheduleExecutionWakeupProbe::$wakeups );
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_jobs_engine/started/' . self::JOB_IDENTITY ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::JOB_IDENTITY ) );
 	}
 
 	// endregion.

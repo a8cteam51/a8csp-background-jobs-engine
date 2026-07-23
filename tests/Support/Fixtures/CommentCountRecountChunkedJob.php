@@ -28,7 +28,7 @@ final class CommentCountRecountChunkedJob implements ChunkedJobExecutionInterfac
 	 *
 	 * @var     string
 	 */
-	public const string NAME = 'a8csp-jobs-engine-demo-comment-count-recount';
+	public const string NAME = 'a8csp-bgje-demo-comment-count-recount';
 
 	/**
 	 * Client-owned action fired after one post's comment count is refreshed.

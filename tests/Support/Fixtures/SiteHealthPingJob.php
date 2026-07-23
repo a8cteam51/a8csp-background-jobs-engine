@@ -26,7 +26,7 @@ final class SiteHealthPingJob implements JobExecutionInterface {
 	 *
 	 * @var     string
 	 */
-	public const string NAME = 'a8csp-jobs-engine-demo-site-health-ping';
+	public const string NAME = 'a8csp-bgje-demo-site-health-ping';
 
 	/**
 	 * Default client-owned transient key for the scheduled snapshot.

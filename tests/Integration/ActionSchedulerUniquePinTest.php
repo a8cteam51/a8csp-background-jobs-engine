@@ -16,7 +16,7 @@ final class ActionSchedulerUniquePinTest extends IntegrationTestCase {
 	private const HOOK = 'a8csp_bgje/integration/as_unique';
 
 	/** Action group isolated to this Action Scheduler drift detector. */
-	private const GROUP = 'a8csp-jobs-engine-integration-as-unique';
+	private const GROUP = 'a8csp-bgje-integration-as-unique';
 
 	// endregion.
 

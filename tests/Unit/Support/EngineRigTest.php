@@ -47,6 +47,15 @@ final class EngineRigTest extends TestCase {
 		EngineRig::bootstrap();
 	}
 
+	/** Initializes the hook seams independently of test execution order. */
+	#[\Override]
+	protected function setUp(): void {
+		parent::setUp();
+
+		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']        = array();
+	}
+
 	// endregion.
 
 	// region TESTS.
@@ -66,7 +75,7 @@ final class EngineRigTest extends TestCase {
 			self::assertSame( array( self::ARGS ), $job->calls );
 			$rig->assert_completed();
 			$rig->assert_no_retry();
-			$completed = $rig->hooks()->fired( 'a8csp_jobs_engine/completed' )[0] ?? null;
+			$completed = $rig->hooks()->fired( 'a8csp_bgje/completed' )[0] ?? null;
 			self::assertIsArray( $completed );
 			$run_id = $completed[1] ?? null;
 			self::assertInstanceOf( RunId::class, $run_id );
@@ -165,7 +174,7 @@ final class EngineRigTest extends TestCase {
 		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $args_hash, kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 
 		[ $run_name, $run_raw ] = $fixtures->run( self::RUN_ID, $state );
-		self::assertSame( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID, $run_name );
+		self::assertSame( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID, $run_name );
 		self::assertSame( 'job', self::decoded( $run_raw )['kind'] ?? null );
 		self::assertSame( self::ARGS, self::decoded( $run_raw )['start_args'] ?? null );
 
@@ -192,7 +201,7 @@ final class EngineRigTest extends TestCase {
 				),
 			)
 		);
-		self::assertSame( 'a8csp_bgje_history_' . self::IDENTITY, $history_name );
+		self::assertSame( 'a8csp_bgje_run_history_' . self::IDENTITY, $history_name );
 		$terminal = self::decoded( $history_raw )['terminal'] ?? null;
 		self::assertIsArray( $terminal );
 		$terminal_entry = $terminal[0] ?? null;

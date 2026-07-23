@@ -437,6 +437,19 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 		try {
 			/**
+			 * Filters the generated chunk queue before work-identity-specific filtering.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   list<array<array-key, mixed>> $queue      Complete list of chunk argument arrays.
+			 * @param   string                        $identity   Complete owner-qualified chunked-job identity.
+			 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
+			 * @param   string                        $run_id     Run identifier.
+			 */
+			$queue = \apply_filters( 'a8csp_bgje/queue', $queue, $identity, $state->start_args, $run_id );
+
+			/**
 			 * Filters the generated chunk queue for a chunked job.
 			 *
 			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
@@ -444,11 +457,11 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			 * @since   1.0.0
 			 * @version 1.0.0
 			 *
-			 * @param   list<array<array-key, mixed>> $queue      Complete list of chunk argument arrays.
+			 * @param   list<array<array-key, mixed>> $queue      Generic-filtered list of chunk argument arrays.
 			 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
 			 * @param   string                        $run_id     Run identifier.
 			 */
-			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_jobs_engine/queue/' . $identity, $queue, $state->start_args, $run_id ) );
+			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_bgje/queue/' . $identity, $queue, $state->start_args, $run_id ) );
 		} catch ( \Throwable $throwable ) {
 			$this->fail_start( $identity, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ErrorCode::ExecutionFailed );
 

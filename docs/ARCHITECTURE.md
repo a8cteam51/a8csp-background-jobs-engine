@@ -78,6 +78,14 @@ before WP-Cron; WP-Cron provides the documented best-effort fallback. Delivery i
 for terminal lifecycle hooks. Overlap locks, occurrence leases, and run generations use
 option-row compare-and-swap fences for concurrency control.
 
+Consumer hooks use the `a8csp_bgje/` namespace. Hooks whose operation has an identity publish
+generic and identity-specific variants: actions fire the specific hook before the generic hook,
+while filters apply the generic hook before the specific hook so the specific return is
+authoritative. This includes the failed lifecycle action and the retry-policy, queue,
+lock-staleness, misfire-grace, and continuation-delay filters. Hooks without an identity remain
+global. Action Scheduler and WP-Cron deliveries use the private
+`a8csp_bgje/internal/deliver` and `a8csp_bgje/internal/schedule_due` hooks.
+
 ## Multisite
 
 Options are per-site, so network uninstall pages through site IDs, switches into each site,

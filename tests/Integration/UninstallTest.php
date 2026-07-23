@@ -40,19 +40,20 @@ final class UninstallTest extends IntegrationTestCase {
 	 */
 	private const array DOCUMENTED_OPTIONS = array(
 		'a8csp_bgje_schedule_registrations_uninstall-test',
-		'a8csp_bgje_run_uninstall-test:job_run-1',
+		'a8csp_bgje_active_run_uninstall-test:job_run-1',
 		'a8csp_bgje_failed_runs_uninstall-test:job',
 		'a8csp_bgje_latest_run_uninstall-test',
-		'a8csp_bgje_history_uninstall-test',
+		'a8csp_bgje_run_history_uninstall-test',
 		'a8csp_bgje_overlap_lock_uninstall-test_args-hash',
 		'a8csp_bgje_occurrence_lease_registration-hash',
 		'a8csp_bgje_cleanup_intent_registration-hash',
+		'a8csp_bgje_cleanup_sweep_cursor',
 	);
 
 	/** Internal lifecycle hooks that may retain scheduled work. */
 	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_jobs_engine/deliver',
-		'a8csp_jobs_engine/schedule_due',
+		'a8csp_bgje/internal/deliver',
+		'a8csp_bgje/internal/schedule_due',
 	);
 
 	/** Runtime arguments prove uninstall clears each hook without requiring an exact identity. */
