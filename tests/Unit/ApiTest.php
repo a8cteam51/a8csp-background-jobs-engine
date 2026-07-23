@@ -172,8 +172,8 @@ final class ApiTest extends TestCase {
 	public function test_concept_facades_map_internal_failures_to_public_codes(): void {
 		$client = $this->rig->operations( 'consumer-plugin' );
 
-		self::assert_api_failure( $client->dispatch( 'missing-job' ), ErrorCode::UnknownJob, array( 'name' ) );
-		self::assert_api_failure( $client->dispatch( 'missing-chunked-job' ), ErrorCode::UnknownJob, array( 'name' ) );
+		self::assert_api_failure( $client->dispatch( 'missing-job' ), ErrorCode::UnknownJob, array( 'identity' ) );
+		self::assert_api_failure( $client->dispatch( 'missing-chunked-job' ), ErrorCode::UnknownJob, array( 'identity' ) );
 		self::assert_api_failure( $client->dispatch_now( 'missing-schedule' ), ErrorCode::UnknownSchedule, array( 'owner', 'schedule' ) );
 	}
 

@@ -134,6 +134,34 @@ final class BoundaryErrorMapperTest extends TestCase {
 	}
 
 	/**
+	 * Composed work identities cross the public boundary under their unambiguous key.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_identity_is_safe_public_context_and_name_is_not(): void {
+		$result = BoundaryErrorMapper::map(
+			new Failure(
+				new EngineError(
+					'Background-work is not registered.',
+					reason: EngineErrorReason::UnknownJob,
+					context: array(
+						'identity' => 'consumer-plugin:missing',
+						'name'     => 'consumer-plugin:missing',
+					),
+				)
+			)
+		);
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
+		self::assertSame( array( 'identity' => 'consumer-plugin:missing' ), $result->error->context );
+		self::assertArrayNotHasKey( 'name', $result->error->context );
+	}
+
+	/**
 	 * Database diagnostics never cross the API boundary into consumer error context.
 	 *
 	 * @load-bearing security

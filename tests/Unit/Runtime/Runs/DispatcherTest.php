@@ -285,6 +285,7 @@ final class DispatcherTest extends TestCase {
 
 		$error = $this->assert_failure_code( $result, ErrorCode::ExecutionFailed );
 		self::assertSame( \sprintf( 'job "%s" started listener failed because RuntimeException was thrown. Fix the started-hook listener before dispatching the job again.', self::IDENTITY ), $error->message );
+		self::assertSame( self::IDENTITY, $error->context['identity'] ?? null );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 		self::assertSame(
 			array(
@@ -553,7 +554,7 @@ final class DispatcherTest extends TestCase {
 		$result = $this->client->dispatch( self::UNKNOWN_NAME, self::ARGS );
 
 		$error = $this->assert_failure_code( $result, ErrorCode::UnknownJob );
-		self::assertSame( self::UNKNOWN_IDENTITY, $error->context['name'] ?? null );
+		self::assertSame( self::UNKNOWN_IDENTITY, $error->context['identity'] ?? null );
 		self::assertSame( $before, $this->public_effects_snapshot() );
 	}
 

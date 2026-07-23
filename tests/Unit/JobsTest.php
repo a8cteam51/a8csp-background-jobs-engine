@@ -280,18 +280,20 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 	}
 
 	/**
-	 * Internal failures preserve code, engine-authored message, and structured context in WP_Error.
+	 * An unregistered dispatch surfaces its composed identity alongside the code and engine-authored message in WP_Error.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_internal_failure_maps_every_boundary_error_field(): void {
+	public function test_unregistered_dispatch_exposes_its_identity_in_error_data(): void {
 		$error = self::assert_wp_error( \a8csp_bgje( self::OWNER )->jobs()->dispatch( 'missing' ), ErrorCode::UnknownJob->value );
+		$data  = $error->get_error_data();
 
 		self::assertSame( 'Background-work "engine-test:missing" is not registered; register it before dispatching.', $error->get_error_message() );
-		self::assertSame( array( 'name' => self::OWNER . ':missing' ), $error->get_error_data() );
+		self::assertSame( array( 'identity' => self::OWNER . ':missing' ), $data );
+		self::assertArrayNotHasKey( 'name', $data );
 	}
 
 	// endregion.

@@ -219,8 +219,8 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 				$exception_type,
 				reason: EngineErrorReason::ExecutionFailed,
 				context: array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				),
 			);
 			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed );

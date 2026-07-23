@@ -139,12 +139,12 @@ final readonly class Dispatcher {
 	public function dispatch( string $identity, array $args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 		$priority ??= 10;
 
@@ -168,12 +168,12 @@ final readonly class Dispatcher {
 	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 
 		return $this->dispatch_resolved( $handler, $options, $identity, $args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted );
@@ -200,12 +200,12 @@ final readonly class Dispatcher {
 
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 
 		$failed_store = $this->stores->failed_run_store( $identity );
@@ -226,8 +226,8 @@ final readonly class Dispatcher {
 					\sprintf( 'Failed run "%1$s" for background-work "%2$s" is not retained; %3$s', $run_id, $identity, $correction ),
 					reason: EngineErrorReason::RunNotRetained,
 					context: array(
-						'name'   => $identity,
-						'run_id' => $run_id,
+						'identity' => $identity,
+						'run_id'   => $run_id,
 					),
 				)
 			);
@@ -273,11 +273,11 @@ final readonly class Dispatcher {
 
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		if ( null === $handler->execution( $identity ) ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $identity );
@@ -288,8 +288,8 @@ final readonly class Dispatcher {
 					\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'name'   => $identity,
-						'run_id' => $run_id,
+						'identity' => $identity,
+						'run_id'   => $run_id,
 					),
 				)
 			);
@@ -364,7 +364,7 @@ final readonly class Dispatcher {
 					\sprintf( '%1$s "%2$s" priority %3$d is invalid; pass a value from 0 through %4$d.', $kind, $identity, $priority, self::MAX_PRIORITY ),
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
-						'name'     => $identity,
+						'identity' => $identity,
 						'priority' => $priority,
 					),
 				)
@@ -382,8 +382,8 @@ final readonly class Dispatcher {
 					\sprintf( '%1$s "%2$s" delay %3$d exceeds supported Unix seconds; pass a smaller delay.', $kind, $identity, $delay ),
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
-						'delay' => $delay,
-						'name'  => $identity,
+						'delay'    => $delay,
+						'identity' => $identity,
 					),
 				)
 			);
@@ -400,17 +400,17 @@ final readonly class Dispatcher {
 		if ( LockClaimOutcome::NotClaimed === $claim && OverlapPolicy::Reject === $overlap ) {
 			$owner = $this->overlap_guard->owner_run_id( $identity, $args_hash );
 			if ( $owner->is_failure() ) {
-				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; repair database reads and retry the dispatch.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; repair database reads and retry the dispatch.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => $identity ), ) );
 			}
 			$running_run_id = $owner->value;
 			if ( null === $running_run_id ) {
-				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; retry the dispatch against the current lock state.', $kind, $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; retry the dispatch against the current lock state.', $kind, $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
 			}
 
 			return new Success( new SkippedJobDispatch( $running_run_id, EngineError::held( $kind, $identity, $running_run_id ) ) );
 		}
 		if ( LockClaimOutcome::NotClaimed === $claim && OverlapPolicy::Allow === $overlap ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $identity );
@@ -422,8 +422,8 @@ final readonly class Dispatcher {
 		if ( 0 < $delay ) {
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $identity, $args_hash, $run_id, $scheduled_at ) ) {
 				HeartbeatOutcome::Owned => null,
-				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its delayed action; dispatch it again against the current lock state.', $kind, $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'name' => $identity ), ),
-				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( '%1$s "%2$s" could not confirm lock ownership while preparing its delayed action; dispatch it again after authoritative storage access recovers.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'name' => $identity ), ),
+				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its delayed action; dispatch it again against the current lock state.', $kind, $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ),
+				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( '%1$s "%2$s" could not confirm lock ownership while preparing its delayed action; dispatch it again after authoritative storage access recovers.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => $identity ), ),
 			};
 			if ( null !== $heartbeat_error ) {
 				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
@@ -446,8 +446,8 @@ final readonly class Dispatcher {
 						\sprintf( '%1$s "%2$s" lost its live run state while preparing its delayed action; retry against the current run state.', $kind, $identity ),
 						reason: EngineErrorReason::StorageFailure,
 						context: array(
-							'name'   => $identity,
-							'run_id' => $run_id,
+							'identity' => $identity,
+							'run_id'   => $run_id,
 						),
 					)
 				);
@@ -532,9 +532,9 @@ final readonly class Dispatcher {
 					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'name'   => $identity,
-						'run_id' => $run_id,
-						'kind'   => $kind,
+						'identity' => $identity,
+						'run_id'   => $run_id,
+						'kind'     => $kind,
 					),
 				)
 			);
@@ -553,8 +553,8 @@ final readonly class Dispatcher {
 				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', $kind, $identity ),
 				reason: EngineErrorReason::OverlapHeld,
 				context: array(
-					'name' => $identity,
-					'kind' => $kind,
+					'identity' => $identity,
+					'kind'     => $kind,
 				),
 			)
 		);
@@ -616,8 +616,8 @@ final readonly class Dispatcher {
 				\sprintf( 'Run "%1$s" for background-work "%2$s" is not retained; nothing remains to cancel.', $run_id, $identity ),
 				reason: EngineErrorReason::RunNotRetained,
 				context: array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				),
 			)
 		);
@@ -724,8 +724,8 @@ final readonly class Dispatcher {
 					$exception_class,
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
-						'name' => $identity,
-						'kind' => $kind,
+						'identity' => $identity,
+						'kind'     => $kind,
 					),
 				)
 			);
@@ -768,7 +768,7 @@ final readonly class Dispatcher {
 			return $args_hash;
 		}
 		if ( '' === $overlap_key || self::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $kind, $identity, self::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'name' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $kind, $identity, self::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'identity' => $identity ), ) );
 		}
 
 		return \hash( 'sha256', 'dedup:' . $overlap_key );
