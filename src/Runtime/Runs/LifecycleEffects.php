@@ -10,7 +10,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use Psr\Log\LoggerInterface;
@@ -171,17 +170,19 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity     Complete owner-qualified job or chunked job identity.
-	 * @param   string               $run_id       Run identifier.
-	 * @param   RunState             $state        Terminal run state.
-	 * @param   string               $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore             $run_store    Active-run store.
-	 * @param   KindHandlerInterface $handler      Resolved kind handler.
+	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
+	 *
+	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   string     $run_id         Run identifier.
+	 * @param   RunState   $state          Terminal run state.
+	 * @param   string     $terminal_raw   Exact terminal snapshot bytes.
+	 * @param   RunStore   $run_store      Active-run store.
+	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function replay_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, KindHandlerInterface $handler ): bool {
-		return $this->execute_claimed_transition( $identity, $run_id, $state, $terminal_raw, $run_store, $handler );
+	public function replay_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, ?array $failure_detail ): bool {
+		return $this->execute_claimed_transition( $identity, $run_id, $state, $terminal_raw, $run_store, $failure_detail );
 	}
 
 	/**
@@ -190,23 +191,21 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity     Complete owner-qualified job or chunked job identity.
-	 * @param   string               $run_id       Run identifier.
-	 * @param   RunState             $state        Terminal run state.
-	 * @param   string               $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore             $run_store    Active-run store.
-	 * @param   KindHandlerInterface $handler      Resolved kind handler.
+	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
+	 *
+	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   string     $run_id         Run identifier.
+	 * @param   RunState   $state          Terminal run state.
+	 * @param   string     $terminal_raw   Exact terminal snapshot bytes.
+	 * @param   RunStore   $run_store      Active-run store.
+	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @throws  \Throwable When an effect fails; a trustworthy refreshed snapshot permits the remaining effects and gated finish before rethrow, while a failed refresh causes an immediate rethrow.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, KindHandlerInterface $handler ): bool {
+	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, ?array $failure_detail ): bool {
 		$expected       = self::expected_effects( $state->status );
-		$missing        = \array_values( \array_diff( $expected, $state->effects ) );
-		$failure_detail = RunStatus::Failed === $state->status && array() !== \array_intersect( array( 'retention', 'hooks' ), $missing )
-			? $this->failure_detail( $identity, $run_id, $state, $handler )
-			: null;
 		$snapshot       = array(
 			'raw'   => $terminal_raw,
 			'state' => $state,
@@ -271,6 +270,48 @@ final readonly class LifecycleEffects {
 		}
 
 		return $finished;
+	}
+
+	/**
+	 * Reconstructs persisted internal and client terminal failure detail.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array<array-key, mixed>|null $fallback_details
+	 *
+	 * @param   string     $identity         Complete owner-qualified job or chunked job identity.
+	 * @param   string     $run_id           Run identifier.
+	 * @param   RunState   $state            Failed terminal state.
+	 * @param   array|null $fallback_details Kind-specific detail available when persisted detail is missing.
+	 *
+	 * @return  array{error: EngineError, failure: RunFailure}
+	 */
+	public function resolve_failure_detail( string $identity, string $run_id, RunState $state, ?array $fallback_details ): array {
+		if ( null !== $state->error ) {
+			$error = new EngineError( $state->error['message'], $state->error['class'] );
+
+			// Store reads reject malformed stages before replay, while grammar-valid extension stages remain opaque.
+			return array(
+				'error'   => $error,
+				'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: \max( 1, $state->failed_attempts ), stage: RunFailureStage::from( $state->error['stage'] ), code: ErrorCode::from( $state->error['code'] ), summary: $error->message, details: $state->error['details'] ?? null, ),
+			);
+		}
+
+		$this->logger->warning(
+			'Failed terminal run has no persisted failure detail; replay uses a generic failure.',
+			array(
+				'identity' => $identity,
+				'run_id'   => $run_id,
+			)
+		);
+
+		$error = new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', $run_id, $identity ) );
+
+		return array(
+			'error'   => $error,
+			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::crash_reclamation(), code: ErrorCode::StorageFailed, summary: $error->message, details: $fallback_details, ),
+		);
 	}
 
 	// endregion
@@ -433,46 +474,6 @@ final readonly class LifecycleEffects {
 		);
 
 		return false;
-	}
-
-	/**
-	 * Reconstructs persisted internal and client terminal failure detail.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string               $identity Complete owner-qualified job or chunked job identity.
-	 * @param   string               $run_id   Run identifier.
-	 * @param   RunState             $state    Failed terminal state.
-	 * @param   KindHandlerInterface $handler  Resolved kind handler.
-	 *
-	 * @return  array{error: EngineError, failure: RunFailure}
-	 */
-	private function failure_detail( string $identity, string $run_id, RunState $state, KindHandlerInterface $handler ): array {
-		if ( null !== $state->error ) {
-			$error = new EngineError( $state->error['message'], $state->error['class'] );
-
-			// Store reads reject malformed stages before replay, while grammar-valid extension stages remain opaque.
-			return array(
-				'error'   => $error,
-				'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: \max( 1, $state->failed_attempts ), stage: RunFailureStage::from( $state->error['stage'] ), code: ErrorCode::from( $state->error['code'] ), summary: $error->message, details: $state->error['details'] ?? null, ),
-			);
-		}
-
-		$this->logger->warning(
-			'Failed terminal run has no persisted failure detail; replay uses a generic failure.',
-			array(
-				'identity' => $identity,
-				'run_id'   => $run_id,
-			)
-		);
-
-		$error = new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', $run_id, $identity ) );
-
-		return array(
-			'error'   => $error,
-			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::crash_reclamation(), code: ErrorCode::StorageFailed, summary: $error->message, details: $handler->failure_details( $state ), ),
-		);
 	}
 
 	/**

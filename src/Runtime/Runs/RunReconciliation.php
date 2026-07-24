@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
@@ -161,6 +162,29 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
+		if ( RunStatus::Running !== $state->status ) {
+			$now = $this->clock->now()->getTimestamp();
+			if (
+				$state->heartbeat_at > \PHP_INT_MAX - $terminal_grace
+				|| $now <= $state->heartbeat_at + $terminal_grace
+			) {
+				return new Success( null );
+			}
+
+			$missing_effects = \array_values( \array_diff( LifecycleEffects::expected_effects( $state->status ), $state->effects ) );
+			$failure_detail  = null;
+			if ( RunStatus::Failed === $state->status && array() !== \array_intersect( array( 'retention', 'hooks' ), $missing_effects ) ) {
+				// Terminal cleanup needs the handler only to reconstruct kind-specific detail for a failed row whose persisted error is gone; an unregistered kind degrades to a generic failure rather than stranding the row, so a null handler is tolerated here where the running-row reclamation below requires one.
+				$handler          = $this->handlers[ $state->kind ] ?? null;
+				$fallback_details = null === $state->error && null !== $handler
+					? $handler->failure_details( $state )
+					: null;
+				$failure_detail   = $this->terminal_effects->resolve_failure_detail( $identity, $run_id, $state, $fallback_details );
+			}
+
+			return $this->reconcile_terminal_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $failure_detail );
+		}
+
 		$handler = $this->handlers[ $state->kind ] ?? null;
 		if ( null === $handler ) {
 			$this->logger->warning(
@@ -175,29 +199,25 @@ final readonly class RunReconciliation {
 			return new Success( null );
 		}
 
-		if ( RunStatus::Running === $state->status ) {
-			$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
-			$fence     = $state->executing
-				? $this->overlap_guard->fence_abandoned_run( $identity, $state->args_hash, $run_id, $staleness )
-				: $this->overlap_guard->classify_run_fence( $identity, $state->args_hash, $run_id );
+		$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
+		$fence     = $state->executing
+			? $this->overlap_guard->fence_abandoned_run( $identity, $state->args_hash, $run_id, $staleness )
+			: $this->overlap_guard->classify_run_fence( $identity, $state->args_hash, $run_id );
 
-			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
-				// A transferred lock can appear during displaced execution; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
-				if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
-					return new Success( $state->args_hash );
-				}
-
-				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $handler, $snapshot['raw'] );
+		if ( MaintenanceFenceOutcome::Transferred === $fence ) {
+			// A transferred lock can appear during displaced execution; its fresh run heartbeat leaves terminalization to that worker's next ownership fence.
+			if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
+				return new Success( $state->args_hash );
 			}
 
-			if ( $state->executing ) {
-				return $this->reconcile_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $fence, $handler );
-			}
-
-			return $this->reconcile_non_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $staleness, $handler );
+			return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $handler, $snapshot['raw'] );
 		}
 
-		return $this->reconcile_terminal_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $terminal_grace, $handler );
+		if ( $state->executing ) {
+			return $this->reconcile_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $fence, $handler );
+		}
+
+		return $this->reconcile_non_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $staleness, $handler );
 	}
 
 	// endregion
@@ -319,26 +339,19 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity       Complete owner-qualified job or chunked job identity.
-	 * @param   string               $run_id         Run identifier.
-	 * @param   RunState             $state          Terminal state observed by maintenance.
-	 * @param   RunStore             $run_store      Name-bound run store.
-	 * @param   string               $expected_raw   Exact observed state.
-	 * @param   int                  $terminal_grace Grace before belt-and-braces terminal cleanup.
-	 * @param   KindHandlerInterface $handler        Resolved kind handler.
+	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
+	 *
+	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   string     $run_id         Run identifier.
+	 * @param   RunState   $state          Terminal state observed by maintenance.
+	 * @param   RunStore   $run_store      Name-bound run store.
+	 * @param   string     $expected_raw   Exact observed state.
+	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_terminal_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $terminal_grace, KindHandlerInterface $handler ): AbstractResult {
-		$now = $this->clock->now()->getTimestamp();
-		if (
-			$state->heartbeat_at > \PHP_INT_MAX - $terminal_grace
-			|| $now <= $state->heartbeat_at + $terminal_grace
-		) {
-			return new Success( null );
-		}
-
-		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $handler ) ) {
+	private function reconcile_terminal_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?array $failure_detail ): AbstractResult {
+		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $failure_detail ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(

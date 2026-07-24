@@ -10,7 +10,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
@@ -69,7 +68,6 @@ final class LifecycleEffectsTest extends TestCase {
 
 	private FixedClock $clock;
 	private OverlapGuard $guard;
-	private KindHandlerInterface $handler;
 	private RecordingLogger $logger;
 	private StoreFactory $stores;
 	private LifecycleEffects $terminal_effects;
@@ -127,11 +125,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$this->wpdb   = new WpdbLockSpy();
 		$rows         = new OptionRows( $this->wpdb );
 		$this->guard  = new OverlapGuard( $this->clock, $this->logger, $rows );
-		$handler      = self::createStub( KindHandlerInterface::class );
-		$handler->method( 'key' )->willReturn( 'job' );
-		$handler->method( 'failure_details' )->willReturn( null );
 
-		$this->handler          = $handler;
 		$this->stores           = new StoreFactory( $this->clock, $rows, $this->logger );
 		$this->terminal_effects = new LifecycleEffects( $this->guard, $this->stores, $this->logger );
 	}
@@ -140,6 +134,67 @@ final class LifecycleEffectsTest extends TestCase {
 
 	// region TESTS.
 	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
+
+	/** Non-Failed terminal replay completes generic hooks and history without kind-owned context. */
+	public function test_replay_terminal_run_completes_non_failed_effects_without_failure_detail(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+
+		$finished = $this->terminal_effects->replay_terminal_run( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
+
+		self::assertTrue( $finished );
+		self::assertNull( $run_store->get( self::RUN_ID ) );
+		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
+		self::assertSame(
+			array(
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_terminal_history( 'superseded' );
+	}
+
+	/** Failed terminal replay consumes an already-resolved failure detail for retention and hooks. */
+	public function test_replay_terminal_run_records_failed_retention_with_resolved_failure_detail(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal       = $running->with_status( RunStatus::Failed )->with_failed_attempts( 2 )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error(
+			array(
+				'class'   => \RuntimeException::class,
+				'message' => 'Persisted terminal failure.',
+				'stage'   => RunFailureStage::execution()->value,
+				'code'    => ErrorCode::ExecutionFailed->value,
+				'details' => array( 'site_id' => 7 ),
+			)
+		);
+		$terminal_raw   = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$failure_detail = $this->terminal_effects->resolve_failure_detail( self::IDENTITY, self::RUN_ID, $terminal, null );
+
+		$finished = $this->terminal_effects->replay_terminal_run( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail );
+
+		self::assertTrue( $finished );
+		self::assertNull( $run_store->get( self::RUN_ID ) );
+		$failed = $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY );
+		self::assertIsArray( $failed );
+		$failed_entry = $failed[0] ?? null;
+		self::assertIsArray( $failed_entry );
+		self::assertSame( 2, $failed_entry['attempts'] ?? null );
+		$failed_error = $failed_entry['error'] ?? null;
+		self::assertIsArray( $failed_error );
+		self::assertSame( array( 'site_id' => 7 ), $failed_error['details'] ?? null );
+		$actions = $this->fired_actions();
+		$failure = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( array( 'site_id' => 7 ), $failure->details );
+		$this->assert_terminal_history( 'failed' );
+	}
 
 	/** Failed-run retention failure is logged without skipping terminal hooks or history. */
 	public function test_failed_run_retention_failure_is_logged_and_later_effects_continue(): void {
@@ -165,8 +220,9 @@ final class LifecycleEffectsTest extends TestCase {
 			)
 		);
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
+		$failure_detail = $this->terminal_effects->resolve_failure_detail( self::IDENTITY, self::RUN_ID, $terminal_state, null );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $this->handler );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $failure_detail );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
@@ -213,7 +269,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( self::PREVIOUS_RUN_ID );
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $this->handler );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, null );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
@@ -303,9 +359,12 @@ final class LifecycleEffectsTest extends TestCase {
 				)
 			);
 		}
-		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$terminal_raw   = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$failure_detail = 'failed' === $status
+			? $this->terminal_effects->resolve_failure_detail( self::IDENTITY, self::RUN_ID, $terminal, null )
+			: null;
 
-		self::assertTrue( $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $this->handler ) );
+		self::assertTrue( $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail ) );
 
 		$actions = $this->fired_actions();
 		if ( 'failed' === $status ) {
@@ -360,7 +419,7 @@ final class LifecycleEffectsTest extends TestCase {
 
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
 
-		self::assertTrue( $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $this->handler ) );
+		self::assertTrue( $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, null ) );
 
 		$actions = $this->fired_actions();
 		self::assertSame( $expected, $actions[0]['args'][1] ?? null );

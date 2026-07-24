@@ -114,6 +114,19 @@ final readonly class RunTransitions {
 			return null;
 		}
 
+		if ( RunStatus::Running !== $state->status ) {
+			$this->logger->warning(
+				$state->kind . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
+				array(
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'status'   => $state->status->value,
+				)
+			);
+
+			return null;
+		}
+
 		$kind    = $state->kind;
 		$handler = $handlers[ $kind ] ?? null;
 		if ( null === $handler ) {
@@ -150,19 +163,6 @@ final readonly class RunTransitions {
 					'expected' => $state->action_sequence,
 					'received' => $action_sequence,
 					'run_id'   => $run_id,
-				)
-			);
-
-			return null;
-		}
-
-		if ( RunStatus::Running !== $state->status ) {
-			$this->logger->warning(
-				$kind . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
-				array(
-					'identity' => $identity,
-					'run_id'   => $run_id,
-					'status'   => $state->status->value,
 				)
 			);
 
@@ -235,7 +235,7 @@ final readonly class RunTransitions {
 		$previous_completed_run_id = $this->last_completed_run_id( $identity );
 		$terminal_state            = $handler->completion_state( $state )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( $previous_completed_run_id );
 
-		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler );
+		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, null );
 	}
 
 	/**
@@ -272,7 +272,7 @@ final readonly class RunTransitions {
 			$clear_pending_actions();
 		} finally {
 			try {
-				$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $handler );
+				$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, null );
 			} catch ( \Throwable $throwable ) {
 				// The committed Cancelled state retains every unmarked effect for maintenance replay.
 				$this->logger->error(
@@ -309,8 +309,9 @@ final readonly class RunTransitions {
 	public function fail_unregistered_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
 		$attempts       = RunState::increment_attempts_safely( $state->failed_attempts );
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, RunFailureStage::execution(), ErrorCode::UnknownJob, $handler->failure_details( $state ) ) );
+		$failure_detail = $this->terminal_effects->resolve_failure_detail( $identity, $run_id, $terminal_state, null );
 
-		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler );
+		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $failure_detail );
 	}
 
 	/**
@@ -339,8 +340,9 @@ final readonly class RunTransitions {
 	 */
 	public function fail_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): bool {
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $details ) );
+		$failure_detail = $this->terminal_effects->resolve_failure_detail( $identity, $run_id, $terminal_state, null );
 
-		return $this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler, $expected_raw );
+		return $this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $failure_detail, $expected_raw );
 	}
 
 	/**
@@ -426,7 +428,7 @@ final readonly class RunTransitions {
 			)
 		);
 
-		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $handler );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, null );
 	}
 
 	// endregion
@@ -439,17 +441,19 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity     Complete owner-qualified work identity.
-	 * @param   string               $run_id       Run identifier.
-	 * @param   RunState             $expected     Complete running state observed by the terminalizing path.
-	 * @param   RunState             $replacement  Terminal replacement state.
-	 * @param   RunStore             $run_store    Active-run store.
-	 * @param   KindHandlerInterface $handler      Handler selected by the persisted kind.
-	 * @param   string|null          $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 * @phpstan-param array{error: EngineError, failure: \A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure}|null $failure_detail
+	 *
+	 * @param   string      $identity       Complete owner-qualified work identity.
+	 * @param   string      $run_id         Run identifier.
+	 * @param   RunState    $expected       Complete running state observed by the terminalizing path.
+	 * @param   RunState    $replacement    Terminal replacement state.
+	 * @param   RunStore    $run_store      Active-run store.
+	 * @param   array|null  $failure_detail Reconstructed internal and client failure detail.
+	 * @param   string|null $expected_raw   Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, KindHandlerInterface $handler, ?string $expected_raw = null ): bool {
+	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?array $failure_detail, ?string $expected_raw = null ): bool {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
 			return false;
@@ -467,7 +471,7 @@ final readonly class RunTransitions {
 			);
 		}
 
-		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $handler );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $failure_detail );
 
 		return true;
 	}

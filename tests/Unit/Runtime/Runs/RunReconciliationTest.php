@@ -1598,28 +1598,183 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A grammar-valid unknown kind also prevents terminal replay from consuming its retained state.
+	 * Generic superseded hooks and history let maintenance finish an unknown terminal kind.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_leaves_a_terminal_unknown_kind_untouched(): void {
+	public function test_sweep_replays_an_old_superseded_run_of_unknown_kind(): void {
 		$name = self::identity( 'unknown-terminal-kind' );
-		$this->store_terminal_run( $name, 'completed', kind: 'acme.export' );
-		$before = $this->run_state( $name );
+		$this->store_terminal_run( $name, 'superseded', kind: 'acme.export' );
 
 		$this->run_maintenance();
 
-		self::assertSame( $before, $this->run_state( $name ) );
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $options );
+		self::assertSame(
+			array(
+				'a8csp_bgje/superseded/' . $name,
+				'a8csp_bgje/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_history_status( $options, 'superseded', $name );
 		$record = $this->log_record(
 			'warning',
 			array(
 				'identity' => $name,
 				'run_id'   => self::RUN_ID,
-				'kind'     => 'acme.export',
+				'status'   => 'superseded',
 			)
 		);
 		self::assertNotNull( $record );
-		self::assertSame( 'Background-work run kind has no registered handler; maintenance left the run untouched.', $record['message'] );
+		self::assertSame( 'Reclaimed old terminal run option left behind after transition cleanup.', $record['message'] );
+		self::assertNull(
+			$this->log_record(
+				'warning',
+				array(
+					'identity' => $name,
+					'run_id'   => self::RUN_ID,
+					'kind'     => 'acme.export',
+				)
+			)
+		);
+	}
+
+	/**
+	 * An unknown Failed kind retains a generic failure without invented kind-specific detail.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_replays_an_old_failed_run_of_unknown_kind_with_generic_detail(): void {
+		$name = self::identity( 'unknown-failed-kind' );
+		$this->store_terminal_run( $name, 'failed', error: null, failed_attempts: 2, kind: 'acme.export', kind_state: array( 'opaque' => 'payload' ) );
+
+		$this->run_maintenance();
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name( $name ), $options );
+		$failed = $options[ FailedRunStore::OPTION_PREFIX . $name ] ?? null;
+		self::assertIsArray( $failed );
+		$summary = \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', self::RUN_ID, $name );
+		self::assertSame(
+			array(
+				array(
+					'run_id'     => self::RUN_ID,
+					'failed_at'  => self::NOW - 3_601,
+					'start_args' => self::ARGS,
+					'attempts'   => 3,
+					'error'      => array(
+						'class'   => null,
+						'message' => $summary,
+						'stage'   => RunFailureStage::crash_reclamation()->value,
+						'code'    => ErrorCode::StorageFailed->value,
+					),
+				),
+			),
+			$failed
+		);
+		$actions = $this->fired_actions();
+		self::assertSame( array( 'a8csp_bgje/failed/' . $name, 'a8csp_bgje/failed' ), \array_column( $actions, 'hook_name' ) );
+		$failure = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( 3, $failure->attempts );
+		self::assertSame( RunFailureStage::crash_reclamation(), $failure->stage );
+		self::assertSame( ErrorCode::StorageFailed, $failure->code );
+		self::assertSame( $summary, $failure->summary );
+		self::assertNull( $failure->details );
+		$this->assert_history_status( $options, 'failed', $name );
+		$generic = $this->log_record(
+			'warning',
+			array(
+				'identity' => $name,
+				'run_id'   => self::RUN_ID,
+			)
+		);
+		self::assertNotNull( $generic );
+		self::assertSame( 'Failed terminal run has no persisted failure detail; replay uses a generic failure.', $generic['message'] );
+		$cleanup = $this->log_record(
+			'warning',
+			array(
+				'identity' => $name,
+				'run_id'   => self::RUN_ID,
+				'status'   => 'failed',
+			)
+		);
+		self::assertNotNull( $cleanup );
+		self::assertSame( 'Reclaimed old terminal run option left behind after transition cleanup.', $cleanup['message'] );
+		self::assertNull(
+			$this->log_record(
+				'warning',
+				array(
+					'identity' => $name,
+					'run_id'   => self::RUN_ID,
+					'kind'     => 'acme.export',
+				)
+			)
+		);
+	}
+
+	/**
+	 * Registered kinds retain cleanup behavior for every terminal status.
+	 *
+	 * @param   string $status Terminal status value.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'registered_terminal_statuses' )]
+	public function test_sweep_replays_every_old_registered_terminal_status( string $status ): void {
+		$error = 'failed' === $status
+			? array(
+				'class'   => \RuntimeException::class,
+				'message' => 'Persisted registered failure.',
+				'stage'   => RunFailureStage::execution()->value,
+				'code'    => ErrorCode::ExecutionFailed->value,
+			)
+			: null;
+		$this->store_terminal_run( self::IDENTITY, $status, error: $error, failed_attempts: 'failed' === $status ? 2 : 0 );
+
+		$this->run_maintenance();
+
+		$options = $this->options();
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+		self::assertSame(
+			array(
+				'a8csp_bgje/' . $status . '/' . self::IDENTITY,
+				'a8csp_bgje/' . $status,
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_history_status( $options, $status );
+		if ( 'failed' === $status ) {
+			self::assertArrayHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
+		} else {
+			self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
+		}
+		self::assertNotNull(
+			$this->log_record(
+				'warning',
+				array(
+					'identity' => self::IDENTITY,
+					'run_id'   => self::RUN_ID,
+					'status'   => $status,
+				)
+			)
+		);
+	}
+
+	/**
+	 * Supplies every terminal status whose cleanup is handler-independent after failure resolution.
+	 *
+	 * @return  array<string, array{status: string}>
+	 */
+	public static function registered_terminal_statuses(): array {
+		return array(
+			'completed'  => array( 'status' => 'completed' ),
+			'failed'     => array( 'status' => 'failed' ),
+			'cancelled'  => array( 'status' => 'cancelled' ),
+			'superseded' => array( 'status' => 'superseded' ),
+		);
 	}
 
 	/**

@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -95,7 +96,7 @@ final class KindDeliveryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_unknown_kind_hydrates_and_delivery_drops_without_mutating_state(): void {
+	public function test_running_unknown_kind_delivery_reports_missing_handler_without_mutating_state(): void {
 		$run_id = $this->enqueue_job();
 		$this->replace_run_field( $run_id, 'kind', 'acme.export' );
 
@@ -112,7 +113,57 @@ final class KindDeliveryTest extends TestCase {
 		\do_action( self::DELIVER_HOOK, self::IDENTITY, $run_id, $state->action_sequence );
 
 		self::assertSame( $before, $this->raw_run( $run_id ) );
-		$this->assert_warning_logged( 'handler', 'acme.export' );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Persisted run kind has no registered handler; the delivery was dropped without changing the run.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => $run_id,
+						'kind'     => 'acme.export',
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
+	 * A terminal unknown kind is classified without resolving handler-owned lifecycle data.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_unknown_kind_delivery_reports_terminal_status_without_mutating_state(): void {
+		$run_id = $this->enqueue_job();
+		$this->replace_run_field( $run_id, 'kind', 'acme.export' );
+		$run_store = $this->run_store();
+		$running   = $run_store->get( $run_id );
+		self::assertNotNull( $running );
+		$terminal_raw = $run_store->replace_if_state_matches( $run_id, $running, $running->with_status( RunStatus::Superseded )->with_pending( null ) );
+		self::assertIsString( $terminal_raw );
+
+		$this->rig->logger()->records = array();
+		\do_action( self::DELIVER_HOOK, self::IDENTITY, $run_id, $running->action_sequence );
+
+		self::assertSame( $terminal_raw, $this->raw_run( $run_id ) );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'acme.export run is already terminal; allow the reconciliation sweep to finish its cleanup.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => $run_id,
+						'status'   => 'superseded',
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
 	}
 
 	/**
