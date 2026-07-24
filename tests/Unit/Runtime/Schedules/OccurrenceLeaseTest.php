@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -171,6 +172,49 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertSame( self::NOW, $this->stored_lease()['claimed_at'] ?? null );
 	}
 
+	/** A claim exactly sixty seconds in the future remains a held lease. */
+	public function test_future_lease_is_held_at_the_sixty_second_boundary(): void {
+		$this->put_lease( self::NOW + 60 );
+
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::NotClaimed, $claim->outcome );
+		self::assertNull( $claim->storage_operation );
+		self::assertNull( $claim->lease );
+		self::assertSame( self::NOW + 60, $this->stored_lease()['claimed_at'] ?? null );
+		self::assertCount( 2, $this->wpdb->recorded_queries );
+	}
+
+	/** A claim more than sixty seconds in the future is reclaimed as implausible. */
+	public function test_future_lease_is_reclaimed_after_sixty_seconds(): void {
+		$this->put_lease( self::NOW + 61 );
+
+		$claim = $this->lease->claim( self::KEY );
+		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
+		self::assertInstanceOf( OccurrenceLeaseHandle::class, $claim->lease );
+		self::assertSame( self::NOW, $this->stored_lease()['claimed_at'] ?? null );
+	}
+
+	/**
+	 * Integer-limit timestamps preserve the strict sixty-second staleness cutoffs.
+	 *
+	 * @param   int  $now            Current timestamp.
+	 * @param   int  $claimed_at     Incumbent claim timestamp.
+	 * @param   bool $expected_stale Whether the incumbent must be reclaimed.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'integer_limit_staleness_boundaries' )]
+	public function test_integer_limit_staleness_guards_preserve_strict_sixty_second_cutoffs( int $now, int $claimed_at, bool $expected_stale ): void {
+		$this->clock->timestamp = $now;
+		$this->put_lease( $claimed_at );
+
+		$claim            = $this->lease->claim( self::KEY );
+		$expected_outcome = $expected_stale ? OccurrenceLeaseOutcome::Claimed : OccurrenceLeaseOutcome::NotClaimed;
+
+		self::assertSame( $expected_outcome, $claim->outcome );
+		self::assertSame( $expected_stale ? $now : $claimed_at, $this->stored_lease()['claimed_at'] ?? null );
+	}
+
 	/** An unreadable incumbent is not replaced from non-authoritative absence. */
 	public function test_incumbent_read_failure_does_not_replace_the_lease(): void {
 		$raw = self::raw_lease( 41, self::NOW - 61 );
@@ -273,6 +317,20 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertNull( $claim->lease );
 		self::assertSame( self::NOW - 61, $this->stored_lease()['claimed_at'] ?? null );
 		self::assertCount( 3, $this->wpdb->recorded_queries );
+	}
+
+	/**
+	 * Returns integer-limit timestamps at the exact fresh and stale boundaries.
+	 *
+	 * @return  array<string, array{int, int, bool}>
+	 */
+	public static function integer_limit_staleness_boundaries(): array {
+		return array(
+			'minimum exact boundary remains fresh' => array( \PHP_INT_MIN + 60, \PHP_INT_MIN, false ),
+			'minimum boundary plus one is stale'   => array( \PHP_INT_MIN + 61, \PHP_INT_MIN, true ),
+			'maximum exact boundary remains fresh' => array( \PHP_INT_MAX - 60, \PHP_INT_MAX, false ),
+			'maximum boundary plus one is stale'   => array( \PHP_INT_MAX - 61, \PHP_INT_MAX, true ),
+		);
 	}
 
 	/**

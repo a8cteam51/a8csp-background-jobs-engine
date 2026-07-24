@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
  *
  * @phpstan-type FailedRunEntry array{
  *     run_id: string,
+ *     kind: string,
  *     failed_at: int,
  *     start_args: array<array-key, mixed>,
  *     attempts: int,

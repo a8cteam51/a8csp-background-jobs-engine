@@ -377,6 +377,56 @@ final class DispatcherCancelTest extends TestCase {
 	}
 
 	/**
+	 * A retained run without a live registration remains untouched.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_rejects_a_retained_run_without_a_live_registration(): void {
+		$identity = self::OWNER . ':unknown';
+		$fixtures = StoreFixtureBuilder::for_identity( $identity );
+		$state    = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $fixtures->args_hash( self::ARGS ), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$fixture  = $fixtures->run( self::RUN_ID, $state );
+		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
+		$before = $this->rig->wpdb()->rows;
+
+		$result = $this->client->cancel( 'unknown', self::RUN_ID );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::UnknownJob );
+		self::assertSame( 'job', $error->context['kind'] ?? null );
+		self::assertStringContainsString( 'is not registered', $error->message );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ) );
+	}
+
+	/**
+	 * Cancellation refuses a live registration whose kind differs from the retained run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_rejects_a_live_registration_with_a_different_kind_from_the_retained_run(): void {
+		$run_id = $this->enqueue_job();
+		$this->put_job_state( RunStatus::Running, false, 0, 1, self::NOW, PendingAction::async( 'run', 10 ), 'chunked_job' );
+		$this->reset_backend_observations();
+		$before = $this->rig->wpdb()->rows;
+
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::UnknownJob );
+		self::assertSame( 'chunked_job', $error->context['kind'] ?? null );
+		self::assertStringContainsString( 'persisted as "chunked_job"', $error->message );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ) );
+	}
+
+	/**
 	 * An unmaterialized chunked job remains cancellable before its start delivery.
 	 *
 	 * @since   1.0.0
@@ -560,14 +610,15 @@ final class DispatcherCancelTest extends TestCase {
 	 * @param   RunStatus          $status          Run status.
 	 * @param   bool               $executing       Execution marker.
 	 * @param   int                $failed_attempts Consumed attempts.
-	 * @param   int                $action_sequence      Delivery sequence.
+	 * @param   int                $action_sequence Delivery sequence.
 	 * @param   int                $heartbeat_at    Liveness timestamp.
 	 * @param   PendingAction|null $pending         Pending delivery.
+	 * @param   string             $kind            Persisted kind key.
 	 *
 	 * @return  void
 	 */
-	private function put_job_state( RunStatus $status, bool $executing, int $failed_attempts, int $action_sequence, int $heartbeat_at, ?PendingAction $pending ): void {
-		$state   = new RunState( status: $status, kind: 'job', executing: $executing, start_args: self::ARGS, args_hash: $this->job_fixtures->args_hash( self::ARGS ), kind_state: array(), failed_attempts: $failed_attempts, action_sequence: $action_sequence, created_at: self::NOW, heartbeat_at: $heartbeat_at, pending: $pending );
+	private function put_job_state( RunStatus $status, bool $executing, int $failed_attempts, int $action_sequence, int $heartbeat_at, ?PendingAction $pending, string $kind = 'job' ): void {
+		$state   = new RunState( status: $status, kind: $kind, executing: $executing, start_args: self::ARGS, args_hash: $this->job_fixtures->args_hash( self::ARGS ), kind_state: array(), failed_attempts: $failed_attempts, action_sequence: $action_sequence, created_at: self::NOW, heartbeat_at: $heartbeat_at, pending: $pending );
 		$fixture = $this->job_fixtures->run( self::RUN_ID, $state );
 		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 	}

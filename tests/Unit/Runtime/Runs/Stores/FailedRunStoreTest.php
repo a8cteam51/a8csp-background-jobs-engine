@@ -154,6 +154,31 @@ final class FailedRunStoreTest extends TestCase {
 	}
 
 	/**
+	 * Failed-run recording persists and hydrates the admitted run kind.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_record_persists_and_hydrates_the_run_kind(): void {
+		self::assertTrue( $this->record_entry( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+
+		$persisted = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $persisted );
+		$entry = $persisted[0] ?? null;
+		self::assertIsArray( $entry );
+		self::assertSame( array( 'run_id', 'kind', 'failed_at', 'start_args', 'attempts', 'error' ), \array_keys( $entry ) );
+		self::assertSame( 'job', $entry['kind'] ?? null );
+		$stored = $this->store()->all();
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertIsArray( $stored->value );
+		$hydrated = $stored->value[0] ?? null;
+		self::assertIsArray( $hydrated );
+		self::assertSame( 'job', $hydrated['kind'] ?? null );
+	}
+
+	/**
 	 * One mixed row preserves healthy failures and reports its rejected member once.
 	 *
 	 * @since   1.0.0
@@ -671,13 +696,14 @@ final class FailedRunStoreTest extends TestCase {
 	 * @param   array<array-key, mixed> $start_args Original run arguments.
 	 * @param   string                  $summary    Failure summary.
 	 *
-	 * @return  array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
+	 * @return  array{kind: string, failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
 	 */
 	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
 		$wire_id = null === RunId::tryFrom( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: $summary, details: null );
 
 		return array(
+			'kind'       => 'job',
 			'failed_at'  => $failed_at,
 			'start_args' => $start_args,
 			'failure'    => $failure,
@@ -705,12 +731,12 @@ final class FailedRunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError} $entry Failed-run request.
+	 * @param   array{kind: string, failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError} $entry Failed-run request.
 	 *
 	 * @return  bool
 	 */
 	private function record_entry( array $entry ): bool {
-		return $this->store()->record( (string) $entry['failure']->run_id, $entry['failed_at'], $entry['start_args'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
+		return $this->store()->record( (string) $entry['failure']->run_id, $entry['kind'], $entry['failed_at'], $entry['start_args'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
 	}
 
 	/**

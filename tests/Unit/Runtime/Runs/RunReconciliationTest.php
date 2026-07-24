@@ -449,6 +449,78 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
+	 * An unowned persisted stage cannot manufacture a redelivery fence or enter a rescheduling loop.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_drops_an_unowned_pending_stage_without_a_redelivery_loop(): void {
+		$this->create_running_run();
+		$this->set_run_fields(
+			self::IDENTITY,
+			array(
+				'heartbeat_at' => self::NOW - 901,
+				'pending'      => array(
+					'stage'    => 'continue',
+					'mode'     => 'async',
+					'fire_at'  => null,
+					'priority' => 10,
+				),
+			)
+		);
+		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+		$state_before = $this->run_state( self::IDENTITY );
+
+		$this->run_maintenance();
+		$this->run_maintenance();
+
+		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( $state_before, $this->run_state( self::IDENTITY ) );
+		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Persisted lifecycle stage is not owned by the resolved kind handler; maintenance left the run untouched.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+						'kind'     => 'job',
+						'stage'    => 'continue',
+					),
+				),
+				array(
+					'level'   => 'warning',
+					'message' => 'Persisted lifecycle stage is not owned by the resolved kind handler; maintenance left the run untouched.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+						'kind'     => 'job',
+						'stage'    => 'continue',
+					),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
+	 * An owned persisted stage remains eligible for ordinary pending-action redelivery.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_redelivers_an_owned_pending_stage(): void {
+		$this->create_running_run();
+		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->run_maintenance();
+
+		self::assertCount( 1, $this->backend->calls );
+		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+	}
+
+	/**
 	 * A missing lock is reconstructed for the retained generation before its job action is redelivered.
 	 *
 	 * @return  void
@@ -1651,6 +1723,7 @@ final class RunReconciliationTest extends TestCase {
 			array(
 				array(
 					'run_id'     => self::RUN_ID,
+					'kind'       => 'acme.export',
 					'failed_at'  => self::NOW - 3_601,
 					'start_args' => self::ARGS,
 					'attempts'   => 3,
@@ -1888,6 +1961,7 @@ final class RunReconciliationTest extends TestCase {
 			array(
 				array(
 					'run_id'     => self::RUN_ID,
+					'kind'       => 'chunked_job',
 					'failed_at'  => self::NOW - 3_601,
 					'start_args' => self::ARGS,
 					'attempts'   => 3,
@@ -1941,6 +2015,7 @@ final class RunReconciliationTest extends TestCase {
 			array(
 				array(
 					'run_id'     => self::RUN_ID,
+					'kind'       => 'chunked_job',
 					'failed_at'  => self::NOW - 3_601,
 					'start_args' => self::ARGS,
 					'attempts'   => 3,
@@ -1977,7 +2052,7 @@ final class RunReconciliationTest extends TestCase {
 		$name        = self::identity( 'partially-effected-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'partially-effected-chunked-job' );
 		$this->registry->register( $name, $chunked_job->definition() );
-		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted chunked job failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Persisted chunked job failure.', details: null, ) ) );
+		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, 'chunked_job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted chunked job failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Persisted chunked job failure.', details: null, ) ) );
 		$failed_option = 'a8csp_bgje_failed_runs_' . $name;
 		$failed_raw    = $this->wpdb->rows[ $failed_option ] ?? null;
 		self::assertIsString( $failed_raw );
@@ -2022,7 +2097,7 @@ final class RunReconciliationTest extends TestCase {
 		$marked_job  = new RecordingJob( 'marked-failed-job' );
 		$this->registry->register( $marked_name, $marked_job->definition() );
 		$failure = new RunFailure( identity: $marked_name, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Persisted job failure.', details: null );
-		self::assertTrue( $this->stores->failed_run_store( $marked_name )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
+		self::assertTrue( $this->stores->failed_run_store( $marked_name )->record( self::RUN_ID, 'job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
 		$this->store_terminal_run( $marked_name, 'failed', array( 'retention', 'hooks' ), $error, 2 );
 
 		$this->run_maintenance();
@@ -2058,7 +2133,7 @@ final class RunReconciliationTest extends TestCase {
 			'code'    => ErrorCode::ExecutionFailed->value,
 		);
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Persisted job failure.', details: null );
-		self::assertTrue( $this->stores->failed_run_store( self::IDENTITY )->record( self::RUN_ID, self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
+		self::assertTrue( $this->stores->failed_run_store( self::IDENTITY )->record( self::RUN_ID, 'job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
 		$this->store_terminal_run( self::IDENTITY, 'failed', array( 'retention' ), $error, 2 );
 		$throwable = new \RuntimeException( 'Failed hook exploded.' );
 

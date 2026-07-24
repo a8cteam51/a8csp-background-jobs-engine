@@ -203,24 +203,23 @@ final readonly class Dispatcher {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
 
-		$kind = $this->registry->kind( $identity );
-		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
-		}
-		$handler = $this->handler( $kind );
-		$options = $handler->options( $identity );
-		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
-		}
-
-		$failed_store = $this->stores->failed_run_store( $identity );
-		$read         = $failed_store->all();
+		$registered_kind = $this->registry->kind( $identity );
+		$failed_store    = $this->stores->failed_run_store( $identity );
+		$read            = $failed_store->all();
 		if ( $read->is_failure() ) {
+			if ( null === $registered_kind ) {
+				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+			}
+
 			return $read;
 		}
 
 		$entry = \array_find( $read->value, static fn ( array $candidate ): bool => $run_id === $candidate['run_id'] );
 		if ( null === $entry ) {
+			if ( null === $registered_kind ) {
+				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+			}
+
 			$retained_run_ids = \array_column( $read->value, 'run_id' );
 			$correction       = array() === $retained_run_ids
 				? 'retry a run identifier returned by the failed-run store after a terminal failure is recorded.'
@@ -236,6 +235,17 @@ final readonly class Dispatcher {
 					),
 				)
 			);
+		}
+
+		$kind     = $entry['kind'];
+		$resolved = $this->registered_handler_for_persisted_kind( $identity, $run_id, $kind, 'retrying this failed run' );
+		if ( $resolved instanceof Failure ) {
+			return $resolved;
+		}
+		$handler = $resolved;
+		$options = $handler->options( $identity );
+		if ( null === $options ) {
+			return $this->incompatible_kind_registration( $identity, $run_id, $kind, 'retrying this failed run' );
 		}
 
 		$overlap_key = $this->custom_overlap_key( $handler->key(), $identity, $options, $entry['start_args'] );
@@ -280,18 +290,14 @@ final readonly class Dispatcher {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
 
-		$kind = $this->registry->kind( $identity );
-		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
-		}
-		$handler = $this->handler( $kind );
-		if ( null === $handler->execution( $identity ) ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
-		}
-
-		$run_store = $this->stores->run_store( $identity );
-		$inspected = $run_store->inspect( $run_id );
+		$registered_kind = $this->registry->kind( $identity );
+		$run_store       = $this->stores->run_store( $identity );
+		$inspected       = $run_store->inspect( $run_id );
 		if ( $inspected->is_failure() ) {
+			if ( null === $registered_kind ) {
+				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+			}
+
 			return new Failure(
 				new EngineError(
 					\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, $identity ),
@@ -306,9 +312,18 @@ final readonly class Dispatcher {
 
 		$snapshot = $inspected->value;
 		if ( null === $snapshot || null === $snapshot['state'] ) {
+			if ( null === $registered_kind ) {
+				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+			}
+
 			return $this->cancel_not_retained( $identity, $run_id );
 		}
-		$state = $snapshot['state'];
+		$state    = $snapshot['state'];
+		$resolved = $this->registered_handler_for_persisted_kind( $identity, $run_id, $state->kind, 'cancelling this run' );
+		if ( $resolved instanceof Failure ) {
+			return $resolved;
+		}
+		$handler = $resolved;
 		if ( RunStatus::Running !== $state->status ) {
 			return new Failure(
 				new EngineError(
@@ -886,6 +901,60 @@ final readonly class Dispatcher {
 		}
 
 		return $handler;
+	}
+
+	/**
+	 * Resolves a persisted kind and verifies that the live identity still belongs to it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified work identity.
+	 * @param   string $run_id    Retained run identifier.
+	 * @param   string $kind      Persisted kind key.
+	 * @param   string $operation Corrective operation phrase.
+	 *
+	 * @return  KindHandlerInterface|Failure<EngineError>
+	 */
+	private function registered_handler_for_persisted_kind( string $identity, string $run_id, string $kind, string $operation ): KindHandlerInterface|Failure {
+		$handler = $this->handlers[ $kind ] ?? null;
+		if ( null === $handler || $kind !== $this->registry->kind( $identity ) || null === $handler->execution( $identity ) ) {
+			return $this->incompatible_kind_registration( $identity, $run_id, $kind, $operation );
+		}
+
+		return $handler;
+	}
+
+	/**
+	 * Returns the corrective failure for a missing or kind-incompatible live registration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity  Complete owner-qualified work identity.
+	 * @param   string $run_id    Retained run identifier.
+	 * @param   string $kind      Persisted kind key.
+	 * @param   string $operation Corrective operation phrase.
+	 *
+	 * @return  Failure<EngineError>
+	 */
+	private function incompatible_kind_registration( string $identity, string $run_id, string $kind, string $operation ): Failure {
+		$registered_kind = $this->registry->kind( $identity );
+		$registration    = null === $registered_kind
+			? 'is not registered'
+			: \sprintf( 'is registered as "%s"', $registered_kind );
+
+		return new Failure(
+			new EngineError(
+				\sprintf( 'Background-work "%1$s" %2$s, but run "%3$s" was persisted as "%4$s"; register the matching %4$s before %5$s.', $identity, $registration, $run_id, $kind, $operation ),
+				reason: EngineErrorReason::UnknownJob,
+				context: array(
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'kind'     => $kind,
+				),
+			)
+		);
 	}
 
 	/**

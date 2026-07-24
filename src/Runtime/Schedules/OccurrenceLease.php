@@ -15,6 +15,8 @@ use Psr\Clock\ClockInterface;
  *
  * The sixty-second stale window bounds crash recovery around scheduler acceptance and the registry
  * CAS; accepted dispatches release before client hooks, and asynchronous job execution is never leased.
+ * A claim timestamped more than that window ahead of now is equally implausible under a sane clock and
+ * is reclaimed too, so a forward clock jump inside the claim window cannot strand the schedule.
  *
  * @internal
  *
@@ -154,7 +156,7 @@ final readonly class OccurrenceLease {
 	}
 
 	/**
-	 * Returns whether a claim age is strictly greater than sixty seconds.
+	 * Returns whether a claim timestamp falls strictly outside the sixty-second plausibility window.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -165,8 +167,13 @@ final readonly class OccurrenceLease {
 	 * @return  bool
 	 */
 	private static function is_stale( int $claimed_at, int $now ): bool {
-		return $now > \PHP_INT_MIN + self::STALENESS
-			&& $claimed_at < $now - self::STALENESS;
+		return (
+			$now > \PHP_INT_MIN + self::STALENESS
+			&& $claimed_at < $now - self::STALENESS
+		) || (
+			$now < \PHP_INT_MAX - self::STALENESS
+			&& $claimed_at > $now + self::STALENESS
+		);
 	}
 
 	/**

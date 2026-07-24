@@ -209,13 +209,15 @@ final readonly class StoreFixtureBuilder {
 	 * @param   array<array-key, mixed> $start_args Original run arguments.
 	 * @param   RunFailure              $failure    Client failure payload.
 	 * @param   EngineError|null        $error      Internal failure detail.
+	 * @param   string                  $kind       Persisted run kind.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function failed( int $failed_at, array $start_args, RunFailure $failure, ?EngineError $error = null ): array {
+	public function failed( int $failed_at, array $start_args, RunFailure $failure, ?EngineError $error = null, string $kind = 'job' ): array {
 		return $this->failed_runs(
 			array(
 				array(
+					'kind'       => $kind,
 					'failed_at'  => $failed_at,
 					'start_args' => $start_args,
 					'failure'    => $failure,
@@ -232,6 +234,7 @@ final readonly class StoreFixtureBuilder {
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param list<array{
+	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     failure: RunFailure,
@@ -253,7 +256,7 @@ final readonly class StoreFixtureBuilder {
 				foreach ( $entries as $entry ) {
 					$failure = $entry['failure'];
 					$error   = $entry['error'] ?? null;
-					if ( ! $store->record( (string) $failure->run_id, $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
+					if ( ! $store->record( (string) $failure->run_id, $entry['kind'], $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
 						throw new \LogicException( 'Production FailedRunStore rejected an isolated failed-run fixture.' );
 					}
 				}

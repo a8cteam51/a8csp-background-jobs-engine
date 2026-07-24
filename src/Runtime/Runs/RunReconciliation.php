@@ -302,6 +302,20 @@ final readonly class RunReconciliation {
 				)
 			);
 		} else {
+			if ( ! $handler->owns_stage( $state->pending->stage ) ) {
+				$this->logger->warning(
+					'Persisted lifecycle stage is not owned by the resolved kind handler; maintenance left the run untouched.',
+					array(
+						'identity' => $identity,
+						'run_id'   => $run_id,
+						'kind'     => $state->kind,
+						'stage'    => $state->pending->stage,
+					)
+				);
+
+				return new Success( null );
+			}
+
 			$redelivery_fence = $this->overlap_guard->prepare_run_redelivery_fence( $identity, $state->args_hash, $run_id, $state->created_at, $state->heartbeat_at, $staleness );
 			if (
 				RedeliveryFenceOutcome::Live === $redelivery_fence

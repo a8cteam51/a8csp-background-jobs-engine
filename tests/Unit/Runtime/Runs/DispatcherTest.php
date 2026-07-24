@@ -1273,6 +1273,53 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Manual retry refuses a live registration whose kind differs from the retained failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_a_live_registration_with_a_different_kind_from_the_retained_failure(): void {
+		$raw = \maybe_serialize( array( $this->failed_entry( self::RUN_ID, self::ARGS, 2, self::NOW - 1, 'chunked_job' ) ) );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $raw );
+		$this->reset_observations();
+		$before = $this->rig->wpdb()->rows;
+
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::UnknownJob );
+		self::assertSame( 'chunked_job', $error->context['kind'] ?? null );
+		self::assertStringContainsString( 'persisted as "chunked_job"', $error->message );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * Manual retry leaves a retained failure untouched when no live registration exists.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_rejects_a_retained_failure_without_a_live_registration(): void {
+		$failure = new RunFailure( identity: self::UNKNOWN_IDENTITY, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Database unavailable.', details: null );
+		$this->put_fixture( StoreFixtureBuilder::for_identity( self::UNKNOWN_IDENTITY )->failed( self::NOW - 1, self::ARGS, $failure ) );
+		$this->reset_observations();
+		$before = $this->rig->wpdb()->rows;
+
+		$result = $this->client->retry_failed( self::UNKNOWN_NAME, self::RUN_ID );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::UnknownJob );
+		self::assertSame( 'job', $error->context['kind'] ?? null );
+		self::assertStringContainsString( 'is not registered', $error->message );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
 	 * Manual retry schedules the failed job's original arguments and consumes the entry.
 	 *
 	 * @since   1.0.0
@@ -1713,12 +1760,14 @@ final class DispatcherTest extends TestCase {
 	 * @param   array<array-key, mixed> $start_args Original arguments.
 	 * @param   int                     $attempts   Attempts consumed.
 	 * @param   int                     $failed_at  Failure timestamp.
+	 * @param   string                  $kind       Persisted kind key.
 	 *
-	 * @return array{run_id: string, failed_at: int, start_args: array<array-key, mixed>, attempts: int, error: array{class: null, message: string, stage: string, code: string}}
+	 * @return array{run_id: string, kind: string, failed_at: int, start_args: array<array-key, mixed>, attempts: int, error: array{class: null, message: string, stage: string, code: string}}
 	 */
-	private function failed_entry( string $run_id, array $start_args, int $attempts, int $failed_at ): array {
+	private function failed_entry( string $run_id, array $start_args, int $attempts, int $failed_at, string $kind = 'job' ): array {
 		return array(
 			'run_id'     => $run_id,
+			'kind'       => $kind,
 			'failed_at'  => $failed_at,
 			'start_args' => $start_args,
 			'attempts'   => $attempts,

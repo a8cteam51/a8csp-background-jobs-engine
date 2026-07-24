@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
@@ -103,6 +104,7 @@ final readonly class FailedRunStore {
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $run_id     Run identifier.
+	 * @param   string                  $kind       Persisted run kind.
 	 * @param   int                     $failed_at  Failure timestamp.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   int                     $attempts   Attempts consumed before failure.
@@ -115,7 +117,7 @@ final readonly class FailedRunStore {
 	 * @return  bool True when the failed-run entry is already present or confirmed persisted.
 	 */
 	#[\NoDiscard( 'a failed-run persistence outcome must be handled, not dropped' )]
-	public function record( string $run_id, int $failed_at, array $start_args, int $attempts, EngineError $error, RunFailure $failure ): bool {
+	public function record( string $run_id, string $kind, int $failed_at, array $start_args, int $attempts, EngineError $error, RunFailure $failure ): bool {
 		$key = $this->option_name();
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( $key );
@@ -142,6 +144,7 @@ final readonly class FailedRunStore {
 
 			$entries[]       = array(
 				'run_id'     => $run_id,
+				'kind'       => $kind,
 				'failed_at'  => $failed_at,
 				'start_args' => $start_args,
 				'attempts'   => $attempts,
@@ -185,6 +188,7 @@ final readonly class FailedRunStore {
 	 *
 	 * @return  AbstractResult<list<array{
 	 *     run_id: string,
+	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     attempts: int,
@@ -214,6 +218,7 @@ final readonly class FailedRunStore {
 	 * @return  AbstractResult<array{
 	 *     entries: list<array{
 	 *         run_id: string,
+	 *         kind: string,
 	 *         failed_at: int,
 	 *         start_args: array<array-key, mixed>,
 	 *         attempts: int,
@@ -424,6 +429,7 @@ final readonly class FailedRunStore {
 	 * @return  array{
 	 *     entries: list<array{
 	 *         run_id: string,
+	 *         kind: string,
 	 *         failed_at: int,
 	 *         start_args: array<array-key, mixed>,
 	 *         attempts: int,
@@ -538,6 +544,7 @@ final readonly class FailedRunStore {
 	 *
 	 * @return  array{
 	 *     run_id: string,
+	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
 	 *     attempts: int,
@@ -548,6 +555,8 @@ final readonly class FailedRunStore {
 		if (
 			! \is_array( $value )
 			|| ! \is_string( $value['run_id'] ?? null )
+			|| ! \is_string( $value['kind'] ?? null )
+			|| 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $value['kind'] )
 			|| ! \is_int( $value['failed_at'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
 			|| ! PortableArguments::is_valid( $value['start_args'] )
@@ -590,6 +599,7 @@ final readonly class FailedRunStore {
 
 		return array(
 			'run_id'     => $value['run_id'],
+			'kind'       => $value['kind'],
 			'failed_at'  => $value['failed_at'],
 			'start_args' => $value['start_args'],
 			'attempts'   => $value['attempts'],
