@@ -294,76 +294,73 @@ function my_plugin_dispatch_recount(): void {
 
 Chunks run one at a time with a short pause between them. `Job\Chunked\ChunkContextInterface` also exposes `prepend_chunk()`, `get_run_id()`, and `get_start_args()`. A failed chunked job starts a fresh run from its original arguments through `runs()->retry_failed()`.
 
-### 4. Day-2 operations: inspection, retry, cancellation, lock repair, and the CLI
+### 4. Reacting to run lifecycles
+
+Lifecycle reactions are hooks-only: the engine pushes every outcome, so consumers listen instead of
+polling. Every admitted run ends in exactly one of four terminal states — completed, failed,
+cancelled, or superseded — and each fires its identity-specific hook first, then its generic hook.
 
 ```php
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 
-function my_plugin_review_digest_run( RunId $run_id ): void {
-	$bg  = a8csp_bgje( 'my-plugin' );
-	$run = $bg->runs()->inspect( 'email-digest', $run_id );
-	if ( is_wp_error( $run ) ) {
-		error_log( $run->get_error_message() );
-		return;
-	}
+add_action( 'init', static function (): void {
+	// Completed: the payload carries the run's RunId and, when one exists, the previously
+	// completed run — enough to keep an owner-side pointer without polling.
+	add_action(
+		'a8csp_bgje/completed/my-plugin:email-digest',
+		static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ): void {
+			update_option( 'my_plugin_last_completed_digest', (string) $run_id );
+		},
+		10,
+		3
+	);
 
-	if ( RunStatus::Failed === $run->status ) {
-		$retry = $bg->runs()->retry_failed( 'email-digest', $run->id );
-		if ( is_wp_error( $retry ) ) {
-			error_log( $retry->get_error_message() );
-		}
-	}
+	// Failed: both variants receive the same self-identifying RunFailure. See "Handling
+	// failures" for the retry-policy side of this hook.
+	add_action(
+		'a8csp_bgje/failed/my-plugin:email-digest',
+		static function ( RunFailure $failure ): void {
+			my_plugin_alert_on_digest_failure( (string) $failure->run_id, $failure->summary );
+		},
+		10,
+		1
+	);
 
-	$last = $bg->runs()->last_completed( 'email-digest' );
-	if ( is_wp_error( $last ) ) {
-		error_log( $last->get_error_message() );
-	} elseif ( null !== $last ) {
-		update_option( 'my_plugin_last_completed_digest', (string) $last->id );
-	}
-}
+	// Cancelled: an operator or owner code withdrew the run before execution.
+	add_action(
+		'a8csp_bgje/cancelled/my-plugin:email-digest',
+		static function ( RunId $run_id, array $start_args ): void {
+			my_plugin_release_digest_reservation( (string) $run_id );
+		},
+		10,
+		2
+	);
 
-function my_plugin_cancel_digest( string $run_id ): void {
-	$cancelled = a8csp_bgje_cancel_run( 'my-plugin', 'email-digest', $run_id );
-	if ( is_wp_error( $cancelled ) ) {
-		error_log( $cancelled->get_error_message() );
-	}
-}
+	// Superseded: a Replace-policy dispatch displaced this run; the replacement carries its
+	// own lifecycle, so clean up anything keyed to the displaced run's id.
+	add_action(
+		'a8csp_bgje/superseded/my-plugin:email-digest',
+		static function ( RunId $run_id, array $start_args ): void {
+			my_plugin_discard_partial_digest( (string) $run_id );
+		},
+		10,
+		2
+	);
+}, 2 );
 ```
 
-`runs()->inspect()` returns a retained `Run\Run` or `WP_Error`; absence is `run_not_retained`. `runs()->last_completed()` adds `null` when no completion is present in retained history. After a manual retry admits a fresh run, the engine attempts to remove the retained source entry and logs a cleanup failure.
+Terminal hooks are durable under Action Scheduler and best-effort under WP-Cron, and crash-recovery
+replay can deliver them more than once — key every reaction to the run ID so repeated delivery
+converges. The generic variants (`a8csp_bgje/completed`, …) prepend `string $identity` (except
+`failed`, whose payload already self-identifies) and serve one listener across every identity.
 
-Every CLI `<identity>` is the composed `{owner}:{name}`:
-
-```sh
-# What is scheduled, and is it healthy?
-wp a8csp-bgje schedules list --owner=my-plugin
-
-# Live and recent runs for one job or chunked job.
-wp a8csp-bgje runs list my-plugin:recount-comments
-wp a8csp-bgje runs list my-plugin:recount-comments --format=json
-
-# What failed, and retry it.
-wp a8csp-bgje failed-runs list --owner=my-plugin
-wp a8csp-bgje failed-runs retry my-plugin:email-digest <run_id>
-
-# Cancel a specific retained run.
-wp a8csp-bgje runs cancel my-plugin:email-digest <run_id>
-
-# Remove an inactive plugin's schedules.
-wp a8csp-bgje schedules remove my-plugin --yes
-
-# Inspect execution-overlap locks without exposing stored values.
-wp a8csp-bgje locks list
-wp a8csp-bgje locks list --format=json
-
-# Repair one reviewed malformed lock lane.
-wp a8csp-bgje locks repair my-plugin:email-digest --args-hash=<hash>
-```
-
-`runs list --format=count` and `--format=csv` report only the live rows (the bounded inspected page, up to 20); `table`, `json`, and `yaml` include recent history. Unreadable rows are excluded and counted in a warning on STDERR for every format, so machine-readable STDOUT stays parseable. `wp a8csp-bgje reset` destroys **all** engine state; it is a development reset, not an operational tool.
-
-`locks list` reports persisted execution-overlap lanes as `owned`, `stale`, or `malformed`. It never prints raw option values; malformed rows expose only `raw_length` and a truncated `raw_sha256` correlation token. Maintenance preserves schema-invalid lock rows for explicit review. `locks repair <identity>` supersedes every matching `Running` row through exact compare-and-swap before exact-deleting the selected malformed lock. Pass `--args-hash=<hash>` when an identity has multiple malformed lanes, and use `--yes` only after reviewing the target. The reserved `a8csp-bgje:maintenance` identity is repairable through the same command when its own malformed lock prevents the maintenance sweep.
+Acting on runs, rather than reacting, stays imperative: `runs()->cancel()` (or
+`a8csp_bgje_cancel_run()`) withdraws a retained run, `runs()->retry_failed()` starts a fresh run
+from a retained failure, and `runs()->inspect()` / `runs()->last_completed()` answer point-in-time
+questions from tooling — inspection returns `run_not_retained` for an absent run, and
+`last_completed()` returns `null` outside the retained history window. Day-2 operator workflows
+live in the CLI — see "WP-CLI".
 
 ### 5. Handling failures
 
