@@ -391,36 +391,61 @@ final readonly class RunTransitions {
 		}
 
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
-		$this->supersede_run( $identity, $run_id, $latest_run_id, $state, $run_store, $handler );
+		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store );
+		if ( null !== $claimed ) {
+			$this->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
+		}
 
 		return true;
 	}
 
 	/**
-	 * Fences a run that no longer owns its overlap lock before hooks and active-state release.
+	 * Claims a Superseded state without releasing its lock or executing terminal effects.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity      Complete owner-qualified work identity.
-	 * @param   string               $run_id        Run identifier.
-	 * @param   string|null          $latest_run_id Latest discoverable pointer value for the single-flight identity.
-	 * @param   RunState             $state         Running state.
-	 * @param   RunStore             $run_store     Active-run store.
-	 * @param   KindHandlerInterface $handler       Handler selected by the persisted kind.
-	 * @param   string|null          $expected_raw  Exact maintenance snapshot, or null for a live transition.
+	 * @param   string      $run_id       Run identifier.
+	 * @param   RunState    $state        Running state.
+	 * @param   RunStore    $run_store    Active-run store.
+	 * @param   string|null $expected_raw Exact selected snapshot, or null to derive it from the typed state.
 	 *
-	 * @return  void
+	 * @return  array{raw: string, state: RunState}|null Exact claimed terminal snapshot, or null after a lost fence.
 	 */
-	public function supersede_run( string $identity, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, KindHandlerInterface $handler, ?string $expected_raw = null ): void {
+	public function claim_superseded_run( string $run_id, RunState $state, RunStore $run_store, ?string $expected_raw = null ): ?array {
+		if ( RunStatus::Running !== $state->status ) {
+			return null;
+		}
+
 		$terminal_state = $state->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw );
 		if ( null === $terminal_raw ) {
-			return;
+			return null;
 		}
-		$kind = $handler->key();
+
+		return array(
+			'raw'   => $terminal_raw,
+			'state' => $terminal_state,
+		);
+	}
+
+	/**
+	 * Executes the replayable effects for one claimed Superseded transition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                              $identity      Complete owner-qualified work identity.
+	 * @param   string                              $run_id        Run identifier.
+	 * @param   string|null                         $latest_run_id Latest discoverable pointer value for the single-flight identity.
+	 * @param   array{raw: string, state: RunState} $claimed       Exact claimed terminal snapshot.
+	 * @param   RunStore                            $run_store     Active-run store.
+	 *
+	 * @return  void
+	 */
+	public function execute_claimed_supersession( string $identity, string $run_id, ?string $latest_run_id, array $claimed, RunStore $run_store ): void {
 		$this->logger->info(
-			'Superseded ' . $kind . ' run after its ownership fence failed.',
+			'Superseded ' . $claimed['state']->kind . ' run after its ownership fence failed.',
 			array(
 				'identity'      => $identity,
 				'run_id'        => $run_id,
@@ -428,7 +453,7 @@ final readonly class RunTransitions {
 			)
 		);
 
-		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, null );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $claimed['state'], $claimed['raw'], $run_store );
 	}
 
 	// endregion

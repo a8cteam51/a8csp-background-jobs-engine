@@ -490,7 +490,7 @@ final readonly class StoreFixtureBuilder {
 			function ( \wpdb $wpdb ) use ( $args_hash, $run_id, $claimed_at, $heartbeat_at ): array {
 				$clock = new FixedClock( $claimed_at );
 				$guard = new OverlapGuard( $clock, new RecordingLogger(), new OptionRows( $wpdb ) );
-				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id, 0 ) ) {
+				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id, 0 )->outcome ) {
 					throw new \LogicException( 'Production OverlapGuard rejected an isolated lock fixture.' );
 				}
 

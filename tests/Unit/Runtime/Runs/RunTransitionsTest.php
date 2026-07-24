@@ -17,7 +17,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
@@ -221,6 +223,77 @@ final class RunTransitionsTest extends TestCase {
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		$this->assert_terminal_history( 'completed' );
+	}
+
+	/** A replacement fences an in-flight incumbent before its completion compare-and-swap. */
+	public function test_replace_supersedes_incumbent_before_inflight_completion_cas(): void {
+		$this->options = new JobOptions( overlap: OverlapPolicy::Replace );
+		$this->prepare_run_action();
+		$replacement_run_id   = null;
+		$this->job->on_handle = function () use ( &$replacement_run_id ): void {
+			$this->randomizer->value = 43;
+			$this->wpdb->before_next( 'update', static function (): void {} );
+			$this->wpdb->before_next(
+				'update',
+				function () use ( &$replacement_run_id ): void {
+					$result = $this->dispatcher->dispatch( self::IDENTITY, self::ARGS );
+					self::assertInstanceOf( Success::class, $result );
+					self::assertIsString( $result->value );
+					$replacement_run_id = $result->value;
+				}
+			);
+		};
+
+		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
+
+		self::assertIsString( $replacement_run_id );
+		self::assertSame( $replacement_run_id, $this->lock()['run_id'] ?? null );
+		$replacement_action_args = array( self::IDENTITY, $replacement_run_id, $this->action_sequence( $replacement_run_id ) );
+		self::assertSame( 1, $this->backend->scheduled_count( ActionDeliveries::DELIVER_HOOK, $replacement_action_args, self::IDENTITY . '|' . $replacement_run_id ) );
+		$history = $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY );
+		self::assertIsArray( $history );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::RUN_ID,
+					'status' => 'superseded',
+				),
+			),
+			$history['terminal'] ?? null
+		);
+	}
+
+	/** A claim-only supersession leaves its lock and every replayable effect untouched. */
+	public function test_claim_superseded_run_does_not_release_lock_or_execute_effects(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$inspected = $run_store->inspect( self::RUN_ID );
+		self::assertTrue( $inspected->is_success() );
+		$snapshot = $inspected->value;
+		self::assertNotNull( $snapshot );
+		$state = $snapshot['state'];
+		self::assertNotNull( $state );
+		$expected_lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $expected_lock_raw );
+
+		$claimed = $this->terminal_transitions->claim_superseded_run( self::RUN_ID, $state, $run_store, $snapshot['raw'] );
+
+		self::assertNotNull( $claimed );
+		self::assertSame( RunStatus::Superseded, $claimed['state']->status );
+		$after = $run_store->inspect( self::RUN_ID );
+		self::assertTrue( $after->is_success() );
+		$after_snapshot = $after->value;
+		self::assertNotNull( $after_snapshot );
+		self::assertSame( $claimed['raw'], $after_snapshot['raw'] );
+		self::assertEquals( $claimed['state'], $after_snapshot['state'] );
+		self::assertSame( $expected_lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		self::assertSame( self::RUN_ID, $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame( array( 'run:superseded' ), $this->lifecycle_labels() );
+		self::assertSame( array(), $this->logger->records );
+		$history = $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY );
+		self::assertIsArray( $history );
+		self::assertSame( array(), $history['terminal'] ?? null );
 	}
 
 	/**

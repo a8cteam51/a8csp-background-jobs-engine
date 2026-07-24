@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -410,33 +411,50 @@ final readonly class Dispatcher {
 		$scheduled_at = $now + $delay;
 		$run_id       = RunIdentity::generate( $now, $this->randomizer );
 		if ( OverlapPolicy::Allow === $overlap ) {
-			// Allow gets a per-run lock identity so concurrent occurrences never contend; NotClaimed can then only mean run-id collision.
+			// Allow gets a per-run lock identity so a Contended selection can only represent a run-ID collision.
 			$args_hash = $this->salted_args_hash( $args_hash, $run_id );
 		}
 
 		$latest_pointer = $this->stores->latest_run_pointer( $identity );
 		$claim          = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ) );
-		if ( LockClaimOutcome::NotClaimed === $claim && OverlapPolicy::Reject === $overlap ) {
-			$owner = $this->overlap_guard->owner_run_id( $identity, $args_hash );
-			if ( $owner->is_failure() ) {
-				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; repair database reads and retry the dispatch.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => $identity ), ) );
-			}
-			$running_run_id = $owner->value;
-			if ( null === $running_run_id ) {
-				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" could not confirm the owner of a contended overlap lock; retry the dispatch against the current lock state.', $kind, $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
-			}
-
-			return new Success( new SkippedJobDispatch( $running_run_id, EngineError::held( $kind, $identity, $running_run_id ) ) );
+		if (
+			LockClaimOutcome::Malformed === $claim->outcome
+			|| LockClaimOutcome::Indeterminate === $claim->outcome
+		) {
+			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}
-		if ( LockClaimOutcome::NotClaimed === $claim && OverlapPolicy::Allow === $overlap ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
+		if ( LockClaimOutcome::Contended === $claim->outcome ) {
+			if ( null === $claim->owner_run_id ) {
+				return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
+			}
+			if ( $run_id === $claim->owner_run_id ) {
+				return new Failure(
+					new EngineError(
+						\sprintf( '%1$s "%2$s" generated run "%3$s", but that identifier already owns the selected overlap lock; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ),
+						reason: EngineErrorReason::OverlapHeld,
+						context: array(
+							'identity' => $identity,
+							'run_id'   => $run_id,
+							'kind'     => $kind,
+						),
+					)
+				);
+			}
+			if ( OverlapPolicy::Allow === $overlap ) {
+				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
+			}
+			if ( false === $claim->stale && OverlapPolicy::Reject === $overlap ) {
+				return new Success( new SkippedJobDispatch( $claim->owner_run_id, EngineError::held( $kind, $identity, $claim->owner_run_id ) ) );
+			}
 		}
 
 		$run_store = $this->stores->run_store( $identity );
-		$state     = $this->create_run_state_and_replace_if_not_claimed( $handler, $identity, $run_id, $args, $args_hash, $claim, $run_store, $scheduled_at, $delay, $priority );
-		if ( $state instanceof Failure ) {
-			return $state;
+		$admission = $this->create_run_state_and_take_over_if_contended( $handler, $identity, $run_id, $args, $args_hash, $claim, $run_store, $scheduled_at, $delay, $priority );
+		if ( $admission instanceof Failure ) {
+			return $admission;
 		}
+		$state    = $admission['state'];
+		$takeover = $admission['takeover'];
 
 		if ( 0 < $delay ) {
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $identity, $args_hash, $run_id, $scheduled_at ) ) {
@@ -445,7 +463,8 @@ final readonly class Dispatcher {
 				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( '%1$s "%2$s" could not confirm lock ownership while preparing its delayed action; dispatch it again after authoritative storage access recovers.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => $identity ), ),
 			};
 			if ( null !== $heartbeat_error ) {
-				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
+				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
+				$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
 
 				return new Failure( $heartbeat_error );
 			}
@@ -453,12 +472,14 @@ final readonly class Dispatcher {
 			$replacement  = $state->with_heartbeat_at( $scheduled_at );
 			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 			if ( $transitioned instanceof Failure ) {
-				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
+				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
+				$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
 
 				return $transitioned;
 			}
 			if ( null === $transitioned ) {
-				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
+				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
+				$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
 
 				return new Failure(
 					new EngineError(
@@ -489,22 +510,28 @@ final readonly class Dispatcher {
 			? $this->scheduler->enqueue_async( ActionDeliveries::DELIVER_HOOK, $action_args, $group, $priority )
 			: $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, $scheduled_at, $action_args, $group, $priority );
 		if ( $scheduled->is_failure() ) {
-			$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
+			$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
+			$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
 
 			return $scheduled;
 		}
 
-		$on_accepted?->__invoke();
-		if ( ! $this->stores->run_history( $identity )->record_started( $run_id, $args_hash ) ) {
-			$this->logger->warning(
-				'Started run history could not be persisted; inspection data may be incomplete.',
-				array(
-					'identity' => $identity,
-					'run_id'   => $run_id,
-				)
-			);
+		$after_dispatch_error = null;
+		try {
+			$on_accepted?->__invoke();
+			if ( ! $this->stores->run_history( $identity )->record_started( $run_id, $args_hash ) ) {
+				$this->logger->warning(
+					'Started run history could not be persisted; inspection data may be incomplete.',
+					array(
+						'identity' => $identity,
+						'run_id'   => $run_id,
+					)
+				);
+			}
+			$after_dispatch_error = $handler->after_dispatch( $identity, $run_id, $state, $run_store );
+		} finally {
+			$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
 		}
-		$after_dispatch_error = $handler->after_dispatch( $identity, $run_id, $state, $run_store );
 		if ( null !== $after_dispatch_error ) {
 			return new Failure( $after_dispatch_error );
 		}
@@ -538,7 +565,13 @@ final readonly class Dispatcher {
 		// A resolver failure has no trustworthy client overlap lane, so its diagnostic run cannot contend with working admissions.
 		$args_hash = $this->salted_args_hash( $args_hash, $run_id );
 		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ) );
-		if ( LockClaimOutcome::NotClaimed === $claim ) {
+		if (
+			LockClaimOutcome::Malformed === $claim->outcome
+			|| LockClaimOutcome::Indeterminate === $claim->outcome
+		) {
+			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
+		}
+		if ( LockClaimOutcome::Claimed !== $claim->outcome ) {
 			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
 		}
 
@@ -568,7 +601,7 @@ final readonly class Dispatcher {
 		$on_accepted?->__invoke();
 		$terminalized = $this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ) );
 		if ( ! $terminalized ) {
-			$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
+			$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
 
 			return new Failure(
 				new EngineError(
@@ -597,26 +630,26 @@ final readonly class Dispatcher {
 	 * @param   string                  $run_id       Run identifier.
 	 * @param   array<array-key, mixed> $args         Start arguments.
 	 * @param   string                  $args_hash    Canonical overlap identity.
-	 * @param   LockClaimOutcome        $claim        Initial overlap-lock claim result.
+	 * @param   LockClaimResult         $claim        Initial overlap-lock selection.
 	 * @param   RunStore                $run_store    Active-run store.
 	 * @param   int                     $scheduled_at Delivery timestamp.
 	 * @param   int                     $delay        Scheduling delay in seconds.
 	 * @param   int                     $priority     Scheduler priority.
 	 *
-	 * @return  RunState|Failure<EngineError>
+	 * @return  array{state: RunState, takeover: array{run_id: string, claimed: array{raw: string, state: RunState}}|null}|Failure<EngineError>
 	 */
-	private function create_run_state_and_replace_if_not_claimed( KindHandlerInterface $handler, string $identity, string $run_id, array $args, string $args_hash, LockClaimOutcome $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): RunState|Failure {
+	private function create_run_state_and_take_over_if_contended( KindHandlerInterface $handler, string $identity, string $run_id, array $args, string $args_hash, LockClaimResult $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): array|Failure {
 		$kind  = $handler->key();
 		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $scheduled_at, $delay, $priority ) );
 		if ( $state instanceof Failure ) {
-			if ( LockClaimOutcome::NotClaimed !== $claim ) {
+			if ( LockClaimOutcome::Claimed === $claim->outcome ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );
 			}
 
 			return $state;
 		}
 		if ( null === $state ) {
-			if ( LockClaimOutcome::NotClaimed !== $claim ) {
+			if ( LockClaimOutcome::Claimed === $claim->outcome ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );
 			}
 
@@ -632,21 +665,28 @@ final readonly class Dispatcher {
 				)
 			);
 		}
-		if ( LockClaimOutcome::NotClaimed !== $claim ) {
-			return $state;
-		}
-		$transfer = $this->overlap_guard->replace( $identity, $args_hash, $run_id );
-		if ( LockTransferOutcome::Transferred === $transfer ) {
-			return $state;
+		if ( LockClaimOutcome::Claimed === $claim->outcome ) {
+			return array(
+				'state'    => $state,
+				'takeover' => null,
+			);
 		}
 
-		// A rival may advance the provisional state while the overlap transfer is in flight.
-		$run_store->delete_if_unchanged( $run_id, $state );
+		$incumbent_run_id = $claim->owner_run_id;
+		$incumbent_raw    = $claim->raw;
+		if ( LockClaimOutcome::Contended !== $claim->outcome || null === $incumbent_run_id || null === $incumbent_raw ) {
+			$run_store->delete_if_unchanged( $run_id, $state );
 
-		if ( LockTransferOutcome::Indeterminate === $transfer ) {
+			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
+		}
+
+		$incumbent_read = $run_store->inspect( $incumbent_run_id );
+		if ( $incumbent_read->is_failure() ) {
+			$run_store->delete_if_unchanged( $run_id, $state );
+
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not transfer overlap lock ownership because storage failed; repair option reads and writes before retrying.', $run_id, $kind, $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not read the contended run before overlap takeover; repair option reads and retry.', $run_id, $kind, $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
 						'identity' => $identity,
@@ -657,12 +697,155 @@ final readonly class Dispatcher {
 			);
 		}
 
+		$incumbent_snapshot = $incumbent_read->value;
+		if (
+			null !== $incumbent_snapshot
+			&& (
+				null === $incumbent_snapshot['state']
+				|| $args_hash !== $incumbent_snapshot['state']->args_hash
+			)
+		) {
+			$run_store->delete_if_unchanged( $run_id, $state );
+
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm a valid matching state for the contended lock owner; repair active-run storage and retry.', $run_id, $kind, $identity ),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'identity' => $identity,
+						'run_id'   => $run_id,
+						'kind'     => $kind,
+					),
+				)
+			);
+		}
+
+		$claimed_incumbent = null;
+		if ( null !== $incumbent_snapshot && RunStatus::Running === $incumbent_snapshot['state']->status ) {
+			// This exact run-state CAS is the first linearization point: once it wins, the incumbent's in-flight completion CAS cannot commit after takeover.
+			$claimed_incumbent = $this->terminal_transitions->claim_superseded_run( $incumbent_run_id, $incumbent_snapshot['state'], $run_store, $incumbent_snapshot['raw'] );
+			if ( null === $claimed_incumbent ) {
+				$run_store->delete_if_unchanged( $run_id, $state );
+
+				return new Failure(
+					new EngineError(
+						\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm the incumbent supersession before overlap transfer; repair option writes and retry.', $run_id, $kind, $identity ),
+						reason: EngineErrorReason::StorageFailure,
+						context: array(
+							'identity' => $identity,
+							'run_id'   => $run_id,
+							'kind'     => $kind,
+						),
+					)
+				);
+			}
+		} elseif ( null !== $incumbent_snapshot && RunStatus::Superseded === $incumbent_snapshot['state']->status ) {
+			// An unresolved lock transfer leaves Superseded effects pending; a retry with a definite transfer owns their replay.
+			$claimed_incumbent = array(
+				'raw'   => $incumbent_snapshot['raw'],
+				'state' => $incumbent_snapshot['state'],
+			);
+		}
+
+		// This exact lock CAS is the second linearization point for a running incumbent; a terminal snapshot crossed its own exact terminal CAS before admission observed it.
+		$transfer = $this->overlap_guard->replace( $identity, $args_hash, $incumbent_run_id, $incumbent_raw, $run_id );
+		if ( LockTransferOutcome::Indeterminate === $transfer ) {
+			$run_store->delete_if_unchanged( $run_id, $state );
+
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not transfer overlap lock ownership because storage failed; repair option writes before retrying.', $run_id, $kind, $identity ),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'identity' => $identity,
+						'run_id'   => $run_id,
+						'kind'     => $kind,
+					),
+				)
+			);
+		}
+
+		if ( LockTransferOutcome::Lost === $transfer ) {
+			// A rival may advance the provisional state while the overlap transfer is in flight.
+			$run_store->delete_if_unchanged( $run_id, $state );
+			// The exact lock-transfer winner owns replay; competing snapshots cannot safely fire the same unmarked effects.
+
+			return new Failure(
+				new EngineError(
+					\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', $kind, $identity ),
+					reason: EngineErrorReason::OverlapHeld,
+					context: array(
+						'identity' => $identity,
+						'kind'     => $kind,
+					),
+				)
+			);
+		}
+
+		return array(
+			'state'    => $state,
+			'takeover' => null === $claimed_incumbent
+				? null
+				: array(
+					'run_id'  => $incumbent_run_id,
+					'claimed' => $claimed_incumbent,
+				),
+		);
+	}
+
+	/**
+	 * Executes post-resolution supersession effects without abandoning the resolved admission.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                                                                   $identity       Complete owner-qualified work identity.
+	 * @param   string                                                                   $replacement_id Replacement run identifier.
+	 * @param   array{run_id: string, claimed: array{raw: string, state: RunState}}|null $takeover       Claimed incumbent supersession, if any.
+	 * @param   RunStore                                                                 $run_store      Active-run store.
+	 *
+	 * @return  void
+	 */
+	private function execute_takeover_effects( string $identity, string $replacement_id, ?array $takeover, RunStore $run_store ): void {
+		if ( null === $takeover ) {
+			return;
+		}
+
+		try {
+			$this->terminal_transitions->execute_claimed_supersession( $identity, $takeover['run_id'], $replacement_id, $takeover['claimed'], $run_store );
+		} catch ( \Throwable $throwable ) {
+			// The committed Superseded row retains every unmarked effect for maintenance replay.
+			$this->logger->error(
+				'Superseded-run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
+				array(
+					'identity'  => $identity,
+					'run_id'    => $takeover['run_id'],
+					'exception' => $throwable,
+				)
+			);
+		}
+	}
+
+	/**
+	 * Returns a storage failure for an untrustworthy overlap-lock selection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $kind     Persisted work-kind key.
+	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $run_id   Generated run identifier.
+	 *
+	 * @return  Failure<EngineError>
+	 */
+	private function invalid_lock_selection_failure( string $kind, string $identity, string $run_id ): Failure {
 		return new Failure(
 			new EngineError(
-				\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', $kind, $identity ),
-				reason: EngineErrorReason::OverlapHeld,
+				\sprintf( 'Run "%1$s" for %2$s "%3$s" could not read a valid authoritative overlap lock row; repair overlap-lock storage and retry.', $run_id, $kind, $identity ),
+				reason: EngineErrorReason::StorageFailure,
 				context: array(
 					'identity' => $identity,
+					'run_id'   => $run_id,
 					'kind'     => $kind,
 				),
 			)
@@ -771,13 +954,17 @@ final readonly class Dispatcher {
 	 * @param   string   $identity  Complete owner-qualified work identity.
 	 * @param   string   $args_hash Canonical overlap identity.
 	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $expected  Exact provisional state admitted by this dispatch.
 	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function roll_back_admitted_run( string $identity, string $args_hash, string $run_id, RunStore $run_store ): void {
-		$lock_release_confirmed = $this->overlap_guard->release( $identity, $args_hash, $run_id );
-		$run_deleted            = $run_store->delete( $run_id );
+	private function roll_back_admitted_run( string $identity, string $args_hash, string $run_id, RunState $expected, RunStore $run_store ): void {
+		$run_deleted = $run_store->delete_if_unchanged( $run_id, $expected );
+		// A changed run generation keeps its overlap fence; only this exact provisional row authorizes lock cleanup.
+		$lock_release_confirmed = $run_deleted
+			? $this->overlap_guard->release( $identity, $args_hash, $run_id )
+			: false;
 		if ( ! $lock_release_confirmed || ! $run_deleted ) {
 			$this->logger->warning(
 				'Scheduling rollback could not confirm complete cleanup; the run row may be redelivered by maintenance. Repair storage reads and writes before retrying.',

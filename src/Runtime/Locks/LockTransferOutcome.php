@@ -26,7 +26,7 @@ enum LockTransferOutcome: string {
 	case Lost = 'lost';
 
 	/**
-	 * Authoritative storage could not complete the transfer read or write.
+	 * Authoritative storage could not complete the transfer write.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

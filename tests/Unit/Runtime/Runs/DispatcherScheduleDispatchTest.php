@@ -17,6 +17,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -41,6 +43,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	private const string CHUNKED_NAME     = 'email-digest-chunked';
 	private const string CHUNKED_SCHEDULE = 'email-digest-chunked-schedule';
 	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string INCUMBENT_RUN_ID = '00000000001699999998-0000000000000000040';
 	private const string NAME             = 'email-digest';
 	private const int NOW                 = 1_700_000_000;
 	private const string OWNER            = 'runs-tests';
@@ -269,7 +272,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			),
 			$result->value
 		);
-		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
+		self::assertSame( self::INCUMBENT_RUN_ID, $this->lock_owner( $this->args_hash() ) );
 		$run = $this->option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertSame( self::ARGS, $run['start_args'] ?? null );
@@ -327,7 +330,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_reject_dispatch_returns_a_typed_not_claimed_outcome(): void {
+	public function test_reject_dispatch_returns_a_typed_fresh_contended_outcome(): void {
 		$this->sync_schedule( OverlapPolicy::Reject );
 		$this->seed_held_lock();
 		$latest_pointer = 'a8csp_bgje_latest_run_' . self::IDENTITY;
@@ -338,34 +341,34 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->boundary_error( $result );
 		self::assertSame( ErrorCode::OverlapHeld, $error->code );
-		self::assertSame( 'run-incumbent', $error->context['run_id'] ?? null );
+		self::assertSame( self::INCUMBENT_RUN_ID, $error->context['run_id'] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
-		self::assertSame( 'run-incumbent', $this->lock_owner( $this->args_hash() ) );
+		self::assertSame( self::INCUMBENT_RUN_ID, $this->lock_owner( $this->args_hash() ) );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
 
 	/**
-	 * Reject fails closed when contention cannot be tied to an authoritative owner.
+	 * Reject fails closed when contention has no authoritative selected row.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The nested insert interception forces a failed overlap-lock claim after the provisional run row exists, a mid-claim database race the public schedule facade cannot stage.
+	 * @pin-rationale The occurrence lease insert succeeds and the following overlap-lock insert fails, staging a lost-insert/absent-read race through the public schedule facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_reject_dispatch_does_not_consume_an_unconfirmed_not_claimed_outcome(): void {
+	public function test_reject_dispatch_maps_an_indeterminate_selection_to_storage_failure(): void {
 		$this->sync_schedule( OverlapPolicy::Reject );
-		// Two insert interceptions are required because the overlap-lock claim follows the provisional run-row insert.
+		// Schedule delivery inserts its occurrence lease before dispatch reaches the overlap-lock claim.
 		$this->rig->wpdb()->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $this->boundary_error( $result );
-		self::assertSame( ErrorCode::OverlapHeld, $error->code );
-		self::assertStringContainsString( 'could not confirm the owner', $error->message );
+		self::assertSame( ErrorCode::StorageFailed, $error->code );
+		self::assertStringContainsString( 'could not read a valid authoritative overlap lock row', $error->message );
 		self::assertSame( array(), $this->run_delivery_calls() );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
@@ -464,6 +467,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$error = $this->boundary_error( $result );
 		self::assertSame( ErrorCode::BackendRejected, $error->code );
 		self::assertNull( $this->lock_owner( $this->args_hash() ) );
+		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID ) );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
 
@@ -502,11 +506,27 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 	/** Stores one valid incumbent lock and latest pointer. */
 	private function seed_held_lock(): void {
-		$this->put_lock( $this->args_hash(), 'run-incumbent' );
+		$this->put_lock( $this->args_hash(), self::INCUMBENT_RUN_ID );
+		[ $run_option, $run_raw ] = $this->fixtures->run(
+			self::INCUMBENT_RUN_ID,
+			new RunState(
+				status: RunStatus::Running,
+				kind: 'job',
+				executing: false,
+				start_args: self::ARGS,
+				args_hash: $this->args_hash(),
+				kind_state: array(),
+				failed_attempts: 0,
+				action_sequence: 1,
+				created_at: self::NOW,
+				heartbeat_at: self::NOW,
+			)
+		);
+		$this->rig->wpdb()->put( $run_option, $run_raw );
 		[ $option_name, $raw ] = $this->fixtures->latest(
 			array(
 				array(
-					'run_id'    => 'run-incumbent',
+					'run_id'    => self::INCUMBENT_RUN_ID,
 					'args_hash' => $this->args_hash(),
 				),
 			)

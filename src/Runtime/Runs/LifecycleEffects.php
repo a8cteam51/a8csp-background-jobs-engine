@@ -204,7 +204,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, ?array $failure_detail ): bool {
+	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, ?array $failure_detail = null ): bool {
 		$expected       = self::expected_effects( $state->status );
 		$snapshot       = array(
 			'raw'   => $terminal_raw,

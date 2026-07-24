@@ -508,7 +508,7 @@ final class LifecycleEffectsTest extends TestCase {
 	 */
 	private function prepare_run_action( array $start_args = self::ARGS ): void {
 		$claim = $this->guard->claim( self::IDENTITY, self::ARGS_HASH, self::RUN_ID, 900 );
-		self::assertSame( LockClaimOutcome::Claimed, $claim );
+		self::assertSame( LockClaimOutcome::Claimed, $claim->outcome );
 
 		$run_store = $this->stores->run_store( self::IDENTITY );
 		if ( null === $run_store->create( self::RUN_ID, 'job', $start_args, self::ARGS_HASH, array() ) ) {

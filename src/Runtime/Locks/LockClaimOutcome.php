@@ -15,9 +15,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 enum LockClaimOutcome: string {
 	// region FIELDS AND CONSTANTS
 
-	case Claimed    = 'claimed';
-	case Reclaimed  = 'reclaimed';
-	case NotClaimed = 'not_claimed';
+	case Claimed       = 'claimed';
+	case Contended     = 'contended';
+	case Malformed     = 'malformed';
+	case Indeterminate = 'indeterminate';
 
 	// endregion
 }

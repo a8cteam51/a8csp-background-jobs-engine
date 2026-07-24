@@ -14,7 +14,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -40,6 +44,7 @@ final class DispatcherTest extends TestCase {
 		'mode'    => 'full',
 	);
 	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string INCUMBENT_RUN_ID = '00000000001699999998-0000000000000000040';
 	private const string NAME             = 'email-digest';
 	private const int NOW                 = 1_700_000_000;
 	private const string OTHER_RUN_ID     = '00000000001700000001-0000000000000000043';
@@ -375,12 +380,12 @@ final class DispatcherTest extends TestCase {
 	 * @param   int|null $staleness_filter Filtered staleness window.
 	 * @param   int|null $continue_filter  Filtered continuation delay.
 	 * @param   int      $heartbeat_age    Incumbent heartbeat age.
-	 * @param   bool     $is_reclaimed     Whether admission should reclaim.
+	 * @param   bool     $takes_over_stale Whether admission should take over a stale incumbent.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'lock_window_boundaries' )]
-	public function test_dispatch_resolves_the_exact_lock_staleness_window( ?int $staleness_filter, ?int $continue_filter, int $heartbeat_age, bool $is_reclaimed ): void {
+	public function test_dispatch_resolves_the_exact_lock_staleness_window( ?int $staleness_filter, ?int $continue_filter, int $heartbeat_age, bool $takes_over_stale ): void {
 		if ( null !== $staleness_filter ) {
 			$this->set_filter_value( 'a8csp_bgje/lock_staleness/' . self::IDENTITY, $staleness_filter );
 		}
@@ -391,7 +396,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		if ( $is_reclaimed ) {
+		if ( $takes_over_stale ) {
 			self::assertInstanceOf( Success::class, $result );
 			self::assertSame( self::RUN_ID, $result->value );
 			$this->rig->backend()->assert_scheduled( self::IDENTITY );
@@ -399,15 +404,15 @@ final class DispatcherTest extends TestCase {
 		}
 
 		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
-		self::assertSame( 'run-running', $error->context['run_id'] ?? null );
+		self::assertSame( self::INCUMBENT_RUN_ID, $error->context['run_id'] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
 	/**
-	 * A failed contended-owner read refuses admission without changing any persisted byte.
+	 * An indeterminate lock selection refuses admission without changing any persisted byte.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The second authoritative lock read fails after the held claim, so exact row equality proves the refusal is fail-closed and write-free.
+	 * @pin-rationale The authoritative claim read fails after the losing insert, so exact row equality proves the refusal is fail-closed and write-free.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -415,14 +420,13 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_fails_closed_when_the_contended_owner_read_fails(): void {
+	public function test_dispatch_fails_closed_when_lock_selection_is_indeterminate(): void {
 		$this->seed_running_lock( 0 );
 		$before = $this->rig->wpdb()->rows;
-		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
-				$wpdb->last_error = 'transient owner read failure';
+				$wpdb->last_error = 'transient lock selection failure';
 			}
 		);
 
@@ -430,6 +434,429 @@ final class DispatcherTest extends TestCase {
 
 		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/** A malformed lock fails closed without changing its raw bytes or creating provisional state. */
+	public function test_dispatch_maps_a_malformed_lock_to_storage_failure_without_mutation(): void {
+		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$malformed   = 'malformed-overlap-lock';
+		$this->rig->wpdb()->put( $lock_option, $malformed );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+				'kind'     => 'job',
+			),
+			$error->context
+		);
+		self::assertSame( $malformed, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
+		self::assertFalse( \get_option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * A lost incumbent supersession aborts before lock transfer and removes only the exact provisional R2.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The incumbent changes during the first CAS, proving the later lock CAS is unreachable and compensation cannot erase either changed R1 or its lock.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_replace_dispatch_aborts_before_lock_transfer_when_incumbent_supersession_is_lost(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->seed_running_lock( 0 );
+		$incumbent_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID;
+		$incumbent_raw    = $this->rig->wpdb()->rows[ $incumbent_option ] ?? null;
+		self::assertIsString( $incumbent_raw );
+		$advanced = \maybe_unserialize( $incumbent_raw );
+		self::assertIsArray( $advanced );
+		$advanced['action_sequence'] = 2;
+		$advanced_raw                = \maybe_serialize( $advanced );
+		self::assertIsString( $advanced_raw );
+		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$lock_raw    = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
+		self::assertIsString( $lock_raw );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $incumbent_option, $advanced_raw ): void {
+				$wpdb->put( $incumbent_option, $advanced_raw );
+			}
+		);
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		self::assertSame( $advanced_raw, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
+		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
+		self::assertFalse( \get_option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * A rival transfer winner remains admitted without duplicate supersession effects from the loser.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale R3 transfers the captured R1 lock inside R2's lock CAS, proving the losing R2 compensates only its exact provisional row and never replays R3-owned effects.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_replace_dispatch_preserves_a_rival_that_transfers_the_lock_before_replace(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->seed_running_lock( 0 );
+		$nested = null;
+		$this->rig->wpdb()->before_next( 'update', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'update',
+			function () use ( &$nested ): void {
+				$this->rig->clock()->timestamp  = self::NOW + 1;
+				$this->rig->randomizer()->value = 43;
+				$nested                         = $this->client->dispatch( self::NAME, self::ARGS );
+			}
+		);
+
+		$outer = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $outer, ErrorCode::OverlapHeld );
+		self::assertInstanceOf( Success::class, $nested );
+		self::assertSame( self::OTHER_RUN_ID, $nested->value );
+		self::assertFalse( \get_option( $this->run_option_name() ) );
+		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( self::OTHER_RUN_ID, $lock['run_id'] ?? null );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/superseded/' . self::IDENTITY ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/superseded' ) );
+	}
+
+	/**
+	 * Supersession hooks run only after the replacement has committed its discovery and delivery state.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A superseded listener admits R3 synchronously, proving outer R2 performs no pointer or scheduler writes after exposing the takeover hook.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_replace_dispatch_commits_replacement_before_firing_superseded_hooks(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->seed_running_lock( 0 );
+		$nested  = null;
+		$entered = false;
+
+		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/superseded/' . self::IDENTITY ] = function () use ( &$nested, &$entered ): void {
+			if ( $entered ) {
+				return;
+			}
+
+			$entered = true;
+
+			$this->rig->clock()->timestamp  = self::NOW + 1;
+			$this->rig->randomizer()->value = 43;
+
+			$nested = $this->client->dispatch( self::NAME, self::ARGS );
+		};
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
+
+		$outer = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $outer );
+		self::assertSame( self::RUN_ID, $outer->value );
+		self::assertInstanceOf( Success::class, $nested );
+		self::assertSame( self::OTHER_RUN_ID, $nested->value );
+		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( self::OTHER_RUN_ID, $lock['run_id'] ?? null );
+		$latest_raw = $this->rig->wpdb()->rows[ 'a8csp_bgje_latest_run_' . self::IDENTITY ] ?? null;
+		self::assertIsString( $latest_raw );
+		$latest = \maybe_unserialize( $latest_raw );
+		self::assertIsArray( $latest );
+		self::assertSame( self::OTHER_RUN_ID, $latest['all'] ?? null );
+		$latest_by_hash = $latest['by_hash'] ?? null;
+		self::assertIsArray( $latest_by_hash );
+		self::assertSame( self::OTHER_RUN_ID, $latest_by_hash[ $this->args_hash() ] ?? null );
+		self::assertCount( 2, $this->run_delivery_calls() );
+	}
+
+	/**
+	 * A throwing superseded listener cannot abandon a replacement whose lock transfer is definite.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The listener throws after R2 scheduling commits, proving dispatch returns the accepted run while R1 retains unmarked effects for maintenance replay.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_replace_dispatch_contains_superseded_listener_failure_after_committing_replacement(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->seed_running_lock( 0 );
+		$listener = new \RuntimeException( 'Superseded listener exploded.' );
+
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array(
+			'a8csp_bgje/superseded/' . self::IDENTITY => $listener,
+		);
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$this->rig->backend()->assert_scheduled( self::IDENTITY );
+		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
+		$incumbent_raw = $this->rig->wpdb()->rows[ RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID ] ?? null;
+		self::assertIsString( $incumbent_raw );
+		$incumbent = \maybe_unserialize( $incumbent_raw );
+		self::assertIsArray( $incumbent );
+		self::assertSame( RunStatus::Superseded->value, $incumbent['status'] ?? null );
+		$effects = $incumbent['effects'] ?? null;
+		self::assertIsArray( $effects );
+		self::assertNotContains( 'hooks', $effects );
+		$effect_errors = \array_values(
+			\array_filter(
+				$this->rig->logger()->records,
+				static fn ( array $record ): bool => 'Superseded-run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.' === $record['message']
+			)
+		);
+		self::assertCount( 1, $effect_errors );
+		self::assertSame( $listener, $effect_errors[0]['context']['exception'] ?? null );
+	}
+
+	/**
+	 * Scheduling compensation preserves a concurrent replacement-run generation.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The scheduler interleaving advances provisional R2 while its lock is unchanged, proving failure cleanup preserves both the newer state and its fence.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_replace_dispatch_preserves_a_concurrent_run_generation_when_scheduling_fails(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->seed_running_lock( 0 );
+		$this->rig->backend()->results['enqueue_async'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Restore scheduling.' ) );
+
+		$run_option     = $this->run_option_name();
+		$lock_option    = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$advanced_state = null;
+		$lock_raw       = null;
+		$this->rig->backend()->before_next(
+			'enqueue_async',
+			function () use ( $run_option, $lock_option, &$advanced_state, &$lock_raw ): void {
+				$advanced = \get_option( $run_option );
+				self::assertIsArray( $advanced );
+				$advanced['action_sequence'] = 2;
+				$advanced_state              = $advanced;
+				self::assertTrue( \update_option( $run_option, $advanced, false ) );
+				$lock_raw = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
+				self::assertIsString( $lock_raw );
+			}
+		);
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
+		self::assertIsArray( $advanced_state );
+		self::assertSame( $advanced_state, \get_option( $run_option ) );
+		self::assertIsString( $lock_raw );
+		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
+		self::assertFalse( \get_option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID ) );
+	}
+
+	/**
+	 * A definite retry transfer replays supersession effects left pending by an indeterminate transfer.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The first admission wins the run-state CAS but cannot classify the lock CAS; exact hooks and history appear only after the retry transfers that same captured lock.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_replace_dispatch_replays_pending_supersession_after_a_definite_retry_transfer(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->seed_running_lock( 0 );
+		$this->rig->wpdb()->before_next( 'update', static function (): void {} );
+		$this->rig->wpdb()->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->script_result( 'update', false ) );
+
+		$first = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $first, ErrorCode::StorageFailed );
+		$incumbent_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID;
+		$incumbent_raw    = $this->rig->wpdb()->rows[ $incumbent_option ] ?? null;
+		self::assertIsString( $incumbent_raw );
+		$incumbent = \maybe_unserialize( $incumbent_raw );
+		self::assertIsArray( $incumbent );
+		self::assertSame( RunStatus::Superseded->value, $incumbent['status'] ?? null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/superseded/' . self::IDENTITY ) );
+		self::assertFalse( \get_option( $this->run_option_name() ) );
+		$this->rig->clock()->timestamp  = self::NOW + 1;
+		$this->rig->randomizer()->value = 43;
+
+		$second = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $second );
+		self::assertSame( self::OTHER_RUN_ID, $second->value );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/superseded/' . self::IDENTITY ) );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/superseded' ) );
+		self::assertArrayNotHasKey( $incumbent_option, $this->rig->wpdb()->rows );
+		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( self::OTHER_RUN_ID, $lock['run_id'] ?? null );
+		$history_raw = $this->rig->wpdb()->rows[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
+		self::assertIsString( $history_raw );
+		$history = \maybe_unserialize( $history_raw );
+		self::assertIsArray( $history );
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		self::assertContains(
+			array(
+				'run_id' => self::INCUMBENT_RUN_ID,
+				'status' => RunStatus::Superseded->value,
+			),
+			$terminal
+		);
+	}
+
+	/**
+	 * Reject takes over a stale parseable lock after its owner row is already absent.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The stale lock is the only surviving owner snapshot, proving Reject transfers it without inventing a Running state to supersede.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_stale_reject_dispatch_takes_over_an_orphaned_parseable_lock(): void {
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::INCUMBENT_RUN_ID, self::NOW - 901, self::NOW - 901 ) );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/superseded/' . self::IDENTITY ) );
+	}
+
+	/**
+	 * Replace takes over a fresh parseable lock after its owner row is already absent.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The ownerless lock remains fresh, proving Replace policy reaches the exact transfer without a fictitious supersession transition.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_fresh_replace_dispatch_takes_over_an_orphaned_parseable_lock(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::INCUMBENT_RUN_ID, self::NOW, self::NOW ) );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::RUN_ID, $result->value );
+		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/superseded/' . self::IDENTITY ) );
+	}
+
+	/**
+	 * A contended lock cannot supersede a valid run from another overlap lane.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A parseable lock names a real Running row whose persisted argument hash differs, proving relational corruption aborts before either exact CAS.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_replace_dispatch_refuses_a_lock_owner_from_another_overlap_lane(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->seed_running_lock( 0 );
+		$incumbent_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID;
+		$incumbent_raw    = $this->rig->wpdb()->rows[ $incumbent_option ] ?? null;
+		self::assertIsString( $incumbent_raw );
+		$incumbent = \maybe_unserialize( $incumbent_raw );
+		self::assertIsArray( $incumbent );
+		$incumbent['args_hash'] = \str_repeat( 'f', 64 );
+		$mismatched_raw         = \maybe_serialize( $incumbent );
+		self::assertIsString( $mismatched_raw );
+		$this->rig->wpdb()->put( $incumbent_option, $mismatched_raw );
+		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$lock_raw    = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
+		self::assertIsString( $lock_raw );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		self::assertSame( $mismatched_raw, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
+		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
+		self::assertFalse( \get_option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * A generated run identifier cannot alias the selected incumbent owner.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A stale lock names the deterministic new ID without an active row, proving collision handling occurs before provisional state can supersede itself.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_dispatch_rejects_a_generated_run_id_that_aliases_the_selected_owner(): void {
+		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW - 901, self::NOW - 901 ) );
+		$lock_raw = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
+		self::assertIsString( $lock_raw );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
+		self::assertFalse( \get_option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * A fresh generated-ID collision cannot release the incumbent's same-owner lock.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The selected lock and active row both name the deterministic new ID, proving collision refusal precedes provisional-create compensation.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_dispatch_rejects_a_fresh_generated_run_id_collision_without_releasing_incumbent(): void {
+		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$run_option  = $this->run_option_name();
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::RUN_ID, self::NOW, self::NOW ) );
+		$this->put_fixture(
+			$this->fixtures->run(
+				self::RUN_ID,
+				new RunState(
+					status: RunStatus::Running,
+					kind: 'job',
+					executing: false,
+					start_args: self::ARGS,
+					args_hash: $this->args_hash(),
+					kind_state: array(),
+					failed_attempts: 0,
+					action_sequence: 1,
+					created_at: self::NOW,
+					heartbeat_at: self::NOW,
+				)
+			)
+		);
+		$lock_raw = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
+		$run_raw  = $this->rig->wpdb()->rows[ $run_option ] ?? null;
+		self::assertIsString( $lock_raw );
+		self::assertIsString( $run_raw );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
+		self::assertSame( $run_raw, $this->rig->wpdb()->rows[ $run_option ] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
@@ -711,7 +1138,7 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( 'warning', $record['level'] ?? null );
 		self::assertSame( self::IDENTITY, $record['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $record['context']['run_id'] ?? null );
-		self::assertSame( 'lock_release' !== $failure, $record['context']['lock_release_confirmed'] ?? null );
+		self::assertFalse( $record['context']['lock_release_confirmed'] ?? null );
 		self::assertSame( 'run_delete' !== $failure, $record['context']['run_deleted'] ?? null );
 	}
 
@@ -1020,7 +1447,7 @@ final class DispatcherTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return array<string, array{staleness_filter: int|null, continue_filter: int|null, heartbeat_age: int, is_reclaimed: bool}>
+	 * @return array<string, array{staleness_filter: int|null, continue_filter: int|null, heartbeat_age: int, takes_over_stale: bool}>
 	 */
 	public static function lock_window_boundaries(): array {
 		return array(
@@ -1028,61 +1455,61 @@ final class DispatcherTest extends TestCase {
 				'staleness_filter' => null,
 				'continue_filter'  => null,
 				'heartbeat_age'    => 900,
-				'is_reclaimed'     => false,
+				'takes_over_stale' => false,
 			),
 			'default boundary plus one is stale'  => array(
 				'staleness_filter' => null,
 				'continue_filter'  => null,
 				'heartbeat_age'    => 901,
-				'is_reclaimed'     => true,
+				'takes_over_stale' => true,
 			),
 			'filtered boundary remains fresh'     => array(
 				'staleness_filter' => 300,
 				'continue_filter'  => null,
 				'heartbeat_age'    => 300,
-				'is_reclaimed'     => false,
+				'takes_over_stale' => false,
 			),
 			'filtered boundary plus one is stale' => array(
 				'staleness_filter' => 300,
 				'continue_filter'  => null,
 				'heartbeat_age'    => 301,
-				'is_reclaimed'     => true,
+				'takes_over_stale' => true,
 			),
 			'floor boundary remains fresh'        => array(
 				'staleness_filter' => 1,
 				'continue_filter'  => 75,
 				'heartbeat_age'    => 150,
-				'is_reclaimed'     => false,
+				'takes_over_stale' => false,
 			),
 			'floor boundary plus one is stale'    => array(
 				'staleness_filter' => 1,
 				'continue_filter'  => 75,
 				'heartbeat_age'    => 151,
-				'is_reclaimed'     => true,
+				'takes_over_stale' => true,
 			),
 			'zero-delay filtered fresh edge'      => array(
 				'staleness_filter' => 1,
 				'continue_filter'  => 0,
 				'heartbeat_age'    => 1,
-				'is_reclaimed'     => false,
+				'takes_over_stale' => false,
 			),
 			'zero-delay filtered stale edge'      => array(
 				'staleness_filter' => 1,
 				'continue_filter'  => 0,
 				'heartbeat_age'    => 2,
-				'is_reclaimed'     => true,
+				'takes_over_stale' => true,
 			),
 			'zero-delay default fresh edge'       => array(
 				'staleness_filter' => null,
 				'continue_filter'  => 0,
 				'heartbeat_age'    => 900,
-				'is_reclaimed'     => false,
+				'takes_over_stale' => false,
 			),
 			'zero-delay default stale edge'       => array(
 				'staleness_filter' => null,
 				'continue_filter'  => 0,
 				'heartbeat_age'    => 901,
-				'is_reclaimed'     => true,
+				'takes_over_stale' => true,
 			),
 		);
 	}
@@ -1182,12 +1609,29 @@ final class DispatcherTest extends TestCase {
 	 */
 	private function seed_running_lock( int $heartbeat_age ): void {
 		$heartbeat = self::NOW - $heartbeat_age;
-		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), 'run-running', $heartbeat, $heartbeat ) );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::INCUMBENT_RUN_ID, $heartbeat, $heartbeat ) );
+		$this->put_fixture(
+			$this->fixtures->run(
+				self::INCUMBENT_RUN_ID,
+				new RunState(
+					status: RunStatus::Running,
+					kind: 'job',
+					executing: false,
+					start_args: self::ARGS,
+					args_hash: $this->args_hash(),
+					kind_state: array(),
+					failed_attempts: 0,
+					action_sequence: 1,
+					created_at: $heartbeat,
+					heartbeat_at: $heartbeat,
+				)
+			)
+		);
 		$this->put_fixture(
 			$this->fixtures->latest(
 				array(
 					array(
-						'run_id'    => 'run-running',
+						'run_id'    => self::INCUMBENT_RUN_ID,
 						'args_hash' => $this->args_hash(),
 					),
 				)
@@ -1295,7 +1739,7 @@ final class DispatcherTest extends TestCase {
 			throw new \InvalidArgumentException( 'Unknown scheduling rollback failure.' );
 		}
 
-		$GLOBALS['a8csp_bgje_test_delete_option_results'] = array( $this->run_option_name() => false );
+		$this->rig->wpdb()->script_result( 'delete', false );
 	}
 
 	/**

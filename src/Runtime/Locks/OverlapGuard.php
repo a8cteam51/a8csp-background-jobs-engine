@@ -18,14 +18,9 @@ use Psr\Log\LoggerInterface;
 /**
  * Owns execution-overlap locks stored as WordPress options.
  *
- * Nobody releases a crashed run's lock; the next claimant replaces it after its heartbeat age
- * exceeds the caller-resolved staleness window. The stale row is deleted only while its exact raw
- * value still matches, so a losing claimant cannot clobber the winner. Reclaim can double-fire when
- * a crashed process revives after its lock has been reclaimed. Replace takeover has the same residual
- * while an incumbent is inside an execution invocation: PHP cannot abort it, so that invocation finishes and then
- * fences. Clients' idempotency contract covers both windows. A leaked lock carrying a pre-credited
- * execution lease reclaims only after the credited runtime plus the staleness window elapses.
- * Malformed rows are not held and follow the same value-conditioned reclaim path.
+ * A claim mutates only an absent row. Existing parseable and malformed rows are returned as exact
+ * snapshots so the admission coordinator can fence the incumbent before transferring that same
+ * lock generation. Maintenance owns stale deletion independently.
  *
  * LockWindows resolves the 15-minute default, lock-staleness filter, and
  * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
@@ -37,16 +32,6 @@ use Psr\Log\LoggerInterface;
  */
 final readonly class OverlapGuard {
 	// region FIELDS AND CONSTANTS
-
-	/**
-	 * Number of SHA-256 characters retained for malformed-row correlation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MALFORMED_RAW_HASH_LENGTH = 16;
 
 	/**
 	 * Prefix for execution-overlap lock option names.
@@ -83,10 +68,7 @@ final readonly class OverlapGuard {
 	// region METHODS
 
 	/**
-	 * Claims an absent lock, refreshes a fresh owned lock, or replaces a stale or malformed row.
-	 *
-	 * Re-claiming a fresh lock with the same run identifier is idempotent: it refreshes the
-	 * heartbeat and returns Claimed without changing the original claim timestamp.
+	 * Claims an absent lock or selects an existing parseable or malformed row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -96,73 +78,33 @@ final readonly class OverlapGuard {
 	 * @param   string $run_id           Claiming run identifier.
 	 * @param   int    $staleness_window Caller-resolved staleness window in seconds.
 	 *
-	 * @return  LockClaimOutcome
+	 * @return  LockClaimResult Typed selection with an exact snapshot when one was read.
 	 */
-	public function claim( string $identity, string $args_hash, string $run_id, int $staleness_window ): LockClaimOutcome {
+	public function claim( string $identity, string $args_hash, string $run_id, int $staleness_window ): LockClaimResult {
 		$key      = $this->option_name( $identity, $args_hash );
 		$now      = $this->clock->now()->getTimestamp();
 		$new_lock = self::new_lock( $run_id, $now );
 
 		if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
-			return LockClaimOutcome::Claimed;
+			return LockClaimResult::claimed();
 		}
 
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
-			return LockClaimOutcome::NotClaimed;
+			return LockClaimResult::indeterminate();
 		}
 
 		$raw = $selected->value;
 		if ( null === $raw ) {
-			return LockClaimOutcome::NotClaimed;
+			return LockClaimResult::indeterminate();
 		}
 
 		$lock = self::parse( $raw );
 		if ( null === $lock ) {
-			return $this->reclaim( $key, $raw, null, $new_lock, $identity, $args_hash, $run_id );
+			return LockClaimResult::malformed( $raw );
 		}
 
-		if ( self::is_stale( $lock, $now, $staleness_window ) ) {
-			return $this->reclaim( $key, $raw, $lock, $new_lock, $identity, $args_hash, $run_id );
-		}
-
-		if ( $run_id !== $lock['run_id'] ) {
-			return LockClaimOutcome::NotClaimed;
-		}
-
-		$lock['heartbeat_at'] = $now;
-
-		return RowWriteOutcome::Won === $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) )
-			? LockClaimOutcome::Claimed
-			: LockClaimOutcome::NotClaimed;
-	}
-
-	/**
-	 * Returns the owner named by the current complete lock row.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
-	 * @param   string $args_hash Stable single-flight identity.
-	 *
-	 * @return  AbstractResult<string|null, EngineError>
-	 */
-	#[\NoDiscard( 'a lock-owner read outcome must be handled, not dropped' )]
-	public function owner_run_id( string $identity, string $args_hash ): AbstractResult {
-		$selected = $this->rows->read( $this->option_name( $identity, $args_hash ) );
-		if ( $selected->is_failure() ) {
-			return $selected;
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return new Success( null );
-		}
-
-		$lock = self::parse( $raw );
-
-		return new Success( $lock['run_id'] ?? null );
+		return LockClaimResult::contended( $lock['run_id'], $raw, self::is_stale( $lock, $now, $staleness_window ) );
 	}
 
 	/**
@@ -171,27 +113,23 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity           Complete owner-qualified job or chunked job identity.
-	 * @param   string $args_hash          Stable single-flight identity.
-	 * @param   string $replacement_run_id Replacement owner.
+	 * @param   string $identity              Complete owner-qualified job or chunked job identity.
+	 * @param   string $args_hash             Stable single-flight identity.
+	 * @param   string $expected_owner_run_id Owner parsed from the selected row.
+	 * @param   string $expected_raw          Exact selected row bytes.
+	 * @param   string $replacement_run_id    Replacement owner.
 	 *
 	 * @return  LockTransferOutcome Ownership classification after the transfer attempt.
 	 */
-	public function replace( string $identity, string $args_hash, string $replacement_run_id ): LockTransferOutcome {
-		$key      = $this->option_name( $identity, $args_hash );
-		$selected = $this->rows->read( $key );
-		if ( $selected->is_failure() ) {
-			return LockTransferOutcome::Indeterminate;
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
+	public function replace( string $identity, string $args_hash, string $expected_owner_run_id, string $expected_raw, string $replacement_run_id ): LockTransferOutcome {
+		$expected_lock = self::parse( $expected_raw );
+		if ( null === $expected_lock || $expected_owner_run_id !== $expected_lock['run_id'] ) {
 			return LockTransferOutcome::Lost;
 		}
 
 		$now = $this->clock->now()->getTimestamp();
 
-		return match ( $this->rows->compare_and_swap( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) ) ) {
+		return match ( $this->rows->compare_and_swap( $this->option_name( $identity, $args_hash ), $expected_raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) ) ) {
 			RowWriteOutcome::Won         => LockTransferOutcome::Transferred,
 			RowWriteOutcome::Lost        => LockTransferOutcome::Lost,
 			RowWriteOutcome::WriteFailed => LockTransferOutcome::Indeterminate,
@@ -314,8 +252,8 @@ final readonly class OverlapGuard {
 	 * Returns whether a complete lock exists without exceeding the supplied staleness window.
 	 *
 	 * A heartbeat exactly one window old remains fresh; only a greater age is stale. Malformed rows
-	 * are not held, so a subsequent claim can reclaim them. An authoritative read failure reports
-	 * held so callers fail closed.
+	 * are not held, but admission classifies them without mutation. An authoritative read failure
+	 * reports held so callers fail closed.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -664,57 +602,6 @@ final readonly class OverlapGuard {
 		return self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness )
 			? RedeliveryFenceOutcome::Indeterminate
 			: RedeliveryFenceOutcome::Live;
-	}
-
-	/**
-	 * Replaces the exact stale or malformed row selected by a losing insert.
-	 *
-	 * The delete predicate prevents this claimant from removing a winner that changes the row after
-	 * selection; a rival that fills the absent row before insertion also wins normally.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                                                         $key       Lock option name.
-	 * @param   string                                                         $raw       Exact selected value.
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}|null $old_lock  Parsed stale row, or null when malformed.
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int}      $new_lock  Replacement row.
-	 * @param   string                                                         $identity  Complete owner-qualified job or chunked job identity.
-	 * @param   string                                                         $args_hash Stable single-flight identity.
-	 * @param   string                                                         $run_id    Claiming run identifier.
-	 *
-	 * @return  LockClaimOutcome
-	 */
-	private function reclaim( string $key, string $raw, ?array $old_lock, array $new_lock, string $identity, string $args_hash, string $run_id ): LockClaimOutcome {
-		if ( RowDeleteOutcome::Deleted !== $this->rows->delete_if_value_matches( $key, $raw ) || RowWriteOutcome::Won !== $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
-			return LockClaimOutcome::NotClaimed;
-		}
-
-		if ( null === $old_lock ) {
-			$this->logger->warning(
-				'Reclaimed malformed execution-overlap lock.',
-				array(
-					'identity'   => $identity,
-					'args_hash'  => $args_hash,
-					'malformed'  => true,
-					'raw_length' => \strlen( $raw ),
-					'raw_sha256' => \substr( \hash( 'sha256', $raw ), 0, self::MALFORMED_RAW_HASH_LENGTH ),
-					'run_id'     => $run_id,
-				)
-			);
-		} else {
-			$this->logger->warning(
-				'Reclaimed stale execution-overlap lock.',
-				array(
-					'identity'    => $identity,
-					'args_hash'   => $args_hash,
-					'dead_run_id' => $old_lock['run_id'],
-					'run_id'      => $run_id,
-				)
-			);
-		}
-
-		return LockClaimOutcome::Reclaimed;
 	}
 
 	/**

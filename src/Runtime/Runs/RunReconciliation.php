@@ -210,7 +210,7 @@ final readonly class RunReconciliation {
 				return new Success( $state->args_hash );
 			}
 
-			return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $handler, $snapshot['raw'] );
+			return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $snapshot['raw'] );
 		}
 
 		if ( $state->executing ) {
@@ -290,7 +290,7 @@ final readonly class RunReconciliation {
 				return new Success( null );
 			}
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
-				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $handler, $expected_raw );
+				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $expected_raw );
 			}
 
 			$error = $this->crash_reclamation_error( $identity, $run_id );
@@ -310,7 +310,7 @@ final readonly class RunReconciliation {
 				return new Success( null );
 			}
 			if ( RedeliveryFenceOutcome::Transferred === $redelivery_fence ) {
-				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $handler, $expected_raw );
+				return $this->supersede_transferred_run( $identity, $run_id, $state, $run_store, $expected_raw );
 			}
 
 			$scheduled = $this->redeliver_pending_action( $identity, $run_id, $state );
@@ -394,18 +394,20 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity     Complete owner-qualified job or chunked job identity.
-	 * @param   string               $run_id       Run identifier.
-	 * @param   RunState             $state        Running state observed by maintenance.
-	 * @param   RunStore             $run_store    Name-bound run store.
-	 * @param   KindHandlerInterface $handler      Resolved kind handler.
-	 * @param   string               $expected_raw Exact observed state.
+	 * @param   string   $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id       Run identifier.
+	 * @param   RunState $state        Running state observed by maintenance.
+	 * @param   RunStore $run_store    Name-bound run store.
+	 * @param   string   $expected_raw Exact observed state.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function supersede_transferred_run( string $identity, string $run_id, RunState $state, RunStore $run_store, KindHandlerInterface $handler, string $expected_raw ): AbstractResult {
+	private function supersede_transferred_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw ): AbstractResult {
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
-		$this->terminal_transitions->supersede_run( $identity, $run_id, $latest_run_id, $state, $run_store, $handler, $expected_raw );
+		$claimed       = $this->terminal_transitions->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
+		if ( null !== $claimed ) {
+			$this->terminal_transitions->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
+		}
 
 		return new Success( null );
 	}

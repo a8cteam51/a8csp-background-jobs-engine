@@ -734,10 +734,10 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * A poisoned lock row is recovered without constructing its serialized class.
+	 * A poisoned lock row fails closed without constructing its serialized class.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale The deliberately corrupt row bypasses production serialization and places an object at the job-lock boundary, proving occurrence admission neither runs wakeup code nor treats poison as an incumbent generation.
+	 * @pin-rationale The deliberately corrupt row bypasses production serialization and places an object at the job-lock boundary, proving occurrence admission neither runs wakeup code nor mutates the untrustworthy row.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -745,7 +745,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_poisoned_lock_row_is_tolerated_without_constructing_classes(): void {
+	public function test_poisoned_lock_row_fails_closed_without_constructing_classes(): void {
 		$this->sync_schedule( self::schedule() );
 		$args_hash = $this->fixtures->args_hash( self::ARGS );
 		$raw       = \maybe_serialize( new ScheduleExecutionWakeupProbe() );
@@ -758,7 +758,15 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( 0, ScheduleExecutionWakeupProbe::$wakeups );
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::JOB_IDENTITY ) );
+		self::assertSame( $raw, $this->rig->wpdb()->rows[ $lock_fixture[0] ] ?? null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::JOB_IDENTITY ) );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
+		$context = $this->rig->logger()->records[0]['context'] ?? null;
+		self::assertIsArray( $context );
+		$logged_error = $context['error'] ?? null;
+		self::assertIsString( $logged_error );
+		self::assertStringContainsString( 'could not read a valid authoritative overlap lock row', $logged_error );
 	}
 
 	// endregion.

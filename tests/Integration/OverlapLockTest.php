@@ -331,32 +331,44 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		$group_b = self::RECLAIM_IDENTITY . '|' . $run_b;
 		self::assertNotSame( $run_a, $run_b, 'Stale reclaim must allocate a fresh run identifier' );
 		self::assertCount( 1, $log_records );
-		self::assertSame( 'warning', $log_records[0][0] ?? null );
+		self::assertSame( 'info', $log_records[0][0] ?? null );
 		self::assertSame(
 			array(
-				'identity'    => self::RECLAIM_IDENTITY,
-				'args_hash'   => $args_hash,
-				'dead_run_id' => $run_a,
-				'run_id'      => $run_b,
+				'identity'      => self::RECLAIM_IDENTITY,
+				'run_id'        => $run_a,
+				'latest_run_id' => $run_b,
 			),
 			$log_records[0][2],
-			'Stale reclaim must expose the dead and replacement owners as structured context'
+			'Stale takeover must expose the superseded and replacement owners as structured context'
 		);
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'The reclaimed lock must belong to the fresh run' );
-		self::assertIsArray( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, null ) );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, false ), 'Stale takeover must finish the incumbent supersession during admission' );
 		self::assertIsArray( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, null ) );
+		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'Stale takeover must publish the identity-specific superseded hook during admission' );
+		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'Stale takeover must publish the generic superseded hook during admission' );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the orphaned incumbent chunk after reclaim' );
 		self::assertSame( array(), $chunked_job->process_calls, 'The orphaned incumbent must stop before chunk execution' );
-		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The identity-specific superseded hook must receive the reclaimed incumbent payload once' );
-		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The generic superseded hook must prepend the reclaimed chunked job name once' );
-		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, false ), 'The orphaned incumbent delivery must delete its active run option' );
+		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The orphaned incumbent delivery must not repeat the identity-specific superseded hook' );
+		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The orphaned incumbent delivery must not repeat the generic superseded hook' );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_a, false ), 'The orphaned incumbent delivery must leave its admission-time cleanup intact' );
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'Orphan cleanup must preserve the reclaimed lock owner' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $this->action_scheduler_store()->get_status( $run_a_action_id ), 'Action Scheduler must complete the quietly superseded orphan delivery' );
+		self::assertCount( 2, $log_records );
+		self::assertSame( array( 'info', 'debug' ), \array_column( $log_records, 0 ) );
+		self::assertSame( 'Stale delivery for a finished or cancelled run was dropped.', $log_records[1][1] ?? null );
+		self::assertSame(
+			array(
+				'identity' => self::RECLAIM_IDENTITY,
+				'run_id'   => $run_a,
+			),
+			$log_records[1][2],
+			'The orphaned delivery must identify the already-finished incumbent'
+		);
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the reclaimed run queue' );
 		$this->drive_generated_chunked_job_to_completion( $chunked_job, self::RECLAIM_IDENTITY, $run_b, $group_b, array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ) );
@@ -373,15 +385,15 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'Reclaimed-run completion must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::RECLAIM_IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'Reclaimed-run completion must not repeat the generic superseded hook' );
 		self::assertCount( 2, $log_records );
-		self::assertSame( array( 'warning', 'info' ), \array_column( $log_records, 0 ) );
+		self::assertSame( array( 'info', 'debug' ), \array_column( $log_records, 0 ) );
 		self::assertSame(
 			array(
 				'identity'      => self::RECLAIM_IDENTITY,
 				'run_id'        => $run_a,
 				'latest_run_id' => $run_b,
 			),
-			$log_records[1][2] ?? null,
-			'Orphan cleanup must expose the superseded and current owners as structured context'
+			$log_records[0][2],
+			'Admission-time supersession must retain its structured context'
 		);
 		self::assertFalse( \get_option( $lock_name, false ), 'Reclaimed run completion must release the overlap lock' );
 		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::RECLAIM_IDENTITY . '_' . $run_b, false ) );

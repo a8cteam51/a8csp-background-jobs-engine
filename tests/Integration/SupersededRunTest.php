@@ -160,15 +160,10 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 			\get_option( 'a8csp_bgje_latest_run_' . self::IDENTITY, null ),
 			'The replacement chunked job must become latest for the shared argument identity'
 		);
-		self::assertIsArray( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_a, null ) );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_a, false ), 'Replacement admission must finish the incumbent supersession' );
 		self::assertIsArray( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_b, null ) );
-		self::assertSame( array(), $named_superseded, 'Starting the replacement must defer incumbent cleanup to its stale delivery' );
-
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the incumbent chunk after replacement' );
-
-		self::assertSame( array(), $chunked_job->process_calls, 'The superseded incumbent delivery must not execute chunk work' );
-		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The identity-specific superseded hook must receive the incumbent run ID and start arguments once' );
-		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The generic superseded hook must prepend the chunked job name to the same incumbent payload once' );
+		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'Replacement admission must publish the identity-specific superseded hook' );
+		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'Replacement admission must publish the generic superseded hook' );
 		self::assertCount( 1, $log_records );
 		self::assertSame( 'info', $log_records[0][0] ?? null );
 		self::assertSame(
@@ -178,10 +173,27 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 				'latest_run_id' => $run_b,
 			),
 			$log_records[0][2],
-			'Supersession must expose stale and current ownership as structured context'
+			'Admission-time supersession must expose incumbent and replacement ownership as structured context'
 		);
-		$supersession_log_records = $log_records;
-		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_a, false ), 'The stale incumbent delivery must delete its run option' );
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the incumbent chunk after replacement' );
+
+		self::assertSame( array(), $chunked_job->process_calls, 'The superseded incumbent delivery must not execute chunk work' );
+		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The stale incumbent delivery must not repeat the identity-specific superseded hook' );
+		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The stale incumbent delivery must not repeat the generic superseded hook' );
+		self::assertCount( 2, $log_records );
+		self::assertSame( array( 'info', 'debug' ), \array_column( $log_records, 0 ) );
+		self::assertSame( 'Stale delivery for a finished or cancelled run was dropped.', $log_records[1][1] ?? null );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => $run_a,
+			),
+			$log_records[1][2],
+			'The stale delivery must identify the already-finished incumbent'
+		);
+		$stale_delivery_log_records = $log_records;
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_a, false ), 'The stale incumbent delivery must leave its admission-time cleanup intact' );
 		$lock = \get_option( 'a8csp_bgje_overlap_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'Incumbent cleanup must preserve the replacement lock owner' );
@@ -229,7 +241,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		self::assertSame( array(), $failed, 'Supersession and replacement completion must not publish a failed hook' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The replacement lifecycle must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The replacement lifecycle must not repeat the generic superseded hook' );
-		self::assertSame( $supersession_log_records, $log_records, 'Superseded stale deliveries must not emit additional logs' );
+		self::assertSame( $stale_delivery_log_records, $log_records, 'Replacement completion must not add logs after the stale-delivery diagnostic' );
 
 		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_a, false ) );
 		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_b, false ) );
