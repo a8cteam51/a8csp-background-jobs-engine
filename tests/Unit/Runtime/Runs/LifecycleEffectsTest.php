@@ -112,6 +112,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_filter_values']        = array();
 		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
 		$GLOBALS['a8csp_bgje_test_fired_actions']        = array();
+		$GLOBALS['a8csp_bgje_test_action_callbacks']     = array();
 		$GLOBALS['a8csp_bgje_test_action_throwables']    = array();
 		$GLOBALS['a8csp_bgje_test_hooks']                = array();
 		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
@@ -334,6 +335,66 @@ final class LifecycleEffectsTest extends TestCase {
 		}
 	}
 
+	/** Terminal hook payloads share no reference containers with persisted start arguments. */
+	public function test_terminal_hooks_detach_referenced_start_arguments_before_listener_access(): void {
+		$value      = 'accepted';
+		$start_args = array(
+			'value'  => &$value,
+			'mirror' => &$value,
+		);
+		$expected   = array(
+			'value'  => 'accepted',
+			'mirror' => 'accepted',
+		);
+		$this->prepare_run_action( $start_args );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = $run_store->get( self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$callbacks    = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/completed/' . self::IDENTITY ] = static function ( RunId $run_id, array $hook_args ): void {
+			$hook_args['value'] = 'listener-mutated';
+		};
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
+
+		self::assertTrue( $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $this->handler ) );
+
+		$actions = $this->fired_actions();
+		self::assertSame( $expected, $actions[0]['args'][1] ?? null );
+		self::assertSame( $expected, $actions[1]['args'][2] ?? null );
+	}
+
+	/** Retry-scheduled hook payloads share no reference containers with persisted start arguments. */
+	public function test_retry_scheduled_hooks_detach_referenced_start_arguments_before_listener_access(): void {
+		$value      = 'accepted';
+		$start_args = array(
+			'value'  => &$value,
+			'mirror' => &$value,
+		);
+		$expected   = array(
+			'value'  => 'accepted',
+			'mirror' => 'accepted',
+		);
+
+		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/retry_scheduled/' . self::IDENTITY ] = static function ( RunId $run_id, array $hook_args ): void {
+			$hook_args['value'] = 'listener-mutated';
+		};
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
+
+		$this->terminal_effects->fire_retry_scheduled( self::IDENTITY, self::RUN_ID, $start_args, 1, 30 );
+
+		$actions = $this->fired_actions();
+		self::assertSame( 'accepted', $value );
+		self::assertSame( $expected, $actions[0]['args'][1] ?? null );
+		self::assertSame( $expected, $actions[1]['args'][2] ?? null );
+	}
+
 	/**
 	 * Supplies all terminal statuses whose hook contracts are public.
 	 *
@@ -382,14 +443,16 @@ final class LifecycleEffectsTest extends TestCase {
 	/**
 	 * Creates one running row, owned lock, and started-history entry before clearing setup observations.
 	 *
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 *
 	 * @return  void
 	 */
-	private function prepare_run_action(): void {
+	private function prepare_run_action( array $start_args = self::ARGS ): void {
 		$claim = $this->guard->claim( self::IDENTITY, self::ARGS_HASH, self::RUN_ID, 900 );
 		self::assertSame( LockClaimOutcome::Claimed, $claim );
 
 		$run_store = $this->stores->run_store( self::IDENTITY );
-		if ( null === $run_store->create( self::RUN_ID, 'job', self::ARGS, self::ARGS_HASH, array() ) ) {
+		if ( null === $run_store->create( self::RUN_ID, 'job', $start_args, self::ARGS_HASH, array() ) ) {
 			throw new \RuntimeException( 'The terminal-effect fixture could not create its running row.' );
 		}
 		if ( ! $this->stores->run_history( self::IDENTITY )->record_started( self::RUN_ID, self::ARGS_HASH ) ) {

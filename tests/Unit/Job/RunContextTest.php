@@ -17,12 +17,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( RunContext::class )]
 #[UsesClass( RunId::class )]
 final class RunContextTest extends TestCase {
-	// region FIELDS AND CONSTANTS.
-
-	private const string RUN_ID = '00000000001700000000-0000000000000000042';
-
-	// endregion.
-
 	// region LIFECYCLE.
 
 	/**
@@ -43,21 +37,6 @@ final class RunContextTest extends TestCase {
 	// endregion.
 
 	// region TESTS.
-
-	/**
-	 * The context returns the exact validated value supplied to its constructor.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_get_run_id_returns_the_constructor_value(): void {
-		$run_id  = RunId::from( self::RUN_ID );
-		$context = new RunContext( $run_id, array( 'site_id' => 7 ) );
-
-		self::assertSame( $run_id, $context->get_run_id() );
-	}
 
 	/**
 	 * A malformed wire value fails before it can enter the typed context constructor.

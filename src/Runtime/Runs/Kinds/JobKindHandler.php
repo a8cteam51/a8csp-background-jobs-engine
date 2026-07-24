@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
@@ -314,9 +315,10 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$context = new RunContext( RunId::from( $run_id ), $state->start_args );
+		$start_args = PortableArguments::without_references( $state->start_args );
+		$context    = new RunContext( RunId::from( $run_id ), $start_args );
 		try {
-			$execution->handle( $state->start_args, $context );
+			$execution->handle( $start_args, $context );
 		} catch ( \Throwable $throwable ) {
 			$this->failure_lifecycle->handle_failure( $this, $options, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::execution(), 'run' );
 

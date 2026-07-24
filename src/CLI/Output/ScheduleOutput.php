@@ -231,7 +231,7 @@ final readonly class ScheduleOutput {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}
+	 * @phpstan-param array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
 	 *                |array{state: 'held', run_id: string, stale: bool} $lock
 	 *
 	 * @param   array $lock Complete discriminated lock state.
@@ -246,6 +246,7 @@ final readonly class ScheduleOutput {
 				'not_declared'    => 'unknown (not declared this request)',
 				'overlap_allowed' => 'not blocking (overlap allowed)',
 				'read_failed'     => 'unknown (lock read failed)',
+				'resolver_failed' => 'unknown (overlap-key resolver failed)',
 			};
 		}
 

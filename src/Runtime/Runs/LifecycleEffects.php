@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -36,11 +37,12 @@ final readonly class LifecycleEffects {
 	 * @var     array<string, string>
 	 */
 	private const array LIFECYCLE_HOOKS = array(
-		'started'    => 'a8csp_bgje/started',
-		'completed'  => 'a8csp_bgje/completed',
-		'failed'     => 'a8csp_bgje/failed',
-		'cancelled'  => 'a8csp_bgje/cancelled',
-		'superseded' => 'a8csp_bgje/superseded',
+		'started'         => 'a8csp_bgje/started',
+		'retry_scheduled' => 'a8csp_bgje/retry_scheduled',
+		'completed'       => 'a8csp_bgje/completed',
+		'failed'          => 'a8csp_bgje/failed',
+		'cancelled'       => 'a8csp_bgje/cancelled',
+		'superseded'      => 'a8csp_bgje/superseded',
 	);
 
 	/**
@@ -119,6 +121,26 @@ final readonly class LifecycleEffects {
 	 */
 	public function fire_started( string $identity, string $run_id, array $start_args ): void {
 		$this->fire_lifecycle_hooks( 'started', $identity, $run_id, $start_args );
+	}
+
+	/**
+	 * Fires the retry-scheduled lifecycle hooks after retry state persists.
+	 *
+	 * The identity-specific hook precedes its generic companion and the retry action scheduling write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   int                     $attempt    One-indexed number of the failed attempt.
+	 * @param   int                     $delay      Delay before the next attempt in seconds.
+	 *
+	 * @return  void
+	 */
+	public function fire_retry_scheduled( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
+		$this->fire_lifecycle_hooks( 'retry_scheduled', $identity, $run_id, $start_args, attempt: $attempt, delay: $delay );
 	}
 
 	/**
@@ -506,7 +528,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'started'|'completed'|'failed'|'cancelled'|'superseded' $event
+	 * @phpstan-param 'started'|'retry_scheduled'|'completed'|'failed'|'cancelled'|'superseded' $event
 	 *
 	 * @param   string                  $event                     Lifecycle event name.
 	 * @param   string                  $identity                  Complete owner-qualified job or chunked job identity.
@@ -514,13 +536,20 @@ final readonly class LifecycleEffects {
 	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
 	 * @param   RunFailure|null         $failure                   Failure detail for a failed event.
 	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for a completed event, or null.
+	 * @param   int|null                $attempt                   One-indexed retry attempt, or null for another event.
+	 * @param   int|null                $delay                     Retry delay in seconds, or null for another event.
+	 *
+	 * @throws  \LogicException When retry-scheduled metadata is absent.
 	 *
 	 * @return  void
 	 */
-	private function fire_lifecycle_hooks( string $event, string $identity, string $run_id, array $start_args, ?RunFailure $failure = null, ?string $previous_completed_run_id = null ): void {
+	private function fire_lifecycle_hooks( string $event, string $identity, string $run_id, array $start_args, ?RunFailure $failure = null, ?string $previous_completed_run_id = null, ?int $attempt = null, ?int $delay = null ): void {
 		$hook                             = self::LIFECYCLE_HOOKS[ $event ];
 		$public_run_id                    = RunId::from( $run_id );
 		$public_previous_completed_run_id = null === $previous_completed_run_id ? null : RunId::from( $previous_completed_run_id );
+		if ( 'failed' !== $event ) {
+			$start_args = PortableArguments::without_references( $start_args );
+		}
 
 		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.
 		if ( 'completed' === $event ) {
@@ -551,6 +580,45 @@ final readonly class LifecycleEffects {
 				 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
 				 */
 				\do_action( $hook, $identity, $public_run_id, $start_args, $public_previous_completed_run_id );
+			}
+
+			return;
+		}
+
+		if ( 'retry_scheduled' === $event ) {
+			if ( null === $attempt || null === $delay ) {
+				throw new \LogicException( 'Retry-scheduled hooks require attempt and delay values.' );
+			}
+
+			try {
+				/**
+				 * Fires after retry state is persisted for one failed work attempt.
+				 *
+				 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+				 *
+				 * @since   1.0.0
+				 * @version 1.0.0
+				 *
+				 * @param   RunId                   $run_id     Run identifier.
+				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+				 * @param   int                     $attempt    One-indexed number of the failed attempt.
+				 * @param   int                     $delay      Delay before the next attempt in seconds.
+				 */
+				\do_action( $hook . '/' . $identity, $public_run_id, $start_args, $attempt, $delay );
+			} finally {
+				/**
+				 * Fires after the identity-specific retry-scheduled hook.
+				 *
+				 * @since   1.0.0
+				 * @version 1.0.0
+				 *
+				 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
+				 * @param   RunId                   $run_id     Run identifier.
+				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+				 * @param   int                     $attempt    One-indexed number of the failed attempt.
+				 * @param   int                     $delay      Delay before the next attempt in seconds.
+				 */
+				\do_action( $hook, $identity, $public_run_id, $start_args, $attempt, $delay );
 			}
 
 			return;

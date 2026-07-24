@@ -14,9 +14,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Jobs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 
 /**
  * Exercises the owner-bound jobs manager through the production engine graph.
@@ -277,6 +279,25 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 			),
 			$this->rig->randomizer()->calls
 		);
+	}
+
+	/**
+	 * Consumer overlap-key failures remain typed at the public dispatch boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Closure $resolver Faulting overlap-key resolver.
+	 *
+	 * @return  void
+	 */
+	#[DataProviderExternal( FaultingOverlapKeyResolverProvider::class, 'resolvers' )]
+	public function test_dispatch_contains_overlap_key_resolver_failures( \Closure $resolver ): void {
+		$jobs = \a8csp_bgje( self::OWNER )->jobs();
+		$job  = new RecordingJob( 'faulting-overlap-key' );
+
+		self::assertTrue( $jobs->register( $job->definition( new JobOptions( overlap_key: $resolver ) ) ) );
+		self::assert_wp_error( $jobs->dispatch( 'faulting-overlap-key', array( 'site_id' => 7 ) ), ErrorCode::ExecutionFailed->value );
 	}
 
 	/**

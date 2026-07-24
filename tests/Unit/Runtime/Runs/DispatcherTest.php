@@ -16,11 +16,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -51,7 +53,7 @@ final class DispatcherTest extends TestCase {
 	private EngineRig $rig;
 	private RecordingJob $job;
 
-	/** @var (\Closure(array<array-key, mixed>): ?string)|null */
+	/** @var (\Closure(array<array-key, mixed>): mixed)|null */
 	private ?\Closure $overlap_key_resolver = null;
 
 	// endregion.
@@ -296,6 +298,68 @@ final class DispatcherTest extends TestCase {
 			),
 			$this->rig->hooks()->sequence()
 		);
+	}
+
+	/**
+	 * A throwing started listener cannot mutate the persisted state used by terminal CAS.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_detaches_started_hook_arguments_before_terminalizing_listener_failure(): void {
+		$value      = 'accepted';
+		$start_args = array(
+			'value'  => &$value,
+			'mirror' => &$value,
+		);
+		$run_option = $this->run_option_name();
+		$wpdb       = $this->rig->wpdb();
+		$GLOBALS['a8csp_bgje_test_before_add_option'] = static function ( string $option, mixed $option_value, string $deprecated, bool|string|null $autoload ) use ( $run_option, $wpdb ): void {
+			if ( $run_option !== $option ) {
+				return;
+			}
+
+			$raw = \maybe_serialize( $option_value );
+			self::assertIsString( $raw );
+			$wpdb->put( $option, $raw );
+			$wpdb->before_next(
+				'update',
+				static function () use ( $option ): void {
+					$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
+					self::assertIsArray( $options );
+
+					// The option stub mirrors add_option() outside the authoritative wpdb row, so its shadow must not survive the raw-row fixture.
+					unset( $options[ $option ] );
+					$GLOBALS['a8csp_bgje_test_options'] = $options;
+				}
+			);
+		};
+
+		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/started/' . self::IDENTITY ] = static function ( RunId $run_id, array $hook_args ): never {
+			$hook_args['value'] = 'listener-mutated';
+
+			throw new \RuntimeException( 'Started listener exploded after mutating its payload.' );
+		};
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
+
+		$result = $this->client->dispatch( self::NAME, $start_args );
+
+		$this->assert_failure_code( $result, ErrorCode::ExecutionFailed );
+		self::assertSame( 'accepted', $value );
+		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
+		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		self::assertSame( array(), $snapshot['live'] );
+		self::assertSame( 'failed', $snapshot['history'][0]['outcome'] ?? null );
+		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = array();
+		$this->rig->clock()->timestamp               = self::NOW + 1;
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, $start_args ) );
 	}
 
 	/**
@@ -758,6 +822,29 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Failed-run retry contains resolver failures without consuming the retained entry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Closure $resolver Faulting overlap-key resolver.
+	 *
+	 * @return  void
+	 */
+	#[DataProviderExternal( FaultingOverlapKeyResolverProvider::class, 'resolvers' )]
+	public function test_retry_failed_contains_overlap_key_resolver_failures_without_consuming_the_entry( \Closure $resolver ): void {
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+		$this->overlap_key_resolver    = $resolver;
+
+		$failure = $this->client->retry_failed( self::NAME, self::RUN_ID );
+
+		$this->assert_failure_code( $failure, ErrorCode::ExecutionFailed );
+		$this->overlap_key_resolver = static fn ( array $args ): string => 'recovered';
+		self::assertInstanceOf( Success::class, $this->client->retry_failed( self::NAME, self::RUN_ID ) );
+	}
+
+	/**
 	 * Manual retry refuses a matching incumbent when the Job declares Replace.
 	 *
 	 * @since   1.0.0
@@ -1039,7 +1126,13 @@ final class DispatcherTest extends TestCase {
 				return null;
 			}
 
-			return ( $this->overlap_key_resolver )( $args );
+			$resolved = ( $this->overlap_key_resolver )( $args );
+			// PHPStan needs the mixed fixture narrowed before the wrapper's declared return type enforces the runtime boundary.
+			if ( null !== $resolved && ! \is_string( $resolved ) ) {
+				throw new \TypeError( 'The test overlap-key resolver violated its declared return contract.' );
+			}
+
+			return $resolved;
 		};
 		$this->client->register( $this->job->definition( new JobOptions( overlap: $overlap, overlap_key: $overlap_key ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );

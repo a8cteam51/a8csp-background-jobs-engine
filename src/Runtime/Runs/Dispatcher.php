@@ -6,9 +6,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -157,15 +159,16 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity    Complete owner-qualified work identity.
-	 * @param   array<array-key, mixed> $args        Target arguments.
-	 * @param   int                     $priority    Scheduler priority from 0 through 255.
-	 * @param   \Closure|null           $on_accepted Internal callback after backend acceptance and before history.
+	 * @param   string                  $identity                        Complete owner-qualified work identity.
+	 * @param   array<array-key, mixed> $args                            Target arguments.
+	 * @param   int                     $priority                        Scheduler priority from 0 through 255.
+	 * @param   \Closure|null           $on_accepted                     Internal callback after backend acceptance and before history.
+	 * @param   bool                    $terminalize_overlap_key_failure Whether resolver failure consumes a recurring occurrence as a failed run.
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
-	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null ): AbstractResult {
+	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
@@ -176,7 +179,7 @@ final readonly class Dispatcher {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
 		}
 
-		return $this->dispatch_resolved( $handler, $options, $identity, $args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted );
+		return $this->dispatch_resolved( $handler, $options, $identity, $args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted, terminalize_overlap_key_failure: $terminalize_overlap_key_failure );
 	}
 
 	/**
@@ -233,7 +236,11 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$args_hash = $this->overlap_args_hash( $handler->key(), $identity, $entry['start_args'], $this->custom_overlap_key( $options, $entry['start_args'] ) );
+		$overlap_key = $this->custom_overlap_key( $handler->key(), $identity, $options, $entry['start_args'] );
+		if ( $overlap_key instanceof Failure ) {
+			return $overlap_key;
+		}
+		$args_hash = $this->overlap_args_hash( $handler->key(), $identity, $entry['start_args'], $overlap_key );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
@@ -344,19 +351,20 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   KindHandlerInterface    $handler            Resolved kind handler.
-	 * @param   JobOptions              $options            Registered policy declaration.
-	 * @param   string                  $identity           Complete owner-qualified work identity.
-	 * @param   array<array-key, mixed> $args               Start arguments.
-	 * @param   int                     $delay              Scheduling delay in seconds.
-	 * @param   int                     $priority           Scheduler priority.
-	 * @param   OverlapPolicy           $overlap            Effective overlap policy.
-	 * @param   \Closure|null           $on_accepted        Callback after scheduler acceptance.
-	 * @param   string|null             $resolved_args_hash Pre-resolved overlap identity for retry.
+	 * @param   KindHandlerInterface    $handler                         Resolved kind handler.
+	 * @param   JobOptions              $options                         Registered policy declaration.
+	 * @param   string                  $identity                        Complete owner-qualified work identity.
+	 * @param   array<array-key, mixed> $args                            Start arguments.
+	 * @param   int                     $delay                           Scheduling delay in seconds.
+	 * @param   int                     $priority                        Scheduler priority.
+	 * @param   OverlapPolicy           $overlap                         Effective overlap policy.
+	 * @param   \Closure|null           $on_accepted                     Callback after scheduler acceptance.
+	 * @param   string|null             $resolved_args_hash              Pre-resolved overlap identity for retry.
+	 * @param   bool                    $terminalize_overlap_key_failure Whether resolver failure consumes a recurring occurrence as a failed run.
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, string $identity, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null ): AbstractResult {
+	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, string $identity, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
 		$kind = $handler->key();
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
@@ -371,7 +379,17 @@ final readonly class Dispatcher {
 			);
 		}
 
-		$args_hash = $resolved_args_hash ?? $this->overlap_args_hash( $kind, $identity, $args, $this->custom_overlap_key( $options, $args ) );
+		if ( null === $resolved_args_hash ) {
+			$overlap_key = $this->custom_overlap_key( $kind, $identity, $options, $args );
+			if ( $overlap_key instanceof Failure ) {
+				return $terminalize_overlap_key_failure
+					? $this->terminalize_overlap_key_failure( $handler, $identity, $args, $overlap_key->error, $on_accepted )
+					: $overlap_key;
+			}
+			$args_hash = $this->overlap_args_hash( $kind, $identity, $args, $overlap_key );
+		} else {
+			$args_hash = $resolved_args_hash;
+		}
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
@@ -488,6 +506,80 @@ final readonly class Dispatcher {
 		$after_dispatch_error = $handler->after_dispatch( $identity, $run_id, $state, $run_store );
 		if ( null !== $after_dispatch_error ) {
 			return new Failure( $after_dispatch_error );
+		}
+
+		return new Success( $run_id );
+	}
+
+	/**
+	 * Consumes one recurring occurrence as a retained failed run after resolver rejection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   KindHandlerInterface    $handler     Resolved kind handler.
+	 * @param   string                  $identity    Complete owner-qualified work identity.
+	 * @param   array<array-key, mixed> $args        Start arguments.
+	 * @param   EngineError             $error       Resolver rejection detail.
+	 * @param   \Closure|null           $on_accepted Callback after run creation and before terminalization.
+	 *
+	 * @return  AbstractResult<string, EngineError>
+	 */
+	private function terminalize_overlap_key_failure( KindHandlerInterface $handler, string $identity, array $args, EngineError $error, ?\Closure $on_accepted ): AbstractResult {
+		$kind      = $handler->key();
+		$args_hash = $this->args_hash( $kind, $identity, $args );
+		if ( $args_hash instanceof Failure ) {
+			return $args_hash;
+		}
+
+		$now    = $this->clock->now()->getTimestamp();
+		$run_id = RunIdentity::generate( $now, $this->randomizer );
+		// A resolver failure has no trustworthy client overlap lane, so its diagnostic run cannot contend with working admissions.
+		$args_hash = $this->salted_args_hash( $args_hash, $run_id );
+		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ) );
+		if ( LockClaimOutcome::NotClaimed === $claim ) {
+			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
+		}
+
+		$run_store = $this->stores->run_store( $identity );
+		$state     = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ) );
+		if ( $state instanceof Failure ) {
+			$this->overlap_guard->release( $identity, $args_hash, $run_id );
+
+			return $state;
+		}
+		if ( null === $state ) {
+			$this->overlap_guard->release( $identity, $args_hash, $run_id );
+
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, $identity ),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'identity' => $identity,
+						'run_id'   => $run_id,
+						'kind'     => $kind,
+					),
+				)
+			);
+		}
+
+		$on_accepted?->__invoke();
+		$terminalized = $this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ) );
+		if ( ! $terminalized ) {
+			$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $run_store );
+
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not persist its overlap-key resolver failure; repair option writes before retrying.', $run_id, $kind, $identity ),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'identity' => $identity,
+						'run_id'   => $run_id,
+						'kind'     => $kind,
+					),
+				)
+			);
 		}
 
 		return new Success( $run_id );
@@ -740,13 +832,53 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobOptions              $options Registered policy declaration.
-	 * @param   array<array-key, mixed> $args    Work arguments.
+	 * @param   string                  $kind     Persisted kind key.
+	 * @param   string                  $identity Complete owner-qualified work identity.
+	 * @param   JobOptions              $options  Registered policy declaration.
+	 * @param   array<array-key, mixed> $args     Work arguments.
+	 *
+	 * @return  string|null|Failure<EngineError>
+	 */
+	private function custom_overlap_key( string $kind, string $identity, JobOptions $options, array $args ): string|null|Failure {
+		if ( null === $options->overlap_key ) {
+			return null;
+		}
+
+		try {
+			// The helper's ?string return turns a wrong-typed consumer return into a catchable TypeError.
+			return self::invoke_overlap_key( $options->overlap_key, $args );
+		} catch ( \Throwable $throwable ) {
+			$exception_type = \get_debug_type( $throwable );
+
+			return new Failure(
+				new EngineError(
+					\sprintf( '%1$s "%2$s" could not resolve its overlap key because %3$s was thrown. Fix the overlap-key resolver before dispatching the background work again.', $kind, $identity, $exception_type ),
+					$exception_type,
+					reason: EngineErrorReason::ExecutionFailed,
+					context: array(
+						'identity' => $identity,
+						'kind'     => $kind,
+					),
+				)
+			);
+		}
+	}
+
+	/**
+	 * Invokes one resolver through the engine's typed return boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param \Closure(array<array-key, mixed>): ?string $resolver
+	 *
+	 * @param   \Closure                $resolver Registered overlap-key resolver.
+	 * @param   array<array-key, mixed> $args     Work arguments.
 	 *
 	 * @return  string|null
 	 */
-	private function custom_overlap_key( JobOptions $options, array $args ): ?string {
-		return null === $options->overlap_key ? null : ( $options->overlap_key )( $args );
+	private static function invoke_overlap_key( \Closure $resolver, array $args ): ?string {
+		return $resolver( $args );
 	}
 
 	/**

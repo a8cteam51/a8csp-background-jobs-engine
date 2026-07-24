@@ -597,7 +597,7 @@ final class CleanupIntentsTest extends TestCase {
 		$terminal_effects      = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions  = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler           ??= new SchedulerFacade( array( $this->backend ) );
-		$failure_lifecycle     = new FailureLifecycle( $scheduler, $this->clock, $randomizer, $this->logger, $terminal_transitions );
+		$failure_lifecycle     = new FailureLifecycle( $scheduler, $this->clock, $randomizer, $this->logger, $terminal_transitions, $terminal_effects );
 		$job_handler           = new JobKindHandler( $job_registry, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$chunked_job_handler   = new ChunkedJobKindHandler( $job_registry, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers              = array(

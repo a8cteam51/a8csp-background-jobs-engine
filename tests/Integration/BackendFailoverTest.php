@@ -192,7 +192,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$lock_windows         = new LockWindows( $clock, $logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
-		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
+		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 		$job_handler          = new JobKindHandler( $job_registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$chunked_job_handler  = new ChunkedJobKindHandler( $job_registry, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(

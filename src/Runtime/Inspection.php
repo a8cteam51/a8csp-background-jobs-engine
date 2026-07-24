@@ -43,7 +43,7 @@ use Psr\Clock\ClockInterface;
  *     misfire_skips: int,
  *     overlap_skips: int,
  *     occurrence_visible: bool,
- *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}
+ *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
  *         |array{state: 'held', run_id: string, stale: bool}
  * }
  * @phpstan-type LiveRunEntry array{
@@ -388,7 +388,7 @@ final readonly class Inspection {
 	 * @param   array|null $declaration Current-request schedule declaration, when available.
 	 * @param   int        $observed_at Inspection timestamp.
 	 *
-	 * @return  array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}
+	 * @return  array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
 	 *          |array{state: 'held', run_id: string, stale: bool}
 	 */
 	private function schedule_lock( ?array $declaration, int $observed_at ): array {
@@ -405,7 +405,13 @@ final readonly class Inspection {
 			return array( 'state' => 'overlap_allowed' );
 		}
 
-		$overlap_key = null === $options->overlap_key ? null : ( $options->overlap_key )( $schedule->args );
+		try {
+			// The helper's ?string return creates the only type check, turning a wrong resolver type into a
+			// TypeError caught here instead of a fatal below.
+			$overlap_key = null === $options->overlap_key ? null : self::invoke_overlap_key( $options->overlap_key, $schedule->args );
+		} catch ( \Throwable ) {
+			return array( 'state' => 'resolver_failed' );
+		}
 		if ( null !== $overlap_key ) {
 			if ( '' === $overlap_key || self::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
 				return array( 'state' => 'invalid' );
@@ -449,6 +455,23 @@ final readonly class Inspection {
 			'run_id' => $lock['run_id'],
 			'stale'  => self::heartbeat_is_stale( $lock['heartbeat_at'], $observed_at, $staleness ),
 		);
+	}
+
+	/**
+	 * Invokes one resolver behind the engine's typed return boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param \Closure(array<array-key, mixed>): ?string $resolver
+	 *
+	 * @param   \Closure                $resolver Registered overlap-key resolver.
+	 * @param   array<array-key, mixed> $args     Work arguments.
+	 *
+	 * @return  string|null
+	 */
+	private static function invoke_overlap_key( \Closure $resolver, array $args ): ?string {
+		return $resolver( $args );
 	}
 
 	/**

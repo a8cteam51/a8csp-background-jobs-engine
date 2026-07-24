@@ -139,6 +139,45 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * Start delivery detaches referenced arguments before sharing them with queue generation and context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_chunked_job_start_detaches_referenced_arguments_before_consumer_access(): void {
+		$value      = 'accepted';
+		$start_args = array(
+			'value'  => &$value,
+			'mirror' => &$value,
+		);
+		$expected   = array(
+			'value'  => 'accepted',
+			'mirror' => 'accepted',
+		);
+
+		$this->chunked_job->queue       = array();
+		$this->chunked_job->on_generate = static function ( array $args ): void {
+			$args['value'] = 'execution-mutated';
+		};
+
+		$this->register_chunked_job();
+		$result = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $result );
+
+		for ( $delivery = 0; 3 > $delivery; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		self::assertSame( array( $expected ), $this->chunked_job->generate_calls );
+		self::assertCount( 1, $this->chunked_job->generate_contexts );
+		self::assertSame( $expected, $this->chunked_job->generate_contexts[0]->get_start_args() );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/completed/' . self::IDENTITY ) );
+		$this->rig->assert_completed();
+	}
+
+	/**
 	 * Consecutive completions deliver the identity-global predecessor to lifecycle hooks.
 	 *
 	 * @since   1.0.0

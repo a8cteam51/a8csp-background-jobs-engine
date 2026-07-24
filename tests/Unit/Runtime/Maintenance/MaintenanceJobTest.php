@@ -141,7 +141,7 @@ final class MaintenanceJobTest extends TestCase {
 		$lock_windows         = new LockWindows( $clock, $this->logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $this->logger, $terminal_effects );
-		$failure_lifecycle    = new FailureLifecycle( $backend, $clock, $randomizer, $this->logger, $terminal_transitions );
+		$failure_lifecycle    = new FailureLifecycle( $backend, $clock, $randomizer, $this->logger, $terminal_transitions, $terminal_effects );
 		$job_handler          = new JobKindHandler( $registry, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $backend, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(

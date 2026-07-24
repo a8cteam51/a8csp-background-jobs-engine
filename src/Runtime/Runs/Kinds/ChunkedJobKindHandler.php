@@ -421,9 +421,10 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$context = new RunContext( RunId::from( $run_id ), $state->start_args );
+		$start_args = PortableArguments::without_references( $state->start_args );
+		$context    = new RunContext( RunId::from( $run_id ), $start_args );
 		try {
-			$queue = $this->materialize_queue( $execution->generate_queue( $state->start_args, $context ) );
+			$queue = $this->materialize_queue( $execution->generate_queue( $start_args, $context ) );
 		} catch ( \Throwable $throwable ) {
 			$this->failure_lifecycle->handle_failure( $this, $this->options( $identity ) ?? new JobOptions(), $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::queue_generation(), 'start' );
 
@@ -447,7 +448,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
 			 * @param   string                        $run_id     Run identifier.
 			 */
-			$queue = \apply_filters( 'a8csp_bgje/queue', $queue, $identity, $state->start_args, $run_id );
+			$queue = \apply_filters( 'a8csp_bgje/queue', $queue, $identity, $start_args, $run_id );
 
 			/**
 			 * Filters the generated chunk queue for a chunked job.
@@ -461,7 +462,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
 			 * @param   string                        $run_id     Run identifier.
 			 */
-			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_bgje/queue/' . $identity, $queue, $state->start_args, $run_id ) );
+			$queue = $this->materialize_filtered_queue( \apply_filters( 'a8csp_bgje/queue/' . $identity, $queue, $start_args, $run_id ) );
 		} catch ( \Throwable $throwable ) {
 			$this->fail_start( $identity, $run_id, $state, $run_store, EngineError::from_throwable( $throwable ), ErrorCode::ExecutionFailed );
 

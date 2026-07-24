@@ -544,7 +544,7 @@ Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guar
 
 ## Admission, overlap, and catch-up policies
 
-Each definition resolves one `Job\OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. Matching is scoped to the owner-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
+Each definition resolves one `Job\OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a non-string fails the run through the ordinary failure path (`failed` hook, retention, and log) instead of escaping, and surfaces as `execution_failed` at the imperative boundary. Matching is scoped to the owner-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
 
 | Overlap | `run_once` catch-up (default) | `skip` catch-up |
 | --- | --- | --- |

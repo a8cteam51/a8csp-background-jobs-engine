@@ -167,7 +167,7 @@ final class RunReconciliationTest extends TestCase {
 		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$this->terminal_effects     = new LifecycleEffects( $guard, $this->stores, $this->logger );
 		$this->terminal_transitions = new RunTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger, $this->terminal_effects );
-		$failure_lifecycle          = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
+		$failure_lifecycle          = new FailureLifecycle( $this->backend, $this->clock, $randomizer, $this->logger, $this->terminal_transitions, $this->terminal_effects );
 		$job_handler                = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
 		$chunked_job_handler        = new ChunkedJobKindHandler( $this->registry, $this->backend, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
 		$this->handlers             = array(

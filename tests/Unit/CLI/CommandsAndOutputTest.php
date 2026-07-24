@@ -473,16 +473,21 @@ final class CommandsAndOutputTest extends TestCase {
 	public function test_schedule_lock_labels_are_discriminated(): void {
 		$client        = $this->rig->operations( 'lock-tests' );
 		$schedules     = array(
-			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
-			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
-			'free'    => new Schedule( 'free', Recurrence::every( 300 ), 'free-job', array( 'case' => 'free' ) ),
-			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-job', array( 'case' => 'invalid' ) ),
+			'allow'    => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
+			'failed'   => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
+			'free'     => new Schedule( 'free', Recurrence::every( 300 ), 'free-job', array( 'case' => 'free' ) ),
+			'invalid'  => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-job', array( 'case' => 'invalid' ) ),
+			'resolver' => new Schedule( 'resolver', Recurrence::every( 300 ), 'resolver-job', array( 'case' => 'resolver' ) ),
 		);
 		$declarations  = array();
 		$registrations = array( 'lock-tests:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
 			$job     = new RecordingJob( $schedule->job );
-			$options = 'allow' === $name ? new JobOptions( overlap: OverlapPolicy::Allow ) : null;
+			$options = match ( $name ) {
+				'allow' => new JobOptions( overlap: OverlapPolicy::Allow ),
+				'resolver' => new JobOptions( overlap_key: static fn ( array $args ): never => throw new \RuntimeException( 'Consumer resolver failed.' ) ),
+				default => null,
+			};
 
 			$client->register( $job->definition( $options ) );
 			$declarations[ 'lock-tests:' . $name ]  = array(
@@ -516,7 +521,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 0, $result->exit_code );
 		self::assertSame( '', $result->stderr );
-		foreach ( array( 'not blocking (overlap allowed)', 'unknown (lock read failed)', 'free', 'unknown (invalid lock row)', 'unknown (not declared this request)' ) as $label ) {
+		foreach ( array( 'not blocking (overlap allowed)', 'unknown (lock read failed)', 'unknown (overlap-key resolver failed)', 'free', 'unknown (invalid lock row)', 'unknown (not declared this request)' ) as $label ) {
 			self::assertStringContainsString( $label, $result->stdout );
 		}
 	}

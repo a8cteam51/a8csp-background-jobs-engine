@@ -192,7 +192,7 @@ final class Component extends AbstractComponent {
 					new WPCronBackend(),
 				)
 			);
-			$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
+			$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 			$job_handler          = new JobKindHandler( $registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 			$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 			$handlers             = array(

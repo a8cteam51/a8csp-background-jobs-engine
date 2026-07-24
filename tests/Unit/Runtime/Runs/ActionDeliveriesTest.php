@@ -204,6 +204,41 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
+	 * Run delivery detaches referenced start arguments before sharing them with the handler and context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_delivery_detaches_referenced_start_arguments_before_consumer_access(): void {
+		$value      = 'accepted';
+		$start_args = array(
+			'value'  => &$value,
+			'mirror' => &$value,
+		);
+		$expected   = array(
+			'value'  => 'accepted',
+			'mirror' => 'accepted',
+		);
+
+		$this->job->on_handle = static function ( array $args ): void {
+			$args['value'] = 'execution-mutated';
+		};
+
+		$result = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $result );
+
+		$this->rig->run_due();
+
+		self::assertSame( array( $expected ), $this->job->calls );
+		self::assertCount( 1, $this->job->contexts );
+		self::assertSame( $expected, $this->job->contexts[0]->get_start_args() );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/completed' ) );
+		$this->rig->assert_completed();
+	}
+
+	/**
 	 * A terminal one-off failure emits one public failed hook payload.
 	 *
 	 * @since   1.0.0

@@ -4,9 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
@@ -17,12 +20,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementO
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -297,6 +302,74 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertInstanceOf( RunId::class, $public_run_id );
 		self::assertSame( $run_id, (string) $public_run_id );
 		self::assertSame( array( array( $public_run_id, self::ARGS ) ), $started );
+	}
+
+	/**
+	 * Occurrence delivery terminalizes consumer overlap-key failures and advances the schedule.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Closure $resolver Faulting overlap-key resolver.
+	 *
+	 * @return  void
+	 */
+	#[DataProviderExternal( FaultingOverlapKeyResolverProvider::class, 'resolvers' )]
+	public function test_schedule_occurrence_terminalizes_overlap_key_resolver_failures( \Closure $resolver ): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap_key: $resolver ) );
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+
+		$this->rig->run_due();
+
+		$failed = $this->rig->hooks()->fired( 'a8csp_bgje/failed' );
+		self::assertCount( 1, $failed );
+		$failure = $failed[0][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( RunFailureStage::execution(), $failure->stage );
+		self::assertSame( 1, $failure->attempts );
+		$snapshot = $this->rig->inspection()->runs( self::JOB_IDENTITY );
+		self::assertSame( array(), $snapshot['live'] );
+		self::assertSame( 'failed', $snapshot['history'][0]['outcome'] ?? null );
+		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
+		self::assertContains( 'Run failed permanently; correct the cause, then use failed-runs retry to start a fresh run.', \array_column( $this->rig->logger()->records, 'message' ) );
+		self::assertSame( self::NOW + 2 * self::INTERVAL, $this->registration()['next_due'] ?? null );
+	}
+
+	/**
+	 * A failing terminal listener cannot stall or escape a broken-resolver occurrence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_consumes_a_broken_resolver_occurrence_before_failed_listener_failure(): void {
+		$resolver = static fn ( array $args ): never => throw new \RuntimeException( 'Consumer resolver failed.' );
+
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap_key: $resolver ) );
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_bgje/failed' => new \RuntimeException( 'Failed listener exploded.' ) );
+		$this->rig->clock()->timestamp                = self::NOW + self::INTERVAL;
+
+		$this->rig->run_due();
+
+		$registration = $this->registration();
+		self::assertSame( self::NOW + 2 * self::INTERVAL, $registration['next_due'] ?? null );
+		self::assertSame( self::NOW + self::INTERVAL, $registration['last_fired'] ?? null );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
+		$history = $this->rig->inspection()->runs( self::JOB_IDENTITY )['history'];
+		self::assertNotNull( $history );
+		self::assertCount( 1, $history );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
+
+		$redelivered        = $this->registration();
+		$redelivery_history = $this->rig->inspection()->runs( self::JOB_IDENTITY )['history'];
+		self::assertSame( $registration['next_due'], $redelivered['next_due'] ?? null );
+		self::assertSame( $registration['last_fired'], $redelivered['last_fired'] ?? null );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
+		self::assertNotNull( $redelivery_history );
+		self::assertCount( 1, $redelivery_history );
 	}
 
 	/**

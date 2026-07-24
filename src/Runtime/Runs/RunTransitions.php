@@ -335,12 +335,12 @@ final readonly class RunTransitions {
 	 * @param   array|null           $details      Generic diagnostic payload, or null when no details are available.
 	 * @param   string|null          $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
-	 * @return  void
+	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	public function fail_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): void {
+	public function fail_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): bool {
 		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $details ) );
 
-		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler, $expected_raw );
+		return $this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler, $expected_raw );
 	}
 
 	/**

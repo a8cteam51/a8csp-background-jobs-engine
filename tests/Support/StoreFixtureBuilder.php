@@ -451,7 +451,7 @@ final readonly class StoreFixtureBuilder {
 				$effects         = new LifecycleEffects( $guard, $stores, $logger );
 				$transitions     = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
 				$registry        = new JobRegistry();
-				$failure         = new FailureLifecycle( $backend, $clock, new RecordingRandomizer( 0 ), $logger, $transitions );
+				$failure         = new FailureLifecycle( $backend, $clock, new RecordingRandomizer( 0 ), $logger, $transitions, $effects );
 				$job_handler     = new JobKindHandler( $registry, $logger, $clock, $windows, $transitions, $effects, $failure );
 				$chunked_handler = new ChunkedJobKindHandler( $registry, $backend, $logger, $clock, $windows, $transitions, $effects, $failure );
 				$handlers        = array(

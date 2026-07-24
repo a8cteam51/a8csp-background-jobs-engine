@@ -165,7 +165,7 @@ final class RunTransitionsTest extends TestCase {
 		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
 		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
-		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
+		$this->failure_lifecycle    = new FailureLifecycle( $this->backend, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions, $terminal_effects );
 		$this->handler              = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
 		$this->handlers             = array( $this->handler->key() => $this->handler );
 

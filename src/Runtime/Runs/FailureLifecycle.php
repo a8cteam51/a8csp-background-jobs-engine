@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -43,6 +42,7 @@ final readonly class FailureLifecycle {
 	 * @param   RandomizerInterface $randomizer           Retry-delay randomness.
 	 * @param   LoggerInterface     $logger               Log event sink.
 	 * @param   RunTransitions      $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   LifecycleEffects    $lifecycle_effects    Client lifecycle-hook dispatcher.
 	 */
 	public function __construct(
 		private BackendInterface $scheduler,
@@ -50,6 +50,7 @@ final readonly class FailureLifecycle {
 		private RandomizerInterface $randomizer,
 		private LoggerInterface $logger,
 		private RunTransitions $terminal_transitions,
+		private LifecycleEffects $lifecycle_effects,
 	) {}
 
 	// endregion
@@ -276,7 +277,7 @@ final readonly class FailureLifecycle {
 		$state = $replacement;
 
 		try {
-			$this->fire_retry_scheduled_hooks( $identity, $run_id, $state->start_args, $attempt, $delay );
+			$this->lifecycle_effects->fire_retry_scheduled( $identity, $run_id, $state->start_args, $attempt, $delay );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
@@ -321,57 +322,6 @@ final readonly class FailureLifecycle {
 				'stage' => RunFailureStage::scheduling(),
 				'code'  => ErrorCode::BackendUnavailable,
 			);
-		}
-	}
-
-	/**
-	 * Fires the retry-scheduled hooks after the retry state persists.
-	 *
-	 * The identity-specific hook precedes its generic companion and the retry action scheduling write.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   int                     $attempt    One-indexed number of the failed attempt.
-	 * @param   int                     $delay      Delay before the next attempt in seconds.
-	 *
-	 * @return  void
-	 */
-	private function fire_retry_scheduled_hooks( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
-		$public_run_id = RunId::from( $run_id );
-
-		try {
-			/**
-			 * Fires after retry state is persisted for one failed work attempt.
-			 *
-			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   RunId                   $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-			 * @param   int                     $attempt    One-indexed number of the failed attempt.
-			 * @param   int                     $delay      Delay before the next attempt in seconds.
-			 */
-			\do_action( 'a8csp_bgje/retry_scheduled/' . $identity, $public_run_id, $start_args, $attempt, $delay );
-		} finally {
-			/**
-			 * Fires after the identity-specific retry-scheduled hook.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
-			 * @param   RunId                   $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-			 * @param   int                     $attempt    One-indexed number of the failed attempt.
-			 * @param   int                     $delay      Delay before the next attempt in seconds.
-			 */
-			\do_action( 'a8csp_bgje/retry_scheduled', $identity, $public_run_id, $start_args, $attempt, $delay );
 		}
 	}
 

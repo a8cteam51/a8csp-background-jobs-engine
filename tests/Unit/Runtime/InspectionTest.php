@@ -21,11 +21,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -216,6 +218,30 @@ final class InspectionTest extends TestCase {
 		self::assertSame( array( 'state' => 'free' ), $locks['owner:free'] );
 		self::assertSame( array( 'state' => 'invalid' ), $locks['owner:invalid'] );
 		self::assertSame( array( 'state' => 'not_declared' ), $locks['owner:orphaned'] );
+	}
+
+	/**
+	 * Schedule inspection reports consumer overlap-key failures without hiding the declaration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Closure $resolver Faulting overlap-key resolver.
+	 *
+	 * @return  void
+	 */
+	#[DataProviderExternal( FaultingOverlapKeyResolverProvider::class, 'resolvers' )]
+	public function test_schedule_inspection_reports_overlap_key_resolver_failures( \Closure $resolver ): void {
+		$client = $this->rig->operations( 'owner' );
+		$job    = new RecordingJob( 'faulting-overlap-key' );
+		$client->register( $job->definition( new JobOptions( overlap_key: $resolver ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'faulting-overlap-key', array( 'site_id' => 7 ) ) ) ) );
+
+		$snapshot = $this->rig->inspection()->schedules( 'owner' );
+
+		self::assertNotNull( $snapshot );
+		self::assertSame( 'owner:nightly', $snapshot['entries'][0]['identity'] ?? null );
+		self::assertSame( array( 'state' => 'resolver_failed' ), $snapshot['entries'][0]['lock'] ?? null );
 	}
 
 	/**

@@ -389,7 +389,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 				new WPCronBackend(),
 			)
 		);
-		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
+		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 		$job_handler          = new JobKindHandler( $job_registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$chunked_job_handler  = new ChunkedJobKindHandler( $job_registry, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(
@@ -506,7 +506,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 	 *     misfire_skips: int,
 	 *     overlap_skips: int,
 	 *     occurrence_visible: bool,
-	 *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}|array{state: 'held', run_id: string, stale: bool}
+	 *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}|array{state: 'held', run_id: string, stale: bool}
 	 * }
 	 */
 	private function registration( string $owner, string $name ): array {

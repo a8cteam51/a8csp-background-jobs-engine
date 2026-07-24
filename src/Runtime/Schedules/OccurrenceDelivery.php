@@ -125,6 +125,14 @@ final readonly class OccurrenceDelivery {
 
 		try {
 			$this->handle_occurrence( $registration_key, $lease_handle );
+		} catch ( \Throwable $throwable ) {
+			$this->logger->error(
+				'Schedule occurrence delivery failed after claiming its decision lease; the next delivery reconciles against persisted schedule state.',
+				array(
+					'schedule_identity' => $registration_key,
+					'exception'         => $throwable,
+				)
+			);
 		} finally {
 			$lease_handle->release();
 		}
@@ -504,7 +512,8 @@ final readonly class OccurrenceDelivery {
 				} finally {
 					$lease_handle->release();
 				}
-			}
+			},
+			terminalize_overlap_key_failure: true
 		);
 		if ( $dispatched->is_failure() ) {
 			$this->logger->error(
