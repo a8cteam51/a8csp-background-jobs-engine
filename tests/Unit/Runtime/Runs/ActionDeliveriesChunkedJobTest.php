@@ -261,6 +261,30 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * Start carries the admitted priority into its persisted continuation and backend delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_start_action_inherits_admitted_priority_for_continue(): void {
+		$this->chunked_job->queue = array( array( 'chunk' => 'first' ) );
+		$this->start( 42 );
+		$this->rig->backend()->calls = array();
+
+		$this->rig->run_due();
+
+		$call = $this->single_call_for_hook( ActionDeliveries::DELIVER_HOOK );
+		self::assertSame( 'enqueue_async', $call['verb'] );
+		self::assertSame( 42, $call['args']['priority'] ?? null );
+		$pending = $this->run_state()['pending'] ?? null;
+		self::assertIsArray( $pending );
+		self::assertSame( 'continue', $pending['stage'] ?? null );
+		self::assertSame( 42, $pending['priority'] ?? null );
+	}
+
+	/**
 	 * A portable payload with the wrong chunked-job shape hydrates before the handler rejects it.
 	 *
 	 * @since   1.0.0
@@ -976,6 +1000,28 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * Continue carries the admitted priority into its persisted cleanup and backend delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_continue_action_inherits_admitted_priority_for_cleanup(): void {
+		$this->prepare_started_chunked_job( array(), 42 );
+
+		$this->rig->run_due();
+
+		$call = $this->single_call_for_hook( ActionDeliveries::DELIVER_HOOK );
+		self::assertSame( 'enqueue_async', $call['verb'] );
+		self::assertSame( 42, $call['args']['priority'] ?? null );
+		$pending = $this->run_state()['pending'] ?? null;
+		self::assertIsArray( $pending );
+		self::assertSame( 'cleanup', $pending['stage'] ?? null );
+		self::assertSame( 42, $pending['priority'] ?? null );
+	}
+
+	/**
 	 * A normal chunk commits real context mutations and delays continue.
 	 *
 	 * @since   1.0.0
@@ -1002,6 +1048,29 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertInstanceOf( ChunkContextInterface::class, $this->chunked_job->process_calls[0]['context'] ?? null );
 		self::assertSame( array( array( 'chunk' => 'prepended-2' ), array( 'chunk' => 'prepended-1' ), array( 'chunk' => 'remaining' ), array( 'chunk' => 'appended' ) ), $this->run_state()['kind_state'] ?? null );
 		self::assertSame( self::NOW + 195, $this->single_call_for_hook( ActionDeliveries::DELIVER_HOOK )['args']['timestamp'] ?? null );
+	}
+
+	/**
+	 * Delayed continue carries the admitted priority into its persisted and backend delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_continue_action_inherits_admitted_priority_for_delayed_continue(): void {
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ), 42 );
+		$this->set_filter_value( 'a8csp_bgje/continue_delay', 75 );
+
+		$this->rig->run_due();
+
+		$call = $this->single_call_for_hook( ActionDeliveries::DELIVER_HOOK );
+		self::assertSame( 'schedule_single', $call['verb'] );
+		self::assertSame( 42, $call['args']['priority'] ?? null );
+		$pending = $this->run_state()['pending'] ?? null;
+		self::assertIsArray( $pending );
+		self::assertSame( 'continue', $pending['stage'] ?? null );
+		self::assertSame( 42, $pending['priority'] ?? null );
 	}
 
 	/**
@@ -1921,11 +1990,13 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   int $priority Scheduler priority.
+	 *
 	 * @return  string
 	 */
-	private function start(): string {
+	private function start( int $priority = 10 ): string {
 		$this->register_chunked_job();
-		$result = $this->client->dispatch( self::NAME, self::ARGS );
+		$result = $this->client->dispatch( self::NAME, self::ARGS, priority: $priority );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -2012,13 +2083,14 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, array<array-key, mixed>> $queue Initial chunks.
+	 * @param   array<array-key, array<array-key, mixed>> $queue    Initial chunks.
+	 * @param   int                                       $priority Scheduler priority.
 	 *
 	 * @return  void
 	 */
-	private function prepare_started_chunked_job( array $queue ): void {
+	private function prepare_started_chunked_job( array $queue, int $priority = 10 ): void {
 		$this->chunked_job->queue = $queue;
-		$this->start();
+		$this->start( $priority );
 		$this->rig->run_due();
 		$this->rig->backend()->calls = array();
 	}
@@ -2029,12 +2101,13 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, array<array-key, mixed>> $queue Initial chunks.
+	 * @param   array<array-key, array<array-key, mixed>> $queue    Initial chunks.
+	 * @param   int                                       $priority Scheduler priority.
 	 *
 	 * @return  void
 	 */
-	private function prepare_scheduled_chunk( array $queue ): void {
-		$this->prepare_started_chunked_job( $queue );
+	private function prepare_scheduled_chunk( array $queue, int $priority = 10 ): void {
+		$this->prepare_started_chunked_job( $queue, $priority );
 	}
 
 	/**

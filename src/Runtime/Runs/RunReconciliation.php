@@ -13,7 +13,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\RedeliveryFenceOutcom
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -41,15 +40,15 @@ final readonly class RunReconciliation {
 	 *
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
-	 * @param   OverlapGuard     $overlap_guard        Execution-overlap guard.
-	 * @param   StoreFactory     $stores               Name-bound store factory.
-	 * @param   ClockInterface   $clock                Timestamp source.
-	 * @param   LoggerInterface  $logger               Log event sink.
-	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
-	 * @param   RunTransitions   $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   LifecycleEffects $terminal_effects     Claimed terminal-effect executor.
-	 * @param   array            $handlers             Kind handlers keyed by their persisted keys.
-	 * @param   BackendInterface $scheduler            Scheduling facade boundary.
+	 * @param   OverlapGuard      $overlap_guard        Execution-overlap guard.
+	 * @param   StoreFactory      $stores               Name-bound store factory.
+	 * @param   ClockInterface    $clock                Timestamp source.
+	 * @param   LoggerInterface   $logger               Log event sink.
+	 * @param   LockWindows       $lock_windows         Filterable run-lock timing policy.
+	 * @param   RunTransitions    $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   LifecycleEffects  $terminal_effects     Claimed terminal-effect executor.
+	 * @param   array             $handlers             Kind handlers keyed by their persisted keys.
+	 * @param   DeliveryScheduler $delivery_scheduler   Lifecycle-delivery scheduler.
 	 */
 	public function __construct(
 		private OverlapGuard $overlap_guard,
@@ -60,7 +59,7 @@ final readonly class RunReconciliation {
 		private RunTransitions $terminal_transitions,
 		private LifecycleEffects $terminal_effects,
 		private array $handlers,
-		private BackendInterface $scheduler,
+		private DeliveryScheduler $delivery_scheduler,
 	) {}
 
 	// endregion
@@ -448,19 +447,7 @@ final readonly class RunReconciliation {
 			throw new \LogicException( 'Pending-action redelivery requires a durable descriptor.' );
 		}
 
-		$args  = array( $identity, $run_id, $state->action_sequence );
-		$hook  = ActionDeliveries::DELIVER_HOOK;
-		$group = $identity . '|' . $run_id;
-		if ( 'async' === $pending->mode ) {
-			return $this->scheduler->enqueue_async( $hook, $args, $group, $pending->priority );
-		}
-
-		$fire_at = $pending->fire_at;
-		if ( ! \is_int( $fire_at ) ) {
-			throw new \LogicException( 'Pending single-action redelivery requires an integer fire time.' );
-		}
-
-		return $this->scheduler->schedule_single( $hook, \max( $this->clock->now()->getTimestamp(), $fire_at ), $args, $group, $pending->priority );
+		return $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 	}
 
 	/**

@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLeaseOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
@@ -454,14 +455,15 @@ final readonly class StoreFixtureBuilder {
 				$effects         = new LifecycleEffects( $guard, $stores, $logger );
 				$transitions     = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
 				$registry        = new JobRegistry();
-				$failure         = new FailureLifecycle( $backend, $clock, new RecordingRandomizer( 0 ), $logger, $transitions, $effects );
+				$delivery        = new DeliveryScheduler( $backend, $clock );
+				$failure         = new FailureLifecycle( $delivery, $clock, new RecordingRandomizer( 0 ), $logger, $transitions, $effects );
 				$job_handler     = new JobKindHandler( $registry, $logger, $clock, $windows, $transitions, $effects, $failure );
-				$chunked_handler = new ChunkedJobKindHandler( $registry, $backend, $logger, $clock, $windows, $transitions, $effects, $failure );
+				$chunked_handler = new ChunkedJobKindHandler( $registry, $delivery, $logger, $clock, $windows, $transitions, $effects, $failure );
 				$handlers        = array(
 					$job_handler->key()     => $job_handler,
 					$chunked_handler->key() => $chunked_handler,
 				);
-				$reconciliation  = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, $handlers, $backend );
+				$reconciliation  = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, $handlers, $delivery );
 				$intents         = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
 
 				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( RunId::from( '00000000000000000000-0000000000000000003' ), array() ) );

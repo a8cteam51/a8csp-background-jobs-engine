@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
@@ -599,14 +600,15 @@ final class CleanupIntentsTest extends TestCase {
 		$terminal_effects      = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions  = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler           ??= new SchedulerFacade( array( $this->backend ) );
-		$failure_lifecycle     = new FailureLifecycle( $scheduler, $this->clock, $randomizer, $this->logger, $terminal_transitions, $terminal_effects );
+		$delivery_scheduler    = new DeliveryScheduler( $scheduler, $this->clock );
+		$failure_lifecycle     = new FailureLifecycle( $delivery_scheduler, $this->clock, $randomizer, $this->logger, $terminal_transitions, $terminal_effects );
 		$job_handler           = new JobKindHandler( $job_registry, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler   = new ChunkedJobKindHandler( $job_registry, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler   = new ChunkedJobKindHandler( $job_registry, $delivery_scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers              = array(
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher            = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions );
+		$dispatcher            = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions );
 		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
 
 		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $this->cleanup_intents, $this->clock, $this->logger );

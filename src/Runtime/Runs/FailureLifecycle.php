@@ -12,7 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use Psr\Clock\ClockInterface;
@@ -37,7 +36,7 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
+	 * @param   DeliveryScheduler   $delivery_scheduler   Lifecycle-delivery scheduler.
 	 * @param   ClockInterface      $clock                Timestamp source.
 	 * @param   RandomizerInterface $randomizer           Retry-delay randomness.
 	 * @param   LoggerInterface     $logger               Log event sink.
@@ -45,7 +44,7 @@ final readonly class FailureLifecycle {
 	 * @param   LifecycleEffects    $lifecycle_effects    Client lifecycle-hook dispatcher.
 	 */
 	public function __construct(
-		private BackendInterface $scheduler,
+		private DeliveryScheduler $delivery_scheduler,
 		private ClockInterface $clock,
 		private RandomizerInterface $randomizer,
 		private LoggerInterface $logger,
@@ -215,6 +214,8 @@ final readonly class FailureLifecycle {
 	 * @param   EngineError          $error       Failed-attempt detail.
 	 * @param   string               $retry_stage Pending-action stage for another attempt.
 	 *
+	 * @throws  \LogicException When the claimed delivery has no durable pending-action descriptor.
+	 *
 	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
@@ -245,8 +246,10 @@ final readonly class FailureLifecycle {
 			return null;
 		}
 
+		$priority = $state->pending->priority ?? throw new \LogicException( 'Claimed retry delivery requires a durable pending-action descriptor.' );
 		try {
-			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( $retry_stage, $fire_at, 10 ) );
+			$pending     = PendingAction::single( $retry_stage, $fire_at, $priority );
+			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
@@ -292,7 +295,7 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$scheduled = $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, $fire_at, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id, 10 );
+			$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,

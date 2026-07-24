@@ -1,0 +1,73 @@
+<?php declare( strict_types=1 );
+
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
+
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
+use Psr\Clock\ClockInterface;
+
+\defined( 'ABSPATH' ) || exit;
+
+/**
+ * Schedules lifecycle deliveries from their persisted pending-action descriptors.
+ *
+ * @internal
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ */
+final readonly class DeliveryScheduler {
+	// region MAGIC METHODS
+
+	/**
+	 * Constructor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   BackendInterface $scheduler Scheduling facade boundary.
+	 * @param   ClockInterface   $clock     Timestamp source.
+	 */
+	public function __construct(
+		private BackendInterface $scheduler,
+		private ClockInterface $clock,
+	) {}
+
+	// endregion
+
+	// region METHODS
+
+	/**
+	 * Schedules one persisted lifecycle delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string        $identity        Complete owner-qualified work identity.
+	 * @param   string        $run_id          Run identifier.
+	 * @param   int           $action_sequence Persisted delivery sequence.
+	 * @param   PendingAction $pending         Persisted delivery descriptor.
+	 *
+	 * @throws  \LogicException When a single-action descriptor has no integer fire time.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	#[\NoDiscard( 'a lifecycle-delivery scheduling failure must be handled, not dropped' )]
+	public function schedule( string $identity, string $run_id, int $action_sequence, PendingAction $pending ): AbstractResult {
+		$args  = array( $identity, $run_id, $action_sequence );
+		$group = $identity . '|' . $run_id;
+		if ( 'async' === $pending->mode ) {
+			return $this->scheduler->enqueue_async( ActionDeliveries::DELIVER_HOOK, $args, $group, $pending->priority );
+		}
+
+		$fire_at = $pending->fire_at;
+		if ( ! \is_int( $fire_at ) ) {
+			throw new \LogicException( 'Pending single-action delivery requires an integer fire time.' );
+		}
+
+		return $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, \max( $this->clock->now()->getTimestamp(), $fire_at ), $args, $group, $pending->priority );
+	}
+
+	// endregion
+}

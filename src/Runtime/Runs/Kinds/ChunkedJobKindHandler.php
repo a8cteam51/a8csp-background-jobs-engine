@@ -11,13 +11,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
@@ -72,18 +71,18 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobRegistry      $registry             Registered work definitions.
-	 * @param   BackendInterface $scheduler            Scheduling facade boundary.
-	 * @param   LoggerInterface  $logger               Log event sink.
-	 * @param   ClockInterface   $clock                Timestamp source.
-	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
-	 * @param   RunTransitions   $terminal_transitions Fenced terminal-write coordinator.
-	 * @param   LifecycleEffects $terminal_effects     Client lifecycle-effect executor.
-	 * @param   FailureLifecycle $failure_lifecycle    Retry adjudication coordinator.
+	 * @param   JobRegistry       $registry             Registered work definitions.
+	 * @param   DeliveryScheduler $delivery_scheduler   Lifecycle-delivery scheduler.
+	 * @param   LoggerInterface   $logger               Log event sink.
+	 * @param   ClockInterface    $clock                Timestamp source.
+	 * @param   LockWindows       $lock_windows         Filterable run-lock timing policy.
+	 * @param   RunTransitions    $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   LifecycleEffects  $terminal_effects     Client lifecycle-effect executor.
+	 * @param   FailureLifecycle  $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
 		private JobRegistry $registry,
-		private BackendInterface $scheduler,
+		private DeliveryScheduler $delivery_scheduler,
 		LoggerInterface $logger,
 		ClockInterface $clock,
 		LockWindows $lock_windows,
@@ -395,6 +394,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @param   RunState $state    Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
 	 *
+	 * @throws  \LogicException When the claimed delivery has no durable pending-action descriptor.
+	 *
 	 * @return  void
 	 */
 	private function handle_start( string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
@@ -469,7 +470,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$replacement  = $state->with_kind_state( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'continue', 10 ) );
+		$priority     = $state->pending->priority ?? throw new \LogicException( 'Claimed chunked-job delivery requires a durable pending-action descriptor.' );
+		$pending      = PendingAction::async( 'continue', $priority );
+		$replacement  = $state->with_kind_state( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 		$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 		if ( $transitioned instanceof Failure || null === $transitioned ) {
 			return;
@@ -505,6 +508,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @param   RunState $state    Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
 	 *
+	 * @throws  \LogicException When the claimed delivery has no durable pending-action descriptor.
+	 *
 	 * @return  void
 	 */
 	private function handle_continue( string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
@@ -522,7 +527,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		}
 
 		if ( array() === $queue ) {
-			$replacement  = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::async( 'cleanup', 10 ) );
+			$priority     = $state->pending->priority ?? throw new \LogicException( 'Claimed chunked-job delivery requires a durable pending-action descriptor.' );
+			$pending      = PendingAction::async( 'cleanup', $priority );
+			$replacement  = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 			if ( $transitioned instanceof Failure || null === $transitioned ) {
 				return;
@@ -585,6 +592,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @param   RunStore                      $run_store   Active-run store.
 	 * @param   list<array<array-key, mixed>> $queue       Validated queue in processing order.
 	 *
+	 * @throws  \LogicException When the claimed delivery has no durable pending-action descriptor.
+	 *
 	 * @return  void
 	 */
 	private function process_chunk( ChunkedJobExecutionInterface $execution, string $identity, string $run_id, RunState $state, RunStore $run_store, array $queue ): void {
@@ -632,14 +641,16 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 			return;
 		}
+		$priority     = $state->pending->priority ?? throw new \LogicException( 'Claimed chunked-job delivery requires a durable pending-action descriptor.' );
 		$fire_at      = $now + $delay;
-		$replacement  = $state->with_kind_state( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( 'continue', $fire_at, 10 ) );
+		$pending      = PendingAction::single( 'continue', $fire_at, $priority );
+		$replacement  = $state->with_kind_state( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 		$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 		if ( $transitioned instanceof Failure || null === $transitioned ) {
 			return;
 		}
 
-		$scheduled = $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, $fire_at, array( $identity, $run_id, $replacement->action_sequence ), $identity . '|' . $run_id, 10 );
+		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $replacement->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {
 			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $replacement, $run_store, EngineError::scheduling( self::KIND, $identity, 'continue', $scheduled->error ), RunState::increment_attempts_safely( $replacement->failed_attempts ), RunFailureStage::scheduling(), EngineError::api_code_for_scheduling( $scheduled->error ) );
 		}
@@ -675,10 +686,13 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @param   RunStore             $run_store Active-run store.
 	 * @param   'continue'|'cleanup' $stage     Persisted successor stage.
 	 *
+	 * @throws  \LogicException When the persisted successor has no durable pending-action descriptor.
+	 *
 	 * @return  void
 	 */
 	private function schedule_async_successor( string $identity, string $run_id, RunState $state, RunStore $run_store, string $stage ): void {
-		$scheduled = $this->scheduler->enqueue_async( ActionDeliveries::DELIVER_HOOK, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id );
+		$pending   = $state->pending ?? throw new \LogicException( 'Persisted chunked-job successor requires a durable pending-action descriptor.' );
+		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {
 			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, $stage, $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), EngineError::api_code_for_scheduling( $scheduled->error ) );
 		}

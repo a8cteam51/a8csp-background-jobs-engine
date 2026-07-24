@@ -241,6 +241,28 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * Retry carries the admitted priority into its persisted descriptor and backend delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_inherits_admitted_priority_for_retry(): void {
+		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 17;
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ), 42 );
+
+		$this->rig->run_due();
+
+		self::assertSame( 42, $this->single_retry_call()['args']['priority'] ?? null );
+		$pending = $this->run_state()['pending'] ?? null;
+		self::assertIsArray( $pending );
+		self::assertSame( 'run', $pending['stage'] ?? null );
+		self::assertSame( 42, $pending['priority'] ?? null );
+	}
+
+	/**
 	 * A throwing retry-state write records the persisted job kind for reconciliation diagnostics.
 	 *
 	 * @since   1.0.0
@@ -691,15 +713,16 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobOptions|null $options Optional policy declaration.
+	 * @param   JobOptions|null $options  Optional policy declaration.
+	 * @param   int             $priority Scheduler priority.
 	 *
 	 * @return  string
 	 */
-	private function enqueue_job( ?JobOptions $options = null ): string {
+	private function enqueue_job( ?JobOptions $options = null, int $priority = 10 ): string {
 		$this->client->register( $this->job->definition( $options ) );
 		$retry_value                    = $this->rig->randomizer()->value;
 		$this->rig->randomizer()->value = 42;
-		$result                         = $this->client->dispatch( self::NAME, self::ARGS );
+		$result                         = $this->client->dispatch( self::NAME, self::ARGS, priority: $priority );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->rig->randomizer()->value = $retry_value;

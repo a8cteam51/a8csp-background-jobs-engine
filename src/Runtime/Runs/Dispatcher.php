@@ -68,22 +68,24 @@ final readonly class Dispatcher {
 	 *
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
-	 * @param   JobRegistry         $registry             Registered work definitions.
-	 * @param   array               $handlers             Kind handlers keyed by their persisted keys.
-	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
-	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
-	 * @param   OverlapIdentity     $overlap_identity     Stable single-flight identity resolver.
-	 * @param   StoreFactory        $stores               Name-bound store factory.
-	 * @param   ClockInterface      $clock                Timestamp source.
-	 * @param   RandomizerInterface $randomizer           Run identifier randomness.
-	 * @param   LoggerInterface     $logger               Log event sink.
-	 * @param   LockWindows         $lock_windows         Filterable run-lock timing policy.
-	 * @param   RunTransitions      $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   JobRegistry         $registry               Registered work definitions.
+	 * @param   array               $handlers               Kind handlers keyed by their persisted keys.
+	 * @param   BackendInterface    $scheduler              Scheduling facade boundary.
+	 * @param   DeliveryScheduler   $delivery_scheduler     Lifecycle-delivery scheduler.
+	 * @param   OverlapGuard        $overlap_guard          Execution-overlap guard.
+	 * @param   OverlapIdentity     $overlap_identity       Stable single-flight identity resolver.
+	 * @param   StoreFactory        $stores                 Name-bound store factory.
+	 * @param   ClockInterface      $clock                  Timestamp source.
+	 * @param   RandomizerInterface $randomizer             Run identifier randomness.
+	 * @param   LoggerInterface     $logger                 Log event sink.
+	 * @param   LockWindows         $lock_windows           Filterable run-lock timing policy.
+	 * @param   RunTransitions      $terminal_transitions   Fenced terminal-write coordinator.
 	 */
 	public function __construct(
 		private JobRegistry $registry,
 		private array $handlers,
 		private BackendInterface $scheduler,
+		private DeliveryScheduler $delivery_scheduler,
 		private OverlapGuard $overlap_guard,
 		private OverlapIdentity $overlap_identity,
 		private StoreFactory $stores,
@@ -524,11 +526,8 @@ final readonly class Dispatcher {
 			return new Failure( $after_dispatch_error );
 		}
 
-		$action_args = array( $identity, $run_id, $state->action_sequence );
-		$group       = $identity . '|' . $run_id;
-		$scheduled   = 0 === $delay
-			? $this->scheduler->enqueue_async( ActionDeliveries::DELIVER_HOOK, $action_args, $group, $priority )
-			: $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, $scheduled_at, $action_args, $group, $priority );
+		$pending   = $state->pending ?? throw new \LogicException( 'Admitted run delivery requires a durable pending-action descriptor.' );
+		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {
 			$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
 			$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
