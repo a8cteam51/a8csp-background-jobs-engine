@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
@@ -286,8 +287,8 @@ final class Component extends AbstractComponent {
 	 *
 	 * @param   string $owner Validated client owner.
 	 *
-	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
-	 * @throws  \LogicException           When the internal graph is unavailable.
+	 * @throws  \InvalidArgumentException  When the owner violates the client-owner contract.
+	 * @throws  EngineUnavailableException When the internal graph is unavailable.
 	 *
 	 * @return  OwnerOperations
 	 */
@@ -298,7 +299,7 @@ final class Component extends AbstractComponent {
 		$dispatcher = self::$dispatcher;
 		$inspection = self::$inspection;
 		if ( null === self::$engine || null === $registry || null === $schedules || null === $dispatcher || null === $inspection ) {
-			throw new \LogicException( 'The background jobs engine graph is unavailable after engine boot.' );
+			throw new EngineUnavailableException( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully or after teardown; invoke engine operations from init or a later hook.' );
 		}
 
 		return new OwnerOperations( $owner, $schedules, $dispatcher, $inspection );

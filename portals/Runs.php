@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
@@ -68,7 +69,7 @@ final readonly class Runs {
 			return $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
+		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
 	}
@@ -93,7 +94,7 @@ final readonly class Runs {
 			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
+		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
 	}
@@ -119,7 +120,7 @@ final readonly class Runs {
 			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
+		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
 	}
@@ -145,7 +146,7 @@ final readonly class Runs {
 			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
+		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
 	}
@@ -160,8 +161,8 @@ final readonly class Runs {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \InvalidArgumentException When the owner violates the owner contract.
-	 * @throws  \LogicException           When the internal graph is unavailable.
+	 * @throws  \InvalidArgumentException  When the owner violates the owner contract.
+	 * @throws  EngineUnavailableException When the internal graph is unavailable.
 	 *
 	 * @return  OwnerOperations
 	 */

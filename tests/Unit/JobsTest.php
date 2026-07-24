@@ -46,7 +46,35 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 		$this->rig->tear_down();
 		$not_ready = \a8csp_bgje( self::OWNER );
 		self::assertInstanceOf( Engine::class, $not_ready );
-		self::assert_wp_error( $not_ready->jobs()->dispatch( 'job' ), ErrorCode::EngineUnavailable->value );
+		$error = self::assert_wp_error( $not_ready->jobs()->dispatch( 'job' ), ErrorCode::EngineUnavailable->value );
+		self::assertSame( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully or after teardown; invoke engine operations from init or a later hook.', $error->get_error_message() );
+	}
+
+	/**
+	 * Unexpected logic exceptions raised synchronously by engine filters remain uncaught.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_propagates_unexpected_logic_exceptions(): void {
+		$jobs = \a8csp_bgje( self::OWNER )->jobs();
+		self::assertTrue( $jobs->register( self::job( 'job' ) ) );
+
+		$filter = static function ( int $staleness ): int {
+			if ( 0 < $staleness ) {
+				throw new \LogicException( 'Consumer lock-staleness filter failed.' );
+			}
+
+			return $staleness;
+		};
+		\add_filter( 'a8csp_bgje/lock_staleness', $filter );
+
+		$this->expectException( \LogicException::class );
+		$this->expectExceptionMessageIs( 'Consumer lock-staleness filter failed.' );
+
+		(void) $jobs->dispatch( 'job' );
 	}
 
 	/**
