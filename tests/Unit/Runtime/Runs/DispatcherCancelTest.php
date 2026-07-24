@@ -761,7 +761,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   mixed        $result Facade result.
+	 * @param   mixed     $result Facade result.
 	 * @param   ErrorCode $code   Expected public code.
 	 *
 	 * @return  BoundaryError

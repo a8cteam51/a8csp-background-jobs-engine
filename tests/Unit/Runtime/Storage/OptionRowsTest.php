@@ -26,7 +26,13 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RowDeleteOutcome::class )]
 #[UsesClass( RowWriteOutcome::class )]
 final class OptionRowsTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	private const string KEY = 'a8csp_bgje_active_run_email-digest_run-123';
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/** Loads the guarded WordPress cache and site functions. */
 	#[\Override]
@@ -47,6 +53,10 @@ final class OptionRowsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_cache']       = array();
 		$GLOBALS['a8csp_bgje_test_cache_calls'] = array();
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/** An UPDATE-only replacement cannot recreate a row deleted before the CAS. */
 	public function test_compare_and_swap_is_insertless_when_the_expected_row_is_absent(): void {
@@ -652,6 +662,10 @@ final class OptionRowsTest extends TestCase {
 		self::fail( 'Every single-row option operation must reject use after switch_to_blog().' );
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Returns one call for each public single-row option operation.
 	 *
@@ -666,6 +680,10 @@ final class OptionRowsTest extends TestCase {
 		yield 'compare_and_swap' => array( static fn ( OptionRows $rows ): RowWriteOutcome => $rows->compare_and_swap( self::KEY, $expected_raw, $row_raw ) );
 		yield 'delete_if_value_matches' => array( static fn ( OptionRows $rows ): RowDeleteOutcome => $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
 	}
+
+	// endregion.
+
+	// region HELPERS.
 
 	/**
 	 * Returns one exact production-authored overlap-lock row.
@@ -703,4 +721,6 @@ final class OptionRowsTest extends TestCase {
 		self::assertArrayNotHasKey( self::KEY, $cache['options'] );
 		self::assertSame( array( 'other' => true ), $cache['options']['notoptions'] );
 	}
+
+	// endregion.
 }

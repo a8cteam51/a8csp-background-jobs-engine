@@ -29,9 +29,15 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( ScheduleOperations::class )]
 final class MaintenanceScheduleTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	private const int NOW = 1_700_000_000;
 
 	private EngineRig $rig;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/** Loads the guarded WordPress seams before the production graph is built. */
 	#[\Override]
@@ -56,6 +62,10 @@ final class MaintenanceScheduleTest extends TestCase {
 			parent::tearDown();
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Corruption cannot cancel the maintenance chain, and the next sync recreates a reclaimed row.
@@ -98,4 +108,6 @@ final class MaintenanceScheduleTest extends TestCase {
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_values( \array_filter( \array_column( $this->rig->backend()->calls, 'verb' ), static fn ( string $verb ): bool => \in_array( $verb, array( 'unschedule', 'schedule_recurring' ), true ) ) ) );
 		self::assertSame( array(), $this->rig->logger()->records );
 	}
+
+	// endregion.
 }

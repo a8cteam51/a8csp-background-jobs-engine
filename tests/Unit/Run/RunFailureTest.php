@@ -17,6 +17,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RunFailure::class )]
 final class RunFailureTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
@@ -32,6 +33,10 @@ final class RunFailureTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Every terminal failure field remains directly observable, and the diagnostic payload is generic.
@@ -53,4 +58,6 @@ final class RunFailureTest extends TestCase {
 		self::assertSame( 'Background-work execution failed because RuntimeException was thrown.', $failure->summary );
 		self::assertSame( array( 'failed_chunk' => array( 'post_id' => 42 ) ), $failure->details );
 	}
+
+	// endregion.
 }

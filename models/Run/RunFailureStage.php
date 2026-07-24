@@ -58,7 +58,7 @@ final readonly class RunFailureStage {
 
 	// endregion
 
-	// region FACTORIES
+	// region METHODS
 
 	/**
 	 * Returns the client-work execution stage.

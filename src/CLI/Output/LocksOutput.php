@@ -87,7 +87,7 @@ final readonly class LocksOutput {
 	 *
 	 * @phpstan-param list<LockLane> $lanes
 	 *
-	 * @param   array  $lanes Inspected execution-overlap lock lanes.
+	 * @param   array  $lanes  Inspected execution-overlap lock lanes.
 	 * @param   string $format WP-CLI output format.
 	 *
 	 * @return  void
@@ -130,16 +130,7 @@ final readonly class LocksOutput {
 	 * @return  void
 	 */
 	public static function confirm( LockRepairPlan $plan, array $assoc_args ): void {
-		\WP_CLI::confirm(
-			\sprintf(
-				'Repair identity "%1$s" lane "%2$s": supersede %3$d Running run %4$s, then delete the malformed execution-overlap lock. Continue?',
-				(string) $plan->identity,
-				$plan->args_hash,
-				$plan->running_run_count,
-				1 === $plan->running_run_count ? 'row' : 'rows',
-			),
-			$assoc_args
-		);
+		\WP_CLI::confirm( \sprintf( 'Repair identity "%1$s" lane "%2$s": supersede %3$d Running run %4$s, then delete the malformed execution-overlap lock. Continue?', (string) $plan->identity, $plan->args_hash, $plan->running_run_count, 1 === $plan->running_run_count ? 'row' : 'rows', ), $assoc_args );
 	}
 
 	/**
@@ -163,7 +154,7 @@ final readonly class LocksOutput {
 	 * @version 1.0.0
 	 *
 	 * @param   LockRepairPlan $plan             Repaired lane.
-	 * @param   int            $runs_superseded Exact run claims completed.
+	 * @param   int            $runs_superseded  Exact run claims completed.
 	 *
 	 * @return  void
 	 */
@@ -214,7 +205,7 @@ final readonly class LocksOutput {
 	 * @version 1.0.0
 	 *
 	 * @param   LockRepairPlan $plan             Selected repair lane.
-	 * @param   int            $runs_superseded Exact run claims completed.
+	 * @param   int            $runs_superseded  Exact run claims completed.
 	 * @param   bool           $lock_cleared     Whether exact lock deletion won.
 	 *
 	 * @return  void

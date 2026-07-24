@@ -11,6 +11,8 @@ use PHPUnit\Framework\TestCase;
  * @pin-rationale This release-metadata guard keeps the plugin header and composer PHP floors in cross-file agreement so packaged installs cannot advertise an unsupported runtime.
  */
 final class PluginHeaderFloorsTest extends TestCase {
+	// region TESTS.
+
 	/**
 	 * The PHP floor declared in the plugin header must match composer.json.
 	 *
@@ -34,6 +36,10 @@ final class PluginHeaderFloorsTest extends TestCase {
 		self::assertSame( '>=' . $header_floor, $composer_floor );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Locates the main plugin file without hardcoding its name.
 	 *
@@ -50,4 +56,6 @@ final class PluginHeaderFloorsTest extends TestCase {
 		}
 		self::fail( 'No main plugin file found.' );
 	}
+
+	// endregion.
 }

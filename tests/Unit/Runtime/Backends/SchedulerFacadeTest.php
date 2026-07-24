@@ -389,11 +389,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$scheduler = Component::get_scheduler();
 		self::assertInstanceOf( SchedulerFacade::class, $scheduler );
 
-		$accepted = $scheduler->enqueue_async(
-			'a8csp_bgje/payload_boundary',
-			self::args_with_json_length( 8_000 ),
-			'scheduler-tests:payload-boundary'
-		);
+		$accepted = $scheduler->enqueue_async( 'a8csp_bgje/payload_boundary', self::args_with_json_length( 8_000 ), 'scheduler-tests:payload-boundary' );
 
 		self::assertInstanceOf( Success::class, $accepted );
 		self::assertSame( array( 'is_ready', 'enqueue_async' ), $this->verbs( $this->preferred() ) );
@@ -401,11 +397,7 @@ final class SchedulerFacadeTest extends TestCase {
 		$this->preferred()->assert_scheduled( 'scheduler-tests:payload-boundary' );
 		$this->reset_backend_observations();
 
-		$rejected = $scheduler->enqueue_async(
-			'a8csp_bgje/payload_boundary',
-			self::args_with_json_length( 8_001 ),
-			'scheduler-tests:payload-boundary'
-		);
+		$rejected = $scheduler->enqueue_async( 'a8csp_bgje/payload_boundary', self::args_with_json_length( 8_001 ), 'scheduler-tests:payload-boundary' );
 
 		self::assertInstanceOf( Failure::class, $rejected );
 		self::assertInstanceOf( SchedulingError::class, $rejected->error );
@@ -425,7 +417,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   'enqueue_async'|'schedule_single'|'schedule_recurring' $verb             Backend write verb.
-	 * @param   'preferred'|'fallback'                                $backend_position Selected backend position.
+	 * @param   'preferred'|'fallback'                                 $backend_position Selected backend position.
 	 *
 	 * @return  void
 	 */
@@ -470,7 +462,7 @@ final class SchedulerFacadeTest extends TestCase {
 
 	// endregion.
 
-	// region PROVIDERS.
+	// region DATA PROVIDERS.
 
 	/**
 	 * Supplies every scheduling write at both facade routing positions.

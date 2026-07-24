@@ -34,12 +34,18 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class OccurrenceLeaseTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	private const string KEY = 'owner-a:email-digest';
 	private const int NOW    = 1_700_000_000;
 
 	private FixedClock $clock;
 	private OccurrenceLease $lease;
 	private WpdbLockSpy $wpdb;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/** Loads the guarded WordPress functions used by lease rows. */
 	#[\Override]
@@ -63,6 +69,10 @@ final class OccurrenceLeaseTest extends TestCase {
 		$this->wpdb                             = new WpdbLockSpy();
 		$this->lease                            = new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) );
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/** An absent lease is exclusively inserted and released by exact raw value. */
 	public function test_absent_lease_is_claimed_and_exact_released(): void {
@@ -319,6 +329,10 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertCount( 3, $this->wpdb->recorded_queries );
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Returns integer-limit timestamps at the exact fresh and stale boundaries.
 	 *
@@ -332,6 +346,10 @@ final class OccurrenceLeaseTest extends TestCase {
 			'maximum boundary plus one is stale'   => array( \PHP_INT_MAX - 61, \PHP_INT_MAX, true ),
 		);
 	}
+
+	// endregion.
+
+	// region HELPERS.
 
 	/**
 	 * Stores one valid lease row as a test precondition.
@@ -383,4 +401,6 @@ final class OccurrenceLeaseTest extends TestCase {
 	private static function option_name(): string {
 		return OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::KEY );
 	}
+
+	// endregion.
 }

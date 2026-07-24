@@ -15,6 +15,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RunIdentity::class )]
 final class RunIdentityTest extends TestCase {
+	// region LIFECYCLE.
+
 	/** Satisfies the production boot guard before the identity helper is autoloaded. */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
@@ -22,6 +24,10 @@ final class RunIdentityTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/** Generation and parsing share the documented fixed-width representation. */
 	public function test_generated_run_id_round_trips_through_the_canonical_parser(): void {
@@ -73,6 +79,10 @@ final class RunIdentityTest extends TestCase {
 		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_active_run_owner:sync_' . $candidate ) );
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Supplies representative candidates rejected by both previous run-ID regular expressions.
 	 *
@@ -90,6 +100,10 @@ final class RunIdentityTest extends TestCase {
 		);
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/** Legacy option-name grammar accepts only canonical work identities around valid IDs. */
 	public function test_option_name_parser_matches_the_previous_run_key_regexes(): void {
 		$run_id = '99999999999999999999-9999999999999999999';
@@ -103,4 +117,6 @@ final class RunIdentityTest extends TestCase {
 		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_active_run_invalid-owner_' . $run_id ) );
 		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_active_run_Owner:sync_' . $run_id ) );
 	}
+
+	// endregion.
 }

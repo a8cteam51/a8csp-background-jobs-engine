@@ -435,7 +435,7 @@ final class ApiTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OwnerOperations      $client Owner-bound public facade.
+	 * @param   OwnerOperations      $client   Owner-bound public facade.
 	 * @param   array<string, mixed> $args     Job arguments.
 	 *
 	 * @return  string
@@ -457,7 +457,7 @@ final class ApiTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   AbstractResult $result       Public API result.
-	 * @param   ErrorCode   $code         Expected stable error code.
+	 * @param   ErrorCode      $code         Expected stable error code.
 	 * @param   array          $context_keys Expected public context keys.
 	 *
 	 * @return  void

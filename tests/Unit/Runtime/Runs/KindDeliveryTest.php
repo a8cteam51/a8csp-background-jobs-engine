@@ -174,10 +174,10 @@ final class KindDeliveryTest extends TestCase {
 	/**
 	 * A malformed persisted kind remains corruption and cannot mutate during delivery.
 	 *
-	 * @param   string $kind Malformed kind value.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $kind Malformed kind value.
 	 *
 	 * @return  void
 	 */
@@ -305,12 +305,12 @@ final class KindDeliveryTest extends TestCase {
 	/**
 	 * Replaces one top-level field in a persisted run row.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $run_id Run identifier.
 	 * @param   string $field  Persisted field name.
 	 * @param   mixed  $value  Replacement value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -326,11 +326,11 @@ final class KindDeliveryTest extends TestCase {
 	/**
 	 * Replaces the stage in a persisted pending action.
 	 *
-	 * @param   string $run_id Run identifier.
-	 * @param   string $stage  Replacement lifecycle stage.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $run_id Run identifier.
+	 * @param   string $stage  Replacement lifecycle stage.
 	 *
 	 * @return  void
 	 */
@@ -347,10 +347,10 @@ final class KindDeliveryTest extends TestCase {
 	/**
 	 * Returns the exact authoritative run bytes.
 	 *
-	 * @param   string $run_id Run identifier.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $run_id Run identifier.
 	 *
 	 * @return  string
 	 */
@@ -373,11 +373,11 @@ final class KindDeliveryTest extends TestCase {
 	/**
 	 * Asserts that delivery emitted one warning carrying the requested evidence.
 	 *
-	 * @param   string      $message_fragment Required message fragment.
-	 * @param   string|null $context_value    Required context value, or null.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string      $message_fragment Required message fragment.
+	 * @param   string|null $context_value    Required context value, or null.
 	 *
 	 * @return  void
 	 */

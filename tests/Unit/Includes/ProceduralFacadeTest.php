@@ -271,6 +271,8 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 	}
 
+	// endregion.
+
 	// region DATA PROVIDERS.
 
 	/**

@@ -250,17 +250,7 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 				( $this->handler )( $start_args, $context );
 			}
 		};
-		$options     = new JobOptions(
-			max_runtime: 42,
-			retry: new RetryPolicy(
-				max_attempts: 3,
-				base_delay: 50,
-				multiplier: 3,
-				max_delay: 150,
-			),
-			overlap: OverlapPolicy::Reject,
-			overlap_key: $overlap_key,
-		);
+		$options     = new JobOptions( max_runtime: 42, retry: new RetryPolicy( max_attempts: 3, base_delay: 50, multiplier: 3, max_delay: 150, ), overlap: OverlapPolicy::Reject, overlap_key: $overlap_key, );
 
 		self::assertTrue( $jobs->register( JobDefinition::job( 'configured', $execution, $options ) ) );
 		$completed_args = array( 'site_id' => 7 );

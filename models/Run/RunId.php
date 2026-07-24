@@ -65,7 +65,7 @@ final readonly class RunId implements \Stringable {
 
 	// endregion
 
-	// region FACTORIES
+	// region METHODS
 
 	/**
 	 * Wraps one canonical run identifier.

@@ -18,6 +18,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Recurrence::class )]
 #[UsesClass( CatchUpPolicy::class )]
 final class ScheduleTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Loads the WordPress JSON seam before schedule classes are first autoloaded.
@@ -32,6 +33,10 @@ final class ScheduleTest extends TestCase {
 
 		require_once \dirname( __DIR__ ) . '/Runtime/Backends/wp-json-encode-stub.php';
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Constructor defaults and supplied values remain directly observable.
@@ -131,6 +136,10 @@ final class ScheduleTest extends TestCase {
 		new Schedule( \str_repeat( 'a', 65 ), Recurrence::every( 300 ), 'refresh-index' );
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Supplies names outside the complete stable-name grammar.
 	 *
@@ -145,6 +154,10 @@ final class ScheduleTest extends TestCase {
 			'non-ASCII' => array( 'name' => 'réindex' ),
 		);
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Target job names obey the same stable grammar at definition construction.
@@ -279,6 +292,10 @@ final class ScheduleTest extends TestCase {
 		self::assertNotSame( $integer->fingerprint(), $float->fingerprint() );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Creates the baseline definition used by fingerprint assertions.
 	 *
@@ -287,4 +304,6 @@ final class ScheduleTest extends TestCase {
 	private function schedule(): Schedule {
 		return new Schedule( name: 'nightly', recurrence: Recurrence::every( 300 ), job: 'refresh-index', args: array( 'site_id' => 7 ), );
 	}
+
+	// endregion.
 }

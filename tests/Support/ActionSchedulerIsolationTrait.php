@@ -50,10 +50,7 @@ trait ActionSchedulerIsolationTrait {
 		}
 
 		if ( ! \ActionScheduler::store() instanceof \ActionScheduler_DBStore ) {
-			throw new \LogicException(
-				'complete the Action Scheduler data migration; ' .
-				'the rig supports the custom-table store only.'
-			);
+			throw new \LogicException( 'complete the Action Scheduler data migration; the rig supports the custom-table store only.' );
 		}
 
 		if ( ! $wpdb instanceof \wpdb ) {
@@ -70,14 +67,7 @@ trait ActionSchedulerIsolationTrait {
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query prepared and validated above.
 			$installed = $wpdb->get_var( $lookup_query );
 			if ( '' !== $wpdb->last_error ) {
-				throw new \RuntimeException(
-					\sprintf(
-						'Action Scheduler table lookup failed for "%s": %s. ' .
-						'Fix the database error before rerunning the integration suite.',
-						$table_name,
-						$wpdb->last_error
-					)
-				);
+				throw new \RuntimeException( \sprintf( 'Action Scheduler table lookup failed for "%s": %s. Fix the database error before rerunning the integration suite.', $table_name, $wpdb->last_error ) );
 			}
 
 			if ( $table_name !== $installed ) {
@@ -92,14 +82,7 @@ trait ActionSchedulerIsolationTrait {
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Identifier prepared above.
 			$deleted = $wpdb->query( $delete_query );
 			if ( false === $deleted ) {
-				throw new \RuntimeException(
-					\sprintf(
-						'Action Scheduler table cleanup failed for "%s": %s. ' .
-						'Fix the database error before rerunning the integration suite.',
-						$table_name,
-						$wpdb->last_error
-					)
-				);
+				throw new \RuntimeException( \sprintf( 'Action Scheduler table cleanup failed for "%s": %s. Fix the database error before rerunning the integration suite.', $table_name, $wpdb->last_error ) );
 			}
 		}
 	}

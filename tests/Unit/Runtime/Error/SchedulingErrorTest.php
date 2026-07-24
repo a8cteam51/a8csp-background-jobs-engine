@@ -171,7 +171,7 @@ final class SchedulingErrorTest extends TestCase {
 
 	// endregion.
 
-	// region PROVIDERS.
+	// region DATA PROVIDERS.
 
 	/**
 	 * Supplies each scheduling rejection scenario and its public classification.

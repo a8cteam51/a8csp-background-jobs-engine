@@ -24,12 +24,20 @@ use PHPUnit\Framework\TestCase;
 
 /** Detects unsafe class construction while corrupt history storage is inspected. */
 final class RunHistoryWakeupProbe {
+	// region FIELDS AND CONSTANTS.
+
 	public static int $wakeups = 0;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/** Records an unsafe native object construction. */
 	public function __wakeup(): void {
 		++self::$wakeups;
 	}
+
+	// endregion.
 }
 
 /**

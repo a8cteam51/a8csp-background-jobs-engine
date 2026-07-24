@@ -345,7 +345,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 	 * Registers one job in the deterministic graph.
 	 *
 	 * @param   Identity      $identity Complete owner-qualified job identity.
-	 * @param   RecordingJob $job     Job to register.
+	 * @param   RecordingJob  $job      Job to register.
 	 *
 	 * @return  void
 	 */
@@ -475,15 +475,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		self::assertIsInt( $registration['overlap_skips'] ?? null );
 		self::assertIsInt( $registration['undeclared_occurrences'] ?? null );
 		self::assertIsBool( $registration['undeclared_escalated'] ?? null );
-		$updated = StoreFixtureBuilder::schedule_registration_state(
-			$registration['fingerprint'],
-			$next_due,
-			$last_fired,
-			$registration['misfire_skips'],
-			$registration['overlap_skips'],
-			$registration['undeclared_occurrences'],
-			$registration['undeclared_escalated']
-		);
+		$updated = StoreFixtureBuilder::schedule_registration_state( $registration['fingerprint'], $next_due, $last_fired, $registration['misfire_skips'], $registration['overlap_skips'], $registration['undeclared_occurrences'], $registration['undeclared_escalated'] );
 		self::assertSame( RegistrationUpdateOutcome::Updated, $registry->update_registration( $identity, $registration['fingerprint'], $updated ) );
 	}
 

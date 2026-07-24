@@ -31,7 +31,7 @@ final readonly class ClosureJobExecution implements JobExecutionInterface {
 
 	// endregion
 
-	// region INHERITED METHODS
+	// region METHODS
 
 	/**
 	 * Invokes the composed closure.

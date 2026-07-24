@@ -214,16 +214,7 @@ final readonly class LockRepair {
 
 		$correlation = OverlapGuard::raw_correlation( $lock_snapshot['raw'] );
 
-		return new Success(
-			new LockRepairPlan(
-				$identity,
-				$selected['args_hash'],
-				$correlation['raw_length'],
-				$correlation['raw_sha256'],
-				$lock_snapshot['raw'],
-				$running,
-			)
-		);
+		return new Success( new LockRepairPlan( $identity, $selected['args_hash'], $correlation['raw_length'], $correlation['raw_sha256'], $lock_snapshot['raw'], $running, ) );
 	}
 
 	/**
@@ -242,49 +233,24 @@ final readonly class LockRepair {
 		foreach ( $plan->running_runs() as $candidate ) {
 			$claimed = $this->transitions->claim_superseded_run( $candidate['run_id'], $candidate['state'], $run_store, $candidate['raw'] );
 			if ( $claimed instanceof Failure ) {
-				return $this->repair_failure(
-					$claimed->error->message . ' The malformed lock remains; resolve the failure and re-run locks repair.',
-					$plan,
-					$superseded,
-					$claimed->error->reason ?? EngineErrorReason::StorageFailure,
-					$candidate['run_id'],
-				);
+				return $this->repair_failure( $claimed->error->message . ' The malformed lock remains; resolve the failure and re-run locks repair.', $plan, $superseded, $claimed->error->reason ?? EngineErrorReason::StorageFailure, $candidate['run_id'], );
 			}
 			if ( null === $claimed ) {
-				return $this->repair_failure(
-					\sprintf( 'Active-run row "%s" changed during lock repair; re-run locks repair against fresh snapshots.', $candidate['run_id'] ),
-					$plan,
-					$superseded,
-					EngineErrorReason::UnsupportedOperation,
-					$candidate['run_id'],
-				);
+				return $this->repair_failure( \sprintf( 'Active-run row "%s" changed during lock repair; re-run locks repair against fresh snapshots.', $candidate['run_id'] ), $plan, $superseded, EngineErrorReason::UnsupportedOperation, $candidate['run_id'], );
 			}
 
 			++$superseded;
 		}
 
-		$deleted = $this->rows->delete_if_value_matches(
-			OverlapGuard::OPTION_PREFIX . (string) $plan->identity . '_' . $plan->args_hash,
-			$plan->lock_raw(),
-		);
+		$deleted = $this->rows->delete_if_value_matches( OverlapGuard::OPTION_PREFIX . (string) $plan->identity . '_' . $plan->args_hash, $plan->lock_raw(), );
 		if ( RowDeleteOutcome::Deleted === $deleted ) {
 			return new Success( $superseded );
 		}
 		if ( RowDeleteOutcome::ValueMismatch === $deleted ) {
-			return $this->repair_failure(
-				'The malformed execution-overlap lock changed before exact deletion; run locks list and re-run locks repair.',
-				$plan,
-				$superseded,
-				EngineErrorReason::UnsupportedOperation,
-			);
+			return $this->repair_failure( 'The malformed execution-overlap lock changed before exact deletion; run locks list and re-run locks repair.', $plan, $superseded, EngineErrorReason::UnsupportedOperation, );
 		}
 
-		return $this->repair_failure(
-			'The malformed execution-overlap lock could not be deleted; repair authoritative storage and re-run locks repair.',
-			$plan,
-			$superseded,
-			EngineErrorReason::StorageFailure,
-		);
+		return $this->repair_failure( 'The malformed execution-overlap lock could not be deleted; repair authoritative storage and re-run locks repair.', $plan, $superseded, EngineErrorReason::StorageFailure, );
 	}
 
 	// endregion

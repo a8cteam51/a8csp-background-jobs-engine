@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RunStatus::class )]
 final class RunStatusTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production files' ABSPATH boot guard before first autoload.
@@ -29,6 +30,10 @@ final class RunStatusTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * The public backing values remain an exact order-independent set.
@@ -65,4 +70,6 @@ final class RunStatusTest extends TestCase {
 
 		self::assertSame( array(), \array_values( \array_diff( $internal_values, $public_values ) ) );
 	}
+
+	// endregion.
 }

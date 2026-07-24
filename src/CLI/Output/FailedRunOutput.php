@@ -172,13 +172,7 @@ final readonly class FailedRunOutput {
 			return \sprintf( '%1$d unreadable failed-run option %2$s %3$s omitted; repair or purge each affected option row.', $unreadable_rows, 1 === $unreadable_rows ? 'row' : 'rows', 1 === $unreadable_rows ? 'was' : 'were' );
 		}
 
-		return \sprintf(
-			'%1$d unreadable failed-run %2$s and %3$d unreadable option %4$s were omitted; repair or purge each affected option row.',
-			$unreadable_entries,
-			1 === $unreadable_entries ? 'entry' : 'entries',
-			$unreadable_rows,
-			1 === $unreadable_rows ? 'row' : 'rows'
-		);
+		return \sprintf( '%1$d unreadable failed-run %2$s and %3$d unreadable option %4$s were omitted; repair or purge each affected option row.', $unreadable_entries, 1 === $unreadable_entries ? 'entry' : 'entries', $unreadable_rows, 1 === $unreadable_rows ? 'row' : 'rows' );
 	}
 
 	/**

@@ -52,7 +52,7 @@ final class SiteHealthPingJob implements JobExecutionInterface {
 	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @throws  NonRetryableException When `transient` is absent, invalid, or over WordPress's length limit.
-	 * @throws  \RuntimeException      When WordPress cannot persist the snapshot; retryable.
+	 * @throws  \RuntimeException     When WordPress cannot persist the snapshot; retryable.
 	 *
 	 * @return  void
 	 */

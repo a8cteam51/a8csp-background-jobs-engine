@@ -15,6 +15,8 @@ use Psr\Log\InvalidArgumentException;
 #[CoversClass( HookLogger::class )]
 #[CoversClass( ThrowableContextNormalizer::class )]
 final class HookLoggerTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production boot guard and loads the recording action stub.
 	 *
@@ -43,6 +45,10 @@ final class HookLoggerTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_action_callbacks']  = array();
 		$GLOBALS['a8csp_bgje_test_action_throwables'] = array();
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Logging interpolates supported placeholders and retains the complete context on the exact hook.
@@ -336,6 +342,10 @@ final class HookLoggerTest extends TestCase {
 		( new HookLogger() )->log( array(), 'Job failed.' );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Captures PHP's configured error-log destination and restores it after the log call.
 	 *
@@ -392,4 +402,6 @@ final class HookLoggerTest extends TestCase {
 	private function assert_error_log_line( string $expected, string $actual ): void {
 		self::assertMatchesRegularExpression( '/^(?:\[[^\r\n]+\] )?' . \preg_quote( $expected, '/' ) . '\r?\n$/D', $actual );
 	}
+
+	// endregion.
 }

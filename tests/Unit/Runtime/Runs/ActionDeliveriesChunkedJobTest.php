@@ -1116,9 +1116,9 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	/**
 	 * Context mutations accept bounded chunks and reject adjacent overflow through failure hooks.
 	 *
-	 * @param   string $mutation  Context mutation method.
+	 * @param   string $mutation   Context mutation method.
 	 * @param   int    $json_bytes Exact encoded chunk size.
-	 * @param   bool   $accepted  Whether the mutation persists.
+	 * @param   bool   $accepted   Whether the mutation persists.
 	 *
 	 * @return  void
 	 */
@@ -2180,7 +2180,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @param   ErrorCode                     $code           Expected failure code.
 	 * @param   RunFailureStage               $stage          Expected failure stage.
-	 * @param   array<array-key, mixed>|null $expected_chunk Expected failed chunk.
+	 * @param   array<array-key, mixed>|null  $expected_chunk Expected failed chunk.
 	 *
 	 * @return  RunFailure
 	 */

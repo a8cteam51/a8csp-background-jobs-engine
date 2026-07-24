@@ -26,11 +26,14 @@ final class RunContext implements RunContextInterface {
 	 * @param   RunId                   $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 */
-	public function __construct( private RunId $run_id, private array $start_args ) {}
+	public function __construct(
+		private RunId $run_id,
+		private array $start_args,
+	) {}
 
 	// endregion
 
-	// region INHERITED METHODS
+	// region METHODS
 
 	/**
 	 * {@inheritDoc}

@@ -316,13 +316,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		$result = self::run_failed_runs_command( 'list', '--format=json' );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame(
-			'[{"owner":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store",' .
-			'"run_id":"' . self::RUN_ID . '",' .
-			'"failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"stage":"execution","code":"execution_failed",' .
-			'"error_class":"RuntimeException","error_message":"CLI boundary failure.","failed_chunk":null}]',
-			$result['stdout']
-		);
+		self::assertSame( '[{"owner":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store","run_id":"' . self::RUN_ID . '","failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"stage":"execution","code":"execution_failed","error_class":"RuntimeException","error_message":"CLI boundary failure.","failed_chunk":null}]', $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -1146,7 +1140,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $subcommand  a8csp-bgje subcommand.
+	 * @param   string $subcommand   a8csp-bgje subcommand.
 	 * @param   string ...$arguments Arguments following the subcommand.
 	 *
 	 * @return  array{stdout: string, stderr: string, exit_code: int}

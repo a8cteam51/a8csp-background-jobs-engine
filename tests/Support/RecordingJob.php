@@ -11,6 +11,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
  * Records standard job executions with optional observation and failure behavior.
  */
 final class RecordingJob implements JobExecutionInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/**
 	 * Handler arguments in call order.
 	 *
@@ -35,6 +37,10 @@ final class RecordingJob implements JobExecutionInterface {
 	 */
 	public ?\Closure $on_handle = null;
 
+	// endregion.
+
+	// region MAGIC METHODS.
+
 	/**
 	 * Constructor.
 	 *
@@ -43,6 +49,10 @@ final class RecordingJob implements JobExecutionInterface {
 	public function __construct(
 		private readonly string $name,
 	) {}
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * Composes this execution fixture with its stable name and supplied policy.
@@ -87,4 +97,6 @@ final class RecordingJob implements JobExecutionInterface {
 			throw $this->throwable;
 		}
 	}
+
+	// endregion.
 }

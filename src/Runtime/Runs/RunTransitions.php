@@ -260,12 +260,12 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param \Closure(): mixed $clear_pending_actions
 	 *
-	 * @param   KindHandlerInterface $handler              Handler selected by the persisted kind.
-	 * @param   Identity             $identity             Complete owner-qualified work identity.
-	 * @param   string               $run_id               Run identifier.
-	 * @param   RunState             $state                Running state from the exact inspected snapshot.
-	 * @param   RunStore             $run_store            Active-run store.
-	 * @param   string               $expected_raw         Exact pre-cancel snapshot.
+	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
+	 * @param   Identity             $identity              Complete owner-qualified work identity.
+	 * @param   string               $run_id                Run identifier.
+	 * @param   RunState             $state                 Running state from the exact inspected snapshot.
+	 * @param   RunStore             $run_store             Active-run store.
+	 * @param   string               $expected_raw          Exact pre-cancel snapshot.
 	 * @param   \Closure             $clear_pending_actions Winner-only scheduler-group clear.
 	 *
 	 * @return  bool Whether the cancellation transition was claimed.
@@ -611,10 +611,7 @@ final readonly class RunTransitions {
 	private function last_completed_run_id( Identity $identity ): ?string {
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
-			$this->logger->warning(
-				'Previous completed run could not be read while freezing completion hook state.',
-				array( 'identity' => (string) $identity )
-			);
+			$this->logger->warning( 'Previous completed run could not be read while freezing completion hook state.', array( 'identity' => (string) $identity ) );
 
 			return null;
 		}

@@ -14,6 +14,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( BoundaryError::class )]
 final class BoundaryErrorTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
 	 *
@@ -25,6 +27,10 @@ final class BoundaryErrorTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * The error exposes its stable code, engine-authored message, and structured context exactly.
@@ -51,4 +57,6 @@ final class BoundaryErrorTest extends TestCase {
 
 		self::assertSame( array(), $error->context );
 	}
+
+	// endregion.
 }

@@ -16,11 +16,17 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
  * @version 1.0.0
  */
 final class ReadinessControlledBackend implements BackendInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/** Live Action Scheduler adapter receiving every delegated operation. */
 	private readonly ActionSchedulerBackend $backend;
 
 	/** Whether the backend reports itself ready. */
 	public bool $ready = true;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/**
 	 * Creates a readiness-controlled live adapter.
@@ -31,6 +37,10 @@ final class ReadinessControlledBackend implements BackendInterface {
 	public function __construct() {
 		$this->backend = new ActionSchedulerBackend();
 	}
+
+	// endregion.
+
+	// region METHODS.
 
 	/** {@inheritDoc} */
 	#[\Override]
@@ -115,4 +125,6 @@ final class ReadinessControlledBackend implements BackendInterface {
 	public function register_hooks(): void {
 		$this->backend->register_hooks();
 	}
+
+	// endregion.
 }

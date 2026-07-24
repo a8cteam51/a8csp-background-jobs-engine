@@ -46,7 +46,7 @@ final readonly class JobKind {
 
 	// endregion
 
-	// region NAMED CONSTRUCTORS
+	// region METHODS
 
 	/**
 	 * Returns the standard job kind.

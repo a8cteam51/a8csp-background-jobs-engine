@@ -9,6 +9,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
  * @version 1.0.0
  */
 final class FaultingOverlapKeyResolverProvider {
+	// region METHODS.
+
 	/**
 	 * Supplies throwing and wrong-returning overlap-key resolvers.
 	 *
@@ -23,4 +25,6 @@ final class FaultingOverlapKeyResolverProvider {
 			'returns non-string' => array( 'resolver' => static fn ( array $args ): array => $args ),
 		);
 	}
+
+	// endregion.
 }

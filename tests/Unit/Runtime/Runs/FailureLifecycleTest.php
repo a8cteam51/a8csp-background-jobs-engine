@@ -742,7 +742,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Throwable     $throwable Job failure.
+	 * @param   \Throwable      $throwable Job failure.
 	 * @param   JobOptions|null $options   Optional policy declaration.
 	 *
 	 * @return  void
@@ -858,7 +858,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ErrorCode    $code  Expected failure code.
+	 * @param   ErrorCode       $code  Expected failure code.
 	 * @param   RunFailureStage $stage Expected failure stage.
 	 *
 	 * @return  RunFailure

@@ -18,11 +18,17 @@ use PHPUnit\Framework\TestCase;
 #[PreserveGlobalState( false )]
 #[CoversFunction( 'a8csp_bgje_check_github_release_update' )]
 final class GitHubUpdateCheckTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	private const string API_URL_PRERELEASE       = 'https://api.github.com/repos/a8cteam51/a8csp-background-jobs-engine/releases?per_page=10';
 	private const string API_URL_STABLE           = 'https://api.github.com/repos/a8cteam51/a8csp-background-jobs-engine/releases/latest';
 	private const string PLUGIN_FILE              = 'a8csp-background-jobs-engine/a8csp-background-jobs-engine.php';
 	private const string TRANSIENT_KEY_PRERELEASE = 'a8csp_bgje_github_latest_release_prerelease';
 	private const string TRANSIENT_KEY_STABLE     = 'a8csp_bgje_github_latest_release_stable';
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/**
 	 * Loads the named bootstrap helper with guarded WordPress API stubs and clean transient state.
@@ -52,6 +58,10 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_transients']          = array();
 		unset( $GLOBALS['a8csp_bgje_test_remote_response'] );
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * A newer release returns the matching asset and populates the positive cache.
@@ -323,6 +333,10 @@ final class GitHubUpdateCheckTest extends TestCase {
 		$this->assert_negative_cache();
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Applies the production updater helper.
 	 *
@@ -353,6 +367,10 @@ final class GitHubUpdateCheckTest extends TestCase {
 		return $update;
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Supplies installed versions for equal and older release comparisons.
 	 *
@@ -365,6 +383,10 @@ final class GitHubUpdateCheckTest extends TestCase {
 		yield 'equal release' => array( '1.1.0' );
 		yield 'older release' => array( '1.2.0' );
 	}
+
+	// endregion.
+
+	// region HELPERS.
 
 	/**
 	 * Returns the plugin data consumed by the update hook.
@@ -444,4 +466,6 @@ final class GitHubUpdateCheckTest extends TestCase {
 			$GLOBALS['a8csp_bgje_test_set_transient_calls']
 		);
 	}
+
+	// endregion.
 }

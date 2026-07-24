@@ -12,6 +12,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RunStatus::class )]
 final class RunStatusTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
@@ -24,6 +25,10 @@ final class RunStatusTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * The persisted values remain an exact order-independent closed set.
@@ -45,4 +50,6 @@ final class RunStatusTest extends TestCase {
 			\array_map( static fn ( RunStatus $status ): string => $status->value, RunStatus::cases() )
 		);
 	}
+
+	// endregion.
 }

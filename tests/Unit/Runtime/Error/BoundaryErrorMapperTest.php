@@ -197,7 +197,7 @@ final class BoundaryErrorMapperTest extends TestCase {
 
 	// endregion.
 
-	// region PROVIDERS.
+	// region DATA PROVIDERS.
 
 	/**
 	 * Supplies every engine failure reason and its public classification.

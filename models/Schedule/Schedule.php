@@ -86,7 +86,7 @@ final readonly class Schedule {
 	 *
 	 * @param   string                  $name       Stable schedule name.
 	 * @param   Recurrence              $recurrence Recurrence definition.
-	 * @param   string                  $job       Stable target job name.
+	 * @param   string                  $job        Stable target job name.
 	 * @param   array<array-key, mixed> $args       Target job arguments.
 	 * @param   CatchUpPolicy           $catch_up   Missed-occurrence policy.
 	 * @param   int                     $priority   Advisory priority from 0 through 255.
@@ -132,11 +132,7 @@ final readonly class Schedule {
 
 	// endregion
 
-	// region METHODS
-
-	// endregion
-
-	// region GETTERS
+	// region GETTERS/SETTERS
 
 	/**
 	 * Returns the stable SHA-256 definition identity.

@@ -27,12 +27,20 @@ use PHPUnit\Framework\TestCase;
 
 /** Detects unsafe class construction while corrupt registry storage is inspected. */
 final class ScheduleRegistryWakeupProbe {
+	// region FIELDS AND CONSTANTS.
+
 	public static int $wakeups = 0;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/** Records an unsafe native object construction. */
 	public function __wakeup(): void {
 		++self::$wakeups;
 	}
+
+	// endregion.
 }
 
 /**

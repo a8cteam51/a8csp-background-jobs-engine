@@ -58,7 +58,7 @@ final class UninstallWpdbSpy {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $query Query template.
+	 * @param   string $query   Query template.
 	 * @param   mixed  ...$args Prepared arguments.
 	 *
 	 * @return  string

@@ -133,11 +133,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 	public function handle( array $start_args, RunContextInterface $context ): void {
 		$selected_cursor = $this->rows->read( self::SWEEP_CURSOR_OPTION );
 		if ( $selected_cursor->is_failure() ) {
-			$this->log_sweep_abort(
-				'Maintenance sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.',
-				'cursor-read',
-				$selected_cursor->error
-			);
+			$this->log_sweep_abort( 'Maintenance sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.', 'cursor-read', $selected_cursor->error );
 
 			return;
 		}
@@ -172,11 +168,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 		while ( $run_count < self::RUN_SWEEP_BUDGET ) {
 			$run_page = $this->rows->option_names_after( RunIdentity::option_prefix(), $runs_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $run_page->is_failure() ) {
-				$this->log_sweep_abort(
-					'Maintenance run sweep aborted while enumerating run rows; repair WordPress option reads and retry the sweep.',
-					'run-enumeration',
-					$run_page->error
-				);
+				$this->log_sweep_abort( 'Maintenance run sweep aborted while enumerating run rows; repair WordPress option reads and retry the sweep.', 'run-enumeration', $run_page->error );
 
 				return;
 			}
@@ -234,11 +226,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 		while ( $lock_count < self::LOCK_SWEEP_BUDGET ) {
 			$lock_page = $this->rows->option_names_after( OverlapGuard::OPTION_PREFIX, $locks_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $lock_page->is_failure() ) {
-				$this->log_sweep_abort(
-					'Maintenance lock sweep aborted while enumerating overlap-lock rows; repair WordPress option reads and retry the sweep.',
-					'lock-enumeration',
-					$lock_page->error
-				);
+				$this->log_sweep_abort( 'Maintenance lock sweep aborted while enumerating overlap-lock rows; repair WordPress option reads and retry the sweep.', 'lock-enumeration', $lock_page->error );
 
 				return;
 			}
@@ -313,11 +301,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 		while ( $registration_count < self::RUN_SWEEP_BUDGET ) {
 			$registration_page = $this->rows->option_names_after( ScheduleRegistry::OPTION_PREFIX, $registrations_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $registration_page->is_failure() ) {
-				$this->log_sweep_abort(
-					'Maintenance schedule-registry sweep aborted while enumerating registration rows; repair WordPress option reads and retry the sweep.',
-					'registry-enumeration',
-					$registration_page->error
-				);
+				$this->log_sweep_abort( 'Maintenance schedule-registry sweep aborted while enumerating registration rows; repair WordPress option reads and retry the sweep.', 'registry-enumeration', $registration_page->error );
 
 				return;
 			}
@@ -331,12 +315,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 
 				$selected = $this->rows->read( $option_name );
 				if ( $selected->is_failure() ) {
-					$this->log_sweep_abort(
-						'Maintenance schedule-registry sweep aborted while reading a registration row; repair WordPress option reads and retry the sweep.',
-						'registry-read',
-						$selected->error,
-						array( 'option_name' => $option_name )
-					);
+					$this->log_sweep_abort( 'Maintenance schedule-registry sweep aborted while reading a registration row; repair WordPress option reads and retry the sweep.', 'registry-read', $selected->error, array( 'option_name' => $option_name ) );
 
 					return;
 				}
@@ -355,10 +334,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 
 				$delete = $this->rows->delete_if_value_matches( $option_name, $raw );
 				if ( RowDeleteOutcome::Deleted === $delete ) {
-					$this->logger->warning(
-						'Deleted corrupt schedule registry option during maintenance sweep.',
-						array( 'option_name' => $option_name )
-					);
+					$this->logger->warning( 'Deleted corrupt schedule registry option during maintenance sweep.', array( 'option_name' => $option_name ) );
 					continue;
 				}
 				if ( RowDeleteOutcome::DeleteFailed === $delete ) {

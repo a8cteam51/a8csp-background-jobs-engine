@@ -177,7 +177,7 @@ final readonly class DemoClient {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   RunId                         $run_id     Engine-assigned chunked job run identifier.
+	 * @param   RunId                          $run_id     Engine-assigned chunked job run identifier.
 	 * @param   array<array-key, mixed>        $start_args Original chunked job start arguments.
 	 *
 	 * @return  void

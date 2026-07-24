@@ -496,11 +496,11 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   RecordingChunkedJob                $chunked_job           Chunked Job fixture.
-	 * @param   string                        $name            Stable chunked job name.
-	 * @param   string                        $run_id          Run identifier.
-	 * @param   string                        $group           Per-run Action Scheduler group.
-	 * @param   list<array<array-key, mixed>> $expected_chunks Expected chunks in processing order.
+	 * @param   RecordingChunkedJob                $chunked_job     Chunked Job fixture.
+	 * @param   string                             $name            Stable chunked job name.
+	 * @param   string                             $run_id          Run identifier.
+	 * @param   string                             $group           Per-run Action Scheduler group.
+	 * @param   list<array<array-key, mixed>>      $expected_chunks Expected chunks in processing order.
 	 *
 	 * @return  void
 	 */

@@ -240,11 +240,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[1]['context']['schedule_identity'] ?? null );
 		$propagated_error = $this->logger->records[1]['context']['error'] ?? null;
 		self::assertIsString( $propagated_error );
-		self::assertStringContainsString(
-			'a8csp_bgje_schedule_registrations_owner-a',
-			$propagated_error,
-			'The propagated corrupt-registry error must name the exact option row so an operator can act on it.'
-		);
+		self::assertStringContainsString( 'a8csp_bgje_schedule_registrations_owner-a', $propagated_error, 'The propagated corrupt-registry error must name the exact option row so an operator can act on it.' );
 	}
 
 	/**
@@ -612,7 +608,7 @@ final class CleanupIntentsTest extends TestCase {
 	/**
 	 * Returns request-local declarations keyed by complete schedule identity.
 	 *
-	 * @param   string   $owner     Owner identifier.
+	 * @param   string   $owner        Owner identifier.
 	 * @param   Schedule ...$schedules Schedule value objects.
 	 *
 	 * @return  array<string, array{schedule: Schedule, job: Identity}>

@@ -114,7 +114,7 @@ final class CommentCountRecountChunkedJob implements ChunkedJobExecutionInterfac
 	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
 	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
 	 *
-	 * @throws  NonRetryableException When the queued post identifier is invalid or its post is gone.
+	 * @throws  NonRetryableException     When the queued post identifier is invalid or its post is gone.
 	 * @throws  \RuntimeException         When the refreshed comment count is not persisted.
 	 *
 	 * @return  void

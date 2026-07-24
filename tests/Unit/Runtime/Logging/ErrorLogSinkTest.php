@@ -17,6 +17,8 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( PortableArguments::class )]
 #[UsesClass( ThrowableContextNormalizer::class )]
 final class ErrorLogSinkTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording action stub.
 	 *
@@ -46,6 +48,10 @@ final class ErrorLogSinkTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_filter_values']        = array();
 		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Registration adds exactly one callable for all three channel arguments.
@@ -278,6 +284,10 @@ final class ErrorLogSinkTest extends TestCase {
 		$this->assert_error_log_line( 'a8csp-background-jobs-engine.debug: Recursive context {"value":"array"}', $output );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Captures PHP's configured error-log destination and restores it after the assertion input runs.
 	 *
@@ -356,4 +366,6 @@ final class ErrorLogSinkTest extends TestCase {
 	private function assert_error_log_line( string $expected, string $actual ): void {
 		self::assertMatchesRegularExpression( '/^(?:\[[^\r\n]+\] )?' . \preg_quote( $expected, '/' ) . '\r?\n$/D', $actual );
 	}
+
+	// endregion.
 }

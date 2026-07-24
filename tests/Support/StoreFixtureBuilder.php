@@ -497,9 +497,9 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $args_hash   Stable single-flight identity.
-	 * @param   string $run_id      Lock owner.
-	 * @param   int    $claimed_at  Claim timestamp.
+	 * @param   string $args_hash    Stable single-flight identity.
+	 * @param   string $run_id       Lock owner.
+	 * @param   int    $claimed_at   Claim timestamp.
 	 * @param   int    $heartbeat_at Latest liveness timestamp.
 	 *
 	 * @return  array{string, string}

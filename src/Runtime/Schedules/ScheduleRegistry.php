@@ -734,10 +734,7 @@ final class ScheduleRegistry {
 
 		$this->corrupt_warnings_in_flight[ $option_name ] = true;
 		try {
-			$this->logger->warning(
-				'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.',
-				array( 'option_name' => $option_name )
-			);
+			$this->logger->warning( 'Schedule registry option row is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', array( 'option_name' => $option_name ) );
 		} finally {
 			unset( $this->corrupt_warnings_in_flight[ $option_name ] );
 		}

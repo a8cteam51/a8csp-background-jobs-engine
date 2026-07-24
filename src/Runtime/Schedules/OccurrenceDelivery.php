@@ -340,12 +340,7 @@ final readonly class OccurrenceDelivery {
 			$aging = $this->registry->record_undeclared_occurrence( $identity, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
 			if ( UndeclaredOccurrenceOutcome::Escalated === $aging ) {
 				$this->logger->warning(
-					\sprintf(
-						'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp a8csp-bgje schedules remove %3$s".',
-						$registration_key,
-						self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
-						$identity->owner()
-					),
+					\sprintf( 'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp a8csp-bgje schedules remove %3$s".', $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD, $identity->owner() ),
 					array(
 						'owner'                  => $identity->owner(),
 						'schedule_identity'      => $registration_key,

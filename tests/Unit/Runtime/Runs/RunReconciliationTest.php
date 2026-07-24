@@ -2665,8 +2665,8 @@ final class RunReconciliationTest extends TestCase {
 	 * Stores one raw valid lock row.
 	 *
 	 * @param   string $option_name Lock option name.
-	 * @param   string $run_id     Owning run identifier.
-	 * @param   int    $heartbeat  Latest heartbeat timestamp.
+	 * @param   string $run_id      Owning run identifier.
+	 * @param   int    $heartbeat   Latest heartbeat timestamp.
 	 *
 	 * @return  void
 	 */

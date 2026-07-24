@@ -57,6 +57,10 @@ final class EngineRig {
 
 	private MaintenanceJob $maintenance_job;
 
+	// endregion.
+
+	// region MAGIC METHODS.
+
 	/**
 	 * Retains deterministic boundaries used by one production graph.
 	 *
@@ -428,10 +432,7 @@ final class EngineRig {
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
 
 		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$dispatcher->register(
-			Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
-			JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job )
-		);
+		$dispatcher->register( Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job ) );
 		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $this->clock );
@@ -518,13 +519,13 @@ final class EngineRig {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   EngineFacade       $engine     Engine facade.
-	 * @param   Inspection         $inspection Inspection facade.
+	 * @param   EngineFacade       $engine      Engine facade.
+	 * @param   Inspection         $inspection  Inspection facade.
 	 * @param   LockRepair         $lock_repair Explicit malformed-lock repair.
 	 * @param   SchedulerFacade    $scheduler   Scheduler facade.
-	 * @param   JobRegistry        $registry   Registered job and chunked job instances.
-	 * @param   ScheduleOperations $schedules  Schedule engine operations.
-	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
+	 * @param   JobRegistry        $registry    Registered job and chunked job instances.
+	 * @param   ScheduleOperations $schedules   Schedule engine operations.
+	 * @param   Dispatcher         $dispatcher  Background-work admission coordinator.
 	 *
 	 * @return  void
 	 */

@@ -12,6 +12,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( CatchUpPolicy::class )]
 final class CatchUpPolicyTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
@@ -25,6 +26,10 @@ final class CatchUpPolicyTest extends TestCase {
 		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * The public backing values remain an exact order-independent set.
 	 *
@@ -33,4 +38,6 @@ final class CatchUpPolicyTest extends TestCase {
 	public function test_backing_values_are_an_exact_set(): void {
 		self::assertEqualsCanonicalizing( array( 'run_once', 'skip' ), \array_map( static fn ( CatchUpPolicy $policy ): string => $policy->value, CatchUpPolicy::cases() ) );
 	}
+
+	// endregion.
 }

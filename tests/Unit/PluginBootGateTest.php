@@ -27,6 +27,8 @@ use PHPUnit\Framework\TestCase;
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
 final class PluginBootGateTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording hook stubs before
 	 * the component classes are first autoloaded.
@@ -77,6 +79,10 @@ final class PluginBootGateTest extends TestCase {
 		$GLOBALS['wpdb']                                = new WpdbLockSpy();
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * Plugin boot publishes the owner-bound client facade.
 	 *
@@ -120,4 +126,6 @@ final class PluginBootGateTest extends TestCase {
 
 		Component::operations( 'plugin-boot-gate' );
 	}
+
+	// endregion.
 }

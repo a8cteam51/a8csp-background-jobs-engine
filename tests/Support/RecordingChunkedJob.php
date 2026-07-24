@@ -12,6 +12,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
  * Records chunked job executions with optional observation and failure behavior.
  */
 final class RecordingChunkedJob implements ChunkedJobExecutionInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/**
 	 * Initial chunks returned by queue generation.
 	 *
@@ -63,6 +65,10 @@ final class RecordingChunkedJob implements ChunkedJobExecutionInterface {
 	 */
 	public ?\Closure $on_process = null;
 
+	// endregion.
+
+	// region MAGIC METHODS.
+
 	/**
 	 * Constructor.
 	 *
@@ -71,6 +77,10 @@ final class RecordingChunkedJob implements ChunkedJobExecutionInterface {
 	public function __construct(
 		private readonly string $name,
 	) {}
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * Composes this execution fixture with its stable name and supplied policy.
@@ -136,6 +146,10 @@ final class RecordingChunkedJob implements ChunkedJobExecutionInterface {
 		}
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Appends one chunked job boundary to the shared lifecycle ledger when enabled.
 	 *
@@ -156,4 +170,6 @@ final class RecordingChunkedJob implements ChunkedJobExecutionInterface {
 
 		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = $lifecycle_events;
 	}
+
+	// endregion.
 }

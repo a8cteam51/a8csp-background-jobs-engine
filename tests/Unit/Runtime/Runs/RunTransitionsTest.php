@@ -1048,7 +1048,7 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Runs one job attempt through the terminal-transition product services.
 	 *
-	 * @param   string $run_id     Run identifier.
+	 * @param   string $run_id          Run identifier.
 	 * @param   int    $action_sequence Received lifecycle action sequence.
 	 *
 	 * @return  void

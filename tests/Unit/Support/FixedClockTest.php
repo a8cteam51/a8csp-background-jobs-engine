@@ -12,6 +12,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversNothing]
 final class FixedClockTest extends TestCase {
+	// region TESTS.
+
 	/**
 	 * Construction from a zoned instant retains its Unix timestamp.
 	 *
@@ -24,4 +26,6 @@ final class FixedClockTest extends TestCase {
 
 		self::assertSame( $instant->getTimestamp(), $clock->now()->getTimestamp() );
 	}
+
+	// endregion.
 }

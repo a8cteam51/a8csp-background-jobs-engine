@@ -16,6 +16,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RunFailureStage::class )]
 final class RunFailureStageTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
@@ -31,6 +32,10 @@ final class RunFailureStageTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Every grammar-valid stage wraps enum-shaped, exposes its value, and is identity-stable.
@@ -63,6 +68,10 @@ final class RunFailureStageTest extends TestCase {
 		RunFailureStage::from( $value );
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Returns grammar-valid stages: the engine's four persisted values plus a vendor-qualified extension.
 	 *
@@ -90,4 +99,6 @@ final class RunFailureStageTest extends TestCase {
 		yield 'leading dot' => array( '.leading' );
 		yield 'double dot' => array( 'a..b' );
 	}
+
+	// endregion.
 }

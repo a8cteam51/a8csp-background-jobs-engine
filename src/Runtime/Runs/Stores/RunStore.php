@@ -725,12 +725,7 @@ final readonly class RunStore {
 	 */
 	private static function kind_state_failure( array $kind_state ): ?Failure {
 		if ( ! PortableArguments::is_valid( $kind_state ) ) {
-			return new Failure(
-				new EngineError(
-					'Run kind state must contain only null, scalar, or nested array values.',
-					reason: EngineErrorReason::PayloadRejected,
-				)
-			);
+			return new Failure( new EngineError( 'Run kind state must contain only null, scalar, or nested array values.', reason: EngineErrorReason::PayloadRejected, ) );
 		}
 
 		$serialized = \maybe_serialize( $kind_state );

@@ -16,6 +16,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( Run::class )]
 final class RunTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production files' ABSPATH boot guard before first autoload.
@@ -31,6 +32,10 @@ final class RunTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Every projection field remains independently observable, and the identifier is the typed value.
@@ -48,4 +53,6 @@ final class RunTest extends TestCase {
 		self::assertSame( $id, $run->id );
 		self::assertSame( RunStatus::Failed, $run->status );
 	}
+
+	// endregion.
 }

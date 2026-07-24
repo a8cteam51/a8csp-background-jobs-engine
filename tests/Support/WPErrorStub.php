@@ -6,6 +6,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
  * Runtime WordPress error stand-in for unit tests that do not load WordPress.
  */
 final readonly class WPErrorStub {
+	// region MAGIC METHODS.
+
 	/**
 	 * Constructor.
 	 *
@@ -18,6 +20,10 @@ final readonly class WPErrorStub {
 		private string $message = '',
 		private mixed $data = null,
 	) {}
+
+	// endregion.
+
+	// region GETTERS.
 
 	/**
 	 * Returns the stored message.
@@ -58,4 +64,6 @@ final readonly class WPErrorStub {
 	public function has_errors(): bool {
 		return '' !== $this->code && 0 !== $this->code;
 	}
+
+	// endregion.
 }

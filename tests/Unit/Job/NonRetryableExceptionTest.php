@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( NonRetryableException::class )]
 final class NonRetryableExceptionTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
@@ -29,6 +30,10 @@ final class NonRetryableExceptionTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * The concrete exception remains catchable as a runtime exception.
@@ -57,4 +62,6 @@ final class NonRetryableExceptionTest extends TestCase {
 
 		self::assertInstanceOf( NonRetryableException::class, $exception );
 	}
+
+	// endregion.
 }

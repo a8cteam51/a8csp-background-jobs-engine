@@ -577,8 +577,8 @@ final class ScheduleOperationsTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Schedule $schedule  Schedule declaration.
-	 * @param   int      $next_due  Next occurrence timestamp.
+	 * @param   Schedule $schedule   Schedule declaration.
+	 * @param   int      $next_due   Next occurrence timestamp.
 	 * @param   int|null $last_fired Last dispatched timestamp.
 	 *
 	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}

@@ -34,7 +34,7 @@ final readonly class Recurrence {
 
 	// endregion
 
-	// region FACTORIES
+	// region METHODS
 
 	/**
 	 * Creates a fixed elapsed-time recurrence.
@@ -81,10 +81,6 @@ final readonly class Recurrence {
 
 		return new self( $seconds, $anchor % $seconds );
 	}
-
-	// endregion
-
-	// region METHODS
 
 	/**
 	 * Returns the stable recurrence representation included in schedule fingerprints.

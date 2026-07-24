@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversNothing]
 final class RecordingBackendTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies production boot guards before the backend interface is autoloaded.
 	 *
@@ -31,6 +33,10 @@ final class RecordingBackendTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Write verbs default to successful results and retain every supplied argument.
@@ -238,4 +244,6 @@ final class RecordingBackendTest extends TestCase {
 			$backend->calls
 		);
 	}
+
+	// endregion.
 }

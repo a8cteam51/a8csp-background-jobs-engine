@@ -390,9 +390,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified chunked-job identity.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Fenced executing state.
+	 * @param   Identity $identity  Complete owner-qualified chunked-job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @throws  \LogicException When the claimed delivery has no durable pending-action descriptor.
@@ -504,9 +504,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified chunked-job identity.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Fenced executing state.
+	 * @param   Identity $identity  Complete owner-qualified chunked-job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @throws  \LogicException When the claimed delivery has no durable pending-action descriptor.
@@ -550,9 +550,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified chunked-job identity.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Fenced executing state.
+	 * @param   Identity $identity  Complete owner-qualified chunked-job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @return  void
@@ -586,7 +586,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ChunkedJobExecutionInterface  $execution  Registered chunked-job execution.
+	 * @param   ChunkedJobExecutionInterface  $execution   Registered chunked-job execution.
 	 * @param   Identity                      $identity    Complete owner-qualified chunked-job identity.
 	 * @param   string                        $run_id      Run identifier.
 	 * @param   RunState                      $state       Fenced executing state.
@@ -823,7 +823,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return new EngineError( 'chunked_job kind_state must be an oldest-first list of portable argument arrays.', \UnexpectedValueException::class, EngineErrorReason::PayloadRejected );
 		}
 
-		return \array_map( static fn ( mixed $chunk ): array => \is_array( $chunk ) ? $chunk : array(), $state->kind_state );
+		return \array_map( static fn ( mixed $chunk ): array => (array) $chunk, $state->kind_state );
 	}
 
 	/**

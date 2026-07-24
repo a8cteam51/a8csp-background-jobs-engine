@@ -138,7 +138,7 @@ final class EngineErrorTest extends TestCase {
 
 	// endregion.
 
-	// region PROVIDERS.
+	// region DATA PROVIDERS.
 
 	/**
 	 * Supplies every throwable boundary that produces retained terminal detail.
@@ -229,7 +229,7 @@ final class EngineErrorTest extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   ErrorCode $code    Client-visible classification.
-	 * @param   string       $summary Engine-authored redacted summary.
+	 * @param   string    $summary Engine-authored redacted summary.
 	 *
 	 * @return  RunFailure
 	 */

@@ -19,6 +19,8 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Success::class )]
 #[CoversClass( Failure::class )]
 final class ResultTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before the classes are first autoloaded.
 	 *
@@ -30,6 +32,10 @@ final class ResultTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * A success selects only the successful branch predicates.
@@ -111,6 +117,10 @@ final class ResultTest extends TestCase {
 		self::assertSame( $error->message, $this->read_narrowed_result( new Failure( $error ) ) );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Reads the payload selected by the result predicate.
 	 *
@@ -142,4 +152,6 @@ final class ResultTest extends TestCase {
 		self::assertSame( $expected_success, $result->is_success() );
 		self::assertSame( ! $expected_success, $result->is_failure() );
 	}
+
+	// endregion.
 }

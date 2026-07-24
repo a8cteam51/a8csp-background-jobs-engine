@@ -12,6 +12,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( Recurrence::class )]
 final class RecurrenceTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
@@ -24,6 +25,10 @@ final class RecurrenceTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * The minimum fixed interval remains valid.
@@ -123,4 +128,6 @@ final class RecurrenceTest extends TestCase {
 
 		Recurrence::every_anchored( 300, -1 );
 	}
+
+	// endregion.
 }

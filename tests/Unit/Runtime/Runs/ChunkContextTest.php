@@ -293,8 +293,8 @@ final class ChunkContextTest extends TestCase {
 	/**
 	 * Starts one chunked job and drives its start and first continuation actions through registered hooks.
 	 *
-	 * @param   RecordingChunkedJob          $chunked_job      Registered chunked job fake.
-	 * @param   array<array-key, mixed> $start_args Chunked Job start arguments.
+	 * @param   RecordingChunkedJob          $chunked_job Registered chunked job fake.
+	 * @param   array<array-key, mixed>      $start_args  Chunked Job start arguments.
 	 *
 	 * @return  string
 	 */

@@ -519,11 +519,7 @@ final readonly class FailedRunStore {
 			}
 
 			$this->logger->warning(
-				\sprintf(
-					'Failed-run retention for "{identity}" contains {unreadable_count} unreadable %1$s in option row "{option_name}"; this read omits %2$s, so repair or purge the row.',
-					1 === $unreadable_count ? 'entry' : 'entries',
-					1 === $unreadable_count ? 'it' : 'them'
-				),
+				\sprintf( 'Failed-run retention for "{identity}" contains {unreadable_count} unreadable %1$s in option row "{option_name}"; this read omits %2$s, so repair or purge the row.', 1 === $unreadable_count ? 'entry' : 'entries', 1 === $unreadable_count ? 'it' : 'them' ),
 				array(
 					'identity'         => (string) $this->identity,
 					'option_name'      => $option_name,

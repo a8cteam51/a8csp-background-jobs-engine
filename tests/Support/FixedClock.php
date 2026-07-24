@@ -9,11 +9,17 @@ use Psr\Clock\ClockInterface;
  * Mutable deterministic clock with observable reads.
  */
 final class FixedClock implements ClockInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/** Number of clock reads. */
 	public int $calls = 0;
 
 	/** Current Unix timestamp. */
 	public int $timestamp;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/**
 	 * Constructor.
@@ -24,6 +30,10 @@ final class FixedClock implements ClockInterface {
 		$this->timestamp = \is_int( $instant ) ? $instant : $instant->getTimestamp();
 	}
 
+	// endregion.
+
+	// region METHODS.
+
 	/** {@inheritDoc} */
 	#[\Override]
 	public function now(): DateTimeImmutable {
@@ -31,4 +41,6 @@ final class FixedClock implements ClockInterface {
 
 		return new DateTimeImmutable( '@' . $this->timestamp );
 	}
+
+	// endregion.
 }

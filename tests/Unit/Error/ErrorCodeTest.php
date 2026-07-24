@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( ErrorCode::class )]
 final class ErrorCodeTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
@@ -29,6 +30,10 @@ final class ErrorCodeTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * The required vocabulary and additive execution classification retain stable backing values.
@@ -59,4 +64,6 @@ final class ErrorCodeTest extends TestCase {
 			\array_map( static fn ( ErrorCode $code ): string => $code->value, ErrorCode::cases() )
 		);
 	}
+
+	// endregion.
 }

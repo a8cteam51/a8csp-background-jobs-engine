@@ -17,6 +17,8 @@ use PHPUnit\Framework\Assert;
  * defaults prove nothing about a real backend.
  */
 final class RecordingBackend implements BackendInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/**
 	 * Deliveries accepted by successful scheduling writes.
 	 *
@@ -80,6 +82,10 @@ final class RecordingBackend implements BackendInterface {
 	 * @var list<bool>
 	 */
 	public array $readiness_results = array();
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * Records a recurring-schedule request and returns its scripted result.
@@ -534,13 +540,14 @@ final class RecordingBackend implements BackendInterface {
 	public function assert_no_duplicate(): void {
 		foreach ( $this->deliveries as $index => $delivery ) {
 			foreach ( \array_slice( $this->deliveries, $index + 1 ) as $candidate ) {
-				Assert::assertFalse(
-					$delivery['hook'] === $candidate['hook'] && $delivery['args'] === $candidate['args'] && $delivery['group'] === $candidate['group'],
-					'The backend retained duplicate deliveries for one hook, argument list, and group.'
-				);
+				Assert::assertFalse( $delivery['hook'] === $candidate['hook'] && $delivery['args'] === $candidate['args'] && $delivery['group'] === $candidate['group'], 'The backend retained duplicate deliveries for one hook, argument list, and group.' );
 			}
 		}
 	}
+
+	// endregion.
+
+	// region HELPERS.
 
 	/**
 	 * Returns the scripted result for a write verb.
@@ -605,4 +612,6 @@ final class RecordingBackend implements BackendInterface {
 			$callback( $this );
 		}
 	}
+
+	// endregion.
 }

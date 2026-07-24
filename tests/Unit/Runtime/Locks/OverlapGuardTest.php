@@ -23,12 +23,20 @@ use PHPUnit\Framework\TestCase;
 
 /** Detects whether lock-row decoding constructs a serialized class. */
 final class LockRowWakeupProbe {
+	// region FIELDS AND CONSTANTS.
+
 	public static bool $woke = false;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/** Records an unsafe object construction during unserialization. */
 	public function __wakeup(): void {
 		self::$woke = true;
 	}
+
+	// endregion.
 }
 
 /**
@@ -52,6 +60,8 @@ final class LockRowWakeupProbe {
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 final class OverlapGuardTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	private const string ARGS_HASH = 'args-123';
 	private const string IDENTITY  = 'owner-a:email-digest';
 	private const string KEY       = 'a8csp_bgje_overlap_lock_owner-a:email-digest_args-123';
@@ -60,6 +70,10 @@ final class OverlapGuardTest extends TestCase {
 	private WpdbLockSpy $wpdb;
 
 	private OptionRows $rows;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/** Loads guarded WordPress functions before production classes are autoloaded. */
 	#[\Override]
@@ -83,6 +97,10 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb                             = new WpdbLockSpy();
 		$this->rows                             = new OptionRows( $this->wpdb );
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/** Lock option parsing derives the exact prefix and accepts the canonical identity and lowercase hash grammar. */
 	public function test_option_name_parser_uses_the_canonical_lock_key_grammar(): void {
@@ -746,6 +764,10 @@ final class OverlapGuardTest extends TestCase {
 		self::assertFalse( $this->guard_at( 1_001 )->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Returns a guard with deterministic time and the shared SQL seam.
 	 *
@@ -847,4 +869,6 @@ final class OverlapGuardTest extends TestCase {
 			$this->wpdb->recorded_queries
 		);
 	}
+
+	// endregion.
 }

@@ -37,7 +37,7 @@ final readonly class JobDefinition {
 
 	// endregion
 
-	// region NAMED CONSTRUCTORS
+	// region METHODS
 
 	/**
 	 * Defines a standard job.

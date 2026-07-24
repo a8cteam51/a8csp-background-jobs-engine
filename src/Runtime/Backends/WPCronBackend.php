@@ -409,11 +409,7 @@ final class WPCronBackend implements BackendInterface {
 		foreach ( $this->active_intervals() as $interval ) {
 			$schedules[ $this->schedule_name( $interval ) ] = array(
 				'interval' => $interval,
-				'display'  => \sprintf(
-					/* translators: %d: interval in seconds. */
-					\__( 'Every %d seconds', 'a8csp-background-jobs-engine' ),
-					$interval
-				),
+				'display'  => \sprintf( /* translators: %d: interval in seconds. */ \__( 'Every %d seconds', 'a8csp-background-jobs-engine' ), $interval ),
 			);
 		}
 

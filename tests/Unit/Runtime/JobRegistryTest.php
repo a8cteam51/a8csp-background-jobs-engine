@@ -66,11 +66,7 @@ final class JobRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registration_retains_definition_data_and_unknown_lookups_return_null(): void {
-		$job_options     = new JobOptions(
-			max_runtime: 42,
-			retry: new RetryPolicy( max_attempts: 1, base_delay: 5, multiplier: 1, max_delay: 5 ),
-			overlap: OverlapPolicy::Allow,
-		);
+		$job_options     = new JobOptions( max_runtime: 42, retry: new RetryPolicy( max_attempts: 1, base_delay: 5, multiplier: 1, max_delay: 5 ), overlap: OverlapPolicy::Allow, );
 		$chunked_options = new JobOptions( max_runtime: 84, overlap: OverlapPolicy::Replace );
 		$job             = new RecordingJob( 'refresh_index-2' );
 		$chunked_job     = new RecordingChunkedJob( 'rebuild-index' );

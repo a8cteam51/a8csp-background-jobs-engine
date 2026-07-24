@@ -14,6 +14,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( AbstractComponent::class )]
 final class AbstractComponentTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before the class under test autoloads.
 	 *
@@ -29,6 +31,10 @@ final class AbstractComponentTest extends TestCase {
 
 		parent::setUpBeforeClass();
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * An extending component inherits both defaults without attaching its behavior.
@@ -63,4 +69,6 @@ final class AbstractComponentTest extends TestCase {
 		$component->register_hooks();
 		self::assertTrue( $component->registered );
 	}
+
+	// endregion.
 }

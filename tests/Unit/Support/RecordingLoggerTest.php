@@ -12,6 +12,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversNothing]
 final class RecordingLoggerTest extends TestCase {
+	// region TESTS.
+
 	/**
 	 * Repeated calls append complete records in invocation order.
 	 *
@@ -39,4 +41,6 @@ final class RecordingLoggerTest extends TestCase {
 			$logger->records
 		);
 	}
+
+	// endregion.
 }
