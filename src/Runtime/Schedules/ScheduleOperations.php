@@ -193,7 +193,7 @@ final readonly class ScheduleOperations {
 					}
 				}
 
-				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $schedule_identity ], array( $schedule_identity ), $current['next_due'], $schedule_identity, priority: $schedule->priority );
+				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $schedule_identity ], array( $schedule_identity ), $current['next_due'], $schedule_identity, priority: $schedule->priority ?? 10 );
 				if ( $recreated->is_failure() ) {
 					return $recreated;
 				}
@@ -225,7 +225,7 @@ final readonly class ScheduleOperations {
 				return $this->registry_replacement_failure( $owner, $replacement );
 			}
 
-			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: $schedule->priority );
+			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: $schedule->priority ?? 10 );
 			if ( $scheduled->is_failure() ) {
 				// A scheduling failure leaves the benign registration-without-chain that the fingerprint-match fast path
 				// recreates; rolling back can race a delivery and manufacture chain-without-registration, the exact orphan

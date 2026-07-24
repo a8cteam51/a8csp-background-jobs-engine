@@ -68,8 +68,8 @@ function a8csp_bgje_sync_schedules( string $owner, array $schedules ): true|\WP_
 				return new \WP_Error( ErrorCode::InvalidArgument->value, 'Schedule catch-up policy is unsupported; pass catch_up as "run_once" or "skip".' );
 			}
 
-			$priority = $specification['priority'] ?? 10;
-			if ( ! \is_int( $priority ) ) {
+			$priority = $specification['priority'] ?? null;
+			if ( null !== $priority && ! \is_int( $priority ) ) {
 				return new \WP_Error( ErrorCode::InvalidArgument->value, 'Schedule priority has an invalid type; pass priority as an integer from 0 through 255.' );
 			}
 

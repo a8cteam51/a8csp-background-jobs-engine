@@ -192,6 +192,33 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertNotSame( '', (string) $run->id );
 		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );
 		self::assertSame( 41, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+		self::assertSame( 41, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
+	}
+
+	/**
+	 * An omitted procedural priority remains unspecified while both backend boundaries use today's default.
+	 *
+	 * @return  void
+	 */
+	public function test_omitted_schedule_priority_defers_to_the_engine_default(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'scheduled-job' ) ) );
+		$schedule = array(
+			'name'  => 'nightly',
+			'every' => 300,
+			'job'   => 'scheduled-job',
+		);
+
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, array( $schedule ) ) );
+		self::assertSame( 10, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+		self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
+		self::assertSame( 10, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
+
+		$this->rig->backend()->calls = array();
+		$schedule['priority']        = 10;
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, array( $schedule ) ) );
+		$writes = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'unschedule', 'schedule_recurring' ), true ) ) );
+		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $writes, 'verb' ) );
+		self::assertSame( 10, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
 	}
 
 	/**

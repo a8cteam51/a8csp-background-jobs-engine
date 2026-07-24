@@ -153,6 +153,32 @@ final class ScheduleExecutionTest extends TestCase {
 	// region BEHAVIOR.
 
 	/**
+	 * Unspecified and explicit default priorities both reach recurring and target backends as 10.
+	 *
+	 * @return  void
+	 */
+	public function test_default_priority_forms_dispatch_occurrences_at_backend_priority_10(): void {
+		$unspecified = new Schedule( 'unspecified', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'unspecified' ), priority: null );
+		$explicit    = new Schedule( 'explicit-default', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'explicit' ), priority: 10 );
+		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow ) ) );
+
+		self::assertInstanceOf( Success::class, $this->client->sync( array( $unspecified, $explicit ) ) );
+		$recurring_calls = $this->calls( 'schedule_recurring' );
+		self::assertCount( 2, $recurring_calls );
+		self::assertSame( array( 10, 10 ), \array_column( \array_column( $recurring_calls, 'args' ), 'priority' ) );
+
+		$this->reset_observations();
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$this->rig->run_due();
+		$this->rig->run_due();
+		$this->rig->run_due();
+
+		$occurrence_calls = $this->calls( 'enqueue_async' );
+		self::assertCount( 2, $occurrence_calls );
+		self::assertSame( array( 10, 10 ), \array_column( \array_column( $occurrence_calls, 'args' ), 'priority' ) );
+	}
+
+	/**
 	 * A Skip schedule delivered inside grace dispatches normally without a misfire-skipped hook.
 	 *
 	 * @since   1.0.0

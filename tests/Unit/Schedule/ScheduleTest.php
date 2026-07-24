@@ -52,7 +52,7 @@ final class ScheduleTest extends TestCase {
 		self::assertSame( 'refresh-index', $schedule->job );
 		self::assertSame( array( 'site_id' => 7 ), $schedule->args );
 		self::assertSame( CatchUpPolicy::RunOnce, $schedule->catch_up );
-		self::assertSame( 10, $schedule->priority );
+		self::assertNull( $schedule->priority );
 	}
 
 	/**
@@ -256,6 +256,21 @@ final class ScheduleTest extends TestCase {
 		$second = $this->schedule();
 
 		self::assertSame( $first->fingerprint(), $second->fingerprint() );
+	}
+
+	/**
+	 * An unspecified priority remains distinct from an explicit engine-default priority.
+	 *
+	 * @return  void
+	 */
+	public function test_unspecified_priority_fingerprints_as_json_null(): void {
+		$unspecified = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$explicit    = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', priority: 10 );
+		$encoded     = '{"name":"nightly","recurrence":{"kind":"every","interval":300},"job":"refresh-index","args":[],"catch_up":"run_once","priority":null}';
+
+		self::assertNull( $unspecified->priority );
+		self::assertSame( \hash( 'sha256', $encoded ), $unspecified->fingerprint() );
+		self::assertNotSame( $explicit->fingerprint(), $unspecified->fingerprint() );
 	}
 
 	/**

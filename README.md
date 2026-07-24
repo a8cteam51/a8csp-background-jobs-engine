@@ -430,7 +430,7 @@ Registration is typed on both surfaces. Compose a `Job\JobDefinition` through `j
 
 Dispatch resolves the registered kind before admission. A null priority selects the engine default of 10; an explicit integer is preserved as the caller's choice.
 
-A procedural schedule entry accepts exactly the keys `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; any other key returns `WP_Error` with the `invalid_argument` code. The `name`, `every`, and `job` fields are required. Optional fields default to `'args' => []`, `'anchor' => null`, `'catch_up' => 'run_once'`, and `'priority' => 10`; catch-up also accepts `'skip'`. `every` is a positive integer number of seconds. `anchor` is a non-negative UTC phase offset reduced modulo `every`; it is not site-local or calendar time.
+A procedural schedule entry accepts exactly the keys `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; any other key returns `WP_Error` with the `invalid_argument` code. The `name`, `every`, and `job` fields are required. Optional fields default to `'args' => []`, `'anchor' => null`, and `'catch_up' => 'run_once'`; omitting `priority` defers to the engine default (10), and catch-up also accepts `'skip'`. `every` is a positive integer number of seconds. `anchor` is a non-negative UTC phase offset reduced modulo `every`; it is not site-local or calendar time.
 
 ## Public models, roles, and contexts
 
