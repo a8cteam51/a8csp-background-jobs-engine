@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
@@ -634,12 +635,27 @@ final readonly class Dispatcher {
 		if ( LockClaimOutcome::NotClaimed !== $claim ) {
 			return $state;
 		}
-		if ( $this->overlap_guard->replace( $identity, $args_hash, $run_id ) ) {
+		$transfer = $this->overlap_guard->replace( $identity, $args_hash, $run_id );
+		if ( LockTransferOutcome::Transferred === $transfer ) {
 			return $state;
 		}
 
 		// A rival may advance the provisional state while the overlap transfer is in flight.
 		$run_store->delete_if_unchanged( $run_id, $state );
+
+		if ( LockTransferOutcome::Indeterminate === $transfer ) {
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not transfer overlap lock ownership because storage failed; repair option reads and writes before retrying.', $run_id, $kind, $identity ),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'identity' => $identity,
+						'run_id'   => $run_id,
+						'kind'     => $kind,
+					),
+				)
+			);
+		}
 
 		return new Failure(
 			new EngineError(

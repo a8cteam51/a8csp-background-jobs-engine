@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Locks;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceLockSweep;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -41,6 +42,7 @@ final class LockRowWakeupProbe {
  */
 #[CoversClass( OverlapGuard::class )]
 #[UsesClass( LockClaimOutcome::class )]
+#[UsesClass( LockTransferOutcome::class )]
 #[UsesClass( HeartbeatOutcome::class )]
 #[UsesClass( MaintenanceLockSweep::class )]
 #[UsesClass( RedeliveryFenceOutcome::class )]
@@ -143,10 +145,49 @@ final class OverlapGuardTest extends TestCase {
 	public function test_replace_moves_a_fresh_lock_to_the_replacement(): void {
 		$this->store_fixture_lock( 'run-live', 1_700_000_000, 1_700_000_090 );
 
-		$replaced = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-new' );
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-new' );
 
-		self::assertTrue( $replaced );
+		self::assertSame( LockTransferOutcome::Transferred, $outcome );
 		self::assertSame( self::expected_lock_row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
+		self::assertSame( array( 'select', 'update' ), $this->operations() );
+	}
+
+	/** A failed replacement read leaves transfer indeterminate without attempting a write. */
+	public function test_replace_reports_indeterminate_without_writing_after_read_failure(): void {
+		$raw = self::fixture_lock_raw( 'run-live', 1_700_000_000, 1_700_000_090 );
+		$this->wpdb->put( self::KEY, $raw );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient replacement read failure';
+			}
+		);
+
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockTransferOutcome::Indeterminate, $outcome );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
+	}
+
+	/** An absent replacement row reports a lost transfer without attempting a write. */
+	public function test_replace_reports_lost_when_the_lock_row_is_absent(): void {
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockTransferOutcome::Lost, $outcome );
+		self::assertSame( array( 'select' ), $this->operations() );
+	}
+
+	/** A failed replacement write leaves transfer indeterminate without changing the selected row. */
+	public function test_replace_reports_indeterminate_after_write_failure(): void {
+		$raw = self::fixture_lock_raw( 'run-live', 1_700_000_000, 1_700_000_090 );
+		$this->wpdb->put( self::KEY, $raw );
+		$this->wpdb->script_result( 'update', false );
+
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockTransferOutcome::Indeterminate, $outcome );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select', 'update' ), $this->operations() );
 	}
 
@@ -155,7 +196,7 @@ final class OverlapGuardTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_replace_cas_loser_cannot_displace_the_winner(): void {
+	public function test_replace_reports_lost_when_the_row_cas_is_lost(): void {
 		$winner_raw = self::fixture_lock_raw( 'run-winner', 1_700_000_100, 1_700_000_100 );
 		$this->store_fixture_lock( 'run-live', 1_700_000_000, 1_700_000_090 );
 		$this->wpdb->before_next(
@@ -165,9 +206,9 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$replaced = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-new' );
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-new' );
 
-		self::assertFalse( $replaced );
+		self::assertSame( LockTransferOutcome::Lost, $outcome );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select', 'update' ), $this->operations() );
 	}

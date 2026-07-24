@@ -725,6 +725,40 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * A replacement write failure removes provisional state and reports failed storage.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A failed overlap CAS is observably different from a lost CAS, so callers must repair storage instead of retrying against an alleged rival.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_chunked_job_reports_storage_failure_when_replacement_lock_write_fails(): void {
+		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Replace ) );
+		$this->seed_running_lock();
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		self::assertSame( \sprintf( 'Run "%1$s" for chunked_job "%2$s" could not transfer overlap lock ownership because storage failed; repair option reads and writes before retrying.', self::RUN_ID, self::IDENTITY ), $error->message );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+				'kind'     => 'chunked_job',
+			),
+			$error->context
+		);
+		self::assertFalse( \get_option( $this->run_option_name() ) );
+		self::assertSame( 'run-running', $this->lock()['run_id'] ?? null );
+		self::assertSame( array(), $this->start_calls() );
+	}
+
+	/**
 	 * A lost replacement CAS removes provisional state and preserves the concurrent owner.
 	 *
 	 * @load-bearing concurrency
@@ -751,6 +785,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame( \sprintf( 'chunked_job "%s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', self::IDENTITY ), $error->message );
+		self::assertFalse( \get_option( $this->run_option_name() ) );
 		self::assertSame( 'run-concurrent-owner', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->start_calls() );
 	}

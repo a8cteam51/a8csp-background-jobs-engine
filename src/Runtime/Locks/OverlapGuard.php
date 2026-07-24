@@ -175,23 +175,27 @@ final readonly class OverlapGuard {
 	 * @param   string $args_hash          Stable single-flight identity.
 	 * @param   string $replacement_run_id Replacement owner.
 	 *
-	 * @return  bool Whether ownership moved to the replacement run.
+	 * @return  LockTransferOutcome Ownership classification after the transfer attempt.
 	 */
-	public function replace( string $identity, string $args_hash, string $replacement_run_id ): bool {
+	public function replace( string $identity, string $args_hash, string $replacement_run_id ): LockTransferOutcome {
 		$key      = $this->option_name( $identity, $args_hash );
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
-			return false;
+			return LockTransferOutcome::Indeterminate;
 		}
 
 		$raw = $selected->value;
 		if ( null === $raw ) {
-			return false;
+			return LockTransferOutcome::Lost;
 		}
 
 		$now = $this->clock->now()->getTimestamp();
 
-		return RowWriteOutcome::Won === $this->rows->compare_and_swap( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) );
+		return match ( $this->rows->compare_and_swap( $key, $raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) ) ) {
+			RowWriteOutcome::Won         => LockTransferOutcome::Transferred,
+			RowWriteOutcome::Lost        => LockTransferOutcome::Lost,
+			RowWriteOutcome::WriteFailed => LockTransferOutcome::Indeterminate,
+		};
 	}
 
 	/**
