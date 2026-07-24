@@ -560,16 +560,19 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
-	/** A maintenance lock sweep reclaims a malformed row through its exact raw snapshot. */
-	public function test_maintenance_lock_sweep_reclaims_a_malformed_row_by_exact_raw(): void {
-		$this->wpdb->put( self::KEY, 'not-a-lock-row' );
+	/** A maintenance lock sweep preserves a malformed row and returns only redacted correlation. */
+	public function test_maintenance_lock_sweep_preserves_a_malformed_row_with_redacted_correlation(): void {
+		$raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $raw );
 
 		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( self::NAME, self::ARGS_HASH );
 
 		self::assertNull( $sweep->run_id );
-		self::assertTrue( $sweep->malformed_reclaimed );
-		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
-		self::assertSame( array( 'select', 'delete' ), $this->operations() );
+		self::assertTrue( $sweep->malformed_preserved );
+		self::assertSame( \strlen( $raw ), $sweep->raw_length );
+		self::assertSame( \substr( \hash( 'sha256', $raw ), 0, 16 ), $sweep->raw_sha256 );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
 	/** A maintenance lock sweep returns a healthy owner without writing or reading twice. */
@@ -580,28 +583,11 @@ final class OverlapGuardTest extends TestCase {
 		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( self::NAME, self::ARGS_HASH );
 
 		self::assertSame( 'run-owner', $sweep->run_id );
-		self::assertFalse( $sweep->malformed_reclaimed );
+		self::assertFalse( $sweep->malformed_preserved );
+		self::assertNull( $sweep->raw_length );
+		self::assertNull( $sweep->raw_sha256 );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
-	}
-
-	/** A maintenance lock sweep reports a lost malformed-row CAS without deleting its winner. */
-	public function test_maintenance_lock_sweep_leaves_the_row_after_a_malformed_delete_loss(): void {
-		$this->wpdb->put( self::KEY, 'not-a-lock-row' );
-		$winner = self::fixture_lock_raw( 'run-winner', 1_000, 1_000 );
-		$this->wpdb->before_next(
-			'delete',
-			static function ( WpdbLockSpy $wpdb ) use ( $winner ): void {
-				$wpdb->put( self::KEY, $winner );
-			}
-		);
-
-		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( self::NAME, self::ARGS_HASH );
-
-		self::assertNull( $sweep->run_id );
-		self::assertFalse( $sweep->malformed_reclaimed );
-		self::assertSame( $winner, $this->wpdb->rows[ self::KEY ] );
-		self::assertSame( array( 'select', 'delete' ), $this->operations() );
 	}
 
 	/** Maintenance distinguishes owned, transferred, and absent locks with typed outcomes. */

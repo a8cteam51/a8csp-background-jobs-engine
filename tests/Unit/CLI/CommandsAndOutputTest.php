@@ -13,10 +13,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\LocksCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\RunsCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\SchedulesCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\LocksOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ScheduleOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -41,9 +43,11 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( Component::class )]
+#[CoversClass( LocksCommand::class )]
 #[CoversClass( RunsCommand::class )]
 #[CoversClass( SchedulesCommand::class )]
 #[CoversClass( FailedRunOutput::class )]
+#[CoversClass( LocksOutput::class )]
 #[CoversClass( RunOutput::class )]
 #[CoversClass( ScheduleOutput::class )]
 final class CommandsAndOutputTest extends TestCase {
@@ -118,7 +122,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_component_registers_the_complete_command_surface(): void {
-		self::assertSame( array( 'failed-runs', 'reset', 'runs', 'schedules' ), CliHarness::registered_subcommands() );
+		self::assertSame( array( 'failed-runs', 'locks', 'reset', 'runs', 'schedules' ), CliHarness::registered_subcommands() );
 	}
 
 	/**

@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
@@ -403,6 +404,7 @@ final class EngineRig {
 		$lock_windows         = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
+		$lock_repair          = new LockRepair( $rows, $guard, $stores, $lock_windows, $terminal_transitions );
 		$scheduler            = new SchedulerFacade( $this->backends );
 		$failure_lifecycle    = new FailureLifecycle( $scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions, $terminal_effects );
 		$job_handler          = new JobKindHandler( $registry, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
@@ -428,7 +430,7 @@ final class EngineRig {
 		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
-		self::publish_component( $engine, $inspection, $scheduler, $registry, $schedule_api, $dispatcher );
+		self::publish_component( $engine, $inspection, $lock_repair, $scheduler, $registry, $schedule_api, $dispatcher );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
@@ -511,16 +513,18 @@ final class EngineRig {
 	 *
 	 * @param   EngineFacade       $engine     Engine facade.
 	 * @param   Inspection         $inspection Inspection facade.
-	 * @param   SchedulerFacade    $scheduler  Scheduler facade.
+	 * @param   LockRepair         $lock_repair Explicit malformed-lock repair.
+	 * @param   SchedulerFacade    $scheduler   Scheduler facade.
 	 * @param   JobRegistry        $registry   Registered job and chunked job instances.
 	 * @param   ScheduleOperations $schedules  Schedule engine operations.
 	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
 	 *
 	 * @return  void
 	 */
-	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, JobRegistry $registry, ScheduleOperations $schedules, Dispatcher $dispatcher ): void {
+	private static function publish_component( EngineFacade $engine, Inspection $inspection, LockRepair $lock_repair, SchedulerFacade $scheduler, JobRegistry $registry, ScheduleOperations $schedules, Dispatcher $dispatcher ): void {
 		self::set_component_property( 'engine', $engine );
 		self::set_component_property( 'inspection', $inspection );
+		self::set_component_property( 'lock_repair', $lock_repair );
 		self::set_component_property( 'scheduler', $scheduler );
 		self::set_component_property( 'registry', $registry );
 		self::set_component_property( 'schedules', $schedules );
@@ -539,6 +543,7 @@ final class EngineRig {
 	private static function reset_component(): void {
 		self::set_component_property( 'engine', null );
 		self::set_component_property( 'inspection', null );
+		self::set_component_property( 'lock_repair', null );
 		self::set_component_property( 'scheduler', null );
 		self::set_component_property( 'registry', null );
 		self::set_component_property( 'schedules', null );

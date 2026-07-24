@@ -293,7 +293,7 @@ function my_plugin_dispatch_recount(): void {
 
 Chunks run one at a time with a short pause between them. `Job\Chunked\ChunkContextInterface` also exposes `prepend_chunk()`, `get_run_id()`, and `get_start_args()`. A failed chunked job starts a fresh run from its original arguments through `runs()->retry_failed()`.
 
-### 4. Day-2 operations: inspection, retry, cancellation, and the CLI
+### 4. Day-2 operations: inspection, retry, cancellation, lock repair, and the CLI
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -351,9 +351,18 @@ wp a8csp-bgje runs cancel my-plugin:email-digest <run_id>
 
 # Remove an inactive plugin's schedules.
 wp a8csp-bgje schedules remove my-plugin --yes
+
+# Inspect execution-overlap locks without exposing stored values.
+wp a8csp-bgje locks list
+wp a8csp-bgje locks list --format=json
+
+# Repair one reviewed malformed lock lane.
+wp a8csp-bgje locks repair my-plugin:email-digest --args-hash=<hash>
 ```
 
 `runs list --format=count` and `--format=csv` report only the live rows (the bounded inspected page, up to 20); `table`, `json`, and `yaml` include recent history. Unreadable rows are excluded and counted in a warning on STDERR for every format, so machine-readable STDOUT stays parseable. `wp a8csp-bgje reset` destroys **all** engine state; it is a development reset, not an operational tool.
+
+`locks list` reports persisted execution-overlap lanes as `owned`, `stale`, or `malformed`. It never prints raw option values; malformed rows expose only `raw_length` and a truncated `raw_sha256` correlation token. Maintenance preserves schema-invalid lock rows for explicit review. `locks repair <identity>` supersedes every matching `Running` row through exact compare-and-swap before exact-deleting the selected malformed lock. Pass `--args-hash=<hash>` when an identity has multiple malformed lanes, and use `--yes` only after reviewing the target. The reserved `a8csp-bgje:maintenance` identity is repairable through the same command when its own malformed lock prevents the maintenance sweep.
 
 ### 5. Handling failures
 
@@ -627,7 +636,7 @@ Network activation is supported; each site runs its own isolated engine state, b
 
 ## WP-CLI
 
-The command root is `wp a8csp-bgje`, exposing three action-taking subcommands — `schedules`, `runs`, `failed-runs` — plus the leaf subcommand `reset`.
+The command root is `wp a8csp-bgje`, exposing four action-taking subcommands — `schedules`, `runs`, `failed-runs`, `locks` — plus the leaf subcommand `reset`.
 
 | Operation | Synopsis |
 | --- | --- |
@@ -637,11 +646,13 @@ The command root is `wp a8csp-bgje`, exposing three action-taking subcommands �
 | Purge every failed-run store | `wp a8csp-bgje failed-runs purge --all` |
 | Cancel a retained run | `wp a8csp-bgje runs cancel <identity> <run_id>` |
 | List runs and recent history | `wp a8csp-bgje runs list <identity> [--format=<format>]` |
+| List execution-overlap locks | `wp a8csp-bgje locks list [--format=<table\|json\|csv\|yaml>]` |
+| Repair a malformed execution-overlap lock | `wp a8csp-bgje locks repair <identity> [--args-hash=<hash>] [--yes]` |
 | List schedules | `wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>]` |
 | Remove every schedule owned by one plugin | `wp a8csp-bgje schedules remove <owner> [--yes]` |
 | Destroy all engine state (development reset) | `wp a8csp-bgje reset [--yes]` |
 
-Every `<identity>` is a composed `{owner}:{name}`; PHP calls take the owner-local name while the CLI takes the full identity. List commands accept `table`, `csv`, `json`, `count`, or `yaml` (default `table`); `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. `reset` permanently deletes every engine option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. `schedules remove` converges an owner's schedules to empty without cancelling existing runs and errors on an owner with no persisted registry row.
+Every `<identity>` is a composed `{owner}:{name}`; PHP calls take the owner-local name while the CLI takes the full identity. `failed-runs list`, `runs list`, and `schedules list` accept `table`, `csv`, `json`, `count`, or `yaml`; `locks list` accepts `table`, `json`, `csv`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Maintenance preserves malformed lock rows and logs redacted correlation for review; `locks repair` fences matching Running rows before exact-deleting the reviewed malformed generation and prompts unless `--yes`. `reset` permanently deletes every engine option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. `schedules remove` converges an owner's schedules to empty without cancelling existing runs and errors on an owner with no persisted registry row.
 
 ## Releasing
 

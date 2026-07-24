@@ -191,6 +191,49 @@ final readonly class RunStore {
 	}
 
 	/**
+	 * Returns every canonical active-run snapshot for the bound identity.
+	 *
+	 * @internal Explicit lock repair only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  AbstractResult<list<array{run_id: string, raw: string, state: RunState|null}>, EngineError>
+	 */
+	#[\NoDiscard( 'an exhaustive run-state read outcome must be handled, not dropped' )]
+	public function inspect_all(): AbstractResult {
+		$names = $this->rows->option_names( RunIdentity::option_name_prefix( $this->identity ) );
+		if ( $names->is_failure() ) {
+			return $names;
+		}
+
+		$snapshots = array();
+		foreach ( $names->value as $option_name ) {
+			$run_identity = RunIdentity::from_option_name( $option_name );
+			if ( null === $run_identity || $this->identity !== $run_identity['identity'] ) {
+				continue;
+			}
+
+			$run_id    = $run_identity['run_id'];
+			$inspected = $this->inspect( $run_id );
+			if ( $inspected->is_failure() ) {
+				return $inspected;
+			}
+			if ( null === $inspected->value ) {
+				continue;
+			}
+
+			$snapshots[] = array(
+				'run_id' => $run_id,
+				'raw'    => $inspected->value['raw'],
+				'state'  => $inspected->value['state'],
+			);
+		}
+
+		return new Success( $snapshots );
+	}
+
+	/**
 	 * Transitions a run only while its exact observed raw state still matches.
 	 *
 	 * @internal Engine terminalization only.

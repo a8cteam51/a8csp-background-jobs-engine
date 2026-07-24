@@ -218,6 +218,68 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * Exhaustive repair inspection returns every canonical identity-bound row without hiding corruption.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_all_returns_every_identity_bound_snapshot_and_preserves_corruption(): void {
+		$other_run_id = '00000000001700000000-0000000000000000043';
+		$valid        = $this->fixtures->run( self::RUN_ID, $this->state() );
+		$corrupt_name = RunIdentity::option_name( self::IDENTITY, $other_run_id );
+		$corrupt_raw  = 'corrupt-run-row';
+		$this->put_fixture( $valid );
+		$this->rig->wpdb()->put( $corrupt_name, $corrupt_raw );
+
+		$foreign_identity = self::IDENTITY . '_other';
+		$foreign          = StoreFixtureBuilder::for_identity( $foreign_identity )->run( self::RUN_ID, $this->state() );
+		$this->put_fixture( $foreign );
+
+		$inspected = $this->store()->inspect_all();
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		$snapshots = $inspected->value;
+		self::assertCount( 2, $snapshots );
+		$valid_snapshot   = $snapshots[0] ?? null;
+		$corrupt_snapshot = $snapshots[1] ?? null;
+		self::assertIsArray( $valid_snapshot );
+		self::assertIsArray( $corrupt_snapshot );
+		self::assertSame( self::RUN_ID, $valid_snapshot['run_id'] ?? null );
+		self::assertSame( $other_run_id, $corrupt_snapshot['run_id'] ?? null );
+		self::assertSame( $valid[1], $valid_snapshot['raw'] ?? null );
+		self::assertInstanceOf( RunState::class, $valid_snapshot['state'] ?? null );
+		self::assertSame( $corrupt_raw, $corrupt_snapshot['raw'] ?? null );
+		self::assertNull( $corrupt_snapshot['state'] ?? null );
+	}
+
+	/**
+	 * Exhaustive repair inspection propagates an authoritative candidate-read failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_all_fails_when_any_candidate_read_is_indeterminate(): void {
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $this->state() ) );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'candidate read failed';
+			}
+		);
+
+		$inspected = $this->store()->inspect_all();
+
+		self::assertInstanceOf( Failure::class, $inspected );
+		self::assertInstanceOf( EngineError::class, $inspected->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $inspected->error->reason );
+	}
+
+	/**
 	 * A grammar-valid unregistered kind hydrates as opaque run state.
 	 *
 	 * @since   1.0.0

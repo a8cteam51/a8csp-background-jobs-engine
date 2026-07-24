@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
@@ -75,6 +76,16 @@ final class Component extends AbstractComponent {
 	 * @var     Inspection|null
 	 */
 	private static ?Inspection $inspection = null;
+
+	/**
+	 * Explicit malformed-lock repair service published by the initialized component.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     LockRepair|null
+	 */
+	private static ?LockRepair $lock_repair = null;
 
 	/**
 	 * Registered background-work definitions published by the initialized component.
@@ -186,6 +197,7 @@ final class Component extends AbstractComponent {
 			$lock_windows         = new LockWindows( $clock, $logger );
 			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
 			$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
+			$lock_repair          = new LockRepair( $option_rows, $guard, $stores, $lock_windows, $terminal_transitions );
 			$scheduler            = new SchedulerFacade(
 				array(
 					new ActionSchedulerBackend(),
@@ -218,12 +230,13 @@ final class Component extends AbstractComponent {
 			$this->occurrence_delivery  = $occurrence_delivery;
 			$this->maintenance_schedule = $maintenance_schedule;
 
-			self::$engine     = $engine;
-			self::$inspection = $inspection;
-			self::$scheduler  = $scheduler;
-			self::$registry   = $registry;
-			self::$schedules  = $schedule_api;
-			self::$dispatcher = $dispatcher;
+			self::$engine      = $engine;
+			self::$inspection  = $inspection;
+			self::$lock_repair = $lock_repair;
+			self::$scheduler   = $scheduler;
+			self::$registry    = $registry;
+			self::$schedules   = $schedule_api;
+			self::$dispatcher  = $dispatcher;
 		} finally {
 			self::$booting = false;
 		}
@@ -315,6 +328,20 @@ final class Component extends AbstractComponent {
 	 */
 	public static function get_inspection(): ?Inspection {
 		return self::$inspection;
+	}
+
+	/**
+	 * Returns the initialized malformed-lock repair service, or null before component boot.
+	 *
+	 * @internal Explicit CLI lock repair only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  LockRepair|null
+	 */
+	public static function get_lock_repair(): ?LockRepair {
+		return self::$lock_repair;
 	}
 
 	/**

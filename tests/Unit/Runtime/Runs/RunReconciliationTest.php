@@ -1454,63 +1454,53 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A schema-invalid lock row is deleted without trusting its serialized fields.
+	 * A schema-invalid lock row is preserved with a redacted operator diagnostic.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_deletes_a_schema_invalid_lock_row(): void {
+	public function test_sweep_preserves_and_diagnoses_a_schema_invalid_lock_row(): void {
 		$corrupt_name = self::identity( 'corrupt-job' );
 		$lock_name    = OverlapGuard::OPTION_PREFIX . $corrupt_name . '_' . \str_repeat( 'b', 64 );
-		$this->wpdb->put( $lock_name, 'not-serialized' );
+		$raw          = 'not-serialized';
+		$this->wpdb->put( $lock_name, $raw );
 
 		$this->run_maintenance();
 
-		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
+		self::assertSame( $raw, $this->wpdb->rows[ $lock_name ] ?? null );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Preserved schema-invalid execution-overlap lock during maintenance sweep; inspect and repair it with WP-CLI.', $this->logger->records[0]['message'] ?? null );
 		self::assertSame( $corrupt_name, $this->logger->records[0]['context']['identity'] ?? null );
-		self::assertNull( $this->logger->records[0]['context']['run_id'] ?? null );
+		self::assertSame( \str_repeat( 'b', 64 ), $this->logger->records[0]['context']['args_hash'] ?? null );
+		self::assertTrue( $this->logger->records[0]['context']['malformed'] ?? null );
+		self::assertSame( \strlen( $raw ), $this->logger->records[0]['context']['raw_length'] ?? null );
+		self::assertSame( \substr( \hash( 'sha256', $raw ), 0, 16 ), $this->logger->records[0]['context']['raw_sha256'] ?? null );
+		self::assertArrayNotHasKey( 'run_id', $this->logger->records[0]['context'] );
 	}
 
 	/**
-	 * A throwing lock cleanup leaves its exact row intact without starving later lock rows.
+	 * Multiple schema-invalid lock rows are preserved and diagnosed independently.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_continues_after_one_lock_cleanup_throws(): void {
-		$throwing_name = self::identity( 'broken-lock' );
-		$throwing_hash = \str_repeat( 'b', 64 );
-		$throwing_key  = OverlapGuard::OPTION_PREFIX . $throwing_name . '_' . $throwing_hash;
-		$throwing_raw  = 'broken-lock-row';
-		$this->wpdb->put( $throwing_key, $throwing_raw );
+	public function test_sweep_preserves_and_diagnoses_multiple_schema_invalid_lock_rows(): void {
+		$first_name = self::identity( 'broken-lock' );
+		$first_hash = \str_repeat( 'b', 64 );
+		$first_key  = OverlapGuard::OPTION_PREFIX . $first_name . '_' . $first_hash;
+		$first_raw  = 'broken-lock-row';
+		$this->wpdb->put( $first_key, $first_raw );
 
-		$healthy_name = self::identity( 'healthy-lock' );
-		$healthy_hash = \str_repeat( 'c', 64 );
-		$healthy_key  = OverlapGuard::OPTION_PREFIX . $healthy_name . '_' . $healthy_hash;
-		$this->wpdb->put( $healthy_key, 'healthy-lock-row' );
-
-		$throwable = new \RuntimeException( 'Lock cleanup exploded.' );
-		$this->wpdb->before_next(
-			'delete',
-			static function () use ( $throwable ): void {
-				throw $throwable;
-			}
-		);
+		$second_name = self::identity( 'other-broken-lock' );
+		$second_hash = \str_repeat( 'c', 64 );
+		$second_key  = OverlapGuard::OPTION_PREFIX . $second_name . '_' . $second_hash;
+		$second_raw  = 'other-broken-lock-row';
+		$this->wpdb->put( $second_key, $second_raw );
 
 		$this->run_maintenance();
 
-		self::assertSame( $throwing_raw, $this->wpdb->rows[ $throwing_key ] ?? null );
-		self::assertArrayNotHasKey( $healthy_key, $this->wpdb->rows );
-		$diagnostic = $this->exception_diagnostic( $throwable );
-		self::assertSame( 'warning', $diagnostic['level'] ?? null );
-		self::assertSame(
-			array(
-				'identity'  => $throwing_name,
-				'args_hash' => $throwing_hash,
-				'run_id'    => null,
-				'exception' => $throwable,
-			),
-			$diagnostic['context']
-		);
+		self::assertSame( $first_raw, $this->wpdb->rows[ $first_key ] ?? null );
+		self::assertSame( $second_raw, $this->wpdb->rows[ $second_key ] ?? null );
+		self::assertCount( 2, $this->logger->records );
+		self::assertSame( array( $first_name, $second_name ), \array_column( \array_column( $this->logger->records, 'context' ), 'identity' ) );
 	}
 
 	/**

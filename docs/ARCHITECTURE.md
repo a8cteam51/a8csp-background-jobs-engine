@@ -56,9 +56,11 @@ every surviving component is initialized before any hook can fire.
   accepted, and the handler SPI is internal. `Backends/` (Action Scheduler preferred, WP-Cron
   fallback), `Schedules/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
-  `Locks/`, `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
+  `Locks/` (CAS-fenced execution-overlap storage, persisted-lane inspection, and explicit malformed-lane
+  repair), `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
   on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.
-- `src/CLI/` registers the `wp a8csp-bgje` command surface, gated on WP-CLI.
+- `src/CLI/` registers the `wp a8csp-bgje` command surface, including the operator-only
+  malformed-lock repair boundary, gated on WP-CLI.
 - `languages/` contains the POT generated from the plugin's strings; the release workflow
   regenerates it so archives always ship current strings.
 - `uninstall.php` carries the persisted footprint inline — the `a8csp_bgje_` prefix sweep is the
@@ -85,6 +87,12 @@ The engine writes through the first ready backend in preference order, with Acti
 before WP-Cron; WP-Cron provides the documented best-effort fallback. Delivery is at-least-once
 for terminal lifecycle hooks. Overlap locks, occurrence leases, and run generations use
 option-row compare-and-swap fences for concurrency control.
+
+Maintenance reconciles stale parseable locks against retained run state. It preserves
+schema-invalid lock values and logs only their length and truncated SHA-256 correlation so repair
+remains an explicit operator action. The WP-CLI repair path first claims `Superseded` through exact
+compare-and-swap for every matching `Running` row and only then exact-deletes the selected malformed
+lock generation; a lost run or lock fence leaves the lock in place.
 
 Consumer hooks use the `a8csp_bgje/` namespace. Hooks whose operation has an identity publish
 generic and identity-specific variants: actions fire the specific hook before the generic hook,

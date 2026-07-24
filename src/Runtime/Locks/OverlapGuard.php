@@ -43,6 +43,16 @@ final readonly class OverlapGuard {
 	 */
 	public const string OPTION_PREFIX = 'a8csp_bgje_overlap_lock_';
 
+	/**
+	 * Prefix length retained from a raw-value digest in operator diagnostics.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int RAW_SHA256_LENGTH = 16;
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -314,7 +324,7 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Reads one persisted lock and reclaims a malformed row only while its exact raw value matches.
+	 * Reads one persisted lock and preserves malformed state for explicit repair.
 	 *
 	 * @internal Engine maintenance only.
 	 *
@@ -324,26 +334,29 @@ final readonly class OverlapGuard {
 	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string $args_hash Stable single-flight identity.
 	 *
-	 * @return  MaintenanceLockSweep Actionable owner or malformed-row reclaim result.
+	 * @return  MaintenanceLockSweep Actionable owner or malformed-row diagnostic.
 	 */
 	#[\NoDiscard( 'a persisted-lock maintenance sweep must be handled, not dropped' )]
 	public function sweep_persisted_lock( string $identity, string $args_hash ): MaintenanceLockSweep {
 		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
 		if ( $inspected->is_failure() ) {
-			return new MaintenanceLockSweep( null, false );
+			return new MaintenanceLockSweep( null, false, null, null );
 		}
 
 		$snapshot = $inspected->value;
 		if ( null === $snapshot ) {
-			return new MaintenanceLockSweep( null, false );
+			return new MaintenanceLockSweep( null, false, null, null );
 		}
 
 		$lock = $snapshot['lock'];
 		if ( null === $lock ) {
-			return new MaintenanceLockSweep( null, $this->delete_persisted_lock( $identity, $args_hash, $snapshot['raw'] ) );
+			$raw         = $snapshot['raw'];
+			$correlation = self::raw_correlation( $raw );
+
+			return new MaintenanceLockSweep( null, true, $correlation['raw_length'], $correlation['raw_sha256'] );
 		}
 
-		return new MaintenanceLockSweep( $lock['run_id'], false );
+		return new MaintenanceLockSweep( $lock['run_id'], false, null, null );
 	}
 
 	/**
@@ -367,6 +380,25 @@ final readonly class OverlapGuard {
 		return array(
 			'identity'  => $matches['identity'],
 			'args_hash' => $matches['args_hash'],
+		);
+	}
+
+	/**
+	 * Returns redacted correlation for one exact persisted raw value.
+	 *
+	 * @internal Operator diagnostics only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $raw Exact persisted option value.
+	 *
+	 * @return  array{raw_length: int, raw_sha256: string}
+	 */
+	public static function raw_correlation( string $raw ): array {
+		return array(
+			'raw_length' => \strlen( $raw ),
+			'raw_sha256' => \substr( \hash( 'sha256', $raw ), 0, self::RAW_SHA256_LENGTH ),
 		);
 	}
 
