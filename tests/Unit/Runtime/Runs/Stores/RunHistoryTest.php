@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -477,13 +478,13 @@ final class RunHistoryTest extends TestCase {
 			$identity = self::OWNER . ':' . $name;
 			$first    = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $first );
-			self::assertIsString( $first->value );
+			self::assertInstanceOf( Run::class, $first->value );
 			$this->rig->randomizer()->value = 8;
 			$second                         = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $second );
 			$this->rig->run_due();
 
-			return array( $identity, $first->value );
+			return array( $identity, (string) $first->value->id );
 		}
 
 		if ( 'failed' === $status ) {
@@ -491,15 +492,15 @@ final class RunHistoryTest extends TestCase {
 		}
 		$result = $this->client->dispatch( self::NAME, array( 'scope' => $status ) );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
 		if ( 'cancelled' === $status ) {
-			$cancelled = $this->client->cancel( self::NAME, $result->value );
+			$cancelled = $this->client->cancel( self::NAME, (string) $result->value->id );
 			self::assertInstanceOf( Success::class, $cancelled );
 		} else {
 			$this->rig->run_due();
 		}
 
-		return array( self::IDENTITY, $result->value );
+		return array( self::IDENTITY, (string) $result->value->id );
 	}
 
 	/**
@@ -519,8 +520,8 @@ final class RunHistoryTest extends TestCase {
 			$this->rig->randomizer()->value = $offset + $index;
 			$result                         = $this->client->dispatch( self::NAME, array( 'index' => $offset + $index ) );
 			self::assertInstanceOf( Success::class, $result );
-			self::assertIsString( $result->value );
-			$run_ids[] = $result->value;
+			self::assertInstanceOf( Run::class, $result->value );
+			$run_ids[] = (string) $result->value->id;
 			$this->rig->run_due();
 		}
 

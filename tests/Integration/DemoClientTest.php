@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures\CommentCountRecountChunkedJob;
@@ -226,8 +227,8 @@ final class DemoClientTest extends AbstractIntegrationTestCase {
 		$manual_args = array( 'transient' => self::MANUAL_SNAPSHOT_TRANSIENT );
 		$manual      = $api->dispatch( SiteHealthPingJob::NAME, $manual_args );
 		self::assertInstanceOf( Success::class, $manual, 'The demo job must enqueue through the owner-bound facade' );
-		self::assertIsString( $manual->value );
-		$manual_run_id = $manual->value;
+		self::assertInstanceOf( Run::class, $manual->value );
+		$manual_run_id = (string) $manual->value->id;
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $job_started_named );
 		self::assertSame( array( array( self::JOB_IDENTITY, $manual_run_id, $manual_args ) ), $job_started_generic );
 
@@ -288,8 +289,8 @@ final class DemoClientTest extends AbstractIntegrationTestCase {
 		$chunked_job_args = array( 'post_type' => self::POST_TYPE );
 		$chunked_job      = $api->dispatch( CommentCountRecountChunkedJob::NAME, $chunked_job_args );
 		self::assertInstanceOf( Success::class, $chunked_job, 'The demo chunked job must start through the owner-bound facade' );
-		self::assertIsString( $chunked_job->value );
-		$chunked_job_run_id = $chunked_job->value;
+		self::assertInstanceOf( Run::class, $chunked_job->value );
+		$chunked_job_run_id = (string) $chunked_job->value->id;
 
 		for ( $step = 1; 5 >= $step; ++$step ) {
 			self::assertSame( 1, $this->run_next_engine_action(), \sprintf( 'The scheduler must execute demo chunked job action %d of 5.', $step ) );

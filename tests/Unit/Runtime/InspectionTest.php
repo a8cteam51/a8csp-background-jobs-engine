@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -183,14 +184,14 @@ final class InspectionTest extends TestCase {
 		$dispatched = $client->dispatch( 'catalog-sync', $args );
 
 		self::assertInstanceOf( Success::class, $dispatched );
-		self::assertIsString( $dispatched->value );
+		self::assertInstanceOf( Run::class, $dispatched->value );
 		self::assertArrayHasKey( OverlapGuard::OPTION_PREFIX . 'owner:catalog-sync_839bc2e28e961c09b79c9adbb7c53159e4a2a138e1dfe756247d9d45cf0a29e9', $this->rig->wpdb()->rows );
 		$snapshot = $this->rig->inspection()->schedules( 'owner' );
 		self::assertNotNull( $snapshot );
 		self::assertSame(
 			array(
 				'state'  => 'held',
-				'run_id' => $dispatched->value,
+				'run_id' => (string) $dispatched->value->id,
 				'stale'  => false,
 			),
 			$snapshot['entries'][0]['lock'] ?? null

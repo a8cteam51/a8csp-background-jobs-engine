@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
@@ -484,9 +485,9 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 	private function start( string $name, array $start_args ): string {
 		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->dispatch( $name, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The chunked job must start through the public API' );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**

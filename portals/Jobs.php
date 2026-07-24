@@ -5,11 +5,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\DuplicateRegistrationException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 
@@ -81,17 +78,16 @@ final readonly class Jobs {
 	 * @param   int                     $delay_seconds Scheduling delay in seconds.
 	 * @param   int|null                $priority      Advisory priority from 0 through 255, or null for the engine default.
 	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
+	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
 	public function dispatch( string $name, array $start_args = array(), int $delay_seconds = 0, ?int $priority = null ): Run|\WP_Error {
 		try {
 			$result = $this->operations()->dispatch( $name, $start_args, $delay_seconds, $priority );
-			if ( $result->is_failure() ) {
-				return self::wp_error( $result->error );
-			}
 
-			return $this->run( $name, $result->value, RunStatus::Running );
+			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
@@ -116,25 +112,6 @@ final readonly class Jobs {
 	 */
 	private function operations(): OwnerOperations {
 		return Component::operations( $this->owner );
-	}
-
-	/**
-	 * Projects one internal run identifier into the public value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string    $name   Owner-local job or chunked job name.
-	 * @param   string    $run_id Run identifier.
-	 * @param   RunStatus $status Public lifecycle state.
-	 *
-	 * @throws  \InvalidArgumentException When the owner or name violates the identity contract.
-	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
-	 *
-	 * @return  Run
-	 */
-	private function run( string $name, string $run_id, RunStatus $status ): Run {
-		return new Run( JobIdentity::compose( $this->owner, $name ), RunId::from( $run_id ), $status );
 	}
 
 	/**

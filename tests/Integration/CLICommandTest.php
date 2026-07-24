@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -1025,8 +1026,8 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 
 		$enqueued = $client->dispatch( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertIsString( $enqueued->value );
-		$run_id = $enqueued->value;
+		self::assertInstanceOf( Run::class, $enqueued->value );
+		$run_id = (string) $enqueued->value->id;
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::INSPECTION_JOB_IDENTITY );
 
 		try {

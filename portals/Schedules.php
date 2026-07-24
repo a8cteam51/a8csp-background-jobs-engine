@@ -5,8 +5,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
@@ -77,17 +75,16 @@ final readonly class Schedules {
 	 *
 	 * @param   string $name Owner-local schedule name.
 	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
+	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch( string $name ): Run|\WP_Error {
 		try {
 			$result = $this->operations()->dispatch_now( $name );
-			if ( $result->is_failure() ) {
-				return self::wp_error( $result->error );
-			}
 
-			return $this->run( $result->value['identity'], $result->value['run_id'], RunStatus::Running );
+			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( \LogicException $exception ) {
@@ -112,24 +109,6 @@ final readonly class Schedules {
 	 */
 	private function operations(): OwnerOperations {
 		return Component::operations( $this->owner );
-	}
-
-	/**
-	 * Projects one internal run result into the public value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string    $identity Complete owner-qualified job or chunked job identity.
-	 * @param   string    $run_id   Run identifier.
-	 * @param   RunStatus $status   Public lifecycle state.
-	 *
-	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
-	 *
-	 * @return  Run
-	 */
-	private function run( string $identity, string $run_id, RunStatus $status ): Run {
-		return new Run( $identity, RunId::from( $run_id ), $status );
 	}
 
 	/**

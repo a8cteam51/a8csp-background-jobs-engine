@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
@@ -303,11 +304,12 @@ final class ChunkContextTest extends TestCase {
 		$result = $this->client->dispatch( $definition->name, $start_args );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
 		$this->rig->run_due();
 		$this->rig->run_due();
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**

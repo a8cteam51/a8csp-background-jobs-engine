@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -73,14 +74,14 @@ final class OptionsHygieneTest extends AbstractIntegrationTestCase {
 
 		$job_result = $client->dispatch( self::JOB_NAME, $job_args );
 		self::assertInstanceOf( Success::class, $job_result, 'The census job must enqueue through the public API' );
-		self::assertIsString( $job_result->value );
-		$job_run_id = $job_result->value;
+		self::assertInstanceOf( Run::class, $job_result->value );
+		$job_run_id = (string) $job_result->value->id;
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must complete the census job' );
 
 		$chunked_job_result = $client->dispatch( self::CHUNKED_JOB_NAME, $chunked_job_args );
 		self::assertInstanceOf( Success::class, $chunked_job_result, 'The census chunked job must start through the public API' );
-		self::assertIsString( $chunked_job_result->value );
-		$chunked_job_run_id = $chunked_job_result->value;
+		self::assertInstanceOf( Run::class, $chunked_job_result->value );
+		$chunked_job_run_id = (string) $chunked_job_result->value->id;
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must generate the census chunked job queue' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must process the census chunked job chunk inline' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must observe the drained census chunked job queue' );
@@ -106,12 +107,14 @@ final class OptionsHygieneTest extends AbstractIntegrationTestCase {
 			self::assertNotContains( $row['autoload'], $autoloaded_values, \sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] ) );
 		}
 
-		$job_latest = $client->last_completed_run_id( self::JOB_NAME );
+		$job_latest = $client->last_completed_run( self::JOB_NAME );
 		self::assertInstanceOf( Success::class, $job_latest );
-		self::assertSame( $job_run_id, $job_latest->value );
-		$chunked_job_latest = $client->last_completed_run_id( self::CHUNKED_JOB_NAME );
+		self::assertInstanceOf( Run::class, $job_latest->value );
+		self::assertSame( $job_run_id, (string) $job_latest->value->id );
+		$chunked_job_latest = $client->last_completed_run( self::CHUNKED_JOB_NAME );
 		self::assertInstanceOf( Success::class, $chunked_job_latest );
-		self::assertSame( $chunked_job_run_id, $chunked_job_latest->value );
+		self::assertInstanceOf( Run::class, $chunked_job_latest->value );
+		self::assertSame( $chunked_job_run_id, (string) $chunked_job_latest->value->id );
 	}
 
 	// endregion.

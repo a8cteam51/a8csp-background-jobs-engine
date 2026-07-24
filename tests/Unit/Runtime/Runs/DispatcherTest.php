@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -126,7 +127,8 @@ final class DispatcherTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, self::ARGS, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$call = $this->single_run_delivery_call();
 		self::assertSame( 23, $call['args']['priority'] ?? null );
 		$run = \get_option( $this->run_option_name() );
@@ -177,12 +179,14 @@ final class DispatcherTest extends TestCase {
 
 		$argument_identity = $this->client->dispatch( self::NAME );
 		self::assertInstanceOf( Success::class, $argument_identity );
+		self::assertInstanceOf( Run::class, $argument_identity->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
 		$overlap_identity = $this->client->dispatch( self::NAME, array( 'opaque' => true ) );
 
 		self::assertInstanceOf( Success::class, $overlap_identity );
-		self::assertNotSame( $argument_identity->value, $overlap_identity->value );
+		self::assertInstanceOf( Run::class, $overlap_identity->value );
+		self::assertNotSame( (string) $argument_identity->value->id, (string) $overlap_identity->value->id );
 		self::assertCount( 2, $this->run_delivery_calls() );
 	}
 
@@ -198,12 +202,14 @@ final class DispatcherTest extends TestCase {
 		$this->overlap_key_resolver = static fn ( array $args ): ?string => \is_string( $args['overlap_key'] ?? null ) ? $args['overlap_key'] : null;
 		$first                      = $this->client->dispatch( self::NAME, self::ARGS + array( 'overlap_key' => 'site-7-full' ) );
 		self::assertInstanceOf( Success::class, $first );
+		self::assertInstanceOf( Run::class, $first->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
 		$second = $this->client->dispatch( self::NAME, self::ARGS + array( 'overlap_key' => 'site-8-full' ) );
 
 		self::assertInstanceOf( Success::class, $second );
-		self::assertNotSame( $first->value, $second->value );
+		self::assertInstanceOf( Run::class, $second->value );
+		self::assertNotSame( (string) $first->value->id, (string) $second->value->id );
 		self::assertCount( 2, $this->run_delivery_calls() );
 	}
 
@@ -220,11 +226,13 @@ final class DispatcherTest extends TestCase {
 
 		$first = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
+		self::assertInstanceOf( Run::class, $first->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 		$second                        = $this->client->dispatch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $second );
-		self::assertNotSame( $first->value, $second->value );
+		self::assertInstanceOf( Run::class, $second->value );
+		self::assertNotSame( (string) $first->value->id, (string) $second->value->id );
 		self::assertCount( 2, $this->run_delivery_calls() );
 	}
 
@@ -422,7 +430,8 @@ final class DispatcherTest extends TestCase {
 
 		if ( $takes_over_stale ) {
 			self::assertInstanceOf( Success::class, $result );
-			self::assertSame( self::RUN_ID, $result->value );
+			self::assertInstanceOf( Run::class, $result->value );
+			self::assertSame( self::RUN_ID, (string) $result->value->id );
 			$this->rig->backend()->assert_scheduled( self::IDENTITY );
 			return;
 		}
@@ -590,7 +599,8 @@ final class DispatcherTest extends TestCase {
 
 		$this->assert_failure_code( $outer, ErrorCode::OverlapHeld );
 		self::assertInstanceOf( Success::class, $nested );
-		self::assertSame( self::OTHER_RUN_ID, $nested->value );
+		self::assertInstanceOf( Run::class, $nested->value );
+		self::assertSame( self::OTHER_RUN_ID, (string) $nested->value->id );
 		self::assertFalse( \get_option( $this->run_option_name() ) );
 		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
 		self::assertIsString( $lock_raw );
@@ -634,9 +644,11 @@ final class DispatcherTest extends TestCase {
 		$outer = $this->client->dispatch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $outer );
-		self::assertSame( self::RUN_ID, $outer->value );
+		self::assertInstanceOf( Run::class, $outer->value );
+		self::assertSame( self::RUN_ID, (string) $outer->value->id );
 		self::assertInstanceOf( Success::class, $nested );
-		self::assertSame( self::OTHER_RUN_ID, $nested->value );
+		self::assertInstanceOf( Run::class, $nested->value );
+		self::assertSame( self::OTHER_RUN_ID, (string) $nested->value->id );
 		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
 		self::assertIsString( $lock_raw );
 		$lock = \maybe_unserialize( $lock_raw );
@@ -672,7 +684,8 @@ final class DispatcherTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
 		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
 		self::assertIsString( $lock_raw );
@@ -766,7 +779,8 @@ final class DispatcherTest extends TestCase {
 		$second = $this->client->dispatch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $second );
-		self::assertSame( self::OTHER_RUN_ID, $second->value );
+		self::assertInstanceOf( Run::class, $second->value );
+		self::assertSame( self::OTHER_RUN_ID, (string) $second->value->id );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/superseded/' . self::IDENTITY ) );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/superseded' ) );
 		self::assertArrayNotHasKey( $incumbent_option, $this->rig->wpdb()->rows );
@@ -803,7 +817,8 @@ final class DispatcherTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
 		self::assertIsString( $lock_raw );
 		$lock = \maybe_unserialize( $lock_raw );
@@ -826,7 +841,8 @@ final class DispatcherTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$lock_raw = $this->rig->wpdb()->rows[ OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash() ] ?? null;
 		self::assertIsString( $lock_raw );
 		$lock = \maybe_unserialize( $lock_raw );
@@ -1091,12 +1107,13 @@ final class DispatcherTest extends TestCase {
 		$this->overlap_key_resolver = static fn ( array $args ): string => "logical-account\0\xFF";
 		$first                      = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
+		self::assertInstanceOf( Run::class, $first->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
 		$duplicate = $this->client->dispatch( self::NAME, array( 'site_id' => 8 ) );
 
 		$error = $this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
-		self::assertSame( $first->value, $error->context['run_id'] ?? null );
+		self::assertSame( (string) $first->value->id, $error->context['run_id'] ?? null );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}
 
@@ -1424,13 +1441,14 @@ final class DispatcherTest extends TestCase {
 
 		$incumbent = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
+		self::assertInstanceOf( Run::class, $incumbent->value );
 		$this->seed_failed_run( self::OTHER_RUN_ID, self::ARGS, 2 );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
 		$retry = $this->client->retry_failed( self::NAME, self::OTHER_RUN_ID );
 
 		$error = $this->assert_failure_code( $retry, ErrorCode::OverlapHeld );
-		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
+		self::assertSame( (string) $incumbent->value->id, $error->context['run_id'] ?? null );
 		$still_retained = $this->client->retry_failed( self::NAME, self::OTHER_RUN_ID );
 		$this->assert_failure_code( $still_retained, ErrorCode::OverlapHeld );
 	}
@@ -1448,13 +1466,15 @@ final class DispatcherTest extends TestCase {
 
 		$incumbent = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
+		self::assertInstanceOf( Run::class, $incumbent->value );
 		$this->seed_failed_run( self::OTHER_RUN_ID, self::ARGS, 2 );
 		$this->rig->clock()->timestamp = self::NOW + 100;
 
 		$retry = $this->client->retry_failed( self::NAME, self::OTHER_RUN_ID );
 
 		self::assertInstanceOf( Success::class, $retry );
-		self::assertNotSame( $incumbent->value, $retry->value );
+		self::assertInstanceOf( Run::class, $retry->value );
+		self::assertNotSame( (string) $incumbent->value->id, (string) $retry->value->id );
 	}
 
 	/**
@@ -1476,8 +1496,8 @@ final class DispatcherTest extends TestCase {
 
 		$first = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $first );
-		self::assertIsString( $first->value );
-		$cancelled = $this->client->cancel( self::NAME, $first->value );
+		self::assertInstanceOf( Run::class, $first->value );
+		$cancelled = $this->client->cancel( self::NAME, (string) $first->value->id );
 		self::assertInstanceOf( Success::class, $cancelled );
 		$this->rig->clock()->timestamp = self::NOW + 101;
 
@@ -1732,9 +1752,9 @@ final class DispatcherTest extends TestCase {
 	private function dispatch_job(): string {
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**

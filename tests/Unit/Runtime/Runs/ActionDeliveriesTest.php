@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
@@ -126,8 +127,10 @@ final class ActionDeliveriesTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $chunked_job->generate_calls );
 		self::assertCount( 1, $chunked_job->generate_contexts );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
 		self::assertInstanceOf( RunId::class, $chunked_job->generate_contexts[0]->get_run_id() );
-		self::assertSame( $result->value, (string) $chunked_job->generate_contexts[0]->get_run_id() );
+		self::assertSame( (string) $result->value->id, (string) $chunked_job->generate_contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $chunked_job->generate_contexts[0]->get_start_args() );
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] );
@@ -503,7 +506,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		$last_completed = $this->client->last_completed_run_id( self::NAME );
+		$last_completed = $this->client->last_completed_run( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertNull( $last_completed->value );
 	}
@@ -568,9 +571,11 @@ final class ActionDeliveriesTest extends TestCase {
 	private function enqueue_job(): string {
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**

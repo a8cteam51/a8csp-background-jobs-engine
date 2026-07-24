@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -123,7 +124,8 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, self::ARGS, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		self::assertSame( 23, $this->single_start_call()['args']['priority'] ?? null );
 		$run = \get_option( $this->run_option_name() );
 		self::assertIsArray( $run );
@@ -298,14 +300,14 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure, kind: 'chunked_job' ) );
 		$incumbent = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
-		self::assertIsString( $incumbent->value );
+		self::assertInstanceOf( Run::class, $incumbent->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
 		$refused = $this->client->retry_failed( self::NAME, self::FAILED_RUN_ID );
 
 		$error = $this->assert_failure_code( $refused, ErrorCode::OverlapHeld );
-		self::assertSame( $incumbent->value, $error->context['run_id'] ?? null );
-		$cancelled = $this->client->cancel( self::NAME, $incumbent->value );
+		self::assertSame( (string) $incumbent->value->id, $error->context['run_id'] ?? null );
+		$cancelled = $this->client->cancel( self::NAME, (string) $incumbent->value->id );
 		self::assertInstanceOf( Success::class, $cancelled );
 		$this->rig->clock()->timestamp = self::NOW + 2;
 
@@ -326,7 +328,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$incumbent = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $incumbent );
-		self::assertIsString( $incumbent->value );
+		self::assertInstanceOf( Run::class, $incumbent->value );
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Chunk processing exploded.', details: array( 'failed_chunk' => array( 'chunk' => 1 ) ) );
 		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, self::ARGS, $failure, kind: 'chunked_job' ) );
 		$this->rig->clock()->timestamp = self::NOW + 100;
@@ -334,8 +336,8 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$retried = $this->client->retry_failed( self::NAME, self::FAILED_RUN_ID );
 
 		self::assertInstanceOf( Success::class, $retried );
-		self::assertIsString( $retried->value );
-		self::assertNotSame( $incumbent->value, $retried->value );
+		self::assertInstanceOf( Run::class, $retried->value );
+		self::assertNotSame( (string) $incumbent->value->id, (string) $retried->value->id );
 	}
 
 	/**
@@ -350,14 +352,14 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->register_chunked_job( new JobOptions( overlap: OverlapPolicy::Allow ) );
 		$first = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
-		self::assertIsString( $first->value );
+		self::assertInstanceOf( Run::class, $first->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
 		$second = $this->client->dispatch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $second );
-		self::assertIsString( $second->value );
-		self::assertNotSame( $first->value, $second->value );
+		self::assertInstanceOf( Run::class, $second->value );
+		self::assertNotSame( (string) $first->value->id, (string) $second->value->id );
 		self::assertCount( 2, $this->start_calls() );
 	}
 
@@ -373,7 +375,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$this->register_chunked_job( new JobOptions( overlap_key: static fn ( array $start_args ): string => 'catalog' ) );
 		$first = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
-		self::assertIsString( $first->value );
+		self::assertInstanceOf( Run::class, $first->value );
 		$this->rig->clock()->timestamp = self::NOW + 1;
 
 		$duplicate = $this->client->dispatch(
@@ -385,7 +387,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		);
 
 		$error = $this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
-		self::assertSame( $first->value, $error->context['run_id'] ?? null );
+		self::assertSame( (string) $first->value->id, $error->context['run_id'] ?? null );
 		self::assertCount( 1, $this->start_calls() );
 	}
 
@@ -646,7 +648,8 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		self::assertSame( self::RUN_ID, $this->lock()['run_id'] ?? null );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );

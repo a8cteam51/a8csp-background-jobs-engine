@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
@@ -89,8 +90,8 @@ final class NonRetryableTest extends AbstractIntegrationTestCase {
 
 		$result = $client->dispatch( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The non-retryable job must enqueue before its handler fails' );
-		self::assertIsString( $result->value );
-		$run_id = $result->value;
+		self::assertInstanceOf( Run::class, $result->value );
+		$run_id = (string) $result->value->id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the non-retryable job action' );
 

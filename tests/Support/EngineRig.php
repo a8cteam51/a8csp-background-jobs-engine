@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
@@ -300,9 +301,10 @@ final class EngineRig {
 		Assert::assertNotNull( $parts );
 		$operations = $this->operations[ $parts[0] ] ?? null;
 		Assert::assertInstanceOf( OwnerOperations::class, $operations );
-		$result = $operations->last_completed_run_id( $parts[1] );
+		$result = $operations->last_completed_run( $parts[1] );
 		Assert::assertInstanceOf( Success::class, $result );
-		Assert::assertSame( (string) $run_id, $result->value );
+		Assert::assertInstanceOf( Run::class, $result->value );
+		Assert::assertSame( (string) $run_id, (string) $result->value->id );
 	}
 
 	/**

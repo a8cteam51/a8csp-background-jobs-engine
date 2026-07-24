@@ -8,7 +8,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
@@ -97,8 +101,9 @@ final readonly class OwnerOperations {
 	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity, delay, or priority is invalid, or arguments are not portable.
+	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<string, BoundaryError>
+	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
 	public function dispatch( string $name, array $start_args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
@@ -116,7 +121,9 @@ final readonly class OwnerOperations {
 			return new Failure( $payload_error );
 		}
 
-		return BoundaryErrorMapper::map( $this->dispatcher->dispatch( $identity, $start_args, $delay, $priority ) );
+		$result = BoundaryErrorMapper::map( $this->dispatcher->dispatch( $identity, $start_args, $delay, $priority ) );
+
+		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
 	}
 
 	/**
@@ -162,12 +169,15 @@ final readonly class OwnerOperations {
 	 * @param   string $name Owner-local schedule name.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
+	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<array{identity: string, run_id: string}, BoundaryError>
+	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now( string $name ): AbstractResult {
-		return BoundaryErrorMapper::map( $this->schedules->dispatch_now( JobIdentity::compose( $this->owner, $name ) ) );
+		$result = BoundaryErrorMapper::map( $this->schedules->dispatch_now( JobIdentity::compose( $this->owner, $name ) ) );
+
+		return $result->is_failure() ? $result : new Success( self::run( $result->value['identity'], $result->value['run_id'], RunStatus::Running ) );
 	}
 
 	/**
@@ -180,16 +190,27 @@ final readonly class OwnerOperations {
 	 * @param   string $run_id Retained run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
+	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus|null, BoundaryError>
+	 * @return  AbstractResult<Run|null, BoundaryError>
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 	public function inspect( string $name, string $run_id ): AbstractResult {
-		return BoundaryErrorMapper::map( $this->inspection->run_status( JobIdentity::compose( $this->owner, $name ), $run_id ) );
+		$identity = JobIdentity::compose( $this->owner, $name );
+		$result   = BoundaryErrorMapper::map( $this->inspection->run_status( $identity, $run_id ) );
+		if ( $result->is_failure() ) {
+			return $result;
+		}
+		if ( null === $result->value ) {
+			return new Success( null );
+		}
+
+		// The public projection covers every internal run status, so from() always resolves here.
+		return new Success( self::run( $identity, $run_id, RunStatus::from( $result->value->value ) ) );
 	}
 
 	/**
-	 * Returns the most recently recorded completed run ID retained for one background-work name.
+	 * Returns the most recently recorded completed run retained for one background-work name.
 	 *
 	 * The lookup covers only the retained history window. Each history buffer retains at most the
 	 * positive `a8csp_bgje/history_size` filter value, 30 by default. A completed run
@@ -204,12 +225,22 @@ final readonly class OwnerOperations {
 	 * @param   string $name Owner-local job or chunked job name.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
+	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<string|null, BoundaryError>
+	 * @return  AbstractResult<Run|null, BoundaryError>
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
-	public function last_completed_run_id( string $name ): AbstractResult {
-		return BoundaryErrorMapper::map( $this->inspection->last_completed_run_id( JobIdentity::compose( $this->owner, $name ) ) );
+	public function last_completed_run( string $name ): AbstractResult {
+		$identity = JobIdentity::compose( $this->owner, $name );
+		$result   = BoundaryErrorMapper::map( $this->inspection->last_completed_run_id( $identity ) );
+		if ( $result->is_failure() ) {
+			return $result;
+		}
+		if ( null === $result->value ) {
+			return new Success( null );
+		}
+
+		return new Success( self::run( $identity, $result->value, RunStatus::Completed ) );
 	}
 
 	/**
@@ -225,12 +256,16 @@ final readonly class OwnerOperations {
 	 * @param   string $run_id Retained failed-run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
+	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<string, BoundaryError>
+	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, string $run_id ): AbstractResult {
-		return BoundaryErrorMapper::map( $this->dispatcher->retry_failed( JobIdentity::compose( $this->owner, $name ), $run_id ) );
+		$identity = JobIdentity::compose( $this->owner, $name );
+		$result   = BoundaryErrorMapper::map( $this->dispatcher->retry_failed( $identity, $run_id ) );
+
+		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
 	}
 
 	/**
@@ -243,17 +278,39 @@ final readonly class OwnerOperations {
 	 * @param   string $run_id Retained run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
+	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<string, BoundaryError>
+	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, string $run_id ): AbstractResult {
-		return BoundaryErrorMapper::map( $this->dispatcher->cancel( JobIdentity::compose( $this->owner, $name ), $run_id ) );
+		$identity = JobIdentity::compose( $this->owner, $name );
+		$result   = BoundaryErrorMapper::map( $this->dispatcher->cancel( $identity, $run_id ) );
+
+		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Cancelled ) );
 	}
 
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Projects one admitted run into the public boundary value.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string    $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string    $run_id   Run identifier.
+	 * @param   RunStatus $status   Public lifecycle state.
+	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
+	 *
+	 * @return  Run
+	 */
+	private static function run( string $identity, string $run_id, RunStatus $status ): Run {
+		return new Run( $identity, RunId::from( $run_id ), $status );
+	}
 
 	/**
 	 * Asserts that a scheduler priority fits the dispatch-owned supported range.

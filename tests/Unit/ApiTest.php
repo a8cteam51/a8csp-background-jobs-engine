@@ -10,7 +10,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -139,8 +141,8 @@ final class ApiTest extends TestCase {
 
 		self::assertSame( array( array( 'owner' => 'left' ) ), $left_job->calls );
 		self::assertSame( array( array( 'owner' => 'right' ) ), $right_job->calls );
-		self::assertInstanceOf( Success::class, $left->last_completed_run_id( 'sync' ) );
-		self::assertInstanceOf( Success::class, $right->last_completed_run_id( 'sync' ) );
+		self::assertInstanceOf( Success::class, $left->last_completed_run( 'sync' ) );
+		self::assertInstanceOf( Success::class, $right->last_completed_run( 'sync' ) );
 	}
 
 	/**
@@ -185,7 +187,7 @@ final class ApiTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_last_completed_run_id_retains_the_latest_successful_terminal(): void {
+	public function test_last_completed_run_retains_the_latest_successful_terminal(): void {
 		$client = $this->rig->operations( 'consumer-plugin' );
 		$job    = new RecordingJob( 'sync' );
 		$client->register( $job->definition() );
@@ -195,10 +197,13 @@ final class ApiTest extends TestCase {
 
 		$job->throwable = new NonRetryableException( 'Terminal failure.' );
 		$this->enqueue_and_run( $client, array( 'sequence' => 3 ) );
-		$result = $client->last_completed_run_id( 'sync' );
+		$result = $client->last_completed_run( 'sync' );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( $last, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( 'consumer-plugin:sync', $result->value->identity );
+		self::assertSame( $last, (string) $result->value->id );
+		self::assertSame( RunStatus::Completed, $result->value->status );
 	}
 
 	/**
@@ -209,16 +214,19 @@ final class ApiTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_last_completed_run_id_inside_a_completed_hook_returns_the_previous_completion(): void {
+	public function test_last_completed_run_inside_a_completed_hook_returns_the_previous_completion(): void {
 		$client = $this->rig->operations( 'consumer-plugin' );
 		$client->register( ( new RecordingJob( 'sync' ) )->definition() );
 		$observed  = array();
 		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
 		$callbacks['a8csp_bgje/completed/consumer-plugin:sync'] = static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $client, &$observed ): void {
-			$result = $client->last_completed_run_id( 'sync' );
+			$result = $client->last_completed_run( 'sync' );
 			self::assertInstanceOf( Success::class, $result );
-			$observed[] = array( null === $previous_completed_run_id ? null : (string) $previous_completed_run_id, $result->value );
+			if ( null !== $result->value ) {
+				self::assertInstanceOf( Run::class, $result->value );
+			}
+			$observed[] = array( null === $previous_completed_run_id ? null : (string) $previous_completed_run_id, null === $result->value ? null : (string) $result->value->id );
 		};
 
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
@@ -227,9 +235,10 @@ final class ApiTest extends TestCase {
 		$second = $this->enqueue_and_run( $client, array( 'sequence' => 2 ) );
 
 		self::assertSame( array( array( null, null ), array( $first, $first ) ), $observed );
-		$result = $client->last_completed_run_id( 'sync' );
+		$result = $client->last_completed_run( 'sync' );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( $second, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( $second, (string) $result->value->id );
 	}
 
 	/**
@@ -264,8 +273,8 @@ final class ApiTest extends TestCase {
 		++$this->rig->clock()->timestamp;
 		$dispatched = $client->dispatch( 'sync', $args );
 		self::assertInstanceOf( Success::class, $dispatched );
-		self::assertIsString( $dispatched->value );
-		$run_id = $dispatched->value;
+		self::assertInstanceOf( Run::class, $dispatched->value );
+		$run_id = (string) $dispatched->value->id;
 		$raw    = \maybe_serialize(
 			array(
 				'started'  => array( $run_id ),
@@ -293,9 +302,10 @@ final class ApiTest extends TestCase {
 			),
 			$completed
 		);
-		$latest = $client->last_completed_run_id( 'sync' );
+		$latest = $client->last_completed_run( 'sync' );
 		self::assertInstanceOf( Success::class, $latest );
-		self::assertSame( $run_id, $latest->value );
+		self::assertInstanceOf( Run::class, $latest->value );
+		self::assertSame( $run_id, (string) $latest->value->id );
 		$history = $this->rig->inspection()->runs( $identity )['history'];
 		self::assertIsArray( $history );
 		self::assertSame( array( $run_id ), \array_column( $history, 'run_id' ) );
@@ -323,8 +333,8 @@ final class ApiTest extends TestCase {
 		++$this->rig->clock()->timestamp;
 		$target = $client->dispatch( 'sync', array( 'sequence' => 'target' ) );
 		self::assertInstanceOf( Success::class, $target );
-		self::assertIsString( $target->value );
-		$target_run_id      = $target->value;
+		self::assertInstanceOf( Run::class, $target->value );
+		$target_run_id      = (string) $target->value->id;
 		$intervening_run_id = null;
 		$target_hook_runs   = 0;
 		$completed_calls    = array();
@@ -342,8 +352,8 @@ final class ApiTest extends TestCase {
 			++$this->rig->clock()->timestamp;
 			$intervening = $client->dispatch( 'sync', array( 'sequence' => 'intervening' ) );
 			self::assertInstanceOf( Success::class, $intervening );
-			self::assertIsString( $intervening->value );
-			$intervening_run_id = $intervening->value;
+			self::assertInstanceOf( Run::class, $intervening->value );
+			$intervening_run_id = (string) $intervening->value->id;
 			$this->rig->run_due();
 
 			for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
@@ -364,9 +374,10 @@ final class ApiTest extends TestCase {
 		self::assertNotNull( $terminal );
 		self::assertSame( $seed_run_id, $terminal->previous_completed_run_id );
 		self::assertSame( array(), $terminal->effects );
-		$latest_before_replay = $client->last_completed_run_id( 'sync' );
+		$latest_before_replay = $client->last_completed_run( 'sync' );
 		self::assertInstanceOf( Success::class, $latest_before_replay );
-		self::assertSame( $intervening_run_id, $latest_before_replay->value );
+		self::assertInstanceOf( Run::class, $latest_before_replay->value );
+		self::assertSame( $intervening_run_id, (string) $latest_before_replay->value->id );
 		$this->rig->clock()->timestamp = $terminal->heartbeat_at + 3_601;
 
 		$this->rig->run_maintenance();
@@ -432,12 +443,10 @@ final class ApiTest extends TestCase {
 		++$this->rig->clock()->timestamp;
 		$result = $client->dispatch( 'sync', $args );
 		self::assertInstanceOf( Success::class, $result );
-		if ( ! \is_string( $result->value ) ) {
-			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
-		}
+		self::assertInstanceOf( Run::class, $result->value );
 		$this->rig->run_due();
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**

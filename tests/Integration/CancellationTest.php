@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
@@ -81,8 +82,8 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 
 		$enqueued = $client->dispatch( self::EXECUTING_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertIsString( $enqueued->value );
-		$run_id    = $enqueued->value;
+		self::assertInstanceOf( Run::class, $enqueued->value );
+		$run_id    = (string) $enqueued->value->id;
 		$group     = self::EXECUTING_IDENTITY . '|' . $run_id;
 		$action_id = $this->assert_pending_job_action( self::EXECUTING_IDENTITY, $run_id, $group );
 		$store     = $this->action_scheduler_store();
@@ -152,8 +153,8 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 
 		$enqueued = $client->dispatch( self::BACKOFF_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertIsString( $enqueued->value );
-		$run_id            = $enqueued->value;
+		self::assertInstanceOf( Run::class, $enqueued->value );
+		$run_id            = (string) $enqueued->value->id;
 		$group             = self::BACKOFF_IDENTITY . '|' . $run_id;
 		$initial_action_id = $this->assert_pending_job_action( self::BACKOFF_IDENTITY, $run_id, $group );
 
@@ -172,7 +173,8 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$cancelled = $client->cancel( self::BACKOFF_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
-		self::assertSame( $run_id, $cancelled->value );
+		self::assertInstanceOf( Run::class, $cancelled->value );
+		self::assertSame( $run_id, (string) $cancelled->value->id );
 		self::assertSame( array( $args ), $job->calls, 'Cancellation must prevent the pending retry attempt' );
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $retry_action_id ) );
 		self::assertSame(
@@ -260,8 +262,8 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 
 		$started = $client->dispatch( self::CHUNKED_JOB_NAME, $start_args );
 		self::assertInstanceOf( Success::class, $started );
-		self::assertIsString( $started->value );
-		$run_id = $started->value;
+		self::assertInstanceOf( Run::class, $started->value );
+		$run_id = (string) $started->value->id;
 		$group  = self::CHUNKED_JOB_IDENTITY . '|' . $run_id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the chunked job queue' );
@@ -286,7 +288,8 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$cancelled = $client->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
-		self::assertSame( $run_id, $cancelled->value );
+		self::assertInstanceOf( Run::class, $cancelled->value );
+		self::assertSame( $run_id, (string) $cancelled->value->id );
 		self::assertSame( array( $first_chunk ), \array_column( $chunked_job->process_calls, 'chunk_args' ) );
 		self::assertSame(
 			array(
@@ -344,10 +347,10 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$enqueued_b = $client->dispatch( self::SIBLING_NAME, $args_b );
 		self::assertInstanceOf( Success::class, $enqueued_a );
 		self::assertInstanceOf( Success::class, $enqueued_b );
-		self::assertIsString( $enqueued_a->value );
-		self::assertIsString( $enqueued_b->value );
-		$run_a    = $enqueued_a->value;
-		$run_b    = $enqueued_b->value;
+		self::assertInstanceOf( Run::class, $enqueued_a->value );
+		self::assertInstanceOf( Run::class, $enqueued_b->value );
+		$run_a    = (string) $enqueued_a->value->id;
+		$run_b    = (string) $enqueued_b->value->id;
 		$group_a  = self::SIBLING_IDENTITY . '|' . $run_a;
 		$group_b  = self::SIBLING_IDENTITY . '|' . $run_b;
 		$action_a = $this->assert_pending_job_action( self::SIBLING_IDENTITY, $run_a, $group_a );
@@ -356,7 +359,8 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$cancelled = $client->cancel( self::SIBLING_NAME, $run_a );
 
 		self::assertInstanceOf( Success::class, $cancelled );
-		self::assertSame( $run_a, $cancelled->value );
+		self::assertInstanceOf( Run::class, $cancelled->value );
+		self::assertSame( $run_a, (string) $cancelled->value->id );
 		$store = $this->action_scheduler_store();
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $action_a ) );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_b ) );
@@ -444,8 +448,8 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 
 		$enqueued = $client->dispatch( self::DEGRADED_NAME, $args );
 		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertIsString( $enqueued->value );
-		$run_id      = $enqueued->value;
+		self::assertInstanceOf( Run::class, $enqueued->value );
+		$run_id      = (string) $enqueued->value->id;
 		$group       = self::DEGRADED_IDENTITY . '|' . $run_id;
 		$action_args = array( self::DEGRADED_IDENTITY, $run_id, 1 );
 		$action_id   = null;
@@ -460,7 +464,8 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 
 		$cancelled = $client->cancel( self::DEGRADED_NAME, $run_id );
 		self::assertInstanceOf( Success::class, $cancelled );
-		self::assertSame( $run_id, $cancelled->value );
+		self::assertInstanceOf( Run::class, $cancelled->value );
+		self::assertSame( $run_id, (string) $cancelled->value->id );
 
 		if ( null !== $action_id ) {
 			self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $action_id ) );

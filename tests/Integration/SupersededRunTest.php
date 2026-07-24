@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
@@ -128,8 +129,8 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 
 		$run_a_result = $client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_a_result, 'The incumbent chunked job must start through the public API' );
-		self::assertIsString( $run_a_result->value );
-		$run_a      = $run_a_result->value;
+		self::assertInstanceOf( Run::class, $run_a_result->value );
+		$run_a      = (string) $run_a_result->value->id;
 		$group_a    = self::IDENTITY . '|' . $run_a;
 		$start_a_id = $this->assert_pending_start_action( $run_a, $group_a );
 
@@ -142,8 +143,8 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 
 		$run_b_result = $client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
-		self::assertIsString( $run_b_result->value );
-		$run_b      = $run_b_result->value;
+		self::assertInstanceOf( Run::class, $run_b_result->value );
+		$run_b      = (string) $run_b_result->value->id;
 		$group_b    = self::IDENTITY . '|' . $run_b;
 		$start_b_id = $this->assert_pending_start_action( $run_b, $group_b );
 		self::assertNotSame( $run_a, $run_b, 'Replacement must allocate a fresh run identifier' );

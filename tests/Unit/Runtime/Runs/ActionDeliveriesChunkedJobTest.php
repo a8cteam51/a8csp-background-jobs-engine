@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -191,7 +192,8 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$first_args = array( 'sequence' => 'first' );
 		$first      = $this->client->dispatch( self::NAME, $first_args );
 		self::assertInstanceOf( Success::class, $first );
-		self::assertIsString( $first->value );
+		self::assertInstanceOf( Run::class, $first->value );
+		self::assertInstanceOf( RunId::class, $first->value->id );
 
 		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
 			$this->rig->run_due();
@@ -201,7 +203,8 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$second_args = array( 'sequence' => 'second' );
 		$second      = $this->client->dispatch( self::NAME, $second_args );
 		self::assertInstanceOf( Success::class, $second );
-		self::assertIsString( $second->value );
+		self::assertInstanceOf( Run::class, $second->value );
+		self::assertInstanceOf( RunId::class, $second->value->id );
 
 		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
 			$this->rig->run_due();
@@ -214,9 +217,9 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertInstanceOf( RunId::class, $first_public_run_id );
 		self::assertInstanceOf( RunId::class, $second_public_run_id );
 		self::assertInstanceOf( RunId::class, $previous_public_run_id );
-		self::assertSame( $first->value, (string) $first_public_run_id );
-		self::assertSame( $second->value, (string) $second_public_run_id );
-		self::assertSame( $first->value, (string) $previous_public_run_id );
+		self::assertSame( (string) $first->value->id, (string) $first_public_run_id );
+		self::assertSame( (string) $second->value->id, (string) $second_public_run_id );
+		self::assertSame( (string) $first->value->id, (string) $previous_public_run_id );
 		self::assertSame(
 			array(
 				array( $first_public_run_id, $first_args, null ),
@@ -481,7 +484,9 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$result = $this->client->cancel( self::NAME, self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$this->rig->assert_cancelled();
 	}
 
@@ -1842,7 +1847,9 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertInstanceOf( Success::class, $replacement );
-		self::assertNotSame( self::RUN_ID, $replacement->value );
+		self::assertInstanceOf( Run::class, $replacement->value );
+		self::assertInstanceOf( RunId::class, $replacement->value->id );
+		self::assertNotSame( self::RUN_ID, (string) $replacement->value->id );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
 		$this->rig->assert_completed();
 	}
@@ -1998,9 +2005,11 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->register_chunked_job();
 		$result = $this->client->dispatch( self::NAME, self::ARGS, priority: $priority );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**

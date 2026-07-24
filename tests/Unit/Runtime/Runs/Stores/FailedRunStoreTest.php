@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Store
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -320,7 +321,8 @@ final class FailedRunStoreTest extends TestCase {
 
 		$retried = $this->client->retry_failed( self::NAME, $failed );
 		self::assertInstanceOf( Success::class, $retried );
-		self::assertNotSame( $failed, $retried->value );
+		self::assertInstanceOf( Run::class, $retried->value );
+		self::assertNotSame( $failed, (string) $retried->value->id );
 		$this->rig->run_due();
 
 		self::assertSame( array( $args, $args ), $this->job->calls );
@@ -678,11 +680,11 @@ final class FailedRunStoreTest extends TestCase {
 		$this->rig->randomizer()->value = $randomness;
 		$result                         = $this->client->dispatch( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
 		$this->rig->run_due();
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**

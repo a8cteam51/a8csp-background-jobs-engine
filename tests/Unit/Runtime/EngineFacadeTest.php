@@ -4,9 +4,11 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
@@ -106,6 +108,9 @@ final class EngineFacadeTest extends TestCase {
 		$result = $client->dispatch( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( 'facade-tests:email-digest', $result->value->identity );
+		self::assertSame( RunStatus::Running, $result->value->status );
 		$this->rig->backend()->assert_scheduled( 'facade-tests:email-digest' );
 		$this->rig->run_due();
 		self::assertSame( array( array( 'site_id' => 7 ) ), $job->calls );
@@ -184,6 +189,10 @@ final class EngineFacadeTest extends TestCase {
 		$result = $client->retry_failed( 'email-digest', self::FAILED_RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertSame( $identity, $result->value->identity );
+		self::assertNotSame( self::FAILED_RUN_ID, (string) $result->value->id );
+		self::assertSame( RunStatus::Running, $result->value->status );
 		$remaining = new FailedRunStore( $identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() )->all();
 		self::assertInstanceOf( Success::class, $remaining );
 		self::assertSame( array(), $remaining->value );
@@ -204,14 +213,107 @@ final class EngineFacadeTest extends TestCase {
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		$enqueued = $client->dispatch( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
-		if ( ! \is_string( $enqueued->value ) ) {
-			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
-		}
+		self::assertInstanceOf( Run::class, $enqueued->value );
 
-		$cancelled = $client->cancel( 'email-digest', $enqueued->value );
+		$cancelled = $client->cancel( 'email-digest', (string) $enqueued->value->id );
 
 		self::assertInstanceOf( Success::class, $cancelled );
+		self::assertInstanceOf( Run::class, $cancelled->value );
+		self::assertSame( $enqueued->value->identity, $cancelled->value->identity );
+		self::assertSame( (string) $enqueued->value->id, (string) $cancelled->value->id );
+		self::assertSame( RunStatus::Cancelled, $cancelled->value->status );
 		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'facade-tests:email-digest' )['history'][0]['outcome'] ?? null );
+	}
+
+	/**
+	 * Owner-bound inspection projects retained statuses and retention absence as public runs.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_owner_run_inspection_projects_public_status_and_retention_absence(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+
+		$missing = $client->inspect( 'email-digest', self::FAILED_RUN_ID );
+		self::assertInstanceOf( Success::class, $missing );
+		self::assertNull( $missing->value );
+
+		$last_completed = $client->last_completed_run( 'email-digest' );
+		self::assertInstanceOf( Success::class, $last_completed );
+		self::assertNull( $last_completed->value );
+
+		$dispatched = $client->dispatch( 'email-digest' );
+		self::assertInstanceOf( Success::class, $dispatched );
+		self::assertInstanceOf( Run::class, $dispatched->value );
+
+		$running = $client->inspect( 'email-digest', (string) $dispatched->value->id );
+		self::assertInstanceOf( Success::class, $running );
+		self::assertInstanceOf( Run::class, $running->value );
+		self::assertSame( $dispatched->value->identity, $running->value->identity );
+		self::assertSame( (string) $dispatched->value->id, (string) $running->value->id );
+		self::assertSame( RunStatus::Running, $running->value->status );
+
+		$this->rig->run_due();
+
+		$completed = $client->inspect( 'email-digest', (string) $dispatched->value->id );
+		self::assertInstanceOf( Success::class, $completed );
+		self::assertInstanceOf( Run::class, $completed->value );
+		self::assertSame( RunStatus::Completed, $completed->value->status );
+
+		$last_completed = $client->last_completed_run( 'email-digest' );
+		self::assertInstanceOf( Success::class, $last_completed );
+		self::assertInstanceOf( Run::class, $last_completed->value );
+		self::assertSame( $completed->value->identity, $last_completed->value->identity );
+		self::assertSame( (string) $completed->value->id, (string) $last_completed->value->id );
+		self::assertSame( $completed->value->status, $last_completed->value->status );
+	}
+
+	/**
+	 * A completed run outside the retained history window is absent at the owner boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_run_is_null_after_completion_leaves_the_retained_window(): void {
+		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
+		self::assertIsArray( $filters );
+		$filters['a8csp_bgje/history_size']       = 1;
+		$GLOBALS['a8csp_bgje_test_filter_values'] = $filters;
+
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+
+		$completed = $client->dispatch( 'email-digest' );
+		self::assertInstanceOf( Success::class, $completed );
+		self::assertInstanceOf( Run::class, $completed->value );
+		$this->rig->run_due();
+
+		$retained = $client->last_completed_run( 'email-digest' );
+		self::assertInstanceOf( Success::class, $retained );
+		self::assertInstanceOf( Run::class, $retained->value );
+		self::assertSame( (string) $completed->value->id, (string) $retained->value->id );
+		self::assertSame( RunStatus::Completed, $retained->value->status );
+
+		++$this->rig->clock()->timestamp;
+		$newer = $client->dispatch( 'email-digest' );
+		self::assertInstanceOf( Success::class, $newer );
+		self::assertInstanceOf( Run::class, $newer->value );
+		self::assertNotSame( (string) $completed->value->id, (string) $newer->value->id );
+		$cancelled = $client->cancel( 'email-digest', (string) $newer->value->id );
+		self::assertInstanceOf( Success::class, $cancelled );
+
+		$evicted_completion = $client->inspect( 'email-digest', (string) $completed->value->id );
+		self::assertInstanceOf( Success::class, $evicted_completion );
+		self::assertNull( $evicted_completion->value );
+
+		$evicted = $client->last_completed_run( 'email-digest' );
+		self::assertInstanceOf( Success::class, $evicted );
+		self::assertNull( $evicted->value );
 	}
 
 	// endregion.

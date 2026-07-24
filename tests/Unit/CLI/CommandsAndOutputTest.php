@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -565,14 +566,13 @@ final class CommandsAndOutputTest extends TestCase {
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		$enqueued = $client->dispatch( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
-		if ( ! \is_string( $enqueued->value ) ) {
-			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
-		}
+		self::assertInstanceOf( Run::class, $enqueued->value );
+		$run_id = (string) $enqueued->value->id;
 
-		$result = CliHarness::run( 'runs', array( 'cancel', 'consumer-plugin:email-digest', $enqueued->value ) );
+		$result = CliHarness::run( 'runs', array( 'cancel', 'consumer-plugin:email-digest', $run_id ) );
 
 		self::assertSame( 0, $result->exit_code );
-		self::assertSame( 'Success: Cancelled run ' . $enqueued->value . ' of "consumer-plugin:email-digest".' . "\n", $result->stdout );
+		self::assertSame( 'Success: Cancelled run ' . $run_id . ' of "consumer-plugin:email-digest".' . "\n", $result->stdout );
 		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'consumer-plugin:email-digest' )['history'][0]['outcome'] ?? null );
 
 		$history_result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'json' ) );

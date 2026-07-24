@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -135,9 +136,9 @@ final class EngineRigTest extends TestCase {
 			$client->register( ( new RecordingJob( 'job' ) )->definition() );
 			$enqueued = $client->dispatch( 'job', self::ARGS );
 			self::assertInstanceOf( Success::class, $enqueued );
-			self::assertIsString( $enqueued->value );
+			self::assertInstanceOf( Run::class, $enqueued->value );
 
-			$cancelled = $client->cancel( 'job', $enqueued->value );
+			$cancelled = $client->cancel( 'job', (string) $enqueued->value->id );
 			self::assertInstanceOf( Success::class, $cancelled );
 			$rig->assert_cancelled();
 		} finally {

@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -313,13 +314,15 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->dispatch( $name, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
+		$run_id                         = (string) $result->value->id;
 		$this->rig->randomizer()->value = 7;
 		$this->rig->backend()->calls    = array();
 
 		$this->rig->run_due();
 
-		$run = $this->run_state_for( $identity, $result->value );
+		$run = $this->run_state_for( $identity, $run_id );
 		self::assertIsArray( $run );
 		self::assertSame( 'job', $run['kind'] ?? null );
 		$pending = $run['pending'] ?? null;
@@ -340,7 +343,7 @@ final class FailureLifecycleTest extends TestCase {
 		);
 		self::assertCount( 1, $calls );
 		self::assertSame( 'a8csp_bgje/internal/deliver', $calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( $identity, $result->value, 2 ), $calls[0]['args']['args'] ?? null );
+		self::assertSame( array( $identity, $run_id, 2 ), $calls[0]['args']['args'] ?? null );
 
 		$this->rig->run_due();
 
@@ -350,7 +353,7 @@ final class FailureLifecycleTest extends TestCase {
 		$failure = $failed[0][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( $identity, $failure->identity );
-		self::assertSame( $result->value, (string) $failure->run_id );
+		self::assertSame( $run_id, (string) $failure->run_id );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
@@ -724,11 +727,13 @@ final class FailureLifecycleTest extends TestCase {
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->dispatch( self::NAME, self::ARGS, priority: $priority );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$this->rig->randomizer()->value = $retry_value;
 		$this->rig->randomizer()->calls = array();
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**

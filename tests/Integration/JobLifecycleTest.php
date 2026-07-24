@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -82,8 +83,8 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 
 		$result = $client->dispatch( self::SUCCESS_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The registered job must enqueue through the public API' );
-		self::assertIsString( $result->value );
-		$run_id = $result->value;
+		self::assertInstanceOf( Run::class, $result->value );
+		$run_id = (string) $result->value->id;
 
 		self::assertCount( 0, $job->calls, 'Enqueueing a job must not invoke its handler inline' );
 		self::assertCount( 0, $named_completed, 'Enqueueing a job must not fire its identity-specific completed hook inline' );
@@ -97,9 +98,10 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 		self::assertSame( array( $args ), $job->calls, 'The job must receive its original argument array exactly once' );
 		self::assertSame( array( array( $run_id, $args, null ) ), $named_completed, 'The identity-specific completed hook must receive run ID, start arguments, and the previous completion' );
 		self::assertSame( array( array( self::SUCCESS_IDENTITY, $run_id, $args, null ) ), $generic_completed, 'The generic completed hook must prepend the job name to the same payload' );
-		$last_completed = $client->last_completed_run_id( self::SUCCESS_NAME );
+		$last_completed = $client->last_completed_run( self::SUCCESS_NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
-		self::assertSame( $run_id, $last_completed->value );
+		self::assertInstanceOf( Run::class, $last_completed->value );
+		self::assertSame( $run_id, (string) $last_completed->value->id );
 		$runs = $this->inspection()->runs( self::SUCCESS_IDENTITY );
 		self::assertSame( array(), $runs['live'], 'Terminal job success must leave no live run' );
 		self::assertSame(
@@ -152,8 +154,8 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 
 		$result = $client->dispatch( self::FAILURE_NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The failing job must enqueue before its handler executes' );
-		self::assertIsString( $result->value );
-		$run_id = $result->value;
+		self::assertInstanceOf( Run::class, $result->value );
+		$run_id = (string) $result->value->id;
 
 		self::assertCount( 0, $job->calls, 'Enqueueing a job must not invoke its handler inline' );
 		self::assertCount( 0, $failed, 'Enqueueing a job must not fire its failed hook inline' );

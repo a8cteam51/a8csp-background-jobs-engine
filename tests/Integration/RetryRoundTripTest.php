@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -228,8 +229,8 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 
 		$result = $client->dispatch( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The retryable job must enqueue before its handler fails' );
-		self::assertIsString( $result->value );
-		$failed_run_id     = $result->value;
+		self::assertInstanceOf( Run::class, $result->value );
+		$failed_run_id     = (string) $result->value->id;
 		$failed_group      = self::IDENTITY . '|' . $failed_run_id;
 		$initial_action_id = $this->assert_pending_job_action( self::IDENTITY, $failed_run_id, $failed_group );
 
@@ -344,8 +345,8 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 
 		$manual_result = $client->retry_failed( self::NAME, $failed_run_id );
 		self::assertInstanceOf( Success::class, $manual_result, 'Manual retry must enqueue a fresh run through the public API' );
-		self::assertIsString( $manual_result->value );
-		$successful_run_id = $manual_result->value;
+		self::assertInstanceOf( Run::class, $manual_result->value );
+		$successful_run_id = (string) $manual_result->value->id;
 		self::assertNotSame( $failed_run_id, $successful_run_id, 'Manual retry must allocate a fresh run identifier' );
 		self::assertSame( array( $args, $args ), $job->calls, 'Manual retry must not invoke the job inline' );
 		$remaining_failed_entries = \get_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY, null );
