@@ -489,8 +489,53 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+		self::assertSame( \sprintf( 'job "%s" incumbent run changed while the replacement was superseding it; retry the dispatch against the current incumbent state.', self::IDENTITY ), $error->message );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+				'kind'     => 'job',
+			),
+			$error->context
+		);
 		self::assertSame( $advanced_raw, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
+		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
+		self::assertFalse( \get_option( $this->run_option_name() ) );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
+	 * A failed incumbent supersession write reports unavailable storage before lock transfer.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A failed first CAS leaves both incumbent generations unchanged, proving storage failure is distinct from a competing run-row writer.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_replace_dispatch_reports_storage_failure_when_incumbent_supersession_write_fails(): void {
+		$this->restart_with_overlap_policy( OverlapPolicy::Replace );
+		$this->seed_running_lock( 0 );
+		$incumbent_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID;
+		$incumbent_raw    = $this->rig->wpdb()->rows[ $incumbent_option ] ?? null;
+		self::assertIsString( $incumbent_raw );
+		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$lock_raw    = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
+		self::assertIsString( $lock_raw );
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		self::assertSame( \sprintf( 'Run "%1$s" for job "%2$s" could not confirm the incumbent supersession before overlap transfer; repair option writes and retry.', self::RUN_ID, self::IDENTITY ), $error->message );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+				'kind'     => 'job',
+			),
+			$error->context
+		);
+		self::assertSame( $incumbent_raw, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
 		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
 		self::assertFalse( \get_option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->run_delivery_calls() );

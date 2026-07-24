@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -13,6 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInter
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -264,7 +266,7 @@ final readonly class RunTransitions {
 	public function cancel_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
 		$terminal_state = $state->with_status( RunStatus::Cancelled )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw, );
-		if ( null === $terminal_raw ) {
+		if ( ! \is_string( $terminal_raw ) ) {
 			return false;
 		}
 
@@ -392,7 +394,7 @@ final readonly class RunTransitions {
 
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store );
-		if ( null !== $claimed ) {
+		if ( \is_array( $claimed ) ) {
 			$this->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
 		}
 
@@ -410,15 +412,18 @@ final readonly class RunTransitions {
 	 * @param   RunStore    $run_store    Active-run store.
 	 * @param   string|null $expected_raw Exact selected snapshot, or null to derive it from the typed state.
 	 *
-	 * @return  array{raw: string, state: RunState}|null Exact claimed terminal snapshot, or null after a lost fence.
+	 * @return  array{raw: string, state: RunState}|Failure<EngineError>|null Exact claimed terminal snapshot, storage or payload failure, or null after a lost fence.
 	 */
-	public function claim_superseded_run( string $run_id, RunState $state, RunStore $run_store, ?string $expected_raw = null ): ?array {
+	public function claim_superseded_run( string $run_id, RunState $state, RunStore $run_store, ?string $expected_raw = null ): array|Failure|null {
 		if ( RunStatus::Running !== $state->status ) {
 			return null;
 		}
 
 		$terminal_state = $state->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw );
+		if ( $terminal_raw instanceof Failure ) {
+			return $terminal_raw;
+		}
 		if ( null === $terminal_raw ) {
 			return null;
 		}
@@ -480,7 +485,7 @@ final readonly class RunTransitions {
 	 */
 	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?array $failure_detail, ?string $expected_raw = null ): bool {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
-		if ( null === $terminal_raw ) {
+		if ( ! \is_string( $terminal_raw ) ) {
 			return false;
 		}
 		if ( RunStatus::Failed === $replacement->status ) {
@@ -513,14 +518,27 @@ final readonly class RunTransitions {
 	 * @param   RunStore    $run_store    Active-run store.
 	 * @param   string|null $expected_raw Exact pre-gate snapshot supplied by maintenance, or null.
 	 *
-	 * @return  string|null Exact terminal snapshot bytes for cleanup, or null after a lost fence.
+	 * @return  string|Failure<EngineError>|null Exact terminal snapshot bytes for cleanup, storage or payload failure, or null after a lost fence.
 	 */
-	private function claim_terminal_transition( string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?string $expected_raw = null ): ?string {
-		$claimed = null === $expected_raw
-			? $run_store->replace_if_state_matches( $run_id, $expected, $replacement )
-			: $run_store->replace_if_raw_matches( $run_id, $expected_raw, $replacement );
+	private function claim_terminal_transition( string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?string $expected_raw = null ): string|Failure|null {
+		$write = null === $expected_raw
+			? $run_store->replace_if_state_matches_classified( $run_id, $expected, $replacement )
+			: $run_store->replace_if_raw_matches_classified( $run_id, $expected_raw, $replacement );
+		if ( $write instanceof Failure ) {
+			return $write;
+		}
 
-		return $claimed instanceof Failure ? null : $claimed;
+		return match ( $write['outcome'] ) {
+			RowWriteOutcome::Won         => $write['raw'],
+			RowWriteOutcome::Lost        => null,
+			RowWriteOutcome::WriteFailed => new Failure(
+				new EngineError(
+					'Run terminal transition could not write authoritative active-run storage.',
+					reason: EngineErrorReason::StorageFailure,
+					context: array( 'run_id' => $run_id ),
+				)
+			),
+		};
 	}
 
 	/**

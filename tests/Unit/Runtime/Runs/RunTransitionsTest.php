@@ -278,7 +278,7 @@ final class RunTransitionsTest extends TestCase {
 
 		$claimed = $this->terminal_transitions->claim_superseded_run( self::RUN_ID, $state, $run_store, $snapshot['raw'] );
 
-		self::assertNotNull( $claimed );
+		self::assertIsArray( $claimed );
 		self::assertSame( RunStatus::Superseded, $claimed['state']->status );
 		$after = $run_store->inspect( self::RUN_ID );
 		self::assertTrue( $after->is_success() );

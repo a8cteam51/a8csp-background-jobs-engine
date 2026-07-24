@@ -724,13 +724,28 @@ final readonly class Dispatcher {
 		if ( null !== $incumbent_snapshot && RunStatus::Running === $incumbent_snapshot['state']->status ) {
 			// This exact run-state CAS is the first linearization point: once it wins, the incumbent's in-flight completion CAS cannot commit after takeover.
 			$claimed_incumbent = $this->terminal_transitions->claim_superseded_run( $incumbent_run_id, $incumbent_snapshot['state'], $run_store, $incumbent_snapshot['raw'] );
-			if ( null === $claimed_incumbent ) {
+			if ( $claimed_incumbent instanceof Failure ) {
 				$run_store->delete_if_unchanged( $run_id, $state );
 
 				return new Failure(
 					new EngineError(
 						\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm the incumbent supersession before overlap transfer; repair option writes and retry.', $run_id, $kind, $identity ),
 						reason: EngineErrorReason::StorageFailure,
+						context: array(
+							'identity' => $identity,
+							'run_id'   => $run_id,
+							'kind'     => $kind,
+						),
+					)
+				);
+			}
+			if ( null === $claimed_incumbent ) {
+				$run_store->delete_if_unchanged( $run_id, $state );
+
+				return new Failure(
+					new EngineError(
+						\sprintf( '%1$s "%2$s" incumbent run changed while the replacement was superseding it; retry the dispatch against the current incumbent state.', $kind, $identity ),
+						reason: EngineErrorReason::OverlapHeld,
 						context: array(
 							'identity' => $identity,
 							'run_id'   => $run_id,

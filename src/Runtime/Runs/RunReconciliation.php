@@ -405,7 +405,7 @@ final readonly class RunReconciliation {
 	private function supersede_transferred_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw ): AbstractResult {
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$claimed       = $this->terminal_transitions->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
-		if ( null !== $claimed ) {
+		if ( \is_array( $claimed ) ) {
 			$this->terminal_transitions->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
 		}
 
