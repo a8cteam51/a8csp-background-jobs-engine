@@ -638,7 +638,8 @@ final readonly class Dispatcher {
 			return $state;
 		}
 
-		$run_store->delete( $run_id );
+		// A rival may advance the provisional state while the overlap transfer is in flight.
+		$run_store->delete_if_unchanged( $run_id, $state );
 
 		return new Failure(
 			new EngineError(

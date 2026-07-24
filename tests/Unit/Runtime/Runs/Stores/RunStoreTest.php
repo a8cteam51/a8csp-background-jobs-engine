@@ -351,6 +351,35 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * Typed exact deletion removes only the generation represented by the supplied state.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built bytes prove typed serialization deletes a matching row and rejects a stale typed generation after a rival advances it.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_delete_if_unchanged_is_conditioned_on_the_expected_typed_generation(): void {
+		$expected = $this->state();
+		$rival    = $expected->with_action_sequence( 2 );
+		$matching = $this->fixtures->run( self::RUN_ID, $expected );
+		$winner   = $this->fixtures->run( self::RUN_ID, $rival );
+		$store    = $this->store();
+		$this->put_fixture( $matching );
+
+		self::assertTrue( $store->delete_if_unchanged( self::RUN_ID, $expected ) );
+		self::assertArrayNotHasKey( $matching[0], $this->rig->wpdb()->rows );
+
+		$this->put_fixture( $winner );
+
+		self::assertFalse( $store->delete_if_unchanged( self::RUN_ID, $expected ) );
+		self::assertSame( $winner[1], $this->raw_row() );
+	}
+
+	/**
 	 * A stale state writer cannot overwrite an interleaved newer generation.
 	 *
 	 * @load-bearing concurrency

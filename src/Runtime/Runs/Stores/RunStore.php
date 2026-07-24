@@ -342,6 +342,26 @@ final readonly class RunStore {
 	}
 
 	/**
+	 * Deletes a run only while its complete typed state still matches.
+	 *
+	 * @internal Engine provisional-state compensation only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $run_id   Run identifier.
+	 * @param   RunState $expected Complete state written before compensation.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the run state to a string.
+	 *
+	 * @return  bool Whether this caller deleted the exact row.
+	 */
+	public function delete_if_unchanged( string $run_id, RunState $expected ): bool {
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->identity, $run_id ), self::serialize_state( $expected ) );
+	}
+
+	/**
 	 * Refreshes a recoverable run's heartbeat and marks its lifecycle action executing.
 	 *
 	 * @since   1.0.0

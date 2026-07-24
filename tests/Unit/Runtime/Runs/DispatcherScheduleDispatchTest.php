@@ -412,6 +412,43 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
+	 * A lost Replace transfer cannot erase a rival that advanced the provisional run.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The overlap CAS interleaving mutates the typed provisional option before compensation, proving cleanup is conditioned on the exact generation it created.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_replace_dispatch_preserves_a_rival_run_generation_when_lock_transfer_is_lost(): void {
+		$this->sync_schedule( OverlapPolicy::Replace );
+		$this->seed_held_lock();
+		$run_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID;
+		$this->rig->wpdb()->before_next(
+			'update',
+			function () use ( $run_option ): void {
+				$this->put_lock( $this->args_hash(), 'run-rival' );
+				$rival = $this->option( $run_option );
+				self::assertIsArray( $rival );
+				$rival['action_sequence'] = 2;
+				self::assertTrue( \update_option( $run_option, $rival, false ) );
+			}
+		);
+
+		$result = $this->client->dispatch_now( self::SCHEDULE );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertSame( ErrorCode::OverlapHeld, $this->boundary_error( $result )->code );
+		self::assertSame( 'run-rival', $this->lock_owner( $this->args_hash() ) );
+		$preserved = $this->option( $run_option );
+		self::assertIsArray( $preserved );
+		self::assertSame( 2, $preserved['action_sequence'] ?? null );
+		self::assertSame( array(), $this->run_delivery_calls() );
+	}
+
+	/**
 	 * A scheduling failure after Replace takeover leaves no replacement lock or run state.
 	 *
 	 * @return  void
