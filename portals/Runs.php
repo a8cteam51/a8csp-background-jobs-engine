@@ -3,12 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -23,23 +20,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class Runs {
-	// region MAGIC METHODS
-
-	/**
-	 * Constructor.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $owner Client plugin owner.
-	 */
-	public function __construct(
-		private string $owner,
-	) {}
-
-	// endregion
-
+final readonly class Runs extends AbstractPortal {
 	// region METHODS
 
 	/**
@@ -149,39 +130,6 @@ final readonly class Runs {
 		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Resolves the owner operations adapter for the bound owner.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @throws  \InvalidArgumentException  When the owner violates the owner contract.
-	 * @throws  EngineUnavailableException When the internal graph is unavailable.
-	 *
-	 * @return  OwnerOperations
-	 */
-	private function operations(): OwnerOperations {
-		return Component::operations( $this->owner );
-	}
-
-	/**
-	 * Converts one boundary failure to the WordPress error boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   BoundaryError $error Boundary failure.
-	 *
-	 * @return  \WP_Error
-	 */
-	private static function wp_error( BoundaryError $error ): \WP_Error {
-		return new \WP_Error( $error->code->value, $error->message, $error->context );
 	}
 
 	// endregion
