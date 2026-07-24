@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
@@ -105,16 +106,18 @@ final readonly class RunStore {
 	 * @param   string                  $args_hash  Stable single-flight identity.
 	 * @param   array<array-key, mixed> $kind_state Initial opaque kind-owned state payload.
 	 * @param   PendingAction|null      $pending    Durable successor delivery, or null when none exists.
+	 * @param   int|null                $priority   Admitted scheduler priority, or null to derive it from the pending descriptor
+	 *                                               or engine default.
 	 *
-	 * @throws  \InvalidArgumentException When the kind key is lexically malformed.
+	 * @throws  \InvalidArgumentException When the kind key or priority is invalid.
 	 * @throws  \LogicException           When WordPress does not serialize the kind-owned state to a string.
 	 *
 	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned state cannot cross the persistence boundary, or null when the run option cannot be added.
 	 */
-	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null ): RunState|Failure|null {
+	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null ): RunState|Failure|null {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
-		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
+		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, priority: $priority, );
 
 		$rejected = self::kind_state_failure( $state->kind_state );
 		if ( null !== $rejected ) {
@@ -551,6 +554,7 @@ final readonly class RunStore {
 	 *     action_sequence: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
+	 *     priority?: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>},
 	 *     previous_completed_run_id?: string,
@@ -577,6 +581,9 @@ final readonly class RunStore {
 				'fire_at'  => $state->pending->fire_at,
 				'priority' => $state->pending->priority,
 			);
+		} elseif ( 10 !== $state->priority ) {
+			// A retained descriptor owns the canonical wire priority; pendingless non-default runs need separate provenance.
+			$option['priority'] = $state->priority;
 		}
 		if ( null !== $state->error ) {
 			$option['error'] = $state->error;
@@ -652,7 +659,7 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], kind_state: $value['kind_state'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, );
+		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], kind_state: $value['kind_state'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, priority: $value['priority'] ?? null, );
 	}
 
 	/**
@@ -674,6 +681,7 @@ final readonly class RunStore {
 	 *     action_sequence: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
+	 *     priority?: int,
 	 *     pending?: StoredPendingAction,
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>},
 	 *     previous_completed_run_id?: string,
@@ -700,6 +708,16 @@ final readonly class RunStore {
 			|| ! \is_int( $value['action_sequence'] ?? null )
 			|| ! \is_int( $value['created_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
+			|| (
+				\array_key_exists( 'priority', $value )
+				&& (
+					! \is_int( $value['priority'] )
+					|| 0 > $value['priority']
+					|| Dispatcher::MAX_PRIORITY < $value['priority']
+					|| 10 === $value['priority']
+					|| \array_key_exists( 'pending', $value )
+				)
+			)
 			|| ( \array_key_exists( 'pending', $value ) && ! self::is_stored_pending( $value['pending'] ) )
 			|| ( \array_key_exists( 'error', $value ) && ! self::is_stored_error( $value['error'] ) )
 			|| ( \array_key_exists( 'previous_completed_run_id', $value ) && ! \is_string( $value['previous_completed_run_id'] ) )
@@ -773,6 +791,8 @@ final readonly class RunStore {
 			|| ! \array_key_exists( 'fire_at', $value )
 			|| ( null !== $value['fire_at'] && ! \is_int( $value['fire_at'] ) )
 			|| ! \is_int( $value['priority'] ?? null )
+			|| 0 > $value['priority']
+			|| Dispatcher::MAX_PRIORITY < $value['priority']
 		) {
 			return false;
 		}

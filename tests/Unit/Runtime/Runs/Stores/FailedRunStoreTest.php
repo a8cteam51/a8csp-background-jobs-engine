@@ -17,12 +17,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -180,7 +182,7 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertIsArray( $persisted );
 		$entry = $persisted[0] ?? null;
 		self::assertIsArray( $entry );
-		self::assertSame( array( 'run_id', 'kind', 'failed_at', 'start_args', 'attempts', 'error' ), \array_keys( $entry ) );
+		self::assertSame( array( 'run_id', 'kind', 'failed_at', 'start_args', 'priority', 'attempts', 'error' ), \array_keys( $entry ) );
 		self::assertSame( 'job', $entry['kind'] ?? null );
 		$stored = $this->store()->all();
 		self::assertInstanceOf( Success::class, $stored );
@@ -188,6 +190,120 @@ final class FailedRunStoreTest extends TestCase {
 		$hydrated = $stored->value[0] ?? null;
 		self::assertIsArray( $hydrated );
 		self::assertSame( 'job', $hydrated['kind'] ?? null );
+	}
+
+	/**
+	 * A terminal failure retains the admitted scheduler priority for manual retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_failure_retains_the_admitted_priority(): void {
+		$this->fail_job( array( 'scope' => 'priority-retention' ), 7, 42 );
+
+		$persisted = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $persisted );
+		$entry = $persisted[0] ?? null;
+		self::assertIsArray( $entry );
+		self::assertSame( 42, $entry['priority'] ?? null );
+		$stored = $this->store()->all();
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertIsArray( $stored->value );
+		$hydrated = $stored->value[0] ?? null;
+		self::assertIsArray( $hydrated );
+		self::assertSame( 42, $hydrated['priority'] ?? null );
+	}
+
+	/**
+	 * A retained row written before priority persistence hydrates at the engine default for manual retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_legacy_entry_without_priority_hydrates_the_engine_default(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+		$value   = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $value );
+		self::assertIsArray( $value[0] ?? null );
+		unset( $value[0]['priority'] );
+		$raw = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+		$this->put_fixture( array( $fixture[0], $raw ) );
+
+		$stored = $this->store()->all();
+
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertIsArray( $stored->value );
+		$hydrated = $stored->value[0] ?? null;
+		self::assertIsArray( $hydrated );
+		self::assertSame( 10, $hydrated['priority'] ?? null );
+	}
+
+	/**
+	 * Out-of-range retained priorities are unreadable and cannot reach fresh admission.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $priority Persisted priority outside the admitted scheduler range.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'out_of_range_priorities' )]
+	public function test_out_of_range_persisted_priorities_cannot_reach_retry( int $priority ): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+		$value   = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $value );
+		self::assertIsArray( $value[0] ?? null );
+		$value[0]['priority'] = $priority;
+		$raw                  = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+		$this->put_fixture( array( $fixture[0], $raw ) );
+		$this->rig->backend()->calls = array();
+
+		$stored  = $this->store()->all();
+		$retried = $this->client->retry_failed( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertSame( array(), $stored->value );
+		self::assertInstanceOf( Failure::class, $retried );
+		self::assertInstanceOf( BoundaryError::class, $retried->error );
+		self::assertSame( ErrorCode::RunNotRetained, $retried->error->code );
+		self::assertSame( array(), $this->rig->backend()->calls );
+	}
+
+	/**
+	 * Manual retry reuses the terminal failure's retained scheduler priority.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_reuses_retained_priority_for_delivery_and_pending_state(): void {
+		$failed                         = $this->fail_job( array( 'scope' => 'priority-retry' ), 7, 42 );
+		$this->job->throwable           = null;
+		$this->rig->clock()->timestamp  = self::NOW + 1;
+		$this->rig->randomizer()->value = 8;
+		$this->rig->backend()->calls    = array();
+
+		$retried = $this->client->retry_failed( self::NAME, $failed );
+
+		self::assertInstanceOf( Success::class, $retried );
+		self::assertInstanceOf( Run::class, $retried->value );
+		$deliveries = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] ) );
+		self::assertCount( 1, $deliveries );
+		self::assertSame( 42, $deliveries[0]['args']['priority'] ?? null );
+		$run_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . (string) $retried->value->id;
+		$run        = \get_option( $run_option );
+		self::assertIsArray( $run );
+		$pending = $run['pending'] ?? null;
+		self::assertIsArray( $pending );
+		self::assertSame( 42, $pending['priority'] ?? null );
 	}
 
 	/**
@@ -674,6 +790,25 @@ final class FailedRunStoreTest extends TestCase {
 
 	// endregion.
 
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies persisted priorities immediately outside both inclusive admission boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{priority: int}>
+	 */
+	public static function out_of_range_priorities(): array {
+		return array(
+			'below minimum' => array( 'priority' => -1 ),
+			'above maximum' => array( 'priority' => 256 ),
+		);
+	}
+
+	// endregion.
+
 	// region HELPERS.
 
 	/**
@@ -684,12 +819,13 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @param   array<array-key, mixed> $args       Job arguments.
 	 * @param   int                     $randomness Deterministic run-id entropy.
+	 * @param   int|null                $priority   Advisory scheduler priority, or null for the engine default.
 	 *
 	 * @return  string
 	 */
-	private function fail_job( array $args, int $randomness ): string {
+	private function fail_job( array $args, int $randomness, ?int $priority = null ): string {
 		$this->rig->randomizer()->value = $randomness;
-		$result                         = $this->client->dispatch( self::NAME, $args );
+		$result                         = $this->client->dispatch( self::NAME, $args, priority: $priority );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertInstanceOf( Run::class, $result->value );
 		$this->rig->run_due();
@@ -709,7 +845,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @param   array<array-key, mixed> $start_args Original run arguments.
 	 * @param   string                  $summary    Failure summary.
 	 *
-	 * @return  array{kind: string, failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
+	 * @return  array{kind: string, failed_at: int, start_args: array<array-key, mixed>, priority: int, failure: RunFailure, error: EngineError}
 	 */
 	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
 		$wire_id = null === RunId::tryFrom( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
@@ -719,6 +855,7 @@ final class FailedRunStoreTest extends TestCase {
 			'kind'       => 'job',
 			'failed_at'  => $failed_at,
 			'start_args' => $start_args,
+			'priority'   => 10,
 			'failure'    => $failure,
 			'error'      => new EngineError( $summary ),
 		);
@@ -744,12 +881,12 @@ final class FailedRunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{kind: string, failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError} $entry Failed-run request.
+	 * @param   array{kind: string, failed_at: int, start_args: array<array-key, mixed>, priority: int, failure: RunFailure, error: EngineError} $entry Failed-run request.
 	 *
 	 * @return  bool
 	 */
 	private function record_entry( array $entry ): bool {
-		return $this->store()->record( (string) $entry['failure']->run_id, $entry['kind'], $entry['failed_at'], $entry['start_args'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
+		return $this->store()->record( (string) $entry['failure']->run_id, $entry['kind'], $entry['failed_at'], $entry['start_args'], $entry['priority'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
 	}
 
 	/**

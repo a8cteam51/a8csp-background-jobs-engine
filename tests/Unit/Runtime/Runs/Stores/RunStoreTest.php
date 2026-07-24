@@ -708,6 +708,76 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * Priority provenance uses the pending descriptor or one pendingless top-level field, never both.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale A single canonical representation keeps typed-state compare-and-swap bytes stable while preserving priority after successor removal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_priority_provenance_uses_one_canonical_wire_location(): void {
+		$pending_state   = $this->state()->with_pending( PendingAction::async( 'run', 42 ) );
+		$pending_fixture = $this->fixtures->run( self::RUN_ID, $pending_state );
+		$pending_row     = \maybe_unserialize( $pending_fixture[1] );
+		self::assertIsArray( $pending_row );
+		self::assertArrayNotHasKey( 'priority', $pending_row );
+		$stored_pending = $pending_row['pending'] ?? null;
+		self::assertIsArray( $stored_pending );
+		self::assertSame( 42, $stored_pending['priority'] ?? null );
+		$this->put_fixture( $pending_fixture );
+		$pending_inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $pending_inspected );
+		self::assertIsArray( $pending_inspected->value );
+		self::assertInstanceOf( RunState::class, $pending_inspected->value['state'] );
+		self::assertSame( 42, $pending_inspected->value['state']->priority );
+
+		$pendingless_fixture = $this->fixtures->run( self::RUN_ID, $pending_state->with_pending( null ) );
+		$pendingless_row     = \maybe_unserialize( $pendingless_fixture[1] );
+		self::assertIsArray( $pendingless_row );
+		self::assertArrayNotHasKey( 'pending', $pendingless_row );
+		self::assertSame( 42, $pendingless_row['priority'] ?? null );
+		$this->put_fixture( $pendingless_fixture );
+		$pendingless_inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $pendingless_inspected );
+		self::assertIsArray( $pendingless_inspected->value );
+		self::assertInstanceOf( RunState::class, $pendingless_inspected->value['state'] );
+		self::assertSame( 42, $pendingless_inspected->value['state']->priority );
+	}
+
+	/**
+	 * A redundant top-level priority is corrupt raw evidence.
+	 *
+	 * @return  void
+	 */
+	public function test_redundant_priority_representation_never_hydrates(): void {
+		$pending_fixture   = $this->fixtures->run( self::RUN_ID, $this->state()->with_pending( PendingAction::async( 'run', 42 ) ) );
+		$pending_row       = \maybe_unserialize( $pending_fixture[1] );
+		$pendingless_state = $this->state()->with_pending( null );
+		$default_fixture   = $this->fixtures->run( self::RUN_ID, $pendingless_state );
+		$default_row       = \maybe_unserialize( $default_fixture[1] );
+		self::assertIsArray( $pending_row );
+		self::assertIsArray( $default_row );
+		$pending_row['priority'] = 42;
+		$default_row['priority'] = 10;
+
+		foreach ( array( $pending_row, $default_row ) as $stored ) {
+			$raw = \maybe_serialize( $stored );
+			self::assertIsString( $raw );
+			$this->rig->wpdb()->put( $pending_fixture[0], $raw );
+
+			$inspected = $this->store()->inspect( self::RUN_ID );
+
+			self::assertInstanceOf( Success::class, $inspected );
+			self::assertIsArray( $inspected->value );
+			self::assertSame( $raw, $inspected->value['raw'] ?? null );
+			self::assertNull( $inspected->value['state'] ?? null );
+		}
+	}
+
+	/**
 	 * Grammar-valid stages round-trip independently of scheduler mode.
 	 *
 	 * @load-bearing durability

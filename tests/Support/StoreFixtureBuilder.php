@@ -184,7 +184,7 @@ final readonly class StoreFixtureBuilder {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
 				$store   = new RunStore( (string) $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
-				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending );
+				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending, $state->priority );
 				if ( ! $created instanceof RunState ) {
 					throw new \LogicException( 'Production RunStore rejected an isolated active-run fixture.' );
 				}
@@ -212,16 +212,18 @@ final readonly class StoreFixtureBuilder {
 	 * @param   RunFailure              $failure    Client failure payload.
 	 * @param   EngineError|null        $error      Internal failure detail.
 	 * @param   string                  $kind       Persisted run kind.
+	 * @param   int                     $priority   Admitted scheduler priority.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function failed( int $failed_at, array $start_args, RunFailure $failure, ?EngineError $error = null, string $kind = 'job' ): array {
+	public function failed( int $failed_at, array $start_args, RunFailure $failure, ?EngineError $error = null, string $kind = 'job', int $priority = 10 ): array {
 		return $this->failed_runs(
 			array(
 				array(
 					'kind'       => $kind,
 					'failed_at'  => $failed_at,
 					'start_args' => $start_args,
+					'priority'   => $priority,
 					'failure'    => $failure,
 					'error'      => $error,
 				),
@@ -239,6 +241,7 @@ final readonly class StoreFixtureBuilder {
 	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
+	 *     priority?: int,
 	 *     failure: RunFailure,
 	 *     error?: EngineError|null
 	 * }> $entries
@@ -258,7 +261,7 @@ final readonly class StoreFixtureBuilder {
 				foreach ( $entries as $entry ) {
 					$failure = $entry['failure'];
 					$error   = $entry['error'] ?? null;
-					if ( ! $store->record( (string) $failure->run_id, $entry['kind'], $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
+					if ( ! $store->record( (string) $failure->run_id, $entry['kind'], $entry['failed_at'], $entry['start_args'], $entry['priority'] ?? 10, $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
 						throw new \LogicException( 'Production FailedRunStore rejected an isolated failed-run fixture.' );
 					}
 				}
@@ -826,6 +829,7 @@ final readonly class StoreFixtureBuilder {
 			&& $left->action_sequence === $right->action_sequence
 			&& $left->created_at === $right->created_at
 			&& $left->heartbeat_at === $right->heartbeat_at
+			&& $left->priority === $right->priority
 			&& ( $left->pending === $right->pending || ( null !== $left->pending && null !== $right->pending && $left->pending->stage === $right->pending->stage && $left->pending->mode === $right->pending->mode && $left->pending->fire_at === $right->pending->fire_at && $left->pending->priority === $right->pending->priority ) )
 			&& $left->error === $right->error
 			&& $left->previous_completed_run_id === $right->previous_completed_run_id

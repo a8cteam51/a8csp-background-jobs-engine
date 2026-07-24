@@ -22,6 +22,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
@@ -1489,6 +1490,54 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * A processed-chunk failure retains retry priority without persisting a replayable successor.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale The committed post-chunk Running snapshot must remain pendingless across a crash while carrying priority provenance into retention and manual retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_processed_chunk_failure_retains_priority_without_persisting_a_replayable_successor(): void {
+		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ), 42 );
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ): void {
+			$context->append_chunk( array( 'chunk' => 'committed' ) );
+		};
+		$this->set_filter_value(
+			'a8csp_bgje/continue_delay',
+			static function (): never {
+				throw new \DomainException( 'Continue-delay filter exploded.' );
+			}
+		);
+
+		$this->rig->run_due();
+
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), null );
+		$intermediate = $this->recorded_pendingless_running_state();
+		self::assertSame( array( array( 'chunk' => 'committed' ) ), $intermediate['kind_state'] ?? null );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+		$retained = $this->decoded_row( FailedRunStore::OPTION_PREFIX . self::IDENTITY );
+		self::assertIsArray( $retained );
+		self::assertIsArray( $retained[0] ?? null );
+		$retained_priority = $retained[0]['priority'] ?? null;
+		$this->set_filter_value( 'a8csp_bgje/continue_delay', 30 );
+		$this->rig->clock()->timestamp  = self::NOW + 1;
+		$this->rig->randomizer()->value = 43;
+		$this->rig->backend()->calls    = array();
+		$retried                        = $this->client->retry_failed( self::NAME, self::RUN_ID );
+		self::assertInstanceOf( Success::class, $retried );
+		self::assertInstanceOf( Run::class, $retried->value );
+		$retry_call = $this->single_call_for_hook( ActionDeliveries::DELIVER_HOOK );
+
+		self::assertSame(
+			array( 42, 42, 42 ),
+			array( $intermediate['priority'] ?? null, $retained_priority, $retry_call['args']['priority'] ?? null )
+		);
+	}
+
+	/**
 	 * Ownership loss in the continue-delay filter prevents successor scheduling.
 	 *
 	 * @load-bearing concurrency
@@ -2263,6 +2312,41 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$value = $this->decoded_row( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 
 		return \is_array( $value ) ? $value : null;
+	}
+
+	/**
+	 * Returns the committed post-chunk Running snapshot that carries no successor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private function recorded_pendingless_running_state(): array {
+		$events = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
+		self::assertIsArray( $events );
+		$run_option = 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID;
+		foreach ( $events as $event ) {
+			if (
+				! \is_array( $event )
+				|| 'update' !== ( $event['operation'] ?? null )
+				|| ( $event['key'] ?? null ) !== $run_option
+			) {
+				continue;
+			}
+
+			$state = \maybe_unserialize( $event['raw'] ?? null );
+			if (
+				\is_array( $state )
+				&& 'running' === ( $state['status'] ?? null )
+				&& false === ( $state['executing'] ?? null )
+				&& ! \array_key_exists( 'pending', $state )
+			) {
+				return $state;
+			}
+		}
+
+		self::fail( 'Chunk processing never persisted a pendingless Running snapshot.' );
 	}
 
 	/**

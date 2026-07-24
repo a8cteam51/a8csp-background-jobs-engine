@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
@@ -108,6 +109,7 @@ final readonly class FailedRunStore {
 	 * @param   string                  $kind       Persisted run kind.
 	 * @param   int                     $failed_at  Failure timestamp.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   int                     $priority   Admitted scheduler priority.
 	 * @param   int                     $attempts   Attempts consumed before failure.
 	 * @param   EngineError             $error      Persisted failure detail.
 	 * @param   RunFailure              $failure    Client terminal-failure value.
@@ -118,7 +120,7 @@ final readonly class FailedRunStore {
 	 * @return  bool True when the failed-run entry is already present or confirmed persisted.
 	 */
 	#[\NoDiscard( 'a failed-run persistence outcome must be handled, not dropped' )]
-	public function record( string $run_id, string $kind, int $failed_at, array $start_args, int $attempts, EngineError $error, RunFailure $failure ): bool {
+	public function record( string $run_id, string $kind, int $failed_at, array $start_args, int $priority, int $attempts, EngineError $error, RunFailure $failure ): bool {
 		$key = $this->option_name();
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( $key );
@@ -148,6 +150,7 @@ final readonly class FailedRunStore {
 				'kind'       => $kind,
 				'failed_at'  => $failed_at,
 				'start_args' => $start_args,
+				'priority'   => $priority,
 				'attempts'   => $attempts,
 				'error'      => $error_detail,
 			);
@@ -192,6 +195,7 @@ final readonly class FailedRunStore {
 	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
+	 *     priority: int,
 	 *     attempts: int,
 	 *     error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 * }>, EngineError>
@@ -222,6 +226,7 @@ final readonly class FailedRunStore {
 	 *         kind: string,
 	 *         failed_at: int,
 	 *         start_args: array<array-key, mixed>,
+	 *         priority: int,
 	 *         attempts: int,
 	 *         error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 *     }>,
@@ -433,6 +438,7 @@ final readonly class FailedRunStore {
 	 *         kind: string,
 	 *         failed_at: int,
 	 *         start_args: array<array-key, mixed>,
+	 *         priority: int,
 	 *         attempts: int,
 	 *         error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 *     }>,
@@ -544,6 +550,7 @@ final readonly class FailedRunStore {
 	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
+	 *     priority: int,
 	 *     attempts: int,
 	 *     error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 * }|null
@@ -557,6 +564,14 @@ final readonly class FailedRunStore {
 			|| ! \is_int( $value['failed_at'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
 			|| ! PortableArguments::is_valid( $value['start_args'] )
+			|| (
+				\array_key_exists( 'priority', $value )
+				&& (
+					! \is_int( $value['priority'] )
+					|| 0 > $value['priority']
+					|| Dispatcher::MAX_PRIORITY < $value['priority']
+				)
+			)
 			|| ! \is_int( $value['attempts'] ?? null )
 			|| ! \is_array( $value['error'] ?? null )
 			|| ! \array_key_exists( 'class', $value['error'] )
@@ -599,6 +614,7 @@ final readonly class FailedRunStore {
 			'kind'       => $value['kind'],
 			'failed_at'  => $value['failed_at'],
 			'start_args' => $value['start_args'],
+			'priority'   => $value['priority'] ?? 10,
 			'attempts'   => $value['attempts'],
 			'error'      => $error_detail,
 		);

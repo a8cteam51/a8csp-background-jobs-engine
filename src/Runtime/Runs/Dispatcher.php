@@ -250,7 +250,7 @@ final readonly class Dispatcher {
 			return $args_hash;
 		}
 		$retry_overlap = OverlapPolicy::Allow === ( $options->overlap ?? OverlapPolicy::Reject ) ? OverlapPolicy::Allow : OverlapPolicy::Reject;
-		$result        = $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $entry['start_args'], 0, 10, $retry_overlap, resolved_args_hash: $args_hash ) );
+		$result        = $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $entry['start_args'], 0, $entry['priority'], $retry_overlap, resolved_args_hash: $args_hash ) );
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
 				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
@@ -394,7 +394,7 @@ final readonly class Dispatcher {
 		if ( null === $resolved_args_hash ) {
 			$args_hash = $this->overlap_identity->resolve( $kind, $identity, $options, $args );
 			if ( $args_hash instanceof Failure && $terminalize_overlap_key_failure && EngineErrorReason::ExecutionFailed === $args_hash->error->reason ) {
-				return $this->terminalize_overlap_key_failure( $handler, $identity, $args, $args_hash->error, $on_accepted );
+				return $this->terminalize_overlap_key_failure( $handler, $identity, $args, $priority, $args_hash->error, $on_accepted );
 			}
 		} else {
 			$args_hash = $resolved_args_hash;
@@ -562,12 +562,13 @@ final readonly class Dispatcher {
 	 * @param   KindHandlerInterface    $handler     Resolved kind handler.
 	 * @param   Identity                $identity    Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args        Start arguments.
+	 * @param   int                     $priority    Admitted scheduler priority.
 	 * @param   EngineError             $error       Resolver rejection detail.
 	 * @param   \Closure|null           $on_accepted Callback after run creation and before terminalization.
 	 *
 	 * @return  AbstractResult<string, EngineError>
 	 */
-	private function terminalize_overlap_key_failure( KindHandlerInterface $handler, Identity $identity, array $args, EngineError $error, ?\Closure $on_accepted ): AbstractResult {
+	private function terminalize_overlap_key_failure( KindHandlerInterface $handler, Identity $identity, array $args, int $priority, EngineError $error, ?\Closure $on_accepted ): AbstractResult {
 		$kind      = $handler->key();
 		$args_hash = $this->overlap_identity->canonical( $kind, $identity, $args );
 		if ( $args_hash instanceof Failure ) {
@@ -590,7 +591,7 @@ final readonly class Dispatcher {
 		}
 
 		$run_store = $this->stores->run_store( $identity );
-		$state     = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ) );
+		$state     = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), priority: $priority );
 		if ( $state instanceof Failure ) {
 			$this->overlap_guard->release( $identity, $args_hash, $run_id );
 
@@ -654,7 +655,7 @@ final readonly class Dispatcher {
 	 */
 	private function create_run_state_and_take_over_if_contended( KindHandlerInterface $handler, Identity $identity, string $run_id, array $args, string $args_hash, LockClaimResult $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): array|Failure {
 		$kind  = $handler->key();
-		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $scheduled_at, $delay, $priority ) );
+		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $scheduled_at, $delay, $priority ), $priority );
 		if ( $state instanceof Failure ) {
 			if ( LockClaimOutcome::Claimed === $claim->outcome ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );

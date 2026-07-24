@@ -893,14 +893,39 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_terminal_failure_logs_once_for_the_winning_transition(): void {
-		$this->prepare_run_action();
+		$this->prepare_run_action( 42 );
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $run_store->get( self::RUN_ID );
 		self::assertNotNull( $state );
+		self::assertNotNull( $state->pending );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
 
 		$this->terminal_transitions->fail_run( $this->handler, $this->identity, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
 		$this->terminal_transitions->fail_run( $this->handler, $this->identity, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+
+		$failed_wire = null;
+		$events      = $GLOBALS['a8csp_bgje_test_lifecycle_events'] ?? null;
+		self::assertIsArray( $events );
+		foreach ( $events as $event ) {
+			if ( ! \is_array( $event ) || 'update' !== ( $event['operation'] ?? null ) || $this->run_option_name() !== ( $event['key'] ?? null ) ) {
+				continue;
+			}
+
+			$candidate = \maybe_unserialize( $event['raw'] ?? null );
+			if ( \is_array( $candidate ) && RunStatus::Failed->value === ( $candidate['status'] ?? null ) ) {
+				$failed_wire = $candidate;
+				break;
+			}
+		}
+		self::assertIsArray( $failed_wire );
+		self::assertIsArray( $failed_wire['pending'] ?? null );
+		self::assertSame( 42, $failed_wire['pending']['priority'] ?? null );
+		self::assertArrayNotHasKey( 'priority', $failed_wire );
+
+		$retained = $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY );
+		self::assertIsArray( $retained );
+		self::assertIsArray( $retained[0] ?? null );
+		self::assertSame( 42, $retained[0]['priority'] ?? null );
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );
@@ -1028,11 +1053,13 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Enqueues the deterministic run and clears enqueue observations before action handling.
 	 *
+	 * @param   int $priority Scheduler priority.
+	 *
 	 * @return  void
 	 */
-	private function prepare_run_action(): void {
+	private function prepare_run_action( int $priority = 10 ): void {
 		$this->register_job();
-		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS );
+		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS, priority: $priority );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->clock->timestamp       = self::NOW + 90;

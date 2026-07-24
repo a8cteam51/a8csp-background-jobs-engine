@@ -327,11 +327,12 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 		self::assertCount( 1, $failed_entries, 'Retry exhaustion must retain exactly one failed entry' );
 		$failed_entry = $failed_entries[0] ?? null;
 		self::assertIsArray( $failed_entry );
-		self::assertSame( array( 'run_id', 'kind', 'failed_at', 'start_args', 'attempts', 'error' ), \array_keys( $failed_entry ), 'The failed entry must contain exactly the manual-retry fields' );
+		self::assertSame( array( 'run_id', 'kind', 'failed_at', 'start_args', 'priority', 'attempts', 'error' ), \array_keys( $failed_entry ), 'The failed entry must contain exactly the manual-retry fields' );
 		self::assertSame( 'job', $failed_entry['kind'] ?? null );
 		self::assertSame( $failed_run_id, $failed_entry['run_id'] ?? null );
 		self::assertIsInt( $failed_entry['failed_at'] ?? null );
 		self::assertSame( $args, $failed_entry['start_args'] ?? null );
+		self::assertSame( 10, $failed_entry['priority'] ?? null );
 		self::assertSame( 2, $failed_entry['attempts'] ?? null, 'The failed entry must record the exhausted two-attempt cap' );
 		self::assertSame(
 			array(

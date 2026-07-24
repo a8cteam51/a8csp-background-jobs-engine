@@ -1831,7 +1831,7 @@ final class DispatcherTest extends TestCase {
 	 * @param   int                     $failed_at  Failure timestamp.
 	 * @param   string                  $kind       Persisted kind key.
 	 *
-	 * @return array{run_id: string, kind: string, failed_at: int, start_args: array<array-key, mixed>, attempts: int, error: array{class: null, message: string, stage: string, code: string}}
+	 * @return array{run_id: string, kind: string, failed_at: int, start_args: array<array-key, mixed>, priority: int, attempts: int, error: array{class: null, message: string, stage: string, code: string}}
 	 */
 	private function failed_entry( string $run_id, array $start_args, int $attempts, int $failed_at, string $kind = 'job' ): array {
 		return array(
@@ -1839,6 +1839,7 @@ final class DispatcherTest extends TestCase {
 			'kind'       => $kind,
 			'failed_at'  => $failed_at,
 			'start_args' => $start_args,
+			'priority'   => 10,
 			'attempts'   => $attempts,
 			'error'      => array(
 				'class'   => null,

@@ -15,6 +15,20 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInter
  * @version 1.0.0
  */
 final readonly class RunState {
+	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Scheduler priority admitted for the run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	public int $priority;
+
+	// endregion
+
 	// region MAGIC METHODS
 
 	/**
@@ -38,12 +52,16 @@ final readonly class RunState {
 	 * @param   int                     $action_sequence           Newest scheduled lifecycle action sequence.
 	 * @param   int                     $created_at                Creation timestamp.
 	 * @param   int                     $heartbeat_at              Latest liveness timestamp.
-	 * @param   PendingAction|null      $pending                   Durable successor delivery, or null when none exists.
+	 * @param   PendingAction|null      $pending                   Durable lifecycle-delivery descriptor, retained by some failed
+	 *                                                             terminal rows as retry-priority provenance, or null.
 	 * @param   array|null              $error                     Durable terminal failure detail, or null for non-failed runs.
 	 * @param   string|null             $previous_completed_run_id Previous completed run identifier frozen for completion delivery, or null.
 	 * @param   array                   $effects                   Completed terminal effect keys in execution order.
+	 * @param   int|null                $priority                  Admitted scheduler priority, or null to derive it from the pending
+	 *                                                             descriptor or engine default.
 	 *
-	 * @throws  \InvalidArgumentException When the kind key is lexically malformed or the action sequence is negative.
+	 * @throws  \InvalidArgumentException When the kind key or priority is invalid, the pending priority disagrees, or the action
+	 *                                    sequence is negative.
 	 */
 	public function __construct(
 		public RunStatus $status,
@@ -60,6 +78,7 @@ final readonly class RunState {
 		public ?array $error = null,
 		public ?string $previous_completed_run_id = null,
 		public array $effects = array(),
+		?int $priority = null,
 	) {
 		if ( 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $kind ) ) {
 			throw new \InvalidArgumentException( 'Run state requires a grammar-valid kind key.' );
@@ -67,6 +86,12 @@ final readonly class RunState {
 		if ( 0 > $action_sequence ) {
 			throw new \InvalidArgumentException( 'Run state requires a non-negative action sequence.' );
 		}
+		$priority = self::validated_priority( $priority ?? $pending->priority ?? 10 );
+		if ( null !== $pending && $priority !== $pending->priority ) {
+			throw new \InvalidArgumentException( 'Run state priority must match its pending delivery priority.' );
+		}
+
+		$this->priority = $priority;
 	}
 
 	// endregion
@@ -167,17 +192,25 @@ final readonly class RunState {
 	}
 
 	/**
-	 * Returns a copy with the supplied durable successor delivery.
+	 * Returns a copy with the supplied durable lifecycle-delivery descriptor.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   PendingAction|null $pending Durable successor delivery, or null when none exists.
+	 * @param   PendingAction|null $pending Durable lifecycle-delivery descriptor, retained by some failed terminal rows as
+	 *                                      retry-priority provenance, or null.
+	 *
+	 * @throws  \InvalidArgumentException When the pending priority is outside the admitted range.
 	 *
 	 * @return  self
 	 */
 	public function with_pending( ?PendingAction $pending ): self {
-		return clone( $this, array( 'pending' => $pending ) );
+		$properties = array( 'pending' => $pending );
+		if ( null !== $pending ) {
+			$properties['priority'] = self::validated_priority( $pending->priority );
+		}
+
+		return clone( $this, $properties );
 	}
 
 	/**
@@ -238,6 +271,23 @@ final readonly class RunState {
 	 */
 	public function with_heartbeat_at( int $heartbeat_at ): self {
 		return clone( $this, array( 'heartbeat_at' => $heartbeat_at ) );
+	}
+
+	/**
+	 * Returns one priority inside the admitted scheduler range.
+	 *
+	 * @param   int $priority Scheduler priority.
+	 *
+	 * @throws  \InvalidArgumentException When the priority is outside the admitted range.
+	 *
+	 * @return  int
+	 */
+	private static function validated_priority( int $priority ): int {
+		if ( 0 > $priority || Dispatcher::MAX_PRIORITY < $priority ) {
+			throw new \InvalidArgumentException( \sprintf( 'Run state priority must be from 0 through %d.', Dispatcher::MAX_PRIORITY ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		return $priority;
 	}
 
 	// endregion

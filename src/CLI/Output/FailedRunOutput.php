@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
  *     kind: string,
  *     failed_at: int,
  *     start_args: array<array-key, mixed>,
+ *     priority: int,
  *     attempts: int,
  *     error: array{
  *         class: string|null,

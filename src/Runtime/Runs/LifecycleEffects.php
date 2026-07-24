@@ -409,7 +409,7 @@ final readonly class LifecycleEffects {
 			throw new \LogicException( 'Failed-run retention requires persisted terminal failure detail.' );
 		}
 
-		$retained = $this->stores->failed_run_store( $identity )->record( $run_id, $state->kind, $state->heartbeat_at, $state->start_args, $failure_detail['failure']->attempts, $failure_detail['error'], $failure_detail['failure'] );
+		$retained = $this->stores->failed_run_store( $identity )->record( $run_id, $state->kind, $state->heartbeat_at, $state->start_args, $state->priority, $failure_detail['failure']->attempts, $failure_detail['error'], $failure_detail['failure'] );
 		if ( $retained ) {
 			return true;
 		}
