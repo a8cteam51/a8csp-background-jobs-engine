@@ -12,7 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Internal facade for schedule operations and retained-run inspection, retry, and cancellation.
+ * Internal facade for schedule operations and retained-run retry and cancellation.
  *
  * @internal
  *
@@ -30,32 +30,15 @@ final readonly class EngineFacade {
 	 *
 	 * @param   ScheduleOperations $schedules  Schedule API.
 	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
-	 * @param   Inspection         $inspection Read-only run inspection.
 	 */
 	public function __construct(
 		public ScheduleOperations $schedules,
 		private Dispatcher $dispatcher,
-		private Inspection $inspection,
 	) {}
 
 	// endregion
 
 	// region METHODS
-
-	/**
-	 * Returns the last completed run ID retained for one background-work identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
-	 *
-	 * @return  AbstractResult<string|null, EngineError>
-	 */
-	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
-	public function last_completed_run_id( Identity $identity ): AbstractResult {
-		return $this->inspection->last_completed_run_id( $identity );
-	}
 
 	/**
 	 * Starts a fresh run from one retained failed run's original arguments.

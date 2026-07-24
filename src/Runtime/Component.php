@@ -229,7 +229,7 @@ final class Component extends AbstractComponent {
 			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
 			$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $option_rows, $lock_windows, $clock );
-			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
+			$engine               = new EngineFacade( $schedule_api, $dispatcher );
 
 			$this->action_deliveries    = $action_deliveries;
 			$this->occurrence_delivery  = $occurrence_delivery;

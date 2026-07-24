@@ -1027,6 +1027,8 @@ final readonly class Dispatcher {
 	 * @return  void
 	 */
 	private function roll_back_admitted_run( Identity $identity, string $args_hash, string $run_id, RunState $expected, RunStore $run_store ): void {
+		// Same-second dispatch or clock rollback can repeat the timestamp, but a rollback ABA also
+		// requires the 63-bit suffix and complete provisional state to match, making the residual negligible.
 		$run_deleted = $run_store->delete_if_unchanged( $run_id, $expected );
 		// A changed run generation keeps its overlap fence; only this exact provisional row authorizes lock cleanup.
 		$lock_release_confirmed = $run_deleted

@@ -435,7 +435,7 @@ final class EngineRig {
 		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $this->clock );
-		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
+		$engine               = new EngineFacade( $schedule_api, $dispatcher );
 
 		self::publish_component( $engine, $inspection, $lock_repair, $scheduler, $registry, $schedule_api, $dispatcher );
 		$scheduler->register_hooks();

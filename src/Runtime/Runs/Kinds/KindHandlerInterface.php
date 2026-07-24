@@ -92,6 +92,9 @@ interface KindHandlerInterface {
 	/**
 	 * Returns whether this handler owns one persisted lifecycle stage.
 	 *
+	 * Each handler keeps this predicate synchronized with its `deliver()` stages by hand; the stage
+	 * vocabulary gains a single authority at the handler SPI milestone, not before.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

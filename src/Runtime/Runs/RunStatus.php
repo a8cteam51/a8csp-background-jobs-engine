@@ -7,6 +7,9 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 /**
  * Lifecycle state persisted for a job or chunked job run.
  *
+ * `Run\RunStatus` mirrors every case in this persisted vocabulary because the public ABI lives in
+ * models, which do not import `src/` internals.
+ *
  * @internal
  *
  * @since   1.0.0

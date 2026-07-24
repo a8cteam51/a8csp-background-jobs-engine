@@ -246,6 +246,8 @@ final readonly class CleanupIntents {
 			return $this->clear_intent( $registration_key, $expected_raw );
 		}
 
+		// A concurrent sync can publish a registration after this read; its persisted fingerprint
+		// makes the next owner sync recreate any chain removed here.
 		$clearance = $this->scheduler->unschedule_for_convergence( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
 		$removed   = $clearance->result;
 		if ( $removed->is_failure() ) {

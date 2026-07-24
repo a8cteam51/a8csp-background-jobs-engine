@@ -403,7 +403,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new ScheduleOperations( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
 		$inspection           = new Inspection( $schedule_registry, $job_registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $clock );
-		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
+		$engine               = new EngineFacade( $schedules, $dispatcher );
 
 		$this->deterministic_inspection   = $inspection;
 		$this->deterministic_registry     = $schedule_registry;

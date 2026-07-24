@@ -164,6 +164,7 @@ An unanchored schedule first runs one interval after synchronization. An anchore
 `Job\JobDefinition::closure()` is the class-free authoring form. Its handler receives the invocation arguments and a typed `Job\RunContextInterface`.
 
 ```php
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 
@@ -193,7 +194,7 @@ function my_plugin_queue_digest( int $user_id ): void {
 		delay_seconds: 0
 	);
 	if ( is_wp_error( $run ) ) {
-		if ( 'overlap_held' === $run->get_error_code() ) {
+		if ( ErrorCode::OverlapHeld->value === $run->get_error_code() ) {
 			return;
 		}
 

@@ -152,9 +152,8 @@ final readonly class RunFailureStage {
 		 */
 		static $instances = array();
 
-		// The cache grows one entry per distinct grammar-valid stage read in a process; storage
-		// gates keep those to declared stage values, so growth is bounded by legitimate variety.
-		// Identity comparisons hold within one process — compare ->value across serialization.
+		// Process-local interning preserves identity comparisons for repeated stage values; comparisons
+		// across serialization use ->value.
 		return $instances[ $value ] ??= new self( $value );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
