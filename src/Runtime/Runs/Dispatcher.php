@@ -11,7 +11,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
@@ -337,7 +336,7 @@ final readonly class Dispatcher {
 			return new Failure( $cancellation_error );
 		}
 
-		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->unschedule_group( $identity . '|' . $run_id ) );
+		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->scheduler->unschedule_group( $identity . '|' . $run_id ) );
 		if ( $cancelled ) {
 			return new Success( $run_id );
 		}
@@ -1010,22 +1009,6 @@ final readonly class Dispatcher {
 	 */
 	private function cancel_executing( string $run_id ): Failure {
 		return new Failure( new EngineError( \sprintf( 'Run "%s" is executing; a run in flight completes or fails on its own.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), ) );
-	}
-
-	/**
-	 * Clears every pending action in one scheduler group.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $group Backend grouping label.
-	 *
-	 * @return  AbstractResult<true, SchedulingError>
-	 */
-	private function unschedule_group( string $group ): AbstractResult {
-		$scheduler = $this->scheduler instanceof SchedulerFacade ? $this->scheduler : new SchedulerFacade( array( $this->scheduler ) );
-
-		return $scheduler->unschedule_group( $group );
 	}
 
 	/**

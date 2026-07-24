@@ -364,7 +364,7 @@ final readonly class RunReconciliation {
 	 * @return  AbstractResult<null, EngineError>
 	 */
 	private function reconcile_terminal_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?array $failure_detail ): AbstractResult {
-		if ( $this->terminal_effects->replay_terminal_run( $identity, $run_id, $state, $expected_raw, $run_store, $failure_detail ) ) {
+		if ( $this->terminal_effects->execute_claimed_transition( $identity, $run_id, $state, $expected_raw, $run_store, $failure_detail ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(

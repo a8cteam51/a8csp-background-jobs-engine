@@ -116,6 +116,20 @@ final class RunStateTest extends TestCase {
 		$this->state( $kind );
 	}
 
+	/**
+	 * A negative lifecycle action sequence cannot enter typed run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_negative_action_sequence_is_rejected(): void {
+		$this->expectException( \InvalidArgumentException::class );
+
+		new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: 'hash', kind_state: array(), failed_attempts: 0, action_sequence: -1, created_at: 1, heartbeat_at: 1 );
+	}
+
 	// endregion.
 
 	// region DATA PROVIDERS.

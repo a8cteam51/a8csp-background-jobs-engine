@@ -15,20 +15,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInter
  * @version 1.0.0
  */
 final readonly class RunState {
-	// region FIELDS AND CONSTANTS
-
-	/**
-	 * Sequence number of the newest scheduled lifecycle action, which is the only delivery allowed to act.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	public int $action_sequence;
-
-	// endregion
-
 	// region MAGIC METHODS
 
 	/**
@@ -57,7 +43,7 @@ final readonly class RunState {
 	 * @param   string|null             $previous_completed_run_id Previous completed run identifier frozen for completion delivery, or null.
 	 * @param   array                   $effects                   Completed terminal effect keys in execution order.
 	 *
-	 * @throws  \InvalidArgumentException When the kind key is lexically malformed.
+	 * @throws  \InvalidArgumentException When the kind key is lexically malformed or the action sequence is negative.
 	 */
 	public function __construct(
 		public RunStatus $status,
@@ -67,7 +53,7 @@ final readonly class RunState {
 		public string $args_hash,
 		public array $kind_state,
 		public int $failed_attempts,
-		int $action_sequence,
+		public int $action_sequence,
 		public int $created_at,
 		public int $heartbeat_at,
 		public ?PendingAction $pending = null,
@@ -78,8 +64,9 @@ final readonly class RunState {
 		if ( 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $kind ) ) {
 			throw new \InvalidArgumentException( 'Run state requires a grammar-valid kind key.' );
 		}
-
-		$this->action_sequence = $action_sequence;
+		if ( 0 > $action_sequence ) {
+			throw new \InvalidArgumentException( 'Run state requires a non-negative action sequence.' );
+		}
 	}
 
 	// endregion
@@ -167,9 +154,15 @@ final readonly class RunState {
 	 *
 	 * @param   int $action_sequence Newest scheduled lifecycle action sequence.
 	 *
+	 * @throws  \InvalidArgumentException When the action sequence is negative.
+	 *
 	 * @return  self
 	 */
 	public function with_action_sequence( int $action_sequence ): self {
+		if ( 0 > $action_sequence ) {
+			throw new \InvalidArgumentException( 'Run state requires a non-negative action sequence.' );
+		}
+
 		return clone( $this, array( 'action_sequence' => $action_sequence ) );
 	}
 

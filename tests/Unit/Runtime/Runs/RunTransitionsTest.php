@@ -546,6 +546,24 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_terminal_history( 'cancelled' );
 	}
 
+	/** Dispatcher cancellation clears the run group through its plain backend dependency. */
+	public function test_dispatcher_cancel_clears_the_run_group_through_a_plain_backend(): void {
+		$this->prepare_run_action();
+
+		$result = $this->dispatcher->cancel( self::IDENTITY, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'unschedule_group',
+					'args' => array( 'group' => self::IDENTITY . '|' . self::RUN_ID ),
+				),
+			),
+			$this->backend->calls
+		);
+	}
+
 	/**
 	 * A successful retry clears the invocation's failed-attempt counter before completion.
 	 *

@@ -96,6 +96,19 @@ interface BackendInterface {
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult;
 
 	/**
+	 * Unschedules every pending action in one backend group.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $group Backend grouping label.
+	 *
+	 * @return  AbstractResult<true, SchedulingError> Success carrying true when every pending action in the group is confirmed absent from that backend's store.
+	 */
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_group( string $group ): AbstractResult;
+
+	/**
 	 * Unschedules every pending action for the supplied hooks, regardless of arguments or groups.
 	 *
 	 * @since   1.0.0

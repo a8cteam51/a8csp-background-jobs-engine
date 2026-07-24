@@ -145,7 +145,7 @@ final readonly class LifecycleEffects {
 	/**
 	 * Finishes an already-claimed terminal transition only after every required effect is marked.
 	 *
-	 * @internal Engine maintenance only.
+	 * @internal Engine terminalization and maintenance only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -159,35 +159,43 @@ final readonly class LifecycleEffects {
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
 	public function finish_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store ): bool {
-		return $this->finish_terminal_run( $identity, $run_id, $state, $terminal_raw, $run_store );
-	}
+		$this->overlap_guard->release( $identity, $state->args_hash, $run_id );
+		if ( array() !== \array_values( \array_diff( self::expected_effects( $state->status ), $state->effects ) ) ) {
+			return false;
+		}
 
-	/**
-	 * Replays missing effects for one already-claimed terminal transition and attempts its finish.
-	 *
-	 * @internal Engine maintenance only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
-	 *
-	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
-	 * @param   string     $run_id         Run identifier.
-	 * @param   RunState   $state          Terminal run state.
-	 * @param   string     $terminal_raw   Exact terminal snapshot bytes.
-	 * @param   RunStore   $run_store      Active-run store.
-	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
-	 *
-	 * @return  bool Whether the run option is confirmed absent.
-	 */
-	public function replay_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, ?array $failure_detail ): bool {
-		return $this->execute_claimed_transition( $identity, $run_id, $state, $terminal_raw, $run_store, $failure_detail );
+		if ( $run_store->delete_exact( $run_id, $terminal_raw ) ) {
+			return true;
+		}
+
+		$inspected = $run_store->inspect( $run_id );
+		if ( ! $inspected->is_failure() ) {
+			$snapshot = $inspected->value;
+			if ( null === $snapshot ) {
+				return true;
+			}
+			if ( $terminal_raw !== $snapshot['raw'] ) {
+				return false;
+			}
+		}
+
+		$this->logger->error(
+			'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
+			array(
+				'identity' => $identity,
+				'run_id'   => $run_id,
+				'status'   => $state->status->value,
+			)
+		);
+
+		return false;
 	}
 
 	/**
 	 * Executes and marks every missing effect before attempting terminal cleanup.
 	 *
+	 * @internal Engine terminalization and maintenance only.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -200,7 +208,8 @@ final readonly class LifecycleEffects {
 	 * @param   RunStore   $run_store      Active-run store.
 	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
 	 *
-	 * @throws  \Throwable When an effect fails; a trustworthy refreshed snapshot permits the remaining effects and gated finish before rethrow, while a failed refresh causes an immediate rethrow.
+	 * @throws  \LogicException When a refreshed outcome carries no trustworthy snapshot.
+	 * @throws  \Throwable      When an effect fails; a trustworthy refreshed snapshot permits the remaining effects and gated finish before rethrow, while a failed refresh causes an immediate rethrow.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
@@ -223,24 +232,24 @@ final readonly class LifecycleEffects {
 			} catch ( \Throwable $throwable ) {
 				$effect_failure ??= $throwable;
 				$refreshed        = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
-				if ( ! \is_array( $refreshed ) ) {
+				if ( TerminalSnapshotRefreshOutcome::Refreshed !== $refreshed->outcome ) {
 					throw $effect_failure;
 				}
 
-				$snapshot = $refreshed;
+				$snapshot = $refreshed->snapshot ?? throw new \LogicException( 'Only a refreshed terminal snapshot outcome carries trustworthy state.' );
 				continue;
 			}
 
 			if ( ! $landed ) {
 				$refreshed = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
-				if ( null === $refreshed ) {
+				if ( TerminalSnapshotRefreshOutcome::AlreadyFinished === $refreshed->outcome ) {
 					if ( null !== $effect_failure ) {
 						throw $effect_failure;
 					}
 
 					return true;
 				}
-				if ( false === $refreshed ) {
+				if ( TerminalSnapshotRefreshOutcome::Untrusted === $refreshed->outcome ) {
 					if ( null !== $effect_failure ) {
 						throw $effect_failure;
 					}
@@ -248,7 +257,7 @@ final readonly class LifecycleEffects {
 					return false;
 				}
 
-				$snapshot = $refreshed;
+				$snapshot = $refreshed->snapshot ?? throw new \LogicException( 'Only a refreshed terminal snapshot outcome carries trustworthy state.' );
 				continue;
 			}
 
@@ -264,7 +273,7 @@ final readonly class LifecycleEffects {
 			$snapshot = $updated;
 		}
 
-		$finished = $this->finish_terminal_run( $identity, $run_id, $snapshot['state'], $snapshot['raw'], $run_store );
+		$finished = $this->finish_claimed_transition( $identity, $run_id, $snapshot['state'], $snapshot['raw'], $run_store );
 		if ( null !== $effect_failure ) {
 			throw $effect_failure;
 		}
@@ -328,28 +337,25 @@ final readonly class LifecycleEffects {
 	 * @param   RunStatus $status    Claimed terminal status.
 	 * @param   RunStore  $run_store Active-run store.
 	 *
-	 * @return  array{raw: string, state: RunState}|false|null Current terminal snapshot, false when it cannot be trusted, or null when another worker finished it.
+	 * @return  TerminalSnapshotRefreshResult Classified terminal refresh and its trustworthy snapshot when present.
 	 */
-	private function refresh_terminal_snapshot( string $run_id, RunStatus $status, RunStore $run_store ): array|false|null {
+	private function refresh_terminal_snapshot( string $run_id, RunStatus $status, RunStore $run_store ): TerminalSnapshotRefreshResult {
 		$inspected = $run_store->inspect( $run_id );
 		if ( $inspected->is_failure() ) {
-			return false;
+			return TerminalSnapshotRefreshResult::untrusted();
 		}
 
 		$snapshot = $inspected->value;
 		if ( null === $snapshot ) {
-			return null;
+			return TerminalSnapshotRefreshResult::already_finished();
 		}
 
 		$state = $snapshot['state'];
 		if ( null === $state || $status !== $state->status ) {
-			return false;
+			return TerminalSnapshotRefreshResult::untrusted();
 		}
 
-		return array(
-			'raw'   => $snapshot['raw'],
-			'state' => $state,
-		);
+		return TerminalSnapshotRefreshResult::refreshed( $snapshot['raw'], $state );
 	}
 
 	/**
@@ -470,53 +476,6 @@ final readonly class LifecycleEffects {
 			array(
 				'identity' => $identity,
 				'run_id'   => $run_id,
-			)
-		);
-
-		return false;
-	}
-
-	/**
-	 * Releases owned overlap state and exact-deletes only a fully effected terminal row.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity     Complete owner-qualified job or chunked job identity.
-	 * @param   string   $run_id       Run identifier.
-	 * @param   RunState $state        Terminal run state.
-	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
-	 * @param   RunStore $run_store    Active-run store.
-	 *
-	 * @return  bool Whether the run option is confirmed absent.
-	 */
-	private function finish_terminal_run( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store ): bool {
-		$this->overlap_guard->release( $identity, $state->args_hash, $run_id );
-		if ( array() !== \array_values( \array_diff( self::expected_effects( $state->status ), $state->effects ) ) ) {
-			return false;
-		}
-
-		if ( $run_store->delete_exact( $run_id, $terminal_raw ) ) {
-			return true;
-		}
-
-		$inspected = $run_store->inspect( $run_id );
-		if ( ! $inspected->is_failure() ) {
-			$snapshot = $inspected->value;
-			if ( null === $snapshot ) {
-				return true;
-			}
-			if ( $terminal_raw !== $snapshot['raw'] ) {
-				return false;
-			}
-		}
-
-		$this->logger->error(
-			'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
-			array(
-				'identity' => $identity,
-				'run_id'   => $run_id,
-				'status'   => $state->status->value,
 			)
 		);
 

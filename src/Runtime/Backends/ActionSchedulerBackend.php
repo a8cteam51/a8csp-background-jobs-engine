@@ -195,6 +195,23 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * Action Scheduler treats an empty hook and argument list with a non-empty group as a group-wide
+	 * identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_group( string $group ): AbstractResult {
+		return $this->unschedule( '', array(), $group );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

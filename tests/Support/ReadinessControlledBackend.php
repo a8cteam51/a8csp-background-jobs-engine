@@ -63,6 +63,13 @@ final class ReadinessControlledBackend implements BackendInterface {
 	/** {@inheritDoc} */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_group( string $group ): AbstractResult {
+		return $this->backend->unschedule_group( $group );
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule_hooks( array $hooks ): AbstractResult {
 		return $this->backend->unschedule_hooks( $hooks );
 	}

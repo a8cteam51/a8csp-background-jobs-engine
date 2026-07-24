@@ -136,7 +136,7 @@ final class LifecycleEffectsTest extends TestCase {
 	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
 	/** Non-Failed terminal replay completes generic hooks and history without kind-owned context. */
-	public function test_replay_terminal_run_completes_non_failed_effects_without_failure_detail(): void {
+	public function test_execute_claimed_transition_replays_non_failed_effects_without_failure_detail(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = $run_store->get( self::RUN_ID );
@@ -144,7 +144,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$terminal     = $running->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
 
-		$finished = $this->terminal_effects->replay_terminal_run( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
 
 		self::assertTrue( $finished );
 		self::assertNull( $run_store->get( self::RUN_ID ) );
@@ -160,7 +160,7 @@ final class LifecycleEffectsTest extends TestCase {
 	}
 
 	/** Failed terminal replay consumes an already-resolved failure detail for retention and hooks. */
-	public function test_replay_terminal_run_records_failed_retention_with_resolved_failure_detail(): void {
+	public function test_execute_claimed_transition_replays_failed_retention_with_resolved_failure_detail(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = $run_store->get( self::RUN_ID );
@@ -177,7 +177,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $running, $terminal );
 		$failure_detail = $this->terminal_effects->resolve_failure_detail( self::IDENTITY, self::RUN_ID, $terminal, null );
 
-		$finished = $this->terminal_effects->replay_terminal_run( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail );
+		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail );
 
 		self::assertTrue( $finished );
 		self::assertNull( $run_store->get( self::RUN_ID ) );

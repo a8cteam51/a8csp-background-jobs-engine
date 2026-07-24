@@ -209,6 +209,23 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * WP-Cron stores no groups, so group-wide clearance has the same no-op semantics as a group-only
+	 * unschedule identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_group( string $group ): AbstractResult {
+		return $this->unschedule( '', array(), $group );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
