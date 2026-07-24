@@ -77,7 +77,7 @@ final readonly class EngineError implements ErrorInterface {
 	}
 
 	/**
-	 * Maps a scheduling failure to its client-visible availability classification.
+	 * Maps a scheduling failure to its client-visible classification.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -87,16 +87,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  ErrorCode
 	 */
 	public static function api_code_for_scheduling( SchedulingError $error ): ErrorCode {
-		if ( SchedulingErrorReason::BackendNotReady === $error->reason ) {
-			return ErrorCode::BackendUnavailable;
-		}
-
-		// Registry persistence failures classify as storage regardless of which path surfaces them.
-		if ( SchedulingErrorReason::StorageFailure === $error->reason ) {
-			return ErrorCode::StorageFailed;
-		}
-
-		return ErrorCode::BackendRejected;
+		return $error->reason->api_code();
 	}
 
 	/**

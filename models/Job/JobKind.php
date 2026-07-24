@@ -18,6 +18,9 @@ final readonly class JobKind {
 	/**
 	 * Lexical grammar shared by installed and prospective kind keys.
 	 *
+	 * The public-model copy mirrors `Runtime\Runs\Kinds\KindHandlerInterface::KEY_PATTERN` because
+	 * models do not import Runtime internals.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

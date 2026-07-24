@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInter
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
@@ -163,6 +164,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->wpdb                 = new WpdbLockSpy();
 		$this->rows                 = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
+		$overlap_identity           = new OverlapIdentity();
 		$stores                     = new StoreFactory( $this->clock, $this->rows, $this->logger );
 		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
@@ -171,7 +173,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->handler              = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
 		$this->handlers             = array( $this->handler->key() => $this->handler );
 
-		$this->dispatcher = new Dispatcher( $this->registry, $this->handlers, $this->backend, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
+		$this->dispatcher = new Dispatcher( $this->registry, $this->handlers, $this->backend, $guard, $overlap_identity, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
 	}
 
 	// endregion.

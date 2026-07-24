@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
@@ -193,6 +194,7 @@ final class Component extends AbstractComponent {
 			$clock                = new SystemClock();
 			$randomizer           = new Randomizer();
 			$guard                = new OverlapGuard( $clock, $logger, $option_rows );
+			$overlap_identity     = new OverlapIdentity();
 			$stores               = new StoreFactory( $clock, $option_rows, $logger );
 			$lock_windows         = new LockWindows( $clock, $logger );
 			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
@@ -212,7 +214,7 @@ final class Component extends AbstractComponent {
 				$chunked_job_handler->key() => $chunked_job_handler,
 			);
 			$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-			$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+			$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
 			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
@@ -223,7 +225,7 @@ final class Component extends AbstractComponent {
 			);
 			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
-			$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $stores, $option_rows, $lock_windows, $clock );
+			$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $option_rows, $lock_windows, $clock );
 			$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 			$this->action_deliveries    = $action_deliveries;

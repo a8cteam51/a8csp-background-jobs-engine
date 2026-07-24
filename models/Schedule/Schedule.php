@@ -18,6 +18,9 @@ final readonly class Schedule {
 	/**
 	 * Maximum encoded JSON bytes accepted for persisted arguments.
 	 *
+	 * The public-model copy mirrors `Runtime\OwnerOperations::MAX_ARGUMENTS_BYTES` because models do
+	 * not import `src/` internals.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -28,6 +31,9 @@ final readonly class Schedule {
 	/**
 	 * Maximum bytes accepted for an owner-local name.
 	 *
+	 * The public-model copy mirrors `Boundary\JobIdentity::NAME_MAX_BYTES` because models do not
+	 * import `src/` internals.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -37,6 +43,9 @@ final readonly class Schedule {
 
 	/**
 	 * Highest scheduler priority accepted by the schedule contract.
+	 *
+	 * The public-model copy mirrors `Runtime\Runs\Dispatcher::MAX_PRIORITY` because models do not
+	 * import `src/` internals.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -1365,6 +1365,30 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Failed-run retry preserves the established opaque overlap-identity bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_preserves_the_opaque_overlap_identity_bytes(): void {
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2 );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+		$resolver_calls                = 0;
+		$this->overlap_key_resolver    = static function ( array $args ) use ( &$resolver_calls ): string {
+			++$resolver_calls;
+
+			return "catalog\0\xFF";
+		};
+		$retried                       = $this->client->retry_failed( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $retried );
+		self::assertSame( 1, $resolver_calls );
+		self::assertArrayHasKey( OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_839bc2e28e961c09b79c9adbb7c53159e4a2a138e1dfe756247d9d45cf0a29e9', $this->rig->wpdb()->rows );
+	}
+
+	/**
 	 * Failed-run retry contains resolver failures without consuming the retained entry.
 	 *
 	 * @since   1.0.0

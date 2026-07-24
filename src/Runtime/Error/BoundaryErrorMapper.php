@@ -99,7 +99,7 @@ final class BoundaryErrorMapper {
 	 */
 	private static function error( EngineError|SchedulingError $error ): BoundaryError {
 		$code = $error instanceof SchedulingError
-			? self::scheduling_code( $error->reason )
+			? $error->reason->api_code()
 			: self::engine_code( $error );
 
 		return new BoundaryError( $code, $error->message, self::safe_context( $error->context ) );
@@ -133,27 +133,6 @@ final class BoundaryErrorMapper {
 			EngineErrorReason::RunNotCancellable    => ErrorCode::RunNotCancellable,
 			EngineErrorReason::UnsupportedOperation => ErrorCode::UnsupportedOperation,
 			EngineErrorReason::ExecutionFailed      => ErrorCode::ExecutionFailed,
-		};
-	}
-
-	/**
-	 * Returns one scheduling failure's public classification.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   SchedulingErrorReason $reason Internal scheduling failure reason.
-	 *
-	 * @return  ErrorCode
-	 */
-	private static function scheduling_code( SchedulingErrorReason $reason ): ErrorCode {
-		return match ( $reason ) {
-			SchedulingErrorReason::BackendNotReady => ErrorCode::BackendUnavailable,
-			SchedulingErrorReason::UnsupportedGroup => ErrorCode::UnsupportedOperation,
-			SchedulingErrorReason::InvalidTimeInput,
-			SchedulingErrorReason::InvalidPayload        => ErrorCode::PayloadRejected,
-			SchedulingErrorReason::ScheduleFailed        => ErrorCode::BackendRejected,
-			SchedulingErrorReason::StorageFailure        => ErrorCode::StorageFailed,
 		};
 	}
 

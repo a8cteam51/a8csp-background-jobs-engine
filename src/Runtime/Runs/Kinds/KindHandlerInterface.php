@@ -25,6 +25,9 @@ interface KindHandlerInterface {
 	/**
 	 * Lexical grammar for persisted kind and lifecycle stage keys.
 	 *
+	 * `Job\JobKind` and `Run\RunFailureStage` carry frozen public copies of this grammar; a change
+	 * here must be mirrored in both.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

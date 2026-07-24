@@ -20,6 +20,9 @@ final readonly class RunFailureStage {
 	/**
 	 * Lexical grammar for persisted kind and lifecycle stage keys.
 	 *
+	 * The public-model copy mirrors `Runtime\Runs\Kinds\KindHandlerInterface::KEY_PATTERN` because
+	 * models do not import Runtime internals.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

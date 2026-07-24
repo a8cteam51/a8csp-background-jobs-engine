@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
@@ -400,6 +401,7 @@ final class EngineRig {
 		$registry             = new JobRegistry();
 		$schedules            = new ScheduleRegistry( $rows, $this->logger );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $rows );
+		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $this->clock, $rows, $this->logger );
 		$lock_windows         = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
@@ -414,7 +416,7 @@ final class EngineRig {
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions );
 		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
@@ -427,7 +429,7 @@ final class EngineRig {
 		);
 		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
+		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
 
 		self::publish_component( $engine, $inspection, $lock_repair, $scheduler, $registry, $schedule_api, $dispatcher );

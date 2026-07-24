@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
@@ -188,6 +189,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$registry             = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new Randomizer();
 		$guard                = new OverlapGuard( $clock, $logger, $rows );
+		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock, $logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
@@ -199,7 +201,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
 		$occurrence_lease     = new OccurrenceLease( $rows, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );

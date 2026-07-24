@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -23,6 +22,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
@@ -44,24 +44,17 @@ final readonly class Dispatcher {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Highest scheduler priority accepted by the orchestration API.
+	 * Highest scheduler priority accepted by run admission.
+	 *
+	 * `Schedule\Schedule::MAX_PRIORITY` mirrors this dispatch-owned limit because the frozen
+	 * public model keeps its constant private.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     int
 	 */
-	private const int MAX_PRIORITY = 255;
-
-	/**
-	 * Maximum bytes accepted from a custom overlap-key resolver.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_OVERLAP_KEY_BYTES = 64;
+	public const int MAX_PRIORITY = 255;
 
 	// endregion
 
@@ -79,6 +72,7 @@ final readonly class Dispatcher {
 	 * @param   array               $handlers             Kind handlers keyed by their persisted keys.
 	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
 	 * @param   OverlapGuard        $overlap_guard        Execution-overlap guard.
+	 * @param   OverlapIdentity     $overlap_identity     Stable single-flight identity resolver.
 	 * @param   StoreFactory        $stores               Name-bound store factory.
 	 * @param   ClockInterface      $clock                Timestamp source.
 	 * @param   RandomizerInterface $randomizer           Run identifier randomness.
@@ -91,6 +85,7 @@ final readonly class Dispatcher {
 		private array $handlers,
 		private BackendInterface $scheduler,
 		private OverlapGuard $overlap_guard,
+		private OverlapIdentity $overlap_identity,
 		private StoreFactory $stores,
 		private ClockInterface $clock,
 		private RandomizerInterface $randomizer,
@@ -248,11 +243,7 @@ final readonly class Dispatcher {
 			return $this->incompatible_kind_registration( $identity, $run_id, $kind, 'retrying this failed run' );
 		}
 
-		$overlap_key = $this->custom_overlap_key( $handler->key(), $identity, $options, $entry['start_args'] );
-		if ( $overlap_key instanceof Failure ) {
-			return $overlap_key;
-		}
-		$args_hash = $this->overlap_args_hash( $handler->key(), $identity, $entry['start_args'], $overlap_key );
+		$args_hash = $this->overlap_identity->resolve( $handler->key(), $identity, $options, $entry['start_args'] );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
@@ -399,13 +390,10 @@ final readonly class Dispatcher {
 		}
 
 		if ( null === $resolved_args_hash ) {
-			$overlap_key = $this->custom_overlap_key( $kind, $identity, $options, $args );
-			if ( $overlap_key instanceof Failure ) {
-				return $terminalize_overlap_key_failure
-					? $this->terminalize_overlap_key_failure( $handler, $identity, $args, $overlap_key->error, $on_accepted )
-					: $overlap_key;
+			$args_hash = $this->overlap_identity->resolve( $kind, $identity, $options, $args );
+			if ( $args_hash instanceof Failure && $terminalize_overlap_key_failure && EngineErrorReason::ExecutionFailed === $args_hash->error->reason ) {
+				return $this->terminalize_overlap_key_failure( $handler, $identity, $args, $args_hash->error, $on_accepted );
 			}
-			$args_hash = $this->overlap_args_hash( $kind, $identity, $args, $overlap_key );
 		} else {
 			$args_hash = $resolved_args_hash;
 		}
@@ -582,7 +570,7 @@ final readonly class Dispatcher {
 	 */
 	private function terminalize_overlap_key_failure( KindHandlerInterface $handler, string $identity, array $args, EngineError $error, ?\Closure $on_accepted ): AbstractResult {
 		$kind      = $handler->key();
-		$args_hash = $this->args_hash( $kind, $identity, $args );
+		$args_hash = $this->overlap_identity->canonical( $kind, $identity, $args );
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
@@ -1087,123 +1075,6 @@ final readonly class Dispatcher {
 	 */
 	private function salted_args_hash( string $args_hash, string $run_id ): string {
 		return \hash( 'sha256', $args_hash . '|' . $run_id );
-	}
-
-	/**
-	 * Returns the SHA-256 identity of insertion-ordered portable JSON.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $kind     Persisted kind key.
-	 * @param   string                  $identity Complete owner-qualified work identity.
-	 * @param   array<array-key, mixed> $args     Work arguments.
-	 *
-	 * @return  string|Failure<EngineError>
-	 */
-	private function args_hash( string $kind, string $identity, array $args ): string|Failure {
-		$exception_class = null;
-		try {
-			$hash = PortableArguments::hash( $args );
-		} catch ( \JsonException $exception ) {
-			$exception_class = \get_debug_type( $exception );
-			$hash            = null;
-		}
-		if ( null === $hash ) {
-			return new Failure(
-				new EngineError(
-					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $kind, $identity ),
-					$exception_class,
-					reason: EngineErrorReason::PayloadRejected,
-					context: array(
-						'identity' => $identity,
-						'kind'     => $kind,
-					),
-				)
-			);
-		}
-
-		return $hash;
-	}
-
-	/**
-	 * Resolves an optional custom overlap identity from registered policy.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $kind     Persisted kind key.
-	 * @param   string                  $identity Complete owner-qualified work identity.
-	 * @param   JobOptions              $options  Registered policy declaration.
-	 * @param   array<array-key, mixed> $args     Work arguments.
-	 *
-	 * @return  string|null|Failure<EngineError>
-	 */
-	private function custom_overlap_key( string $kind, string $identity, JobOptions $options, array $args ): string|null|Failure {
-		if ( null === $options->overlap_key ) {
-			return null;
-		}
-
-		try {
-			// The helper's ?string return turns a wrong-typed consumer return into a catchable TypeError.
-			return self::invoke_overlap_key( $options->overlap_key, $args );
-		} catch ( \Throwable $throwable ) {
-			$exception_type = \get_debug_type( $throwable );
-
-			return new Failure(
-				new EngineError(
-					\sprintf( '%1$s "%2$s" could not resolve its overlap key because %3$s was thrown. Fix the overlap-key resolver before dispatching the background work again.', $kind, $identity, $exception_type ),
-					$exception_type,
-					reason: EngineErrorReason::ExecutionFailed,
-					context: array(
-						'identity' => $identity,
-						'kind'     => $kind,
-					),
-				)
-			);
-		}
-	}
-
-	/**
-	 * Invokes one resolver through the engine's typed return boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param \Closure(array<array-key, mixed>): ?string $resolver
-	 *
-	 * @param   \Closure                $resolver Registered overlap-key resolver.
-	 * @param   array<array-key, mixed> $args     Work arguments.
-	 *
-	 * @return  string|null
-	 */
-	private static function invoke_overlap_key( \Closure $resolver, array $args ): ?string {
-		return $resolver( $args );
-	}
-
-	/**
-	 * Returns the canonical argument hash or the tagged hash of an opaque overlap key.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $kind        Persisted kind key.
-	 * @param   string                  $identity    Complete owner-qualified work identity.
-	 * @param   array<array-key, mixed> $args        Work arguments.
-	 * @param   string|null             $overlap_key Custom overlap identity, or null.
-	 *
-	 * @return  string|Failure<EngineError>
-	 */
-	private function overlap_args_hash( string $kind, string $identity, array $args, ?string $overlap_key ): string|Failure {
-		$args_hash = $this->args_hash( $kind, $identity, $args );
-		if ( $args_hash instanceof Failure || null === $overlap_key ) {
-			return $args_hash;
-		}
-		if ( '' === $overlap_key || self::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $kind, $identity, self::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'identity' => $identity ), ) );
-		}
-
-		return \hash( 'sha256', 'dedup:' . $overlap_key );
 	}
 
 	// endregion

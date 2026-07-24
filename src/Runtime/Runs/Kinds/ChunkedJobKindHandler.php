@@ -53,16 +53,6 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	public const string KIND = 'chunked_job';
 
 	/**
-	 * Maximum encoded JSON bytes accepted for one generated or filtered chunk.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_CHUNK_BYTES = 8_192;
-
-	/**
 	 * Maximum persisted serialization bytes accepted for one materialized queue.
 	 *
 	 * @since   1.0.0
@@ -872,8 +862,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			}
 
 			$chunk_bytes = \strlen( $encoded_chunk );
-			if ( self::MAX_CHUNK_BYTES < $chunk_bytes ) {
-				return new EngineError( \sprintf( 'chunked_job queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, self::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
+			if ( ChunkContext::MAX_CHUNK_BYTES < $chunk_bytes ) {
+				return new EngineError( \sprintf( 'chunked_job queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, ChunkContext::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
 			}
 
 			$queue[]          = $chunk_args;

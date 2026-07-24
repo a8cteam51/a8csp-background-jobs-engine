@@ -30,22 +30,15 @@ final readonly class OwnerOperations {
 	/**
 	 * Maximum encoded JSON bytes accepted for persisted start arguments.
 	 *
+	 * `Schedule\Schedule::MAX_ARGUMENTS_BYTES` mirrors this owner-boundary limit because the frozen
+	 * public model keeps its constant private.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     int
 	 */
 	private const int MAX_ARGUMENTS_BYTES = 8_192;
-
-	/**
-	 * Highest scheduler priority accepted by admission contracts.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_PRIORITY = 255;
 
 	// endregion
 
@@ -263,7 +256,7 @@ final readonly class OwnerOperations {
 	// region HELPERS
 
 	/**
-	 * Asserts that a scheduler priority fits the supported byte range.
+	 * Asserts that a scheduler priority fits the dispatch-owned supported range.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -276,12 +269,12 @@ final readonly class OwnerOperations {
 	 * @return  void
 	 */
 	private static function assert_priority( int $priority, string $context ): void {
-		if ( 0 <= $priority && self::MAX_PRIORITY >= $priority ) {
+		if ( 0 <= $priority && Dispatcher::MAX_PRIORITY >= $priority ) {
 			return;
 		}
 
 		// Exception values are diagnostic data, not rendered output.
-		throw new \InvalidArgumentException( \sprintf( '%1$s priority %2$d is invalid; pass a value from 0 through %3$d.', $context, $priority, self::MAX_PRIORITY ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		throw new \InvalidArgumentException( \sprintf( '%1$s priority %2$d is invalid; pass a value from 0 through %3$d.', $context, $priority, Dispatcher::MAX_PRIORITY ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 
 	/**

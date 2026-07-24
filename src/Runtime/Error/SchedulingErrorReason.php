@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+
 \defined( 'ABSPATH' ) || exit;
 
 /**
@@ -39,6 +41,29 @@ enum SchedulingErrorReason: string {
 
 	case ScheduleFailed = 'schedule_failed';
 	case StorageFailure = 'storage_failure';
+
+	// endregion
+
+	// region METHODS
+
+	/**
+	 * Returns the client-visible classification for this scheduling failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  ErrorCode
+	 */
+	public function api_code(): ErrorCode {
+		return match ( $this ) {
+			self::BackendNotReady  => ErrorCode::BackendUnavailable,
+			self::UnsupportedGroup => ErrorCode::UnsupportedOperation,
+			self::InvalidTimeInput,
+			self::InvalidPayload   => ErrorCode::PayloadRejected,
+			self::ScheduleFailed   => ErrorCode::BackendRejected,
+			self::StorageFailure   => ErrorCode::StorageFailed,
+		};
+	}
 
 	// endregion
 }

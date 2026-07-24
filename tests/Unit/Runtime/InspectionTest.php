@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -158,6 +159,42 @@ final class InspectionTest extends TestCase {
 		self::assertSame( array( 'state' => 'not_declared' ), $snapshot['entries'][1]['lock'] );
 		self::assertTrue( $snapshot['entries'][0]['occurrence_visible'] );
 		self::assertSame( array( 'owner-b' ), \array_column( $this->rig->inspection()->schedules( 'owner-b' )['entries'] ?? array(), 'owner' ) );
+	}
+
+	/**
+	 * Admission and chunked-schedule inspection share one byte-identical opaque overlap identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_chunked_schedule_inspection_uses_admission_overlap_identity(): void {
+		$client      = $this->rig->operations( 'owner' );
+		$args        = array(
+			'site_id' => 7,
+			'mode'    => 'incremental',
+		);
+		$overlap_key = "catalog\0\xFF";
+		$job         = new RecordingChunkedJob( 'catalog-sync' );
+		$client->register( $job->definition( new JobOptions( overlap_key: static fn ( array $start_args ): string => $overlap_key ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'catalog-sync', $args ) ) ) );
+
+		$dispatched = $client->dispatch( 'catalog-sync', $args );
+
+		self::assertInstanceOf( Success::class, $dispatched );
+		self::assertIsString( $dispatched->value );
+		self::assertArrayHasKey( OverlapGuard::OPTION_PREFIX . 'owner:catalog-sync_839bc2e28e961c09b79c9adbb7c53159e4a2a138e1dfe756247d9d45cf0a29e9', $this->rig->wpdb()->rows );
+		$snapshot = $this->rig->inspection()->schedules( 'owner' );
+		self::assertNotNull( $snapshot );
+		self::assertSame(
+			array(
+				'state'  => 'held',
+				'run_id' => $dispatched->value,
+				'stale'  => false,
+			),
+			$snapshot['entries'][0]['lock'] ?? null
+		);
 	}
 
 	/**

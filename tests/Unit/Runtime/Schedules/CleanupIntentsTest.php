@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
@@ -591,6 +592,7 @@ final class CleanupIntentsTest extends TestCase {
 		$job_registry = new JobRegistry();
 		$job_registry->register( self::JOB_IDENTITY, ( new RecordingJob( self::JOB ) )->definition() );
 		$guard                 = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
+		$overlap_identity      = new OverlapIdentity();
 		$stores                = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
 		$randomizer            = new RecordingRandomizer( 42 );
 		$lock_windows          = new LockWindows( $this->clock, $this->logger );
@@ -604,7 +606,7 @@ final class CleanupIntentsTest extends TestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher            = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions );
+		$dispatcher            = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions );
 		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
 
 		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $this->cleanup_intents, $this->clock, $this->logger );

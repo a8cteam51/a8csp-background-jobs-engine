@@ -196,15 +196,15 @@ final class EngineErrorTest extends TestCase {
 			),
 			'unsupported group'  => array(
 				'reason'        => 'unsupported_group',
-				'expected_code' => 'backend_rejected',
+				'expected_code' => 'unsupported_operation',
 			),
 			'invalid time input' => array(
 				'reason'        => 'invalid_time_input',
-				'expected_code' => 'backend_rejected',
+				'expected_code' => 'payload_rejected',
 			),
 			'invalid payload'    => array(
 				'reason'        => 'invalid_payload',
-				'expected_code' => 'backend_rejected',
+				'expected_code' => 'payload_rejected',
 			),
 			'schedule failed'    => array(
 				'reason'        => 'schedule_failed',

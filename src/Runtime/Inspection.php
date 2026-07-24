@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDeliver
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -20,7 +21,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use Psr\Clock\ClockInterface;
 
@@ -76,16 +76,6 @@ final readonly class Inspection {
 	 */
 	private const int LIVE_RUN_LIMIT = 20;
 
-	/**
-	 * Maximum bytes accepted from a custom overlap-key resolver.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_OVERLAP_KEY_BYTES = 64;
-
 	// endregion
 
 	// region MAGIC METHODS
@@ -98,15 +88,16 @@ final readonly class Inspection {
 	 *
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
-	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
-	 * @param   JobRegistry      $registry     Registered Job instances.
-	 * @param   array            $handlers     Kind handlers keyed by their persisted keys.
-	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
-	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
-	 * @param   StoreFactory     $stores       Name-bound run stores.
-	 * @param   OptionRows       $option_rows  Active-run option enumeration.
-	 * @param   LockWindows      $lock_windows Effective heartbeat staleness policy.
-	 * @param   ClockInterface   $clock        Inspection timestamp source.
+	 * @param   ScheduleRegistry $schedules        Persisted and request-local schedule state.
+	 * @param   JobRegistry      $registry         Registered Job instances.
+	 * @param   array            $handlers         Kind handlers keyed by their persisted keys.
+	 * @param   SchedulerFacade  $scheduler        Union scheduling reads.
+	 * @param   OverlapGuard     $guard            Persisted overlap-lock reads.
+	 * @param   OverlapIdentity  $overlap_identity Stable single-flight identity resolver.
+	 * @param   StoreFactory     $stores           Name-bound run stores.
+	 * @param   OptionRows       $option_rows      Active-run option enumeration.
+	 * @param   LockWindows      $lock_windows     Effective heartbeat staleness policy.
+	 * @param   ClockInterface   $clock            Inspection timestamp source.
 	 */
 	public function __construct(
 		private ScheduleRegistry $schedules,
@@ -114,6 +105,7 @@ final readonly class Inspection {
 		private array $handlers,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
+		private OverlapIdentity $overlap_identity,
 		private StoreFactory $stores,
 		private OptionRows $option_rows,
 		private LockWindows $lock_windows,
@@ -397,41 +389,20 @@ final readonly class Inspection {
 		}
 
 		$schedule = $declaration['schedule'];
-		$options  = $this->registry->options( $declaration['job'] );
-		if ( JobKindHandler::KIND !== $this->registry->kind( $declaration['job'] ) || null === $this->registry->execution( $declaration['job'] ) || null === $options ) {
+		$kind     = $this->registry->kind( $declaration['job'] );
+		$handler  = null === $kind ? null : ( $this->handlers[ $kind ] ?? null );
+		$options  = $handler?->options( $declaration['job'] );
+		if ( null === $handler || null === $handler->execution( $declaration['job'] ) || null === $options ) {
 			return array( 'state' => 'invalid' );
 		}
 		if ( OverlapPolicy::Allow === ( $options->overlap ?? OverlapPolicy::Reject ) ) {
 			return array( 'state' => 'overlap_allowed' );
 		}
 
-		try {
-			// The helper's ?string return creates the only type check, turning a wrong resolver type into a
-			// TypeError caught here instead of a fatal below.
-			$overlap_key = null === $options->overlap_key ? null : self::invoke_overlap_key( $options->overlap_key, $schedule->args );
-		} catch ( \Throwable ) {
-			return array( 'state' => 'resolver_failed' );
-		}
-		if ( null !== $overlap_key ) {
-			if ( '' === $overlap_key || self::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
-				return array( 'state' => 'invalid' );
-			}
-
-			// Both sites share one lock namespace, so this formula remains byte-identical to the Dispatcher overlap-key lane.
-			$args_hash = \hash( 'sha256', 'dedup:' . $overlap_key );
-		} else {
-			// Both sites feed the same lock namespace, so this formula remains byte-identical to PortableArguments::hash();
-			// it stays inline to bypass PortableArguments::is_valid() and report the invalid state instead.
-			try {
-				$encoded_args = \wp_json_encode( $schedule->args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-			} catch ( \JsonException ) {
-				return array( 'state' => 'invalid' );
-			}
-			if ( ! \is_string( $encoded_args ) ) {
-				return array( 'state' => 'invalid' );
-			}
-
-			$args_hash = \hash( 'sha256', $encoded_args );
+		$args_hash = $this->overlap_identity->resolve( $kind, $declaration['job'], $options, $schedule->args );
+		if ( $args_hash instanceof Failure ) {
+			// The resolver reports a consumer overlap-key fault as ExecutionFailed and every other rejection as PayloadRejected, so that reason is what separates a broken resolver from an unusable declaration.
+			return array( 'state' => EngineErrorReason::ExecutionFailed === $args_hash->error->reason ? 'resolver_failed' : 'invalid' );
 		}
 		$inspected = $this->guard->inspect_persisted_lock( $declaration['job'], $args_hash );
 		if ( $inspected->is_failure() ) {
@@ -455,23 +426,6 @@ final readonly class Inspection {
 			'run_id' => $lock['run_id'],
 			'stale'  => self::heartbeat_is_stale( $lock['heartbeat_at'], $observed_at, $staleness ),
 		);
-	}
-
-	/**
-	 * Invokes one resolver behind the engine's typed return boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param \Closure(array<array-key, mixed>): ?string $resolver
-	 *
-	 * @param   \Closure                $resolver Registered overlap-key resolver.
-	 * @param   array<array-key, mixed> $args     Work arguments.
-	 *
-	 * @return  string|null
-	 */
-	private static function invoke_overlap_key( \Closure $resolver, array $args ): ?string {
-		return $resolver( $args );
 	}
 
 	/**

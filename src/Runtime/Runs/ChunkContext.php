@@ -28,7 +28,7 @@ final class ChunkContext implements ChunkContextInterface {
 	 *
 	 * @var     int
 	 */
-	private const int MAX_CHUNK_BYTES = 8_192;
+	public const int MAX_CHUNK_BYTES = 8_192;
 
 	/**
 	 * Maximum persisted serialization bytes accepted for one context-mutated chunked job queue.

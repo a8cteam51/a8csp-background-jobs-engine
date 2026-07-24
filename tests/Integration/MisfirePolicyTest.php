@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
@@ -379,6 +380,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$randomizer           = new RecordingRandomizer( 42 );
 		$locks                = new OptionRows( $wpdb );
 		$guard                = new OverlapGuard( $clock, $logger, $locks );
+		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock, $logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
@@ -397,13 +399,13 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new ScheduleOperations( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
-		$inspection           = new Inspection( $schedule_registry, $job_registry, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $clock );
+		$inspection           = new Inspection( $schedule_registry, $job_registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( $schedules, $dispatcher, $inspection );
 
 		$this->deterministic_inspection   = $inspection;
