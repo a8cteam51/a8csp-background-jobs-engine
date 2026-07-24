@@ -22,7 +22,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -278,7 +277,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Delivery clamps invalid and runaway declarations before crediting execution liveness.
+	 * Delivery clamps a runaway declaration before crediting execution liveness.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The execution-time lock generation is the concurrency contract that prevents a long-running owner from being reclaimed early.
@@ -286,15 +285,11 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $declared       Declared execution runtime.
-	 * @param   int $expected_lease Expected credited runtime.
-	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'bounded_runtime_values' )]
-	public function test_run_delivery_bounds_the_declared_runtime( int $declared, int $expected_lease ): void {
-		$this->restart_with_options( new JobOptions( max_runtime: $declared ) );
-		$this->assert_execution_lease( $expected_lease );
+	public function test_run_delivery_clamps_declared_runtime_to_the_effective_ceiling(): void {
+		$this->restart_with_options( new JobOptions( max_runtime: 24 * 60 * 60 ) );
+		$this->assert_execution_lease( 6 * 60 * 60 );
 	}
 
 	/**
@@ -511,31 +506,6 @@ final class ActionDeliveriesTest extends TestCase {
 		$last_completed = $this->client->last_completed_run_id( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertNull( $last_completed->value );
-	}
-
-	/**
-	 * Supplies invalid and runaway runtime declarations.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return array<string, array{declared: int, expected_lease: int}>
-	 */
-	public static function bounded_runtime_values(): array {
-		return array(
-			'zero uses default'      => array(
-				'declared'       => 0,
-				'expected_lease' => 300,
-			),
-			'negative uses default'  => array(
-				'declared'       => -1,
-				'expected_lease' => 300,
-			),
-			'twenty-four hours caps' => array(
-				'declared'       => 24 * 60 * 60,
-				'expected_lease' => 6 * 60 * 60,
-			),
-		);
 	}
 
 	// endregion.

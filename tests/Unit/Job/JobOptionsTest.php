@@ -68,6 +68,78 @@ final class JobOptionsTest extends TestCase {
 	}
 
 	/**
+	 * An explicit null maximum runtime selects the engine default.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_accepts_null_for_the_engine_default(): void {
+		$options = new JobOptions( max_runtime: null );
+
+		self::assertNull( $options->max_runtime );
+	}
+
+	/**
+	 * One second is the minimum valid declared runtime.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_accepts_positive_seconds(): void {
+		$options = new JobOptions( max_runtime: 1 );
+
+		self::assertSame( 1, $options->max_runtime );
+	}
+
+	/**
+	 * Declarations above the effective lease ceiling remain valid policy data.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_accepts_values_above_the_effective_lease_ceiling(): void {
+		$options = new JobOptions( max_runtime: 21_601 );
+
+		self::assertSame( 21_601, $options->max_runtime );
+	}
+
+	/**
+	 * Zero cannot declare a positive execution ceiling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_rejects_zero(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Job maximum runtime must be positive; pass null for the engine default or a value of at least one second.' );
+
+		new JobOptions( max_runtime: 0 );
+	}
+
+	/**
+	 * Negative seconds cannot declare a positive execution ceiling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_rejects_negative_seconds(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Job maximum runtime must be positive; pass null for the engine default or a value of at least one second.' );
+
+		new JobOptions( max_runtime: -1 );
+	}
+
+	/**
 	 * Explicit policy values are retained unchanged for registration-time resolution.
 	 *
 	 * @since   1.0.0

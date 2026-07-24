@@ -379,6 +379,8 @@ final readonly class Dispatcher {
 	 * @param   string|null             $resolved_args_hash              Pre-resolved overlap identity for retry.
 	 * @param   bool                    $terminalize_overlap_key_failure Whether resolver failure consumes a recurring occurrence as a failed run.
 	 *
+	 * @throws  \Throwable When kind-owned admission effects fail unexpectedly.
+	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
 	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, string $identity, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
@@ -519,6 +521,21 @@ final readonly class Dispatcher {
 				)
 			);
 		}
+
+		$after_dispatch_error = null;
+		try {
+			$after_dispatch_error = $handler->after_dispatch( $identity, $run_id, $state, $run_store );
+		} catch ( \Throwable $throwable ) {
+			$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
+
+			throw $throwable;
+		}
+		if ( null !== $after_dispatch_error ) {
+			$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
+
+			return new Failure( $after_dispatch_error );
+		}
+
 		$action_args = array( $identity, $run_id, $state->action_sequence );
 		$group       = $identity . '|' . $run_id;
 		$scheduled   = 0 === $delay
@@ -531,7 +548,6 @@ final readonly class Dispatcher {
 			return $scheduled;
 		}
 
-		$after_dispatch_error = null;
 		try {
 			$on_accepted?->__invoke();
 			if ( ! $this->stores->run_history( $identity )->record_started( $run_id, $args_hash ) ) {
@@ -543,12 +559,8 @@ final readonly class Dispatcher {
 					)
 				);
 			}
-			$after_dispatch_error = $handler->after_dispatch( $identity, $run_id, $state, $run_store );
 		} finally {
 			$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
-		}
-		if ( null !== $after_dispatch_error ) {
-			return new Failure( $after_dispatch_error );
 		}
 
 		return new Success( $run_id );

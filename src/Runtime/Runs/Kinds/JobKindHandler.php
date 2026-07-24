@@ -197,7 +197,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Fires started hooks after scheduler acceptance and terminalizes listener failure.
+	 * Fires started hooks after admission and terminalizes listener failure before scheduler acceptance.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

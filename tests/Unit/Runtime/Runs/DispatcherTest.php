@@ -143,6 +143,28 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Admission publishes started before the backend can accept the run delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_fires_started_before_enqueuing_delivery(): void {
+		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/started/' . self::IDENTITY ] = function (): void {
+			self::assertSame( array(), $this->run_delivery_calls() );
+		};
+		$GLOBALS['a8csp_bgje_test_action_callbacks']         = $callbacks;
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertCount( 1, $this->run_delivery_calls() );
+	}
+
+	/**
 	 * An opaque key cannot alias the canonical argument identity with the same bytes.
 	 *
 	 * @since   1.0.0
@@ -294,6 +316,8 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( \sprintf( 'job "%s" started listener failed because RuntimeException was thrown. Fix the started-hook listener before dispatching the job again.', self::IDENTITY ), $error->message );
 		self::assertSame( self::IDENTITY, $error->context['identity'] ?? null );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
+		self::assertSame( array(), $this->run_delivery_calls() );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 		self::assertSame(
 			array(
 				'a8csp_bgje/started/' . self::IDENTITY,

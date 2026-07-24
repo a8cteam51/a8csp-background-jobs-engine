@@ -124,7 +124,7 @@ interface KindHandlerInterface {
 	public function initial_pending( int $scheduled_at, int $delay, int $priority ): PendingAction;
 
 	/**
-	 * Runs kind-owned effects after the first scheduler action is accepted.
+	 * Runs kind-owned admission effects before the first scheduler action is accepted.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

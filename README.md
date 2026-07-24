@@ -454,7 +454,7 @@ This table is the canonical public PHP type index. Every listed type is marked `
 | `Runs` | Owner-bound readonly manager for run inspection, retry, and cancellation. |
 | `Job\JobDefinition` | Final readonly registration declaration with public `string $name`, `Job\JobKind $kind`, `object $execution`, and `Job\JobOptions $options`. Its non-public constructor is exposed through `job()`, `chunked_job()`, `closure()`, and `for_kind()`. The closure constructor always applies engine-default policy. |
 | `Job\JobKind` | Final readonly kind key with public `string $value`, built-in `job()` and `chunked_job()` constructors, and `from( string $value )` for a grammar-valid key. It carries no execution contract. |
-| `Job\JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?Job\RetryPolicy $retry`, `?Job\OverlapPolicy $overlap`, and `?\Closure $overlap_key`; each null selects the engine default. |
+| `Job\JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?Job\RetryPolicy $retry`, `?Job\OverlapPolicy $overlap`, and `?\Closure $overlap_key`; each null selects the engine default. `max_runtime` accepts positive seconds, and declarations above 21,600 seconds (6 hours) remain valid while effective execution credit is clamped to that ceiling. |
 | `Job\JobExecutionInterface` | Standard execution role requiring only `handle( array $start_args, Job\RunContextInterface $context ): void`. |
 | `Job\Chunked\ChunkedJobExecutionInterface` | Standalone chunked execution role requiring only `generate_queue( array $start_args, Job\RunContextInterface $context ): iterable` and `process_chunk( array $chunk_args, Job\Chunked\ChunkContextInterface $context ): void`; it does not extend `Job\JobExecutionInterface`. |
 | `Schedule\Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`. |
@@ -504,7 +504,7 @@ The `job()` and `chunked_job()` constructors bind the built-in kind to its typed
 
 `Job\JobExecutionInterface` requires exactly `handle( array $start_args, Job\RunContextInterface $context ): void`. The definition supplies the name and policy, so the execution role carries no naming, policy, or lifecycle-reaction methods. A normal return succeeds. A throwable fails the attempt and follows the retry policy, except `Job\NonRetryableException`, which fails permanently.
 
-`Job\JobOptions` carries four independent optional policies: `max_runtime`, `retry`, `overlap`, and `overlap_key`. Null selects the engine default for that field. The defaults are a 300-second execution-invocation ceiling, a `Job\RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `Job\OverlapPolicy::Reject`, and a null overlap-key resolver. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
+`Job\JobOptions` carries four independent optional policies: `max_runtime`, `retry`, `overlap`, and `overlap_key`. Null selects the engine default for that field. When set, `max_runtime` must be a positive number of seconds. Declarations above 21,600 seconds (6 hours) are accepted and clamped to that effective execution-credit ceiling rather than rejected. The defaults are a 300-second execution-invocation ceiling, a `Job\RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `Job\OverlapPolicy::Reject`, and a null overlap-key resolver. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
 
 A handler that exceeds its credited window becomes eligible for crash reclamation, and a reclaimed run can overlap its replacement, so handlers remain idempotent.
 
@@ -515,7 +515,7 @@ A handler that exceeds its credited window becomes eligible for crash reclamatio
 - `generate_queue( array $start_args, Job\RunContextInterface $context ): iterable`
 - `process_chunk( array $chunk_args, Job\Chunked\ChunkContextInterface $context ): void`
 
-The resolved `JobOptions::$max_runtime` ceiling applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution; the complete queue is capped at 1,048,576 bytes and each chunk at 8,192 bytes.
+The effective `JobOptions::$max_runtime` ceiling, including its 21,600-second (6-hour) clamp, applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution; the complete queue is capped at 1,048,576 bytes and each chunk at 8,192 bytes.
 
 Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `Run\RunFailureStage::crash_reclamation()`, preserving the in-flight chunk in `Run\RunFailure::$details['failed_chunk']`; `runs()->retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
 
@@ -565,7 +565,7 @@ An occurrence is a misfire only when observed strictly after `next_due + grace`;
 
 ## Hooks and filters
 
-Lifecycle reactions are hooks-only. Every event with an identity fires its identity-specific hook first and its generic hook second. Generic lifecycle hooks prepend the identity except `failed`, whose specific and generic variants receive the same self-identifying `Run\RunFailure` object. Terminal hooks (`completed`, `failed`, `cancelled`, and `superseded`) are durable under Action Scheduler and best-effort under WP-Cron; `started` is inline and non-durable.
+Lifecycle reactions are hooks-only. Every event with an identity fires its identity-specific hook first and its generic hook second. Generic lifecycle hooks prepend the identity except `failed`, whose specific and generic variants receive the same self-identifying `Run\RunFailure` object. Terminal hooks (`completed`, `failed`, `cancelled`, and `superseded`) are durable under Action Scheduler and best-effort under WP-Cron; `started` is inline and non-durable. An ordinary job's `started` hook fires on admission before backend delivery is scheduled, so a throwing listener fails the dispatch closed; a chunked job fires `started` after its generated queue is durably persisted and before continuation delivery is scheduled.
 
 | Event | Hooks and arguments |
 | --- | --- |

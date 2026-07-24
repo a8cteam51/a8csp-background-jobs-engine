@@ -184,11 +184,11 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * The history row and started hook are absent at the first dispatch database update.
+	 * Started hooks precede occurrence acceptance while history waits for backend acceptance.
 	 *
 	 * @return  void
 	 */
-	public function test_accepted_callback_runs_before_history_and_started_hooks(): void {
+	public function test_started_hooks_run_before_accepted_callback_and_history(): void {
 		$this->sync_schedule( OverlapPolicy::Allow );
 		$observed = false;
 		$this->rig->wpdb()->before_next(
@@ -196,7 +196,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 			function ( WpdbLockSpy $wpdb ) use ( &$observed ): void {
 				$observed = true;
 				self::assertArrayNotHasKey( RunHistory::OPTION_PREFIX . self::IDENTITY, $wpdb->rows );
-				self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started' ) );
+				self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/started' ) );
 			}
 		);
 
