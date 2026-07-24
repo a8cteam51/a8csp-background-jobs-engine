@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Error;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
@@ -95,8 +96,8 @@ final class EngineErrorTest extends TestCase {
 	public function test_throwable_content_is_redacted_before_terminal_detail_is_retained( string $boundary, \Throwable $throwable, string $secret, string $expected_class, string $corrective_prose ): void {
 		$error = match ( $boundary ) {
 			'callback', 'anonymous callback' => EngineError::from_throwable( $throwable ),
-			'retry policy'                   => EngineError::retry_policy( 'job', 'email-digest', $throwable ),
-			'retry preparation'              => EngineError::retry_preparation( 'chunked_job', 'catalog-sync', $throwable ),
+			'retry policy'                   => EngineError::retry_policy( 'job', Identity::compose( 'consumer', 'email-digest' ), $throwable ),
+			'retry preparation'              => EngineError::retry_preparation( 'chunked_job', Identity::compose( 'consumer', 'catalog-sync' ), $throwable ),
 			default                          => self::fail( 'Unknown throwable boundary: ' . $boundary ),
 		};
 
@@ -108,9 +109,9 @@ final class EngineErrorTest extends TestCase {
 		self::assertStringNotContainsString( "\0", $error->exception_class ?? '' );
 		self::assertStringNotContainsString( __DIR__, $error->exception_class ?? '' );
 		if ( 'retry policy' === $boundary ) {
-			self::assertStringStartsWith( 'job "email-digest"', $error->message );
+			self::assertStringStartsWith( 'job "consumer:email-digest"', $error->message );
 		} elseif ( 'retry preparation' === $boundary ) {
-			self::assertStringStartsWith( 'chunked_job "catalog-sync"', $error->message );
+			self::assertStringStartsWith( 'chunked_job "consumer:catalog-sync"', $error->message );
 		}
 	}
 

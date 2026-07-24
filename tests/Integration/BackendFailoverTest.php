@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
@@ -137,7 +138,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$declarations           = array(
 			self::CONVERGENCE_IDENTITY => array(
 				'schedule' => $schedule,
-				'job'      => self::CONVERGENCE_OWNER . ':' . self::CONVERGENCE_JOB,
+				'job'      => Identity::compose( self::CONVERGENCE_OWNER, self::CONVERGENCE_JOB ),
 			),
 		);
 		$action_scheduler_probe = new SchedulerFacade( array( new ActionSchedulerBackend() ) );

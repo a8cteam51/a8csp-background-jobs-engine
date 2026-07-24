@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -32,7 +33,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
  *     raw_sha256: string|null
  * }
  * @phpstan-type LockSnapshot array{
- *     identity: string,
+ *     identity: Identity,
  *     args_hash: string,
  *     raw: string,
  *     lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null
@@ -92,7 +93,7 @@ final readonly class LockRepair {
 
 			$staleness = $this->lock_windows->lock_staleness( $snapshot['identity'], $lock['run_id'] );
 			$lanes[]   = array(
-				'identity'   => $snapshot['identity'],
+				'identity'   => (string) $snapshot['identity'],
 				'args_hash'  => $snapshot['args_hash'],
 				'state'      => $this->lock_windows->heartbeat_is_stale( $lock['heartbeat_at'], $staleness ) ? 'stale' : 'owned',
 				'raw_length' => null,
@@ -112,12 +113,12 @@ final readonly class LockRepair {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $identity  Complete owner-qualified work identity.
+	 * @param   Identity    $identity  Complete owner-qualified work identity.
 	 * @param   string|null $args_hash Optional selected overlap-lock lane.
 	 *
 	 * @return  AbstractResult<LockRepairPlan|list<LockLane>|null, EngineError>
 	 */
-	public function prepare( string $identity, ?string $args_hash ): AbstractResult {
+	public function prepare( Identity $identity, ?string $args_hash ): AbstractResult {
 		$snapshots = $this->snapshots( $identity );
 		if ( $snapshots->is_failure() ) {
 			return $snapshots;
@@ -149,10 +150,10 @@ final readonly class LockRepair {
 			if ( null === $selected ) {
 				return new Failure(
 					new EngineError(
-						\sprintf( 'Execution-overlap lock lane "%1$s" / "%2$s" is absent or is not malformed; run locks list and select a malformed lane.', $identity, $args_hash ),
+						\sprintf( 'Execution-overlap lock lane "%1$s" / "%2$s" is absent or is not malformed; run locks list and select a malformed lane.', (string) $identity, $args_hash ),
 						reason: EngineErrorReason::UnsupportedOperation,
 						context: array(
-							'identity'  => $identity,
+							'identity'  => (string) $identity,
 							'args_hash' => $args_hash,
 						),
 					)
@@ -172,7 +173,7 @@ final readonly class LockRepair {
 					'The selected execution-overlap lock changed during repair preparation; run locks list and retry.',
 					reason: EngineErrorReason::UnsupportedOperation,
 					context: array(
-						'identity'  => $identity,
+						'identity'  => (string) $identity,
 						'args_hash' => $selected['args_hash'],
 					),
 				)
@@ -194,7 +195,7 @@ final readonly class LockRepair {
 						\sprintf( 'Active-run row "%s" is unreadable; repair authoritative run storage before repairing the lock.', $candidate['run_id'] ),
 						reason: EngineErrorReason::StorageFailure,
 						context: array(
-							'identity' => $identity,
+							'identity' => (string) $identity,
 							'run_id'   => $candidate['run_id'],
 						),
 					)
@@ -263,7 +264,7 @@ final readonly class LockRepair {
 		}
 
 		$deleted = $this->rows->delete_if_value_matches(
-			OverlapGuard::OPTION_PREFIX . $plan->identity . '_' . $plan->args_hash,
+			OverlapGuard::OPTION_PREFIX . (string) $plan->identity . '_' . $plan->args_hash,
 			$plan->lock_raw(),
 		);
 		if ( RowDeleteOutcome::Deleted === $deleted ) {
@@ -296,14 +297,14 @@ final readonly class LockRepair {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $identity Optional exact work identity.
+	 * @param   Identity|null $identity Optional exact work identity.
 	 *
 	 * @return  AbstractResult<list<LockSnapshot>, EngineError>
 	 */
-	private function snapshots( ?string $identity ): AbstractResult {
+	private function snapshots( ?Identity $identity ): AbstractResult {
 		$prefix = null === $identity
 			? OverlapGuard::OPTION_PREFIX
-			: OverlapGuard::OPTION_PREFIX . $identity . '_';
+			: OverlapGuard::OPTION_PREFIX . (string) $identity . '_';
 		$names  = $this->rows->option_names( $prefix );
 		if ( $names->is_failure() ) {
 			return $names;
@@ -312,7 +313,7 @@ final readonly class LockRepair {
 		$snapshots = array();
 		foreach ( $names->value as $option_name ) {
 			$lock_identity = OverlapGuard::identity_from_option_name( $option_name );
-			if ( null === $lock_identity || ( null !== $identity && $identity !== $lock_identity['identity'] ) ) {
+			if ( null === $lock_identity || ( null !== $identity && (string) $identity !== (string) $lock_identity['identity'] ) ) {
 				continue;
 			}
 
@@ -349,7 +350,7 @@ final readonly class LockRepair {
 		$correlation = OverlapGuard::raw_correlation( $snapshot['raw'] );
 
 		return array(
-			'identity'   => $snapshot['identity'],
+			'identity'   => (string) $snapshot['identity'],
 			'args_hash'  => $snapshot['args_hash'],
 			'state'      => 'malformed',
 			'raw_length' => $correlation['raw_length'],
@@ -373,7 +374,7 @@ final readonly class LockRepair {
 	 */
 	private function repair_failure( string $message, LockRepairPlan $plan, int $runs_superseded, EngineErrorReason $reason, ?string $run_id = null ): Failure {
 		$context = array(
-			'identity'        => $plan->identity,
+			'identity'        => (string) $plan->identity,
 			'args_hash'       => $plan->args_hash,
 			'raw_length'      => $plan->raw_length,
 			'raw_sha256'      => $plan->raw_sha256,

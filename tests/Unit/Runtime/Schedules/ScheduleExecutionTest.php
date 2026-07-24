@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
@@ -289,7 +290,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertIsArray( $action_args );
 		$run_id = $action_args[1] ?? null;
 		self::assertIsString( $run_id );
-		$live = $this->rig->inspection()->runs( self::CHUNKED_IDENTITY )['live'];
+		$live = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::CHUNKED_JOB ) )['live'];
 		self::assertCount( 1, $live );
 		self::assertSame( $run_id, $live[0]['run_id'] ?? null );
 		self::assertSame( 'chunked_job', $live[0]['kind'] ?? null );
@@ -328,7 +329,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( RunFailureStage::execution(), $failure->stage );
 		self::assertSame( 1, $failure->attempts );
-		$snapshot = $this->rig->inspection()->runs( self::JOB_IDENTITY );
+		$snapshot = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::JOB ) );
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertSame( 'failed', $snapshot['history'][0]['outcome'] ?? null );
 		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
@@ -357,14 +358,14 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( self::NOW + self::INTERVAL, $registration['last_fired'] ?? null );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
-		$history = $this->rig->inspection()->runs( self::JOB_IDENTITY )['history'];
+		$history = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::JOB ) )['history'];
 		self::assertNotNull( $history );
 		self::assertCount( 1, $history );
 
 		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
 
 		$redelivered        = $this->registration();
-		$redelivery_history = $this->rig->inspection()->runs( self::JOB_IDENTITY )['history'];
+		$redelivery_history = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::JOB ) )['history'];
 		self::assertSame( $registration['next_due'], $redelivered['next_due'] ?? null );
 		self::assertSame( $registration['last_fired'], $redelivered['last_fired'] ?? null );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
@@ -572,9 +573,15 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertCount( 1, $this->inactive_warning_records() );
 		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
 
-		$redeclared = self::owner_fixture( $schedule, self::NOW + self::INTERVAL );
-		$registry   = new ScheduleRegistry( new OptionRows( $this->rig->wpdb() ), $this->rig->logger() );
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( self::OWNER, $redeclared['declarations'], $redeclared['registrations'], reset_undeclared_episodes: true ) );
+		$redeclared   = self::owner_fixture( $schedule, self::NOW + self::INTERVAL );
+		$registry     = new ScheduleRegistry( new OptionRows( $this->rig->wpdb() ), $this->rig->logger() );
+		$declarations = array(
+			self::REGISTRATION_KEY => array(
+				'schedule' => $schedule,
+				'job'      => Identity::compose( self::OWNER, $schedule->job ),
+			),
+		);
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( self::OWNER, $declarations, $redeclared['registrations'], reset_undeclared_episodes: true ) );
 		$this->reset_observations();
 
 		$this->rig->run_due();
@@ -828,7 +835,7 @@ final class ScheduleExecutionTest extends TestCase {
 			'declarations'  => array(
 				self::REGISTRATION_KEY => array(
 					'schedule' => $schedule,
-					'job'      => self::JOB_IDENTITY,
+					'job'      => self::OWNER . ':' . $schedule->job,
 				),
 			),
 			'registrations' => array( self::REGISTRATION_KEY => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due ) ),

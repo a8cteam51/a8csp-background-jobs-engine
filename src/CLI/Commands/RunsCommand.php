@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
@@ -77,11 +77,11 @@ final readonly class RunsCommand {
 		}
 
 		if ( 'list' === $request['action'] ) {
-			$this->list_runs( $request['name'], $request['format'] );
+			$this->list_runs( $request['identity'], $request['format'] );
 			return;
 		}
 
-		$this->cancel_run( $request['name'], $request['run_id'] );
+		$this->cancel_run( $request['identity'], $request['run_id'] );
 	}
 
 	/**
@@ -96,8 +96,8 @@ final readonly class RunsCommand {
 	 * @param   array<string, mixed> $assoc_args Named command arguments.
 	 *
 	 * @return  array{action: 'error', message: string}
-	 *          |array{action: 'list', name: string, format: string}
-	 *          |array{action: 'cancel', name: string, run_id: RunId}
+	 *          |array{action: 'list', identity: Identity, format: string}
+	 *          |array{action: 'cancel', identity: Identity, run_id: RunId}
 	 */
 	public static function runs_request_from_args( array $args, array $assoc_args ): array {
 		if ( array() === $args ) {
@@ -122,7 +122,8 @@ final readonly class RunsCommand {
 					'message' => 'Cancel requires exactly an identity and run_id; use wp a8csp-bgje runs cancel <identity> <run_id>.',
 				);
 			}
-			if ( null === JobIdentity::parts( $args[1] ) ) {
+			$identity = Identity::tryFrom( $args[1] );
+			if ( null === $identity ) {
 				return array(
 					'action'  => 'error',
 					'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
@@ -137,9 +138,9 @@ final readonly class RunsCommand {
 			}
 
 			return array(
-				'action' => 'cancel',
-				'name'   => $args[1],
-				'run_id' => $run_id,
+				'action'   => 'cancel',
+				'identity' => $identity,
+				'run_id'   => $run_id,
 			);
 		}
 
@@ -150,8 +151,8 @@ final readonly class RunsCommand {
 			);
 		}
 
-		$name = $args[1];
-		if ( null === JobIdentity::parts( $name ) ) {
+		$identity = Identity::tryFrom( $args[1] );
+		if ( null === $identity ) {
 			return array(
 				'action'  => 'error',
 				'message' => 'Run identity is invalid; use a composed {owner}:{name} identity.',
@@ -167,9 +168,9 @@ final readonly class RunsCommand {
 		}
 
 		return array(
-			'action' => 'list',
-			'name'   => $name,
-			'format' => $format,
+			'action'   => 'list',
+			'identity' => $identity,
+			'format'   => $format,
 		);
 	}
 
@@ -237,10 +238,10 @@ final readonly class RunsCommand {
 				$this->list_failed_runs( $request['owner'], $request['format'] );
 				break;
 			case 'retry':
-				$this->retry_failed_run( $request['name'], $request['run_id'] );
+				$this->retry_failed_run( $request['identity'], $request['run_id'] );
 				break;
 			case 'purge':
-				$this->purge_failed_runs( $request['name'] );
+				$this->purge_failed_runs( $request['identity'] );
 				break;
 		}
 	}
@@ -258,8 +259,8 @@ final readonly class RunsCommand {
 	 *
 	 * @return  array{action: 'error', message: string}
 	 *          |array{action: 'list', owner: string|null, format: string}
-	 *          |array{action: 'retry', name: string, run_id: RunId}
-	 *          |array{action: 'purge', name: string|null}
+	 *          |array{action: 'retry', identity: Identity, run_id: RunId}
+	 *          |array{action: 'purge', identity: Identity|null}
 	 */
 	public static function failed_runs_request_from_args( array $args, array $assoc_args ): array {
 		if ( array() === $args ) {
@@ -291,7 +292,7 @@ final readonly class RunsCommand {
 
 					$owner = $owner_argument;
 					try {
-						JobIdentity::validate_owner( $owner, true );
+						Identity::validate_owner( $owner, true );
 					} catch ( \InvalidArgumentException ) {
 						return array(
 							'action'  => 'error',
@@ -321,7 +322,8 @@ final readonly class RunsCommand {
 						'message' => 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.',
 					);
 				}
-				if ( null === JobIdentity::parts( $args[1] ) ) {
+				$identity = Identity::tryFrom( $args[1] );
+				if ( null === $identity ) {
 					return array(
 						'action'  => 'error',
 						'message' => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
@@ -336,9 +338,9 @@ final readonly class RunsCommand {
 				}
 
 				return array(
-					'action' => 'retry',
-					'name'   => $args[1],
-					'run_id' => $run_id,
+					'action'   => 'retry',
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				);
 			case 'purge':
 				if ( ! self::has_only_keys( $assoc_args, array( 'all' ) ) ) {
@@ -350,14 +352,14 @@ final readonly class RunsCommand {
 
 				if ( 1 === \count( $args ) && true === ( $assoc_args['all'] ?? null ) ) {
 					return array(
-						'action' => 'purge',
-						'name'   => null,
+						'action'   => 'purge',
+						'identity' => null,
 					);
 				}
 
 				if ( 2 === \count( $args ) && ! \array_key_exists( 'all', $assoc_args ) ) {
-					$name = $args[1];
-					if ( null === JobIdentity::parts( $name ) ) {
+					$identity = Identity::tryFrom( $args[1] );
+					if ( null === $identity ) {
 						return array(
 							'action'  => 'error',
 							'message' => 'Purge identity is invalid; use a composed {owner}:{name} identity.',
@@ -365,8 +367,8 @@ final readonly class RunsCommand {
 					}
 
 					return array(
-						'action' => 'purge',
-						'name'   => $name,
+						'action'   => 'purge',
+						'identity' => $identity,
 					);
 				}
 
@@ -392,25 +394,25 @@ final readonly class RunsCommand {
 	 *
 	 * @param   array<array-key, mixed> $option_names Discovered option names.
 	 *
-	 * @return  list<string>
+	 * @return  list<Identity>
 	 */
-	public static function names_from_option_names( array $option_names ): array {
-		$names = array();
+	public static function identities_from_option_names( array $option_names ): array {
+		$identities = array();
 		foreach ( $option_names as $option_name ) {
 			if ( ! \is_string( $option_name ) || ! \str_starts_with( $option_name, FailedRunStore::OPTION_PREFIX ) ) {
 				continue;
 			}
 
-			$name = \substr( $option_name, \strlen( FailedRunStore::OPTION_PREFIX ) );
-			if ( null !== JobIdentity::parts( $name ) ) {
-				$names[ $name ] = true;
+			$name     = \substr( $option_name, \strlen( FailedRunStore::OPTION_PREFIX ) );
+			$identity = Identity::tryFrom( $name );
+			if ( null !== $identity ) {
+				$identities[ $name ] = $identity;
 			}
 		}
 
-		$stable_names = \array_keys( $names );
-		\sort( $stable_names, \SORT_STRING );
+		\ksort( $identities, \SORT_STRING );
 
-		return $stable_names;
+		return \array_values( $identities );
 	}
 
 	// endregion
@@ -423,25 +425,25 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Composed job or chunked job identity.
-	 * @param   RunId  $run_id Retained run identifier.
+	 * @param   Identity $identity Composed job or chunked job identity.
+	 * @param   RunId    $run_id   Retained run identifier.
 	 *
 	 * @return  void
 	 */
-	private function cancel_run( string $name, RunId $run_id ): void {
+	private function cancel_run( Identity $identity, RunId $run_id ): void {
 		$engine = Component::get_engine();
 		if ( null === $engine ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		$result = $engine->cancel( $name, (string) $run_id );
+		$result = $engine->cancel( $identity, (string) $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;
 		}
 
-		\WP_CLI::success( \sprintf( 'Cancelled run %1$s of "%2$s".', $run_id, $name ) );
+		\WP_CLI::success( \sprintf( 'Cancelled run %1$s of "%2$s".', $run_id, (string) $identity ) );
 	}
 
 	/**
@@ -450,19 +452,19 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Composed job or chunked job identity.
-	 * @param   string $format WP-CLI output format.
+	 * @param   Identity $identity Composed job or chunked job identity.
+	 * @param   string   $format   WP-CLI output format.
 	 *
 	 * @return  void
 	 */
-	private function list_runs( string $name, string $format ): void {
+	private function list_runs( Identity $identity, string $format ): void {
 		$inspection = Component::get_inspection();
 		if ( null === $inspection ) {
 			\WP_CLI::error( 'The background jobs inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		RunOutput::render( $inspection->runs( $name ), $name, $format );
+		RunOutput::render( $inspection->runs( $identity ), (string) $identity, $format );
 	}
 
 	/**
@@ -477,20 +479,16 @@ final readonly class RunsCommand {
 	 * @return  void
 	 */
 	private function list_failed_runs( ?string $owner, string $format ): void {
-		$names = $this->failed_run_names();
-		if ( null === $names ) {
+		$identities = $this->failed_run_identities();
+		if ( null === $identities ) {
 			\WP_CLI::error( 'The database check for failed-run stores failed; resolve the database error and try again.' );
 			return;
 		}
 		if ( null !== $owner ) {
-			$names = \array_values(
+			$identities = \array_values(
 				\array_filter(
-					$names,
-					static function ( string $name ) use ( $owner ): bool {
-						$parts = JobIdentity::parts( $name );
-
-						return null !== $parts && $owner === $parts[0];
-					}
+					$identities,
+					static fn ( Identity $identity ): bool => $owner === $identity->owner()
 				)
 			);
 		}
@@ -507,15 +505,16 @@ final readonly class RunsCommand {
 		$entries_by_name    = array();
 		$unreadable_entries = 0;
 		$unreadable_rows    = 0;
-		foreach ( $names as $name ) {
-			$inspection = new FailedRunStore( $name, $option_rows, $logger )->inspect();
+		foreach ( $identities as $identity ) {
+			$inspection = new FailedRunStore( $identity, $option_rows, $logger )->inspect();
 			if ( $inspection->is_failure() ) {
-				\WP_CLI::error( \sprintf( 'Failed runs for "%s" are unavailable because the authoritative database read failed; resolve the database error and try again.', $name ) );
+				\WP_CLI::error( \sprintf( 'Failed runs for "%s" are unavailable because the authoritative database read failed; resolve the database error and try again.', (string) $identity ) );
 				return;
 			}
 
-			$entries_by_name[ $name ] = $inspection->value['entries'];
-			$unreadable_entries      += $inspection->value['unreadable'];
+			$entries_by_name[ (string) $identity ] = $inspection->value['entries'];
+
+			$unreadable_entries += $inspection->value['unreadable'];
 			if ( $inspection->value['row_unreadable'] ) {
 				++$unreadable_rows;
 			}
@@ -530,25 +529,25 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Composed job or chunked job identity.
-	 * @param   RunId  $run_id Retained failed-run identifier.
+	 * @param   Identity $identity Composed job or chunked job identity.
+	 * @param   RunId    $run_id   Retained failed-run identifier.
 	 *
 	 * @return  void
 	 */
-	private function retry_failed_run( string $name, RunId $run_id ): void {
+	private function retry_failed_run( Identity $identity, RunId $run_id ): void {
 		$engine = Component::get_engine();
 		if ( null === $engine ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		$result = $engine->retry_failed( $name, (string) $run_id );
+		$result = $engine->retry_failed( $identity, (string) $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;
 		}
 
-		\WP_CLI::success( \sprintf( 'Retried failed run "%1$s" for "%2$s" as new run "%3$s".', $run_id, $name, $result->value ) );
+		\WP_CLI::success( \sprintf( 'Retried failed run "%1$s" for "%2$s" as new run "%3$s".', $run_id, (string) $identity, $result->value ) );
 	}
 
 	/**
@@ -559,13 +558,13 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $name Composed job or chunked job identity, or null for every identity.
+	 * @param   Identity|null $identity Composed job or chunked job identity, or null for every identity.
 	 *
 	 * @return  void
 	 */
-	private function purge_failed_runs( ?string $name ): void {
-		$names = null === $name ? $this->failed_run_names() : array( $name );
-		if ( null === $names ) {
+	private function purge_failed_runs( ?Identity $identity ): void {
+		$identities = null === $identity ? $this->failed_run_identities() : array( $identity );
+		if ( null === $identities ) {
 			\WP_CLI::error( 'The database check for failed-run stores failed; resolve the database error and try again.' );
 			return;
 		}
@@ -580,17 +579,17 @@ final readonly class RunsCommand {
 		$rows   = new OptionRows( $wpdb );
 		$logger = new HookLogger();
 		$count  = 0;
-		foreach ( $names as $store_name ) {
-			$purged = new FailedRunStore( $store_name, $rows, $logger )->purge();
+		foreach ( $identities as $store_identity ) {
+			$purged = new FailedRunStore( $store_identity, $rows, $logger )->purge();
 			if ( null === $purged ) {
-				\WP_CLI::error( \sprintf( 'Failed-run store "%s" could not be purged; resolve its database error or concurrent writes and try again.', $store_name ) );
+				\WP_CLI::error( \sprintf( 'Failed-run store "%s" could not be purged; resolve its database error or concurrent writes and try again.', (string) $store_identity ) );
 				return;
 			}
 
 			$count += $purged;
 		}
 
-		$scope = null === $name ? 'across all names' : \sprintf( 'for "%s"', $name );
+		$scope = null === $identity ? 'across all names' : \sprintf( 'for "%s"', (string) $identity );
 		\WP_CLI::success( \sprintf( 'Purged %1$d failed run%2$s %3$s.', $count, 1 === $count ? '' : 's', $scope ) );
 	}
 
@@ -600,9 +599,9 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  list<string>|null Null when the database query fails.
+	 * @return  list<Identity>|null Null when the database query fails.
 	 */
-	private function failed_run_names(): ?array {
+	private function failed_run_identities(): ?array {
 		global $wpdb;
 
 		/**
@@ -615,7 +614,7 @@ final readonly class RunsCommand {
 			return null;
 		}
 
-		return self::names_from_option_names( $option_names );
+		return self::identities_from_option_names( $option_names );
 	}
 
 	/**

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
@@ -99,7 +100,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $identity   Complete owner-qualified job identity.
+	 * @param   Identity      $identity   Complete owner-qualified job identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
 	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecutionInterface.
@@ -107,7 +108,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @return  void
 	 */
 	#[\Override]
-	public function register( string $identity, JobDefinition $definition ): void {
+	public function register( Identity $identity, JobDefinition $definition ): void {
 		if ( ! $definition->execution instanceof JobExecutionInterface ) {
 			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, JobExecutionInterface::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
@@ -121,12 +122,12 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job identity.
+	 * @param   Identity $identity Complete owner-qualified job identity.
 	 *
 	 * @return  JobExecutionInterface|null
 	 */
 	#[\Override]
-	public function execution( string $identity ): ?JobExecutionInterface {
+	public function execution( Identity $identity ): ?JobExecutionInterface {
 		$execution = $this->registry->execution( $identity );
 
 		return self::KIND === $this->registry->kind( $identity ) && $execution instanceof JobExecutionInterface ? $execution : null;
@@ -138,12 +139,12 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job identity.
+	 * @param   Identity $identity Complete owner-qualified job identity.
 	 *
 	 * @return  JobOptions|null
 	 */
 	#[\Override]
-	public function options( string $identity ): ?JobOptions {
+	public function options( Identity $identity ): ?JobOptions {
 		return self::KIND === $this->registry->kind( $identity ) ? $this->registry->options( $identity ) : null;
 	}
 
@@ -202,7 +203,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity  Complete owner-qualified job identity.
+	 * @param   Identity $identity  Complete owner-qualified job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Persisted running state.
 	 * @param   RunStore $run_store Active-run store.
@@ -210,17 +211,17 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @return  EngineError|null Failure returned to the admission caller, or null.
 	 */
 	#[\Override]
-	public function after_dispatch( string $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError {
+	public function after_dispatch( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError {
 		try {
 			$this->terminal_effects->fire_started( $identity, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
 			$exception_type = \get_debug_type( $throwable );
 			$error          = new EngineError(
-				\sprintf( '%1$s "%2$s" started listener failed because %3$s was thrown. Fix the started-hook listener before dispatching the job again.', self::KIND, $identity, $exception_type ),
+				\sprintf( '%1$s "%2$s" started listener failed because %3$s was thrown. Fix the started-hook listener before dispatching the job again.', self::KIND, (string) $identity, $exception_type ),
 				$exception_type,
 				reason: EngineErrorReason::ExecutionFailed,
 				context: array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				),
 			);
@@ -254,7 +255,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Complete owner-qualified job identity.
+	 * @param   string   $identity Raw scheduler-wire identity bytes.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Persisted run-stage state.
 	 *
@@ -262,7 +263,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int {
-		$options = $this->options( $identity );
+		$options = $this->registry->raw_options( $identity, self::KIND );
 		if ( null === $options ) {
 			return null;
 		}
@@ -291,7 +292,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity  Complete owner-qualified job identity.
+	 * @param   Identity $identity  Complete owner-qualified job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
@@ -299,14 +300,14 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @return  void
 	 */
 	#[\Override]
-	public function deliver( string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+	public function deliver( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
 		$execution = $this->execution( $identity );
 		$options   = $this->options( $identity );
 		if ( null === $execution || null === $options ) {
 			$this->logger->warning(
 				'job delivery references an unregistered execution; register the job before dispatching its run action.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);

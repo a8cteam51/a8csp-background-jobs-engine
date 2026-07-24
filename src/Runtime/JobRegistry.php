@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\DuplicateRegistrationException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 
@@ -43,7 +43,7 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $identity   Complete owner-qualified identity.
+	 * @param   Identity      $identity   Complete owner-qualified identity.
 	 * @param   JobDefinition $definition Definition to register.
 	 *
 	 * @throws  \InvalidArgumentException      When the identity and definition name disagree, or another kind owns the identity.
@@ -51,17 +51,17 @@ final class JobRegistry {
 	 *
 	 * @return  void
 	 */
-	public function register( string $identity, JobDefinition $definition ): void {
-		JobIdentity::validate_name( $definition->name );
-		$parts = JobIdentity::parts( $identity );
-		if ( null === $parts || $definition->name !== $parts[1] ) {
+	public function register( Identity $identity, JobDefinition $definition ): void {
+		Identity::validate_name( $definition->name );
+		if ( $definition->name !== $identity->name() ) {
 			throw new \InvalidArgumentException( 'Background-work identity must be canonical and end with the definition\'s declared local name.' );
 		}
 
+		$key      = (string) $identity;
 		$kind     = $definition->kind->value;
-		$existing = $this->registrations[ $identity ] ?? null;
+		$existing = $this->registrations[ $key ] ?? null;
 		if ( null === $existing ) {
-			$this->registrations[ $identity ] = array(
+			$this->registrations[ $key ] = array(
 				'kind'      => $kind,
 				'name'      => $definition->name,
 				'execution' => $definition->execution,
@@ -76,7 +76,7 @@ final class JobRegistry {
 		}
 
 		// Exception values are diagnostic data, not rendered output.
-		throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', $identity, $existing['kind'], $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', (string) $identity, $existing['kind'], $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 
 	// endregion
@@ -89,12 +89,12 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete owner-qualified work identity.
 	 *
 	 * @return  object|null
 	 */
-	public function execution( string $identity ): ?object {
-		return $this->registrations[ $identity ]['execution'] ?? null;
+	public function execution( Identity $identity ): ?object {
+		return $this->registrations[ (string) $identity ]['execution'] ?? null;
 	}
 
 	/**
@@ -103,12 +103,29 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete owner-qualified work identity.
 	 *
 	 * @return  JobOptions|null
 	 */
-	public function options( string $identity ): ?JobOptions {
-		return $this->registrations[ $identity ]['options'] ?? null;
+	public function options( Identity $identity ): ?JobOptions {
+		return $this->registrations[ (string) $identity ]['options'] ?? null;
+	}
+
+	/**
+	 * Returns the policy declaration for untrusted scheduler-wire identity bytes when its kind matches.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Raw scheduler-wire identity bytes.
+	 * @param   string $kind     Persisted kind key.
+	 *
+	 * @return  JobOptions|null
+	 */
+	public function raw_options( string $identity, string $kind ): ?JobOptions {
+		$registration = $this->registrations[ $identity ] ?? null;
+
+		return ( $registration['kind'] ?? null ) === $kind ? $registration['options'] : null;
 	}
 
 	/**
@@ -117,12 +134,12 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified identity.
+	 * @param   Identity $identity Complete owner-qualified identity.
 	 *
 	 * @return  string|null
 	 */
-	public function kind( string $identity ): ?string {
-		return $this->registrations[ $identity ]['kind'] ?? null;
+	public function kind( Identity $identity ): ?string {
+		return $this->registrations[ (string) $identity ]['kind'] ?? null;
 	}
 
 	// endregion

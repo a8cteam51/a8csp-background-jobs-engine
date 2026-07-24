@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Locks;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -57,6 +58,7 @@ final class LockRepairTest extends TestCase {
 	private const string FOURTH_RUN_ID = '00000000001700000000-0000000000000000045';
 
 	private StoreFixtureBuilder $fixtures;
+	private Identity $identity;
 	private EngineRig $rig;
 	private LockRepair $repair;
 	private OptionRows $rows;
@@ -92,6 +94,7 @@ final class LockRepairTest extends TestCase {
 		parent::setUp();
 
 		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->identity = Identity::compose( 'repair-tests', 'reports' );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 		$guard          = new OverlapGuard( $this->rig->clock(), $this->rig->logger(), $this->rows );
 		$this->stores   = new StoreFactory( $this->rig->clock(), $this->rows, $this->rig->logger() );
@@ -138,7 +141,7 @@ final class LockRepairTest extends TestCase {
 		$other_lane = $this->put_running_run( self::IDENTITY, self::THIRD_RUN_ID, self::OTHER_HASH );
 		$terminal   = $this->fixtures->run( self::FOURTH_RUN_ID, $this->running_state( self::ARGS_HASH )->with_status( RunStatus::Superseded )->with_pending( null ) );
 		$this->put_fixture( $terminal );
-		$plan = $this->ready_plan( self::IDENTITY );
+		$plan = $this->ready_plan( $this->identity );
 		self::assertSame( 2, $plan->running_run_count );
 		$this->rig->wpdb()->recorded_queries = array();
 
@@ -157,14 +160,14 @@ final class LockRepairTest extends TestCase {
 		self::assertStringStartsWith( 'UPDATE ', $write_queries[0] );
 		self::assertStringStartsWith( 'UPDATE ', $write_queries[1] );
 		self::assertStringStartsWith( 'DELETE ', $write_queries[2] );
-		$inspected = $this->stores->run_store( self::IDENTITY )->inspect( self::RUN_ID );
+		$inspected = $this->stores->run_store( $this->identity )->inspect( self::RUN_ID );
 		self::assertInstanceOf( Success::class, $inspected );
 		self::assertIsArray( $inspected->value );
 		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
 		self::assertSame( RunStatus::Superseded, $inspected->value['state']->status );
 		self::assertNull( $inspected->value['state']->pending );
 		self::assertSame( array(), $inspected->value['state']->effects );
-		$second = $this->stores->run_store( self::IDENTITY )->inspect( self::SECOND_RUN_ID );
+		$second = $this->stores->run_store( $this->identity )->inspect( self::SECOND_RUN_ID );
 		self::assertInstanceOf( Success::class, $second );
 		self::assertIsArray( $second->value );
 		$second_state = $second->value['state'] ?? null;
@@ -187,7 +190,7 @@ final class LockRepairTest extends TestCase {
 		$this->put_fixture( $owned );
 		$this->rig->wpdb()->recorded_queries = array();
 
-		$prepared = $this->repair->prepare( self::IDENTITY, null );
+		$prepared = $this->repair->prepare( $this->identity, null );
 
 		self::assertInstanceOf( Success::class, $prepared );
 		self::assertNull( $prepared->value );
@@ -209,14 +212,14 @@ final class LockRepairTest extends TestCase {
 
 		$this->rig->wpdb()->recorded_queries = array();
 
-		$ambiguous = $this->repair->prepare( self::IDENTITY, null );
+		$ambiguous = $this->repair->prepare( $this->identity, null );
 
 		self::assertInstanceOf( Success::class, $ambiguous );
 		self::assertIsArray( $ambiguous->value );
 		self::assertSame( array( self::ARGS_HASH, self::OTHER_HASH ), \array_column( $ambiguous->value, 'args_hash' ) );
 		$this->assert_no_writes();
 
-		$plan     = $this->ready_plan( self::IDENTITY, self::OTHER_HASH );
+		$plan     = $this->ready_plan( $this->identity, self::OTHER_HASH );
 		$repaired = $this->repair->repair( $plan );
 
 		self::assertInstanceOf( Success::class, $repaired );
@@ -235,11 +238,11 @@ final class LockRepairTest extends TestCase {
 	 */
 	public function test_prepare_refuses_an_indeterminate_candidate_without_mutation(): void {
 		$lock_name = $this->put_malformed_lock( self::IDENTITY, self::ARGS_HASH, 'malformed-lock' );
-		$run_name  = RunIdentity::option_name( self::IDENTITY, self::RUN_ID );
+		$run_name  = RunIdentity::option_name( $this->identity, self::RUN_ID );
 		$this->rig->wpdb()->put( $run_name, 'corrupt-run-row' );
 		$this->rig->wpdb()->recorded_queries = array();
 
-		$prepared = $this->repair->prepare( self::IDENTITY, null );
+		$prepared = $this->repair->prepare( $this->identity, null );
 
 		self::assertInstanceOf( Failure::class, $prepared );
 		self::assertInstanceOf( EngineError::class, $prepared->error );
@@ -269,7 +272,7 @@ final class LockRepairTest extends TestCase {
 			}
 		);
 
-		$prepared = $this->repair->prepare( self::IDENTITY, null );
+		$prepared = $this->repair->prepare( $this->identity, null );
 
 		self::assertInstanceOf( Failure::class, $prepared );
 		self::assertSame( 'malformed-lock', $this->rig->wpdb()->rows[ $lock_name ] ?? null );
@@ -287,7 +290,7 @@ final class LockRepairTest extends TestCase {
 	public function test_repair_aborts_without_deleting_the_lock_after_a_lost_run_cas(): void {
 		$lock_name = $this->put_malformed_lock( self::IDENTITY, self::ARGS_HASH, 'malformed-lock' );
 		$this->put_running_run( self::IDENTITY, self::RUN_ID, self::ARGS_HASH );
-		$plan   = $this->ready_plan( self::IDENTITY );
+		$plan   = $this->ready_plan( $this->identity );
 		$winner = $this->fixtures->run( self::RUN_ID, $this->running_state( self::ARGS_HASH )->with_heartbeat_at( self::NOW + 1 ) );
 		$this->rig->wpdb()->before_next(
 			'update',
@@ -318,7 +321,7 @@ final class LockRepairTest extends TestCase {
 	public function test_repair_aborts_when_the_lock_changes_before_exact_delete(): void {
 		$lock_name = $this->put_malformed_lock( self::IDENTITY, self::ARGS_HASH, 'malformed-lock' );
 		$this->put_running_run( self::IDENTITY, self::RUN_ID, self::ARGS_HASH );
-		$plan   = $this->ready_plan( self::IDENTITY );
+		$plan   = $this->ready_plan( $this->identity );
 		$winner = $this->fixtures->lock( self::ARGS_HASH, self::SECOND_RUN_ID, self::NOW, self::NOW );
 		$this->rig->wpdb()->before_next(
 			'delete',
@@ -334,7 +337,7 @@ final class LockRepairTest extends TestCase {
 		self::assertStringContainsString( 'changed', $repaired->error->message );
 		self::assertSame( 1, $repaired->error->context['runs_superseded'] ?? null );
 		self::assertSame( $winner[1], $this->rig->wpdb()->rows[ $lock_name ] ?? null );
-		$run = $this->stores->run_store( self::IDENTITY )->inspect( self::RUN_ID );
+		$run = $this->stores->run_store( $this->identity )->inspect( self::RUN_ID );
 		self::assertInstanceOf( Success::class, $run );
 		self::assertIsArray( $run->value );
 		$state = $run->value['state'] ?? null;
@@ -351,9 +354,9 @@ final class LockRepairTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_repair_handles_the_engine_maintenance_lane_directly(): void {
-		$identity = 'a8csp-bgje:maintenance';
-		$lock     = $this->put_malformed_lock( $identity, self::ARGS_HASH, 'malformed-maintenance-lock' );
-		$this->put_running_run( $identity, self::RUN_ID, self::ARGS_HASH );
+		$identity = Identity::compose( Identity::ENGINE_OWNER, 'maintenance', true );
+		$lock     = $this->put_malformed_lock( (string) $identity, self::ARGS_HASH, 'malformed-maintenance-lock' );
+		$this->put_running_run( (string) $identity, self::RUN_ID, self::ARGS_HASH );
 
 		$plan     = $this->ready_plan( $identity );
 		$repaired = $this->repair->repair( $plan );
@@ -361,7 +364,7 @@ final class LockRepairTest extends TestCase {
 		self::assertInstanceOf( Success::class, $repaired );
 		self::assertSame( 1, $repaired->value );
 		self::assertArrayNotHasKey( $lock, $this->rig->wpdb()->rows );
-		$run       = new RunStore( $identity, $this->rig->clock(), $this->rows );
+		$run       = new RunStore( (string) $identity, $this->rig->clock(), $this->rows );
 		$inspected = $run->inspect( self::RUN_ID );
 		self::assertInstanceOf( Success::class, $inspected );
 		self::assertIsArray( $inspected->value );
@@ -380,12 +383,12 @@ final class LockRepairTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $identity  Complete work identity.
+	 * @param   Identity    $identity  Complete work identity.
 	 * @param   string|null $args_hash Optional selected lane.
 	 *
 	 * @return  LockRepairPlan
 	 */
-	private function ready_plan( string $identity, ?string $args_hash = null ): LockRepairPlan {
+	private function ready_plan( Identity $identity, ?string $args_hash = null ): LockRepairPlan {
 		$prepared = $this->repair->prepare( $identity, $args_hash );
 		self::assertInstanceOf( Success::class, $prepared );
 		self::assertInstanceOf( LockRepairPlan::class, $prepared->value );

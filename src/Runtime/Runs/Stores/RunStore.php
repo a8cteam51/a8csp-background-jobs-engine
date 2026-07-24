@@ -121,7 +121,7 @@ final readonly class RunStore {
 			return $rejected;
 		}
 
-		if ( ! \add_option( RunIdentity::option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
+		if ( ! \add_option( RunIdentity::raw_option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
 		}
 
@@ -139,7 +139,7 @@ final readonly class RunStore {
 	 * @return  RunState|null
 	 */
 	public function get( string $run_id ): ?RunState {
-		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return null;
 		}
@@ -172,7 +172,7 @@ final readonly class RunStore {
 	 */
 	#[\NoDiscard( 'a run-state read outcome must be handled, not dropped' )]
 	public function inspect( string $run_id ): AbstractResult {
-		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return $selected;
 		}
@@ -202,7 +202,7 @@ final readonly class RunStore {
 	 */
 	#[\NoDiscard( 'an exhaustive run-state read outcome must be handled, not dropped' )]
 	public function inspect_all(): AbstractResult {
-		$names = $this->rows->option_names( RunIdentity::option_name_prefix( $this->identity ) );
+		$names = $this->rows->option_names( RunIdentity::raw_option_name_prefix( $this->identity ) );
 		if ( $names->is_failure() ) {
 			return $names;
 		}
@@ -210,7 +210,7 @@ final readonly class RunStore {
 		$snapshots = array();
 		foreach ( $names->value as $option_name ) {
 			$run_identity = RunIdentity::from_option_name( $option_name );
-			if ( null === $run_identity || $this->identity !== $run_identity['identity'] ) {
+			if ( null === $run_identity || $this->identity !== (string) $run_identity['identity'] ) {
 				continue;
 			}
 
@@ -413,7 +413,7 @@ final readonly class RunStore {
 	 * @return  bool Whether this caller deleted the exact row.
 	 */
 	public function delete_exact( string $run_id, string $expected_raw ): bool {
-		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw );
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::raw_option_name( $this->identity, $run_id ), $expected_raw );
 	}
 
 	/**
@@ -433,7 +433,7 @@ final readonly class RunStore {
 	 * @return  bool Whether this caller deleted the exact row.
 	 */
 	public function delete_if_unchanged( string $run_id, RunState $expected ): bool {
-		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->identity, $run_id ), self::serialize_state( $expected ) );
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::raw_option_name( $this->identity, $run_id ), self::serialize_state( $expected ) );
 	}
 
 	/**
@@ -487,8 +487,8 @@ final readonly class RunStore {
 	 * @return  bool True when the run option is confirmed absent.
 	 */
 	public function delete( string $run_id ): bool {
-		\delete_option( RunIdentity::option_name( $this->identity, $run_id ) );
-		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
+		\delete_option( RunIdentity::raw_option_name( $this->identity, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return false;
 		}
@@ -525,7 +525,7 @@ final readonly class RunStore {
 		$replacement_raw = self::serialize_state( $replacement );
 
 		return array(
-			'outcome' => $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ),
+			'outcome' => $this->rows->compare_and_swap( RunIdentity::raw_option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ),
 			'raw'     => $replacement_raw,
 		);
 	}

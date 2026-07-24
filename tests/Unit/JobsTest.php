@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
@@ -182,7 +183,7 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 			'closure-defaults',
 			function ( array $start_args, RunContextInterface $context ) use ( &$handled, &$observed_heartbeat ): void {
 				$handled[]          = array( $start_args, (string) $context->get_run_id() );
-				$snapshot           = $this->rig->inspection()->runs( self::OWNER . ':closure-defaults' );
+				$snapshot           = $this->rig->inspection()->runs( Identity::compose( self::OWNER, 'closure-defaults' ) );
 				$observed_heartbeat = $snapshot['live'][0]['heartbeat_at'] ?? null;
 			}
 		);
@@ -216,7 +217,7 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 		$handler            = function ( array $start_args, RunContextInterface $context ) use ( &$observed_heartbeat, &$observed_run_ids ): void {
 			$observed_run_ids[] = $context->get_run_id();
 			if ( null === $observed_heartbeat ) {
-				$snapshot           = $this->rig->inspection()->runs( self::OWNER . ':configured' );
+				$snapshot           = $this->rig->inspection()->runs( Identity::compose( self::OWNER, 'configured' ) );
 				$observed_heartbeat = $snapshot['live'][0]['heartbeat_at'] ?? null;
 			}
 			if ( true === ( $start_args['fail'] ?? false ) ) {

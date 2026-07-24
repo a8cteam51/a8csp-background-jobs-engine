@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepairPlan;
@@ -132,7 +133,7 @@ final readonly class LocksOutput {
 		\WP_CLI::confirm(
 			\sprintf(
 				'Repair identity "%1$s" lane "%2$s": supersede %3$d Running run %4$s, then delete the malformed execution-overlap lock. Continue?',
-				$plan->identity,
+				(string) $plan->identity,
 				$plan->args_hash,
 				$plan->running_run_count,
 				1 === $plan->running_run_count ? 'row' : 'rows',
@@ -147,12 +148,12 @@ final readonly class LocksOutput {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete work identity.
+	 * @param   Identity $identity Complete work identity.
 	 *
 	 * @return  void
 	 */
-	public static function nothing_to_repair( string $identity ): void {
-		\WP_CLI::line( \sprintf( 'Nothing to repair for identity "%s".', $identity ) );
+	public static function nothing_to_repair( Identity $identity ): void {
+		\WP_CLI::line( \sprintf( 'Nothing to repair for identity "%s".', (string) $identity ) );
 	}
 
 	/**
@@ -168,7 +169,7 @@ final readonly class LocksOutput {
 	 */
 	public static function report_success( LockRepairPlan $plan, int $runs_superseded ): void {
 		self::diagnostic( $plan, $runs_superseded, true );
-		\WP_CLI::success( \sprintf( 'Cleared malformed execution-overlap lock for "%1$s" lane "%2$s".', $plan->identity, $plan->args_hash ) );
+		\WP_CLI::success( \sprintf( 'Cleared malformed execution-overlap lock for "%1$s" lane "%2$s".', (string) $plan->identity, $plan->args_hash ) );
 	}
 
 	/**
@@ -219,7 +220,7 @@ final readonly class LocksOutput {
 	 * @return  void
 	 */
 	private static function diagnostic( LockRepairPlan $plan, int $runs_superseded, bool $lock_cleared ): void {
-		\WP_CLI::line( 'identity=' . $plan->identity );
+		\WP_CLI::line( 'identity=' . (string) $plan->identity );
 		\WP_CLI::line( 'args_hash=' . $plan->args_hash );
 		\WP_CLI::line( 'raw_length=' . $plan->raw_length );
 		\WP_CLI::line( 'raw_sha256=' . $plan->raw_sha256 );

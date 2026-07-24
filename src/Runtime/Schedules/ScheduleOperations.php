@@ -11,7 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use Psr\Clock\ClockInterface;
@@ -63,7 +63,7 @@ final readonly class ScheduleOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param  array<string, array{schedule: Schedule, job: string}> $declarations
+	 * @phpstan-param  array<string, array{schedule: Schedule, job: Identity}> $declarations
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
 	 * @param   string $owner        Stable client identifier captured by the owner-bound facade.
@@ -75,7 +75,7 @@ final readonly class ScheduleOperations {
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	public function sync( string $owner, array $declarations ): AbstractResult {
-		JobIdentity::validate_owner( $owner );
+		Identity::validate_owner( $owner );
 
 		return $this->sync_owner( $owner, $declarations );
 	}
@@ -88,7 +88,7 @@ final readonly class ScheduleOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param  array<string, array{schedule: Schedule, job: string}> $declarations
+	 * @phpstan-param  array<string, array{schedule: Schedule, job: Identity}> $declarations
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
 	 * @param   string $owner        Stable client or engine identifier.
@@ -99,7 +99,7 @@ final readonly class ScheduleOperations {
 	 * @return  AbstractResult
 	 */
 	public function sync_owner( string $owner, array $declarations ): AbstractResult {
-		JobIdentity::validate_owner( $owner, true );
+		Identity::validate_owner( $owner, true );
 
 		$declared = array();
 		foreach ( $declarations as $schedule_identity => $declaration ) {
@@ -107,8 +107,8 @@ final readonly class ScheduleOperations {
 				throw new \InvalidArgumentException( 'Schedule sync declaration keys must be canonical owner-qualified schedule identities.' );
 			}
 
-			$registration_parts = JobIdentity::parts( $schedule_identity );
-			if ( null === $registration_parts || $owner !== $registration_parts[0] ) {
+			$identity = Identity::tryFrom( $schedule_identity );
+			if ( null === $identity || $owner !== $identity->owner() ) {
 				throw new \InvalidArgumentException( 'Schedule sync declaration identities must be canonical and belong to the bound owner.' );
 			}
 
@@ -117,17 +117,16 @@ final readonly class ScheduleOperations {
 				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
 			}
 
-			if ( $schedule->name !== $registration_parts[1] ) {
+			if ( $schedule->name !== $identity->name() ) {
 				throw new \InvalidArgumentException( 'Schedule sync declaration identities must match their Schedule value-object names.' );
 			}
 
 			$job = $declaration['job'] ?? null;
-			if ( ! \is_string( $job ) ) {
+			if ( ! $job instanceof Identity ) {
 				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical owner-qualified job identities.' );
 			}
 
-			$job_parts = JobIdentity::parts( $job );
-			if ( null === $job_parts || $owner !== $job_parts[0] || $schedule->job !== $job_parts[1] ) {
+			if ( $owner !== $job->owner() || $schedule->job !== $job->name() ) {
 				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical, belong to the bound owner, and match their Schedule value-object job names.' );
 			}
 
@@ -266,19 +265,13 @@ final readonly class ScheduleOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key Complete owner-qualified schedule identity.
+	 * @param   Identity $identity Complete owner-qualified schedule identity.
 	 *
-	 * @throws  \InvalidArgumentException When the schedule identity is not canonical.
-	 *
-	 * @return  AbstractResult<array{identity: string, run_id: string}, EngineError|SchedulingError>
+	 * @return  AbstractResult<array{identity: Identity, run_id: string}, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
-	public function dispatch_now( string $registration_key ): AbstractResult {
-		if ( null === JobIdentity::parts( $registration_key ) ) {
-			throw new \InvalidArgumentException( 'Schedule identity is invalid; pass one canonical {owner}:{name} identity.' );
-		}
-
-		return $this->occurrence_delivery->dispatch_now_under_lease( $registration_key );
+	public function dispatch_now( Identity $identity ): AbstractResult {
+		return $this->occurrence_delivery->dispatch_now_under_lease( $identity );
 	}
 
 	// endregion

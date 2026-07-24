@@ -191,11 +191,11 @@ final class MaintenanceJob implements JobExecutionInterface {
 				try {
 					$reconciled = $this->reconciliation->reconcile_run( $identity['identity'], $identity['run_id'], self::TERMINAL_GRACE );
 				} catch ( \Throwable $throwable ) {
-					$deferred_lock_names[ $identity['identity'] ] = true;
+					$deferred_lock_names[ (string) $identity['identity'] ] = true;
 					$this->logger->warning(
 						'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
 						array(
-							'identity'  => $identity['identity'],
+							'identity'  => (string) $identity['identity'],
 							'run_id'    => $identity['run_id'],
 							'exception' => $throwable,
 						)
@@ -209,7 +209,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 						'run-reconciliation',
 						$reconciled->error,
 						array(
-							'identity' => $identity['identity'],
+							'identity' => (string) $identity['identity'],
 							'run_id'   => $identity['run_id'],
 						)
 					);
@@ -219,7 +219,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 
 				$transferred_hash = $reconciled->value;
 				if ( null !== $transferred_hash ) {
-					$protected_transfers[ $identity['identity'] . '|' . $transferred_hash ] = true;
+					$protected_transfers[ (string) $identity['identity'] . '|' . $transferred_hash ] = true;
 				}
 			}
 
@@ -252,12 +252,12 @@ final class MaintenanceJob implements JobExecutionInterface {
 
 				$identity  = $lock_identity['identity'];
 				$args_hash = $lock_identity['args_hash'];
-				if ( isset( $deferred_lock_names[ $identity ] ) ) {
+				if ( isset( $deferred_lock_names[ (string) $identity ] ) ) {
 					// An unclassified run can still depend on every same-name lock as authoritative fence evidence.
 					continue;
 				}
 
-				if ( isset( $protected_transfers[ $identity . '|' . $args_hash ] ) ) {
+				if ( isset( $protected_transfers[ (string) $identity . '|' . $args_hash ] ) ) {
 					// A fresh displaced run still needs the foreign lock as authoritative takeover evidence.
 					continue;
 				}
@@ -270,7 +270,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 						$this->logger->warning(
 							'Preserved schema-invalid execution-overlap lock during maintenance sweep; inspect and repair it with WP-CLI.',
 							array(
-								'identity'   => $identity,
+								'identity'   => (string) $identity,
 								'args_hash'  => $args_hash,
 								'malformed'  => true,
 								'raw_length' => $sweep->raw_length,
@@ -288,7 +288,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 					$this->logger->warning(
 						'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',
 						array(
-							'identity'  => $identity,
+							'identity'  => (string) $identity,
 							'args_hash' => $args_hash,
 							'run_id'    => $run_id,
 							'exception' => $throwable,

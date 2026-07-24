@@ -138,6 +138,46 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
+	 * A malformed lifecycle-action identity performs the exact raw lookup before stale-drop handling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_uses_the_exact_raw_lookup_before_stale_drop(): void {
+		$identity = 'malformed';
+		$before   = $this->rig->wpdb()->rows;
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->logger()->records        = array();
+
+		\do_action( ActionDeliveries::DELIVER_HOOK, $identity, self::RUN_ID, 1 );
+
+		self::assertSame(
+			array(
+				"SELECT `option_value` FROM `wp_options` WHERE `option_name` = 'a8csp_bgje_active_run_malformed_" . self::RUN_ID . "' LIMIT 1",
+			),
+			$this->rig->wpdb()->recorded_queries
+		);
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->job->calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'Stale delivery for a finished or cancelled run was dropped.',
+					'context' => array(
+						'identity' => $identity,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
 	 * One explicit key blocks differing payloads only until its incumbent completes.
 	 *
 	 * @since   1.0.0

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -89,6 +90,7 @@ final class RunReconciliationTest extends TestCase {
 	private const string RUN_ID          = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
+	private Identity $identity;
 	private JobRegistry $registry;
 	private RecordingJob $job;
 	private RecordingBackend $backend;
@@ -156,11 +158,12 @@ final class RunReconciliationTest extends TestCase {
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
 		$this->clock    = new FixedClock( self::NOW );
+		$this->identity = Identity::compose( self::OWNER, self::NAME );
 		$this->registry = new JobRegistry();
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
 		$this->job      = new RecordingJob( self::NAME );
-		$this->registry->register( self::IDENTITY, $this->job->definition() );
+		$this->registry->register( $this->identity, $this->job->definition() );
 		$this->backend              = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
 		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
@@ -321,8 +324,9 @@ final class RunReconciliationTest extends TestCase {
 		$chunk              = array( 'page' => 1 );
 		$chunked_job        = new RecordingChunkedJob( 'redelivered-chunked-job' );
 		$chunked_job->queue = array( $chunk );
-		$this->registry->register( $name, $chunked_job->definition() );
-		$result = $this->dispatcher->dispatch( $name, self::ARGS );
+		$identity           = self::boundary_identity( $name );
+		$this->registry->register( $identity, $chunked_job->definition() );
+		$result = $this->dispatcher->dispatch( $identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$this->lifecycle_deliveries->handle_deliver_action( $name, self::RUN_ID, 1 );
 		$this->backend->calls   = array();
@@ -367,8 +371,9 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_redelivers_a_stale_pending_chunked_job_start_for_every_overlap_policy( string $overlap_value ): void {
 		$name        = self::identity( 'redelivered-start-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'redelivered-start-chunked-job' );
-		$this->registry->register( $name, $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::from( $overlap_value ) ) ) );
-		$result = $this->dispatcher->dispatch( $name, self::ARGS, priority: 23 );
+		$identity    = self::boundary_identity( $name );
+		$this->registry->register( $identity, $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::from( $overlap_value ) ) ) );
+		$result = $this->dispatcher->dispatch( $identity, self::ARGS, priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertSame(
@@ -427,7 +432,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_redelivers_a_stale_pending_job_action(): void {
-		$result = $this->dispatcher->dispatch_scheduled_target( self::IDENTITY, self::ARGS, priority: 23 );
+		$result = $this->dispatcher->dispatch_scheduled_target( $this->identity, self::ARGS, priority: 23 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->backend->calls   = array();
 		$this->clock->timestamp = self::NOW + 901;
@@ -594,7 +599,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_repairs_a_stale_same_owner_heartbeat_mismatch_before_redelivery(): void {
-		$result = $this->dispatcher->dispatch( self::IDENTITY, self::ARGS, delay: 1_200 );
+		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS, delay: 1_200 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->set_run_fields( self::IDENTITY, array( 'heartbeat_at' => self::NOW ) );
 		$this->backend->calls   = array();
@@ -712,8 +717,9 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_preserves_a_stale_pending_run_when_redelivery_is_rejected(): void {
 		$name        = self::identity( 'redelivery-rejection-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'redelivery-rejection-chunked-job' );
-		$this->registry->register( $name, $chunked_job->definition() );
-		$result = $this->dispatcher->dispatch( $name, self::ARGS );
+		$identity    = self::boundary_identity( $name );
+		$this->registry->register( $identity, $chunked_job->definition() );
+		$result = $this->dispatcher->dispatch( $identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -918,8 +924,9 @@ final class RunReconciliationTest extends TestCase {
 		$chunk              = array( 'page' => 1 );
 		$chunked_job        = new RecordingChunkedJob( 'idempotent-chunked-job' );
 		$chunked_job->queue = array( $chunk );
-		$this->registry->register( $name, $chunked_job->definition() );
-		$result = $this->dispatcher->dispatch( $name, self::ARGS );
+		$identity           = self::boundary_identity( $name );
+		$this->registry->register( $identity, $chunked_job->definition() );
+		$result = $this->dispatcher->dispatch( $identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$this->lifecycle_deliveries->handle_deliver_action( $name, self::RUN_ID, 1 );
 		$this->backend->calls   = array();
@@ -950,7 +957,7 @@ final class RunReconciliationTest extends TestCase {
 		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'continue', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
-		$current_job = $this->registry->execution( self::IDENTITY );
+		$current_job = $this->registry->execution( $this->identity );
 		self::assertInstanceOf( RecordingJob::class, $current_job );
 
 		$this->run_maintenance();
@@ -991,7 +998,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_pending_job_redelivery_ignores_a_current_chunked_job_with_the_same_identity(): void {
 		$name                = self::identity( 'reused-as-chunked-job' );
 		$current_chunked_job = new RecordingChunkedJob( 'reused-as-chunked-job' );
-		$this->registry->register( $name, $current_chunked_job->definition() );
+		$this->registry->register( self::boundary_identity( $name ), $current_chunked_job->definition() );
 		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'run', 10 ) );
 		$this->store_running_state( $name, $state );
 		$this->put_lock( 'a8csp_bgje_overlap_lock_' . $name . '_' . self::ARGS_HASH, self::RUN_ID, self::NOW - 901 );
@@ -1034,8 +1041,9 @@ final class RunReconciliationTest extends TestCase {
 
 		$healthy_name        = self::identity( 'healthy-chunked-job' );
 		$healthy_chunked_job = new RecordingChunkedJob( 'healthy-chunked-job' );
-		$this->registry->register( $healthy_name, $healthy_chunked_job->definition() );
-		$result = $this->dispatcher->dispatch( $healthy_name, self::ARGS );
+		$healthy_identity    = self::boundary_identity( $healthy_name );
+		$this->registry->register( $healthy_identity, $healthy_chunked_job->definition() );
+		$result = $this->dispatcher->dispatch( $healthy_identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->set_run_fields( $healthy_name, array( 'executing' => true ) );
@@ -1406,8 +1414,9 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_terminalizes_a_running_chunked_job_through_chunked_job_failure_machinery(): void {
 		$name        = self::identity( 'crashed-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'crashed-chunked-job' );
-		$this->registry->register( $name, $chunked_job->definition() );
-		$result = $this->dispatcher->dispatch( $name, self::ARGS );
+		$identity    = self::boundary_identity( $name );
+		$this->registry->register( $identity, $chunked_job->definition() );
+		$result = $this->dispatcher->dispatch( $identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 
@@ -1478,8 +1487,9 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_continues_after_a_failed_hook_throws_for_one_chunked_job(): void {
 		$throwing_name        = self::identity( 'broken-chunked-job' );
 		$throwing_chunked_job = new RecordingChunkedJob( 'broken-chunked-job' );
-		$this->registry->register( $throwing_name, $throwing_chunked_job->definition() );
-		$result = $this->dispatcher->dispatch( $throwing_name, self::ARGS );
+		$throwing_identity    = self::boundary_identity( $throwing_name );
+		$this->registry->register( $throwing_identity, $throwing_chunked_job->definition() );
+		$result = $this->dispatcher->dispatch( $throwing_identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 		$this->set_run_fields( $throwing_name, array( 'executing' => true ) );
@@ -1872,8 +1882,9 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_saturates_chunked_job_failure_attempts_at_php_int_max(): void {
 		$name        = self::identity( 'crashed-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'crashed-chunked-job' );
-		$this->registry->register( $name, $chunked_job->definition() );
-		$result = $this->dispatcher->dispatch( $name, self::ARGS );
+		$identity    = self::boundary_identity( $name );
+		$this->registry->register( $identity, $chunked_job->definition() );
+		$result = $this->dispatcher->dispatch( $identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		$run_name = 'a8csp_bgje_active_run_' . $name . '_' . self::RUN_ID;
 		$this->set_run_fields( $name, array( 'executing' => true ) );
@@ -1940,7 +1951,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_replays_all_effects_for_an_old_failed_chunked_job(): void {
 		$name        = self::identity( 'failed-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'failed-chunked-job' );
-		$this->registry->register( $name, $chunked_job->definition() );
+		$this->registry->register( self::boundary_identity( $name ), $chunked_job->definition() );
 		$this->store_terminal_run(
 			$name,
 			'failed',
@@ -2006,7 +2017,7 @@ final class RunReconciliationTest extends TestCase {
 		$name        = self::identity( 'failed-without-detail' );
 		$chunk       = array( 'page' => 1 );
 		$chunked_job = new RecordingChunkedJob( 'failed-without-detail' );
-		$this->registry->register( $name, $chunked_job->definition() );
+		$this->registry->register( self::boundary_identity( $name ), $chunked_job->definition() );
 		$this->store_terminal_run( $name, 'failed', array(), null, 2, 'chunked_job', array( $chunk ), PendingAction::async( 'continue', 10 ) );
 
 		$this->run_maintenance();
@@ -2055,8 +2066,9 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_replays_only_missing_failed_chunked_job_effects(): void {
 		$name        = self::identity( 'partially-effected-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'partially-effected-chunked-job' );
-		$this->registry->register( $name, $chunked_job->definition() );
-		self::assertTrue( $this->stores->failed_run_store( $name )->record( self::RUN_ID, 'chunked_job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted chunked job failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Persisted chunked job failure.', details: null, ) ) );
+		$identity    = self::boundary_identity( $name );
+		$this->registry->register( $identity, $chunked_job->definition() );
+		self::assertTrue( $this->stores->failed_run_store( $identity )->record( self::RUN_ID, 'chunked_job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted chunked job failure.', \RuntimeException::class ), new RunFailure( identity: $name, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Persisted chunked job failure.', details: null, ) ) );
 		$failed_option = 'a8csp_bgje_failed_runs_' . $name;
 		$failed_raw    = $this->wpdb->rows[ $failed_option ] ?? null;
 		self::assertIsString( $failed_raw );
@@ -2097,11 +2109,12 @@ final class RunReconciliationTest extends TestCase {
 		);
 		$this->store_terminal_run( self::IDENTITY, 'failed', error: $error, failed_attempts: 2 );
 
-		$marked_name = self::identity( 'marked-failed-job' );
-		$marked_job  = new RecordingJob( 'marked-failed-job' );
-		$this->registry->register( $marked_name, $marked_job->definition() );
+		$marked_name     = self::identity( 'marked-failed-job' );
+		$marked_job      = new RecordingJob( 'marked-failed-job' );
+		$marked_identity = self::boundary_identity( $marked_name );
+		$this->registry->register( $marked_identity, $marked_job->definition() );
 		$failure = new RunFailure( identity: $marked_name, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Persisted job failure.', details: null );
-		self::assertTrue( $this->stores->failed_run_store( $marked_name )->record( self::RUN_ID, 'job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
+		self::assertTrue( $this->stores->failed_run_store( $marked_identity )->record( self::RUN_ID, 'job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
 		$this->store_terminal_run( $marked_name, 'failed', array( 'retention', 'hooks' ), $error, 2 );
 
 		$this->run_maintenance();
@@ -2137,7 +2150,7 @@ final class RunReconciliationTest extends TestCase {
 			'code'    => ErrorCode::ExecutionFailed->value,
 		);
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( self::RUN_ID ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Persisted job failure.', details: null );
-		self::assertTrue( $this->stores->failed_run_store( self::IDENTITY )->record( self::RUN_ID, 'job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
+		self::assertTrue( $this->stores->failed_run_store( $this->identity )->record( self::RUN_ID, 'job', self::NOW - 3_601, self::ARGS, 2, new EngineError( 'Persisted job failure.', \RuntimeException::class ), $failure ) );
 		$this->store_terminal_run( self::IDENTITY, 'failed', array( 'retention' ), $error, 2 );
 		$throwable = new \RuntimeException( 'Failed hook exploded.' );
 
@@ -2208,7 +2221,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_replays_all_effects_for_an_old_completed_chunked_job(): void {
 		$name        = self::identity( 'completed-chunked-job' );
 		$chunked_job = new RecordingChunkedJob( 'completed-chunked-job' );
-		$this->registry->register( $name, $chunked_job->definition() );
+		$this->registry->register( self::boundary_identity( $name ), $chunked_job->definition() );
 		$this->store_terminal_run( $name, 'completed', kind: 'chunked_job' );
 
 		$this->run_maintenance();
@@ -2387,7 +2400,7 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_terminal_finish_is_gated_until_the_sweep_completes_missing_effects(): void {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
-		$run_store = $this->stores->run_store( self::IDENTITY );
+		$run_store = $this->stores->run_store( $this->identity );
 		$inspected = $run_store->inspect( self::RUN_ID );
 		self::assertFalse( $inspected->is_failure() );
 		$snapshot = $inspected->value;
@@ -2395,7 +2408,7 @@ final class RunReconciliationTest extends TestCase {
 		$state = $snapshot['state'];
 		self::assertNotNull( $state );
 
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $state, $snapshot['raw'], $run_store ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( $this->identity, self::RUN_ID, $state, $snapshot['raw'], $run_store ) );
 		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
 
 		$this->run_maintenance();
@@ -2493,12 +2506,24 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
+	 * Wraps one canonical test identity for direct internal calls.
+	 *
+	 * @param   string $identity Complete owner-qualified work identity.
+	 *
+	 * @return  Identity
+	 */
+	private static function boundary_identity( string $identity ): Identity {
+		return Identity::tryFrom( $identity )
+			?? throw new \LogicException( 'The test identity must satisfy the canonical grammar.' );
+	}
+
+	/**
 	 * Creates one ordinary running job through the dispatcher.
 	 *
 	 * @return  void
 	 */
 	private function create_running_run(): void {
-		$result = $this->dispatcher->dispatch( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
 

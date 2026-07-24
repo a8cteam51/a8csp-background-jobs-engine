@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
@@ -44,7 +45,7 @@ final readonly class DeliveryScheduler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $identity        Complete owner-qualified work identity.
+	 * @param   Identity      $identity        Complete owner-qualified work identity.
 	 * @param   string        $run_id          Run identifier.
 	 * @param   int           $action_sequence Persisted delivery sequence.
 	 * @param   PendingAction $pending         Persisted delivery descriptor.
@@ -54,9 +55,10 @@ final readonly class DeliveryScheduler {
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\NoDiscard( 'a lifecycle-delivery scheduling failure must be handled, not dropped' )]
-	public function schedule( string $identity, string $run_id, int $action_sequence, PendingAction $pending ): AbstractResult {
-		$args  = array( $identity, $run_id, $action_sequence );
-		$group = $identity . '|' . $run_id;
+	public function schedule( Identity $identity, string $run_id, int $action_sequence, PendingAction $pending ): AbstractResult {
+		$wire_identity = (string) $identity;
+		$args          = array( $wire_identity, $run_id, $action_sequence );
+		$group         = $wire_identity . '|' . $run_id;
 		if ( 'async' === $pending->mode ) {
 			return $this->scheduler->enqueue_async( ActionDeliveries::DELIVER_HOOK, $args, $group, $pending->priority );
 		}

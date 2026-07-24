@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
@@ -31,6 +32,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( JobKind::class )]
 #[UsesClass( JobOptions::class )]
 #[UsesClass( RetryPolicy::class )]
+#[UsesClass( Identity::class )]
 final class JobRegistryTest extends TestCase {
 	// region LIFECYCLE.
 
@@ -74,18 +76,21 @@ final class JobRegistryTest extends TestCase {
 		$chunked_job     = new RecordingChunkedJob( 'rebuild-index' );
 		$registry        = new JobRegistry();
 
-		$registry->register( 'consumer:refresh_index-2', $job->definition( $job_options ) );
-		$registry->register( 'consumer:rebuild-index', $chunked_job->definition( $chunked_options ) );
+		$job_identity     = self::identity( 'consumer:refresh_index-2' );
+		$chunked_identity = self::identity( 'consumer:rebuild-index' );
+		$unknown_identity = self::identity( 'consumer:unknown' );
+		$registry->register( $job_identity, $job->definition( $job_options ) );
+		$registry->register( $chunked_identity, $chunked_job->definition( $chunked_options ) );
 
-		self::assertSame( $job, $registry->execution( 'consumer:refresh_index-2' ) );
-		self::assertSame( $job_options, $registry->options( 'consumer:refresh_index-2' ) );
-		self::assertSame( 'job', $registry->kind( 'consumer:refresh_index-2' ) );
-		self::assertSame( $chunked_job, $registry->execution( 'consumer:rebuild-index' ) );
-		self::assertSame( $chunked_options, $registry->options( 'consumer:rebuild-index' ) );
-		self::assertSame( 'chunked_job', $registry->kind( 'consumer:rebuild-index' ) );
-		self::assertNull( $registry->execution( 'consumer:unknown' ) );
-		self::assertNull( $registry->options( 'consumer:unknown' ) );
-		self::assertNull( $registry->kind( 'consumer:unknown' ) );
+		self::assertSame( $job, $registry->execution( $job_identity ) );
+		self::assertSame( $job_options, $registry->options( $job_identity ) );
+		self::assertSame( 'job', $registry->kind( $job_identity ) );
+		self::assertSame( $chunked_job, $registry->execution( $chunked_identity ) );
+		self::assertSame( $chunked_options, $registry->options( $chunked_identity ) );
+		self::assertSame( 'chunked_job', $registry->kind( $chunked_identity ) );
+		self::assertNull( $registry->execution( $unknown_identity ) );
+		self::assertNull( $registry->options( $unknown_identity ) );
+		self::assertNull( $registry->kind( $unknown_identity ) );
 	}
 
 	/**
@@ -101,10 +106,11 @@ final class JobRegistryTest extends TestCase {
 		$definition = JobDefinition::for_kind( 'sync', JobKind::job(), $execution );
 		$registry   = new JobRegistry();
 
-		$registry->register( 'consumer:sync', $definition );
+		$identity = self::identity( 'consumer:sync' );
+		$registry->register( $identity, $definition );
 
-		self::assertSame( $execution, $registry->execution( 'consumer:sync' ) );
-		self::assertSame( 'job', $registry->kind( 'consumer:sync' ) );
+		self::assertSame( $execution, $registry->execution( $identity ) );
+		self::assertSame( 'job', $registry->kind( $identity ) );
 	}
 
 	/**
@@ -125,13 +131,13 @@ final class JobRegistryTest extends TestCase {
 		$registry     = new JobRegistry();
 		$accepted_key = 'consumer:' . $name;
 
-		$registry->register( $accepted_key, $accepted['definition'] );
-		self::assertSame( $accepted['execution'], $registry->execution( $accepted_key ) );
+		$registry->register( self::identity( $accepted_key ), $accepted['definition'] );
+		self::assertSame( $accepted['execution'], $registry->execution( self::identity( $accepted_key ) ) );
 
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
-		$registry->register( 'consumer:valid', $too_long['definition'] );
+		$registry->register( self::identity( 'consumer:valid' ), $too_long['definition'] );
 	}
 
 	/**
@@ -151,27 +157,27 @@ final class JobRegistryTest extends TestCase {
 		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		$registry = new JobRegistry();
-		$registry->register( 'consumer:valid', self::registration( $kind, $name )['definition'] );
+		$registry->register( self::identity( 'consumer:valid' ), self::registration( $kind, $name )['definition'] );
 	}
 
 	/**
-	 * Non-canonical and name-mismatched identities share one definition-centric diagnostic.
+	 * A canonical identity whose local name disagrees with the definition is rejected.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   'chunked_job'|'job' $kind     Definition kind.
-	 * @param   string              $identity Invalid or mismatched identity.
+	 * @param   string              $identity Mismatched canonical identity.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'invalid_identities' )]
-	public function test_registration_rejects_invalid_or_mismatched_identities( string $kind, string $identity ): void {
+	#[DataProvider( 'mismatched_identities' )]
+	public function test_registration_rejects_mismatched_identities( string $kind, string $identity ): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work identity must be canonical and end with the definition\'s declared local name.' );
 
 		$registry = new JobRegistry();
-		$registry->register( $identity, self::registration( $kind, 'valid' )['definition'] );
+		$registry->register( self::identity( $identity ), self::registration( $kind, 'valid' )['definition'] );
 	}
 
 	/**
@@ -189,18 +195,19 @@ final class JobRegistryTest extends TestCase {
 		$first    = self::registration( $kind, 'sync', new JobOptions( max_runtime: 42 ) );
 		$second   = self::registration( $kind, 'sync', new JobOptions( max_runtime: 84 ) );
 		$registry = new JobRegistry();
-		$registry->register( 'consumer:sync', $first['definition'] );
+		$identity = self::identity( 'consumer:sync' );
+		$registry->register( $identity, $first['definition'] );
 
 		try {
-			$registry->register( 'consumer:sync', $second['definition'] );
+			$registry->register( $identity, $second['definition'] );
 			self::fail( 'A same-kind duplicate must be rejected.' );
 		} catch ( DuplicateRegistrationException $exception ) {
 			self::assertSame( $kind . ' name is already registered; register each background-work name exactly once.', $exception->getMessage() );
 		}
 
-		self::assertSame( $first['execution'], $registry->execution( 'consumer:sync' ) );
-		self::assertSame( $first['definition']->options, $registry->options( 'consumer:sync' ) );
-		self::assertSame( $kind, $registry->kind( 'consumer:sync' ) );
+		self::assertSame( $first['execution'], $registry->execution( $identity ) );
+		self::assertSame( $first['definition']->options, $registry->options( $identity ) );
+		self::assertSame( $kind, $registry->kind( $identity ) );
 	}
 
 	/**
@@ -219,18 +226,19 @@ final class JobRegistryTest extends TestCase {
 		$first    = self::registration( $existing_kind, 'sync', new JobOptions( max_runtime: 42 ) );
 		$second   = self::registration( $incoming_kind, 'sync', new JobOptions( max_runtime: 84 ) );
 		$registry = new JobRegistry();
-		$registry->register( 'consumer:sync', $first['definition'] );
+		$identity = self::identity( 'consumer:sync' );
+		$registry->register( $identity, $first['definition'] );
 
 		try {
-			$registry->register( 'consumer:sync', $second['definition'] );
+			$registry->register( $identity, $second['definition'] );
 			self::fail( 'A cross-kind collision must be rejected.' );
 		} catch ( \InvalidArgumentException $exception ) {
 			self::assertSame( \sprintf( 'Background-work identity "consumer:sync" is already registered as a %1$s; it cannot also be registered as a %2$s.', $existing_kind, $incoming_kind ), $exception->getMessage() );
 		}
 
-		self::assertSame( $first['execution'], $registry->execution( 'consumer:sync' ) );
-		self::assertSame( $first['definition']->options, $registry->options( 'consumer:sync' ) );
-		self::assertSame( $existing_kind, $registry->kind( 'consumer:sync' ) );
+		self::assertSame( $first['execution'], $registry->execution( $identity ) );
+		self::assertSame( $first['definition']->options, $registry->options( $identity ) );
+		self::assertSame( $existing_kind, $registry->kind( $identity ) );
 	}
 
 	/**
@@ -242,17 +250,19 @@ final class JobRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_different_owners_can_register_the_same_local_name(): void {
-		$job         = self::registration( 'job', 'sync' );
-		$chunked_job = self::registration( 'chunked_job', 'sync' );
-		$registry    = new JobRegistry();
+		$job              = self::registration( 'job', 'sync' );
+		$chunked_job      = self::registration( 'chunked_job', 'sync' );
+		$registry         = new JobRegistry();
+		$job_identity     = self::identity( 'owner-a:sync' );
+		$chunked_identity = self::identity( 'owner-b:sync' );
 
-		$registry->register( 'owner-a:sync', $job['definition'] );
-		$registry->register( 'owner-b:sync', $chunked_job['definition'] );
+		$registry->register( $job_identity, $job['definition'] );
+		$registry->register( $chunked_identity, $chunked_job['definition'] );
 
-		self::assertSame( $job['execution'], $registry->execution( 'owner-a:sync' ) );
-		self::assertSame( 'job', $registry->kind( 'owner-a:sync' ) );
-		self::assertSame( $chunked_job['execution'], $registry->execution( 'owner-b:sync' ) );
-		self::assertSame( 'chunked_job', $registry->kind( 'owner-b:sync' ) );
+		self::assertSame( $job['execution'], $registry->execution( $job_identity ) );
+		self::assertSame( 'job', $registry->kind( $job_identity ) );
+		self::assertSame( $chunked_job['execution'], $registry->execution( $chunked_identity ) );
+		self::assertSame( 'chunked_job', $registry->kind( $chunked_identity ) );
 	}
 
 	/**
@@ -273,12 +283,13 @@ final class JobRegistryTest extends TestCase {
 			? JobDefinition::job( 'sync', $execution, $options )
 			: JobDefinition::chunked_job( 'sync', $execution, $options );
 		$registry   = new JobRegistry();
+		$identity   = self::identity( 'consumer:sync' );
 
-		$registry->register( 'consumer:sync', $definition );
+		$registry->register( $identity, $definition );
 
-		self::assertSame( $execution, $registry->execution( 'consumer:sync' ) );
-		self::assertSame( $options, $registry->options( 'consumer:sync' ) );
-		self::assertSame( $kind, $registry->kind( 'consumer:sync' ) );
+		self::assertSame( $execution, $registry->execution( $identity ) );
+		self::assertSame( $options, $registry->options( $identity ) );
+		self::assertSame( $kind, $registry->kind( $identity ) );
 	}
 
 	// endregion.
@@ -319,25 +330,17 @@ final class JobRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Supplies non-canonical and declared-name-mismatched identities for both kinds.
+	 * Supplies declared-name-mismatched identities for both kinds.
 	 *
 	 * @return  array<string, array{kind: 'chunked_job'|'job', identity: string}>
 	 */
-	public static function invalid_identities(): array {
+	public static function mismatched_identities(): array {
 		return array(
-			'job: non-canonical'         => array(
-				'kind'     => 'job',
-				'identity' => 'not-canonical',
-			),
-			'job: name mismatch'         => array(
+			'job'         => array(
 				'kind'     => 'job',
 				'identity' => 'consumer:other',
 			),
-			'chunked job: non-canonical' => array(
-				'kind'     => 'chunked_job',
-				'identity' => 'not-canonical',
-			),
-			'chunked job: name mismatch' => array(
+			'chunked job' => array(
 				'kind'     => 'chunked_job',
 				'identity' => 'consumer:other',
 			),
@@ -365,6 +368,17 @@ final class JobRegistryTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Returns one canonical identity fixture.
+	 *
+	 * @param   string $identity Complete owner-qualified identity.
+	 *
+	 * @return  Identity
+	 */
+	private static function identity( string $identity ): Identity {
+		return Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Test identity fixtures must be canonical.' );
+	}
 
 	/**
 	 * Composes one installed-kind definition and returns its exact execution object.

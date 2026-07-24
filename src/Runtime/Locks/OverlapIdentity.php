@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
@@ -42,13 +43,13 @@ final readonly class OverlapIdentity {
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $kind     Persisted kind key.
-	 * @param   string                  $identity Complete owner-qualified work identity.
+	 * @param   Identity                $identity Complete owner-qualified work identity.
 	 * @param   JobOptions              $options  Registered policy declaration.
 	 * @param   array<array-key, mixed> $args     Work arguments.
 	 *
 	 * @return  string|Failure<EngineError>
 	 */
-	public function resolve( string $kind, string $identity, JobOptions $options, array $args ): string|Failure {
+	public function resolve( string $kind, Identity $identity, JobOptions $options, array $args ): string|Failure {
 		$overlap_key = null;
 		if ( null !== $options->overlap_key ) {
 			// The helper's ?string return is the only type check, turning a wrong-typed consumer
@@ -60,11 +61,11 @@ final readonly class OverlapIdentity {
 
 				return new Failure(
 					new EngineError(
-						\sprintf( '%1$s "%2$s" could not resolve its overlap key because %3$s was thrown. Fix the overlap-key resolver before dispatching the background work again.', $kind, $identity, $exception_type ),
+						\sprintf( '%1$s "%2$s" could not resolve its overlap key because %3$s was thrown. Fix the overlap-key resolver before dispatching the background work again.', $kind, (string) $identity, $exception_type ),
 						$exception_type,
 						reason: EngineErrorReason::ExecutionFailed,
 						context: array(
-							'identity' => $identity,
+							'identity' => (string) $identity,
 							'kind'     => $kind,
 						),
 					)
@@ -77,7 +78,7 @@ final readonly class OverlapIdentity {
 			return $args_hash;
 		}
 		if ( '' === $overlap_key || self::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $kind, $identity, self::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'identity' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" overlap key must contain 1 to %3$d bytes when provided.', $kind, (string) $identity, self::MAX_OVERLAP_KEY_BYTES ), reason: EngineErrorReason::PayloadRejected, context: array( 'identity' => (string) $identity ), ) );
 		}
 
 		return \hash( 'sha256', 'dedup:' . $overlap_key );
@@ -90,12 +91,12 @@ final readonly class OverlapIdentity {
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $kind     Persisted kind key.
-	 * @param   string                  $identity Complete owner-qualified work identity.
+	 * @param   Identity                $identity Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args     Work arguments.
 	 *
 	 * @return  string|Failure<EngineError>
 	 */
-	public function canonical( string $kind, string $identity, array $args ): string|Failure {
+	public function canonical( string $kind, Identity $identity, array $args ): string|Failure {
 		$exception_class = null;
 		try {
 			$hash = PortableArguments::hash( $args );
@@ -106,11 +107,11 @@ final readonly class OverlapIdentity {
 		if ( null === $hash ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $kind, $identity ),
+					\sprintf( '%1$s "%2$s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $kind, (string) $identity ),
 					$exception_class,
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'kind'     => $kind,
 					),
 				)

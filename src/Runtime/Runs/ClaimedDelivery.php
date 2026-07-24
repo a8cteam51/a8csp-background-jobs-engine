@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -23,10 +24,12 @@ final readonly class ClaimedDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   KindHandlerInterface $handler Resolved kind handler.
-	 * @param   RunState             $state   Fenced executing state.
+	 * @param   Identity             $identity Canonical identity resolved by the claimed run row.
+	 * @param   KindHandlerInterface $handler  Resolved kind handler.
+	 * @param   RunState             $state    Fenced executing state.
 	 */
 	public function __construct(
+		public Identity $identity,
 		public KindHandlerInterface $handler,
 		public RunState $state,
 	) {}

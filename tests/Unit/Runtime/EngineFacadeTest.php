@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -178,8 +179,9 @@ final class EngineFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_retry_failed_consumes_authoritative_storage_without_option_function_writes(): void {
-		$identity = 'facade-tests:email-digest';
-		$client   = $this->rig->operations( 'facade-tests' );
+		$work_identity = Identity::compose( 'facade-tests', 'email-digest' );
+		$identity      = (string) $work_identity;
+		$client        = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		$failure               = new RunFailure( identity: $identity, run_id: RunId::from( self::FAILED_RUN_ID ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null );
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $identity )->failed( self::NOW - 1, array( 'site_id' => 7 ), $failure, new EngineError( 'Handler failed.' ) );
@@ -193,7 +195,7 @@ final class EngineFacadeTest extends TestCase {
 		self::assertSame( $identity, $result->value->identity );
 		self::assertNotSame( self::FAILED_RUN_ID, (string) $result->value->id );
 		self::assertSame( RunStatus::Running, $result->value->status );
-		$remaining = new FailedRunStore( $identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() )->all();
+		$remaining = new FailedRunStore( $work_identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() )->all();
 		self::assertInstanceOf( Success::class, $remaining );
 		self::assertSame( array(), $remaining->value );
 		$this->assert_option_functions_did_not_write( $option_name );
@@ -222,7 +224,7 @@ final class EngineFacadeTest extends TestCase {
 		self::assertSame( $enqueued->value->identity, $cancelled->value->identity );
 		self::assertSame( (string) $enqueued->value->id, (string) $cancelled->value->id );
 		self::assertSame( RunStatus::Cancelled, $cancelled->value->status );
-		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'facade-tests:email-digest' )['history'][0]['outcome'] ?? null );
+		self::assertSame( 'cancelled', $this->rig->inspection()->runs( Identity::compose( 'facade-tests', 'email-digest' ) )['history'][0]['outcome'] ?? null );
 	}
 
 	/**

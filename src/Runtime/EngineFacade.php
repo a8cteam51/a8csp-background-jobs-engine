@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -47,12 +48,12 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
-	public function last_completed_run_id( string $identity ): AbstractResult {
+	public function last_completed_run_id( Identity $identity ): AbstractResult {
 		return $this->inspection->last_completed_run_id( $identity );
 	}
 
@@ -62,13 +63,13 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
-	 * @param   string $run_id   Retained failed-run identifier.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id   Retained failed-run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-	public function retry_failed( string $identity, string $run_id ): AbstractResult {
+	public function retry_failed( Identity $identity, string $run_id ): AbstractResult {
 		return $this->dispatcher->retry_failed( $identity, $run_id );
 	}
 
@@ -78,13 +79,13 @@ final readonly class EngineFacade {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
-	 * @param   string $run_id   Retained run identifier.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id   Retained run identifier.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
-	public function cancel( string $identity, string $run_id ): AbstractResult {
+	public function cancel( Identity $identity, string $run_id ): AbstractResult {
 		return $this->dispatcher->cancel( $identity, $run_id );
 	}
 

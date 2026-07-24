@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
@@ -56,6 +57,7 @@ final class RunStoreTest extends TestCase {
 
 	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
+	private Identity $identity;
 	private EngineRig $rig;
 	private OptionRows $rows;
 	private RecordingJob $job;
@@ -89,9 +91,10 @@ final class RunStoreTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->operations( self::OWNER );
-		$this->job    = new RecordingJob( self::NAME );
+		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->client   = $this->rig->operations( self::OWNER );
+		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->job      = new RecordingJob( self::NAME );
 		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 ) ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
@@ -145,7 +148,7 @@ final class RunStoreTest extends TestCase {
 		self::assertIsArray( $during_execution );
 		self::assertTrue( $during_execution['executing'] );
 		self::assertGreaterThanOrEqual( self::NOW, $during_execution['heartbeat_at'] );
-		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		$snapshot = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertSame( 'completed', $snapshot['history'][0]['outcome'] ?? null );
 		self::assertSame( self::RUN_ID, $snapshot['history'][0]['run_id'] ?? null );
@@ -172,7 +175,7 @@ final class RunStoreTest extends TestCase {
 		self::assertFalse( $retrying['executing'] );
 		self::assertGreaterThanOrEqual( self::NOW, $retrying['heartbeat_at'] );
 		$this->rig->run_due();
-		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['live'] );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
@@ -185,10 +188,10 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_malformed_live_rows_are_tolerated_by_inspection(): void {
-		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['live'] );
 		$this->rig->wpdb()->put( $this->run_option_name(), 'legacy-corrupt-run-row' );
 
-		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		$snapshot = $this->rig->inspection()->runs( $this->identity );
 
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertNull( $snapshot['live_error'] );
@@ -228,7 +231,7 @@ final class RunStoreTest extends TestCase {
 	public function test_inspect_all_returns_every_identity_bound_snapshot_and_preserves_corruption(): void {
 		$other_run_id = '00000000001700000000-0000000000000000043';
 		$valid        = $this->fixtures->run( self::RUN_ID, $this->state() );
-		$corrupt_name = RunIdentity::option_name( self::IDENTITY, $other_run_id );
+		$corrupt_name = RunIdentity::option_name( $this->identity, $other_run_id );
 		$corrupt_raw  = 'corrupt-run-row';
 		$this->put_fixture( $valid );
 		$this->rig->wpdb()->put( $corrupt_name, $corrupt_raw );
@@ -644,7 +647,7 @@ final class RunStoreTest extends TestCase {
 		$this->rig->wpdb()->put( $this->run_option_name(), $raw );
 		RunStoreWakeupProbe::$wakeups = 0;
 
-		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['live'] );
 		self::assertSame( 0, RunStoreWakeupProbe::$wakeups );
 		$inspected = $this->store()->inspect( self::RUN_ID );
 		self::assertInstanceOf( Success::class, $inspected );
@@ -797,7 +800,7 @@ final class RunStoreTest extends TestCase {
 
 		foreach ( $invalid as $pending ) {
 			$this->put_corrupt_state( array( 'pending' => $pending ) );
-			self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+			self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['live'] );
 		}
 	}
 
@@ -918,7 +921,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  array{run_id: string, kind: string, status: string, executing: bool, attempts: int, queue_depth: int|null, queue_known: bool, heartbeat_at: int, stale: bool}
 	 */
 	private function single_live_run(): array {
-		$live = $this->rig->inspection()->runs( self::IDENTITY )['live'];
+		$live = $this->rig->inspection()->runs( $this->identity )['live'];
 		self::assertCount( 1, $live );
 
 		return $live[0];
@@ -1019,7 +1022,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return RunIdentity::option_name( self::IDENTITY, self::RUN_ID );
+		return RunIdentity::option_name( $this->identity, self::RUN_ID );
 	}
 
 	/**

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
@@ -26,6 +27,7 @@ final class DeliverySchedulerTest extends TestCase {
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
 	private RecordingBackend $backend;
+	private Identity $identity;
 	private DeliveryScheduler $scheduler;
 
 	// endregion.
@@ -60,6 +62,7 @@ final class DeliverySchedulerTest extends TestCase {
 		parent::setUp();
 
 		$this->backend   = new RecordingBackend();
+		$this->identity  = Identity::compose( 'delivery-tests', 'catalog-sync' );
 		$this->scheduler = new DeliveryScheduler( $this->backend, new FixedClock( self::NOW ) );
 	}
 
@@ -76,7 +79,7 @@ final class DeliverySchedulerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_composes_an_asynchronous_delivery_from_the_pending_descriptor(): void {
-		$result = $this->scheduler->schedule( self::IDENTITY, self::RUN_ID, 7, PendingAction::async( 'continue', 42 ) );
+		$result = $this->scheduler->schedule( $this->identity, self::RUN_ID, 7, PendingAction::async( 'continue', 42 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -104,7 +107,7 @@ final class DeliverySchedulerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_composes_a_future_single_delivery_from_the_pending_descriptor(): void {
-		$result = $this->scheduler->schedule( self::IDENTITY, self::RUN_ID, 11, PendingAction::single( 'cleanup', self::NOW + 75, 31 ) );
+		$result = $this->scheduler->schedule( $this->identity, self::RUN_ID, 11, PendingAction::single( 'cleanup', self::NOW + 75, 31 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -133,7 +136,7 @@ final class DeliverySchedulerTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_clamps_a_past_single_delivery_to_now(): void {
-		$result = $this->scheduler->schedule( self::IDENTITY, self::RUN_ID, 13, PendingAction::single( 'continue', self::NOW - 75, 19 ) );
+		$result = $this->scheduler->schedule( $this->identity, self::RUN_ID, 13, PendingAction::single( 'continue', self::NOW - 75, 19 ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::NOW, $this->backend->calls[0]['args']['timestamp'] ?? null );

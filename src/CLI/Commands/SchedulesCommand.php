@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ScheduleOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 
 \defined( 'ABSPATH' ) || exit;
@@ -119,7 +119,7 @@ final readonly class SchedulesCommand {
 
 			$owner = $args[1];
 			try {
-				JobIdentity::validate_owner( $owner );
+				Identity::validate_owner( $owner );
 			} catch ( \InvalidArgumentException ) {
 				return array(
 					'action'  => 'error',
@@ -159,7 +159,7 @@ final readonly class SchedulesCommand {
 
 			$owner = $owner_argument;
 			try {
-				JobIdentity::validate_owner( $owner, true );
+				Identity::validate_owner( $owner, true );
 			} catch ( \InvalidArgumentException ) {
 				return array(
 					'action'  => 'error',

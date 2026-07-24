@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -94,6 +95,7 @@ final class RunTransitionsTest extends TestCase {
 	private FixedClock $clock;
 	private RecordingBackend $backend;
 	private FailureLifecycle $failure_lifecycle;
+	private Identity $identity;
 	private RecordingLogger $logger;
 	private RecordingRandomizer $randomizer;
 	private OptionRows $rows;
@@ -156,6 +158,7 @@ final class RunTransitionsTest extends TestCase {
 
 		$this->clock                = new FixedClock( self::NOW );
 		$this->backend              = new RecordingBackend();
+		$this->identity             = Identity::compose( self::OWNER, self::NAME );
 		$this->logger               = new RecordingLogger();
 		$this->randomizer           = new RecordingRandomizer( 42 );
 		$this->job                  = new RecordingJob( self::NAME );
@@ -192,7 +195,7 @@ final class RunTransitionsTest extends TestCase {
 		$caught = null;
 
 		try {
-			$this->handler->deliver( self::IDENTITY, 'non-canonical-run-id', $state, $run_store );
+			$this->handler->deliver( $this->identity, 'non-canonical-run-id', $state, $run_store );
 		} catch ( \ValueError $exception ) {
 			$caught = $exception;
 		}
@@ -240,7 +243,7 @@ final class RunTransitionsTest extends TestCase {
 			$this->wpdb->before_next(
 				'update',
 				function () use ( &$replacement_run_id ): void {
-					$result = $this->dispatcher->dispatch( self::IDENTITY, self::ARGS );
+					$result = $this->dispatcher->dispatch( $this->identity, self::ARGS );
 					self::assertInstanceOf( Success::class, $result );
 					self::assertIsString( $result->value );
 					$replacement_run_id = $result->value;
@@ -410,7 +413,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->wpdb->before_next(
 			'select',
 			function () use ( $advanced, $incumbent, $reset_at, $run_store ): void {
-				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( $this->handler, self::IDENTITY, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
+				self::assertFalse( $this->terminal_transitions->enforce_delivery_fence( $this->handler, $this->identity, self::RUN_ID, $incumbent, $run_store, $reset_at, $incumbent->heartbeat_at ) );
 				self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $incumbent, $advanced ) );
 			}
 		);
@@ -454,7 +457,7 @@ final class RunTransitionsTest extends TestCase {
 			}
 		);
 
-		$must_abort = $this->terminal_transitions->enforce_delivery_fence( $this->handler, self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( $this->handler, $this->identity, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		$after = $run_store->inspect( self::RUN_ID );
@@ -506,7 +509,7 @@ final class RunTransitionsTest extends TestCase {
 		try {
 			$this->terminal_transitions->cancel_run(
 				$this->handler,
-				self::IDENTITY,
+				$this->identity,
 				self::RUN_ID,
 				$snapshot['state'],
 				$run_store,
@@ -550,7 +553,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_dispatcher_cancel_clears_the_run_group_through_a_plain_backend(): void {
 		$this->prepare_run_action();
 
-		$result = $this->dispatcher->cancel( self::IDENTITY, self::RUN_ID );
+		$result = $this->dispatcher->cancel( $this->identity, self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame(
@@ -728,7 +731,7 @@ final class RunTransitionsTest extends TestCase {
 			);
 		}
 
-		$result = $this->dispatcher->dispatch( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::RUN_ID, $result->value );
@@ -750,7 +753,7 @@ final class RunTransitionsTest extends TestCase {
 		for ( $index = 0; 21 > $index; ++$index ) {
 			$this->randomizer->value = 100 + $index;
 
-			$result = $this->dispatcher->dispatch( self::IDENTITY, array( 'identity' => $index ) );
+			$result = $this->dispatcher->dispatch( $this->identity, array( 'identity' => $index ) );
 			self::assertInstanceOf( Success::class, $result );
 			$run_id = $result->value;
 			self::assertIsString( $run_id );
@@ -823,7 +826,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
-		$must_abort = $this->terminal_transitions->enforce_delivery_fence( $this->handler, self::IDENTITY, self::RUN_ID, $state, $run_store );
+		$must_abort = $this->terminal_transitions->enforce_delivery_fence( $this->handler, $this->identity, self::RUN_ID, $state, $run_store );
 
 		self::assertTrue( $must_abort );
 		self::assertNull( $this->option( $this->run_option_name() ) );
@@ -896,8 +899,8 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $state );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );
 
-		$this->terminal_transitions->fail_run( $this->handler, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
-		$this->terminal_transitions->fail_run( $this->handler, self::IDENTITY, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_run( $this->handler, $this->identity, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+		$this->terminal_transitions->fail_run( $this->handler, $this->identity, self::RUN_ID, $state, $run_store, $error, 3, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
 
 		$error_records = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => 'error' === $record['level'] ) );
 		self::assertCount( 1, $error_records );
@@ -1029,7 +1032,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	private function prepare_run_action(): void {
 		$this->register_job();
-		$result = $this->dispatcher->dispatch( self::IDENTITY, self::ARGS );
+		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->clock->timestamp       = self::NOW + 90;
@@ -1058,7 +1061,7 @@ final class RunTransitionsTest extends TestCase {
 			return;
 		}
 
-		$this->handler->deliver( self::IDENTITY, $run_id, $state, $run_store );
+		$this->handler->deliver( $this->identity, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -1071,7 +1074,7 @@ final class RunTransitionsTest extends TestCase {
 			return;
 		}
 
-		$this->registry->register( self::IDENTITY, $this->job->definition( $this->options ) );
+		$this->registry->register( $this->identity, $this->job->definition( $this->options ) );
 		$this->registered = true;
 	}
 

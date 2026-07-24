@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
@@ -64,7 +65,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @param   KindHandlerInterface         $handler        Handler selected by the persisted kind.
 	 * @param   JobOptions                   $options        Registered policy declaration.
-	 * @param   string                       $identity       Complete owner-qualified work identity.
+	 * @param   Identity                     $identity       Complete owner-qualified work identity.
 	 * @param   string                       $run_id         Run identifier.
 	 * @param   RunState                     $state          Fenced running state.
 	 * @param   RunStore                     $run_store      Active-run store.
@@ -75,7 +76,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	public function handle_failure( KindHandlerInterface $handler, JobOptions $options, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, ?array $details = null ): void {
+	public function handle_failure( KindHandlerInterface $handler, JobOptions $options, Identity $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, ?array $details = null ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -133,7 +134,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface         $handler       Handler selected by the persisted kind.
-	 * @param   string                       $identity      Complete owner-qualified work identity.
+	 * @param   Identity                     $identity      Complete owner-qualified work identity.
 	 * @param   string                       $run_id        Run identifier.
 	 * @param   RunState                     $state         Fenced running state.
 	 * @param   RunStore                     $run_store     Active-run store.
@@ -145,7 +146,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $details ): void {
+	private function fail_terminally( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $details ): void {
 		$this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $details );
 	}
 
@@ -155,12 +156,12 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   Identity    $identity    Complete owner-qualified job or chunked job identity.
 	 * @param   RetryPolicy $base_policy Registered or engine-default policy.
 	 *
 	 * @return  RetryPolicy
 	 */
-	private function retry_policy( string $identity, RetryPolicy $base_policy ): RetryPolicy {
+	private function retry_policy( Identity $identity, RetryPolicy $base_policy ): RetryPolicy {
 		/**
 		 * Filters the retry policy before work-identity-specific filtering.
 		 *
@@ -170,7 +171,7 @@ final readonly class FailureLifecycle {
 		 * @param   RetryPolicy $base_policy Registered or engine-default retry policy.
 		 * @param   string      $identity    Complete owner-qualified work identity.
 		 */
-		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy', $base_policy, $identity );
+		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy', $base_policy, (string) $identity );
 
 		/**
 		 * Filters the retry policy for one work identity.
@@ -182,7 +183,7 @@ final readonly class FailureLifecycle {
 		 *
 		 * @param   RetryPolicy $filtered_policy Generic-filtered retry policy.
 		 */
-		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy/' . $identity, $filtered_policy );
+		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy/' . (string) $identity, $filtered_policy );
 		if ( $filtered_policy instanceof RetryPolicy ) {
 			return $filtered_policy;
 		}
@@ -190,7 +191,7 @@ final readonly class FailureLifecycle {
 		$this->logger->warning(
 			'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the registered policy.',
 			array(
-				'identity'      => $identity,
+				'identity'      => (string) $identity,
 				'returned_type' => \get_debug_type( $filtered_policy ),
 			)
 		);
@@ -205,7 +206,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler     Handler selected by the persisted kind.
-	 * @param   string               $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity    Complete owner-qualified job or chunked job identity.
 	 * @param   string               $run_id      Run identifier.
 	 * @param   RunState             $state       Exact persisted state before the retry transition.
 	 * @param   RunStore             $run_store   Active-run store.
@@ -219,7 +220,7 @@ final readonly class FailureLifecycle {
 	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
-	private function reschedule_retry( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, string $retry_stage ): ?array {
+	private function reschedule_retry( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, string $retry_stage ): ?array {
 		$kind = $handler->key();
 		try {
 			$delay = $this->randomizer->int( 0, $policy->delay_ceiling_for_attempt( $attempt ) );
@@ -227,7 +228,7 @@ final readonly class FailureLifecycle {
 			if ( $delay > \PHP_INT_MAX - $now ) {
 				return array(
 					'state' => $state,
-					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $kind, $identity ) ),
+					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $kind, (string) $identity ) ),
 					'stage' => RunFailureStage::scheduling(),
 					'code'  => ErrorCode::BackendRejected,
 				);
@@ -265,7 +266,7 @@ final readonly class FailureLifecycle {
 			$this->logger->warning(
 				'Retry state could not be persisted; the reconciliation sweep retains the run until storage recovers.',
 				array(
-					'identity'        => $identity,
+					'identity'        => (string) $identity,
 					'run_id'          => $run_id,
 					'kind'            => $kind,
 					'exception_class' => \get_debug_type( $throwable ),
@@ -308,7 +309,7 @@ final readonly class FailureLifecycle {
 			$this->logger->warning(
 				'Run attempt failed and was scheduled for retry; correct recurring failures before the retry policy is exhausted.',
 				array(
-					'identity'     => $identity,
+					'identity'     => (string) $identity,
 					'run_id'       => $run_id,
 					'attempt'      => $attempt,
 					'max_attempts' => $policy->max_attempts,

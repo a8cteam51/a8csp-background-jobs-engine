@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\LocksOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 
@@ -89,7 +89,7 @@ final readonly class LocksCommand {
 		}
 		if ( \is_array( $prepared->value ) ) {
 			LocksOutput::render_ambiguity( $prepared->value );
-			LocksOutput::error( \sprintf( 'Multiple malformed execution-overlap lock lanes exist for "%s"; re-run with --args-hash=<one shown>.', $request['identity'] ) );
+			LocksOutput::error( \sprintf( 'Multiple malformed execution-overlap lock lanes exist for "%s"; re-run with --args-hash=<one shown>.', (string) $request['identity'] ) );
 			return;
 		}
 
@@ -117,7 +117,7 @@ final readonly class LocksCommand {
 	 *
 	 * @return  array{action: 'error', message: string}
 	 *          |array{action: 'list', format: string}
-	 *          |array{action: 'repair', identity: string, args_hash: string|null}
+	 *          |array{action: 'repair', identity: Identity, args_hash: string|null}
 	 */
 	public static function request_from_args( array $args, array $assoc_args ): array {
 		if ( array() === $args ) {
@@ -167,8 +167,8 @@ final readonly class LocksCommand {
 			);
 		}
 
-		$identity = $args[1];
-		if ( null === JobIdentity::parts( $identity ) ) {
+		$identity = Identity::tryFrom( $args[1] );
+		if ( null === $identity ) {
 			return array(
 				'action'  => 'error',
 				'message' => 'Lock repair identity is invalid; use a composed {owner}:{name} identity.',

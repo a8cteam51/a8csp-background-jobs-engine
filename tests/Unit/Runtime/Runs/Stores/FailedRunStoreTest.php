@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
@@ -54,6 +55,7 @@ final class FailedRunStoreTest extends TestCase {
 
 	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
+	private Identity $identity;
 	private EngineRig $rig;
 	private OptionRows $rows;
 	private RecordingJob $job;
@@ -89,6 +91,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		$this->rig            = EngineRig::set_up( self::NOW );
 		$this->client         = $this->rig->operations( self::OWNER );
+		$this->identity       = Identity::compose( self::OWNER, self::NAME );
 		$this->job            = new RecordingJob( self::NAME );
 		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
@@ -231,7 +234,7 @@ final class FailedRunStoreTest extends TestCase {
 	public function test_corrupt_entry_warning_is_guarded_across_reentrant_store_instances(): void {
 		$fixture = StoreFixtureBuilder::failed_runs_with_corrupt_member( $this->fixtures->failed_runs( array( self::fixture_entry( 'run-a', 100 ) ) ) );
 		$this->put_fixture( $fixture );
-		$store          = new FailedRunStore( self::IDENTITY, $this->rows, new HookLogger() );
+		$store          = new FailedRunStore( $this->identity, $this->rows, new HookLogger() );
 		$listener_calls = 0;
 		$nested         = null;
 		$callbacks      = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
@@ -239,7 +242,7 @@ final class FailedRunStoreTest extends TestCase {
 		$callbacks['a8csp_bgje/log']                 = function () use ( &$listener_calls, &$nested ): void {
 			++$listener_calls;
 			if ( 1 === $listener_calls ) {
-				$nested = new FailedRunStore( self::IDENTITY, $this->rows, new HookLogger() )->all();
+				$nested = new FailedRunStore( $this->identity, $this->rows, new HookLogger() )->all();
 			}
 		};
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
@@ -278,7 +281,7 @@ final class FailedRunStoreTest extends TestCase {
 			$run_ids[] = $this->fail_job( array( 'index' => $index ), $index + 1 );
 		}
 
-		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		$history = $this->rig->inspection()->runs( $this->identity )['history'];
 		self::assertNotNull( $history );
 		$retained = \array_column( $history, 'failed_store', 'run_id' );
 		self::assertFalse( $retained[ $run_ids[0] ] );
@@ -326,7 +329,7 @@ final class FailedRunStoreTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertSame( array( $args, $args ), $this->job->calls );
-		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		$history = $this->rig->inspection()->runs( $this->identity )['history'];
 		self::assertNotNull( $history );
 		$failed_entry = \array_find( $history, static fn ( array $entry ): bool => $failed === $entry['run_id'] );
 		self::assertNotNull( $failed_entry );
@@ -345,7 +348,7 @@ final class FailedRunStoreTest extends TestCase {
 	public function test_malformed_failed_rows_are_tolerated_by_inspection_and_retry(): void {
 		$this->put_fixture( $this->fixtures->unreadable_failed_runs() );
 
-		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		$snapshot = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( array(), $snapshot['history'] );
 		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
@@ -397,7 +400,7 @@ final class FailedRunStoreTest extends TestCase {
 		$fixture = StoreFixtureBuilder::failed_runs_with_stage( $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) ), 'acme.invalid-stage' );
 		$this->put_fixture( $fixture );
 
-		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['history'] );
+		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['history'] );
 		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
@@ -750,7 +753,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  FailedRunStore
 	 */
 	private function store(): FailedRunStore {
-		return new FailedRunStore( self::IDENTITY, $this->rows, $this->rig->logger() );
+		return new FailedRunStore( $this->identity, $this->rows, $this->rig->logger() );
 	}
 
 	/**

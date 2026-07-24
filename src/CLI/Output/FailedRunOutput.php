@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -111,8 +111,8 @@ final readonly class FailedRunOutput {
 
 		$rows = array();
 		foreach ( $entries_by_name as $name => $entries ) {
-			$parts = JobIdentity::parts( $name );
-			if ( null === $parts || ( null !== $owner && $owner !== $parts[0] ) ) {
+			$identity = Identity::tryFrom( $name );
+			if ( null === $identity || ( null !== $owner && $owner !== $identity->owner() ) ) {
 				continue;
 			}
 
@@ -131,7 +131,7 @@ final readonly class FailedRunOutput {
 					: null;
 
 				$rows[] = array(
-					'owner'         => $parts[0],
+					'owner'         => $identity->owner(),
 					'identity'      => $name,
 					'run_id'        => $entry['run_id'],
 					'failed_at'     => \gmdate( \DATE_ATOM, $entry['failed_at'] ),

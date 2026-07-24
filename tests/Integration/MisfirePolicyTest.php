@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
@@ -87,9 +88,6 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 	/** Job isolated to the Skip occurrence. */
 	private const string SKIP_JOB = 'integration-misfire-skip-job';
 
-	/** Owner-qualified Skip target identity. */
-	private const string SKIP_JOB_IDENTITY = self::SKIP_OWNER . ':' . self::SKIP_JOB;
-
 	/** Owner isolated to the grace-boundary occurrences. */
 	private const string BOUNDARY_OWNER = 'integration-misfire-boundary';
 
@@ -113,9 +111,6 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 
 	/** Job one second beyond the grace boundary. */
 	private const string BEYOND_JOB = 'integration-misfire-beyond-job';
-
-	/** Owner-qualified beyond-boundary target identity. */
-	private const string BEYOND_JOB_IDENTITY = self::BOUNDARY_OWNER . ':' . self::BEYOND_JOB;
 
 	/** Owner isolated to misfire-grace filter ordering. */
 	private const string FILTER_OWNER = 'integration-misfire-filter-order';
@@ -152,7 +147,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FILTER_JOB_IDENTITY );
 		$engine = $this->build_engine( $clock, $logger );
 		$job    = new RecordingJob( self::FILTER_JOB );
-		$this->register_deterministic_job( self::FILTER_JOB_IDENTITY, $job );
+		$this->register_deterministic_job( Identity::compose( self::FILTER_OWNER, self::FILTER_JOB ), $job );
 		$schedule = new Schedule( self::FILTER_SCHEDULE, Recurrence::every( self::INTERVAL ), self::FILTER_JOB, catch_up: CatchUpPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::FILTER_OWNER, array( $schedule ) );
 
@@ -210,7 +205,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::RUN_ONCE_JOB_IDENTITY );
 		$engine = $this->build_engine( $clock, $logger );
 		$job    = new RecordingJob( self::RUN_ONCE_JOB );
-		$this->register_deterministic_job( self::RUN_ONCE_JOB_IDENTITY, $job );
+		$this->register_deterministic_job( Identity::compose( self::RUN_ONCE_OWNER, self::RUN_ONCE_JOB ), $job );
 		$schedule = new Schedule( self::RUN_ONCE_SCHEDULE, Recurrence::every( self::INTERVAL ), self::RUN_ONCE_JOB, array( 'policy' => 'run-once' ) );
 		$this->assert_sync_success( $engine->schedules, self::RUN_ONCE_OWNER, array( $schedule ) );
 
@@ -249,7 +244,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$this->expect_option( ScheduleRegistry::option_name( self::SKIP_OWNER ) );
 		$engine = $this->build_engine( $clock, $logger );
 		$job    = new RecordingJob( self::SKIP_JOB );
-		$this->register_deterministic_job( self::SKIP_JOB_IDENTITY, $job );
+		$this->register_deterministic_job( Identity::compose( self::SKIP_OWNER, self::SKIP_JOB ), $job );
 		$schedule = new Schedule( self::SKIP_SCHEDULE, Recurrence::every( self::INTERVAL ), self::SKIP_JOB, array( 'policy' => 'skip' ), CatchUpPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::SKIP_OWNER, array( $schedule ) );
 
@@ -302,8 +297,8 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$engine     = $this->build_engine( $clock, $logger );
 		$exact_job  = new RecordingJob( self::EXACT_JOB );
 		$beyond_job = new RecordingJob( self::BEYOND_JOB );
-		$this->register_deterministic_job( self::EXACT_JOB_IDENTITY, $exact_job );
-		$this->register_deterministic_job( self::BEYOND_JOB_IDENTITY, $beyond_job );
+		$this->register_deterministic_job( Identity::compose( self::BOUNDARY_OWNER, self::EXACT_JOB ), $exact_job );
+		$this->register_deterministic_job( Identity::compose( self::BOUNDARY_OWNER, self::BEYOND_JOB ), $beyond_job );
 		$exact  = new Schedule( self::EXACT_SCHEDULE, Recurrence::every( self::INTERVAL ), self::EXACT_JOB, catch_up: CatchUpPolicy::Skip );
 		$beyond = new Schedule( self::BEYOND_SCHEDULE, Recurrence::every( self::INTERVAL ), self::BEYOND_JOB, catch_up: CatchUpPolicy::Skip );
 		$this->assert_sync_success( $engine->schedules, self::BOUNDARY_OWNER, array( $exact, $beyond ) );
@@ -349,12 +344,12 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 	/**
 	 * Registers one job in the deterministic graph.
 	 *
-	 * @param   string        $identity Complete owner-qualified job identity.
+	 * @param   Identity      $identity Complete owner-qualified job identity.
 	 * @param   RecordingJob $job     Job to register.
 	 *
 	 * @return  void
 	 */
-	private function register_deterministic_job( string $identity, RecordingJob $job ): void {
+	private function register_deterministic_job( Identity $identity, RecordingJob $job ): void {
 		$job_registry = $this->deterministic_job_registry;
 		self::assertNotNull( $job_registry );
 		$job_registry->register( $identity, $job->definition() );
@@ -438,10 +433,10 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 	private function assert_sync_success( ScheduleOperations $schedules, string $owner, array $declared ): void {
 		$declarations = array();
 		foreach ( $declared as $schedule ) {
-			$identity                  = $owner . ':' . $schedule->name;
-			$declarations[ $identity ] = array(
+			$identity                           = Identity::compose( $owner, $schedule->name );
+			$declarations[ (string) $identity ] = array(
 				'schedule' => $schedule,
-				'job'      => $owner . ':' . $schedule->job,
+				'job'      => Identity::compose( $owner, $schedule->job ),
 			);
 		}
 
@@ -468,8 +463,8 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 			throw new \LogicException( 'Build the deterministic graph before aging a schedule fixture.' );
 		}
 
-		$identity = $owner . ':' . $name;
-		$read     = $registry->registration( $identity );
+		$identity = Identity::compose( $owner, $name );
+		$read     = $registry->registration( (string) $identity );
 		self::assertInstanceOf( Success::class, $read );
 		$registration = $read->value;
 		self::assertIsArray( $registration );

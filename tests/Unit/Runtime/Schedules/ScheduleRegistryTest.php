@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
@@ -208,8 +209,9 @@ final class ScheduleRegistryTest extends TestCase {
 		$registration = $registry->registration( 'owner-a:nightly' );
 		self::assertInstanceOf( Success::class, $registration );
 		self::assertIsArray( $registration->value );
-		$marked = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 600, self::NOW + 300, 2, 3, 3, true );
-		self::assertSame( RegistrationUpdateOutcome::Updated, $registry->update_registration( 'owner-a:nightly', $schedule->fingerprint(), $marked ) );
+		$marked   = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 600, self::NOW + 300, 2, 3, 3, true );
+		$identity = self::identity( 'nightly' );
+		self::assertSame( RegistrationUpdateOutcome::Updated, $registry->update_registration( $identity, $schedule->fingerprint(), $marked ) );
 
 		$persisted = $registry->registration( 'owner-a:nightly' );
 		self::assertInstanceOf( Success::class, $persisted );
@@ -231,11 +233,11 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertFalse( $reset->value['undeclared_escalated'] ?? true );
 		self::assertSame( array(), \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'schedule_recurring', 'unschedule' ), true ) ) ) );
 
-		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
-		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
-		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
 		$this->rig->wpdb()->recorded_queries = array();
-		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $registry->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
 		self::assertSame( array(), $this->queries_starting_with( 'UPDATE ' ) );
 		$fresh_episode = $registry->registration( 'owner-a:nightly' );
 		self::assertInstanceOf( Success::class, $fresh_episode );
@@ -272,7 +274,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $owner['declarations'], $owner['registrations'], reset_undeclared_episodes: true ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner['declarations'] ), $owner['registrations'], reset_undeclared_episodes: true ) );
 
 		$expected = $owner;
 
@@ -379,10 +381,10 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		$outcome = $registry->replace_owner( 'owner-a', $owner['declarations'], $owner['registrations'] );
+		$outcome = $registry->replace_owner( 'owner-a', self::internal_declarations( $owner['declarations'] ), $owner['registrations'] );
 
 		self::assertSame( OwnerReplacementOutcome::ReadFailed, $outcome );
-		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
+		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 		self::assertSame( array(), $this->write_queries() );
 	}
 
@@ -398,11 +400,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$owner    = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
 		$registry = $this->registry();
 
-		$outcome = $registry->replace_owner( 'owner-a', $owner['declarations'], $owner['registrations'] );
+		$outcome = $registry->replace_owner( 'owner-a', self::internal_declarations( $owner['declarations'] ), $owner['registrations'] );
 
 		self::assertSame( OwnerReplacementOutcome::Corrupt, $outcome );
 		self::assertSame( $poison, $this->rig->wpdb()->rows[ $option_name ] ?? null );
-		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
+		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 	}
 
 	/**
@@ -527,11 +529,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( &$nested ): void {
-				$nested = $this->registry()->record_undeclared_occurrence( 'owner-a:nightly', 3 );
+				$nested = $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 );
 			}
 		);
 
-		$outer = $this->registry()->record_undeclared_occurrence( 'owner-a:nightly', 3 );
+		$outer = $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 );
 
 		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $nested );
 		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $outer );
@@ -561,7 +563,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		self::assertSame( UndeclaredOccurrenceOutcome::Failed, $this->registry()->record_undeclared_occurrence( 'owner-a:nightly', 3 ) );
+		self::assertSame( UndeclaredOccurrenceOutcome::Failed, $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
@@ -588,7 +590,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
 		self::assertSame( $this->fixtures->schedule_registration( $owner_a )[1], $this->raw_row() );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 
@@ -626,11 +628,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( $next_b ): void {
-				self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-b', $next_b['declarations'], $next_b['registrations'] ) );
+				self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-b', self::internal_declarations( $next_b['declarations'] ), $next_b['registrations'] ) );
 			}
 		);
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', $next_a['declarations'], $next_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( $this->fixtures->schedule_registration( $next_a )[1], $this->raw_row( 'owner-a' ) );
@@ -664,12 +666,12 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( $advanced ): void {
-				self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( 'owner-a:nightly', $advanced['fingerprint'], $advanced ) );
+				self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( self::identity( 'nightly' ), $advanced['fingerprint'], $advanced ) );
 			}
 		);
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $replacement['declarations'], $replacement['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
 
 		$expected                                     = $replacement;
 		$expected['registrations']['owner-a:nightly'] = $advanced;
@@ -715,7 +717,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $stale['declarations'], $stale['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $stale['declarations'] ), $stale['registrations'] ) );
 
 		self::assertSame( array(), $this->write_queries() );
 		self::assertSame( $fixture[1], $this->raw_row() );
@@ -735,7 +737,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->put_fixture( $this->fixtures->schedule_registration( $stored ) );
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $replacement['declarations'], $replacement['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
 
 		$registrations = $registry->registrations_for( 'owner-a' );
 		self::assertInstanceOf( Success::class, $registrations );
@@ -770,7 +772,7 @@ final class ScheduleRegistryTest extends TestCase {
 			}
 		);
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', $next_a['declarations'], $next_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertSame( $this->fixtures->schedule_registration( $next_a )[1], $this->raw_row() );
 		self::assertSame( $owner_b_raw, $this->raw_row( 'owner-b' ) );
@@ -801,11 +803,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( $hourly_next ): void {
-				self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( 'owner-a:hourly', $hourly_next['fingerprint'], $hourly_next ) );
+				self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( self::identity( 'hourly' ), $hourly_next['fingerprint'], $hourly_next ) );
 			}
 		);
 
-		self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( 'owner-a:nightly', $nightly_next['fingerprint'], $nightly_next ) );
+		self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( self::identity( 'nightly' ), $nightly_next['fingerprint'], $nightly_next ) );
 		$expected                                     = $owner;
 		$expected['registrations']['owner-a:nightly'] = $nightly_next;
 		$expected['registrations']['owner-a:hourly']  = $hourly_next;
@@ -820,7 +822,7 @@ final class ScheduleRegistryTest extends TestCase {
 				$wpdb->put( $replacement_fixture[0], $replacement_fixture[1] );
 			}
 		);
-		self::assertSame( RegistrationUpdateOutcome::Superseded, $this->registry()->update_registration( 'owner-a:nightly', $nightly_next['fingerprint'], $nightly_next ) );
+		self::assertSame( RegistrationUpdateOutcome::Superseded, $this->registry()->update_registration( self::identity( 'nightly' ), $nightly_next['fingerprint'], $nightly_next ) );
 		self::assertSame( $replacement_fixture[1], $this->raw_row() );
 
 		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
@@ -831,7 +833,7 @@ final class ScheduleRegistryTest extends TestCase {
 				unset( $wpdb->rows[ $option_name ], $wpdb->autoload[ $option_name ] );
 			}
 		);
-		self::assertSame( RegistrationUpdateOutcome::Pruned, $this->registry()->update_registration( 'owner-a:nightly', $nightly_next['fingerprint'], $nightly_next ) );
+		self::assertSame( RegistrationUpdateOutcome::Pruned, $this->registry()->update_registration( self::identity( 'nightly' ), $nightly_next['fingerprint'], $nightly_next ) );
 		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'owner-a' ), $this->rig->wpdb()->rows );
 	}
 
@@ -857,7 +859,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		self::assertSame( RegistrationUpdateOutcome::Failed, $this->registry()->update_registration( 'owner-a:nightly', $next['fingerprint'], $next ) );
+		self::assertSame( RegistrationUpdateOutcome::Failed, $this->registry()->update_registration( self::identity( 'nightly' ), $next['fingerprint'], $next ) );
 		self::assertSame( $this->fixtures->schedule_registration( $owner )[1], $this->raw_row() );
 		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
@@ -884,10 +886,10 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
 
 		self::assertSame( $fixture[1], $this->raw_row() );
-		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
+		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
 	}
@@ -926,7 +928,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
 		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( $replacement[1], $this->raw_row() );
@@ -964,13 +966,13 @@ final class ScheduleRegistryTest extends TestCase {
 		}
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', $owner_a['declarations'], $owner_a['registrations'] ) );
+		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
 		self::assertCount( 5, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 5, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'INSERT ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'DELETE ' ) );
 		self::assertSame( $last_rival[1], $this->raw_row() );
-		self::assertNull( $registry->declaration( 'owner-a:nightly' ) );
+		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 	}
 
 	// endregion.
@@ -990,6 +992,42 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	private static function schedule( string $name, int $interval ): Schedule {
 		return new Schedule( $name, Recurrence::every( $interval ), 'refresh-index', array( 'schedule' => $name ) );
+	}
+
+	/**
+	 * Returns one canonical owner-qualified schedule identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Schedule name.
+	 *
+	 * @return  Identity
+	 */
+	private static function identity( string $name ): Identity {
+		return Identity::compose( 'owner-a', $name );
+	}
+
+	/**
+	 * Converts raw fixture declarations at the direct registry boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<string, array{schedule: Schedule, job: string}> $declarations Raw fixture declarations.
+	 *
+	 * @return  array<string, array{schedule: Schedule, job: Identity}>
+	 */
+	private static function internal_declarations( array $declarations ): array {
+		$internal = array();
+		foreach ( $declarations as $schedule_identity => $declaration ) {
+			$internal[ $schedule_identity ] = array(
+				'schedule' => $declaration['schedule'],
+				'job'      => Identity::tryFrom( $declaration['job'] ) ?? throw new \LogicException( 'Schedule fixture target identity must be canonical.' ),
+			);
+		}
+
+		return $internal;
 	}
 
 	/**

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
@@ -68,6 +69,7 @@ final class LifecycleEffectsTest extends TestCase {
 
 	private FixedClock $clock;
 	private OverlapGuard $guard;
+	private Identity $identity;
 	private RecordingLogger $logger;
 	private StoreFactory $stores;
 	private LifecycleEffects $terminal_effects;
@@ -120,11 +122,12 @@ final class LifecycleEffectsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_lifecycle_events']     = array();
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
-		$this->clock  = new FixedClock( self::NOW );
-		$this->logger = new RecordingLogger();
-		$this->wpdb   = new WpdbLockSpy();
-		$rows         = new OptionRows( $this->wpdb );
-		$this->guard  = new OverlapGuard( $this->clock, $this->logger, $rows );
+		$this->clock    = new FixedClock( self::NOW );
+		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->logger   = new RecordingLogger();
+		$this->wpdb     = new WpdbLockSpy();
+		$rows           = new OptionRows( $this->wpdb );
+		$this->guard    = new OverlapGuard( $this->clock, $this->logger, $rows );
 
 		$this->stores           = new StoreFactory( $this->clock, $rows, $this->logger );
 		$this->terminal_effects = new LifecycleEffects( $this->guard, $this->stores, $this->logger );
@@ -144,7 +147,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$terminal     = $running->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
+		$finished = $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
 
 		self::assertTrue( $finished );
 		self::assertNull( $run_store->get( self::RUN_ID ) );
@@ -175,9 +178,9 @@ final class LifecycleEffectsTest extends TestCase {
 			)
 		);
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $running, $terminal );
-		$failure_detail = $this->terminal_effects->resolve_failure_detail( self::IDENTITY, self::RUN_ID, $terminal, null );
+		$failure_detail = $this->terminal_effects->resolve_failure_detail( $this->identity, self::RUN_ID, $terminal, null );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail );
+		$finished = $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail );
 
 		self::assertTrue( $finished );
 		self::assertNull( $run_store->get( self::RUN_ID ) );
@@ -220,9 +223,9 @@ final class LifecycleEffectsTest extends TestCase {
 			)
 		);
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
-		$failure_detail = $this->terminal_effects->resolve_failure_detail( self::IDENTITY, self::RUN_ID, $terminal_state, null );
+		$failure_detail = $this->terminal_effects->resolve_failure_detail( $this->identity, self::RUN_ID, $terminal_state, null );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $failure_detail );
+		$finished = $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $failure_detail );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
@@ -269,7 +272,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$terminal_state = $state->with_failed_attempts( 0 )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( self::PREVIOUS_RUN_ID );
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $state, $terminal_state );
 
-		$finished = $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, null );
+		$finished = $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, null );
 
 		self::assertFalse( $finished );
 		$remaining = $run_store->get( self::RUN_ID );
@@ -309,19 +312,19 @@ final class LifecycleEffectsTest extends TestCase {
 		$claim_raw = $run_store->replace_if_state_matches( self::RUN_ID, $running, $terminal );
 		self::assertIsString( $claim_raw );
 
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $claim_raw, $run_store ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( $this->identity, self::RUN_ID, $terminal, $claim_raw, $run_store ) );
 		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
 		self::assertNull( $this->lock() );
 
 		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'hooks' );
 		self::assertIsArray( $hooks );
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( $this->identity, self::RUN_ID, $hooks['state'], $hooks['raw'], $run_store ) );
 
 		$complete = $run_store->append_terminal_effect( self::RUN_ID, $hooks['state'], $hooks['raw'], 'history' );
 		self::assertIsArray( $complete );
-		self::assertFalse( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store ) );
+		self::assertFalse( $this->terminal_effects->finish_claimed_transition( $this->identity, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store ) );
 		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
-		self::assertTrue( $this->terminal_effects->finish_claimed_transition( self::IDENTITY, self::RUN_ID, $complete['state'], $complete['raw'], $run_store ) );
+		self::assertTrue( $this->terminal_effects->finish_claimed_transition( $this->identity, self::RUN_ID, $complete['state'], $complete['raw'], $run_store ) );
 		self::assertNull( $run_store->get( self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
 	}
@@ -361,10 +364,10 @@ final class LifecycleEffectsTest extends TestCase {
 		}
 		$terminal_raw   = $this->claim_terminal_state( $run_store, $running, $terminal );
 		$failure_detail = 'failed' === $status
-			? $this->terminal_effects->resolve_failure_detail( self::IDENTITY, self::RUN_ID, $terminal, null )
+			? $this->terminal_effects->resolve_failure_detail( $this->identity, self::RUN_ID, $terminal, null )
 			: null;
 
-		self::assertTrue( $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail ) );
+		self::assertTrue( $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail ) );
 
 		$actions = $this->fired_actions();
 		if ( 'failed' === $status ) {
@@ -419,7 +422,7 @@ final class LifecycleEffectsTest extends TestCase {
 
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
 
-		self::assertTrue( $this->terminal_effects->execute_claimed_transition( self::IDENTITY, self::RUN_ID, $terminal, $terminal_raw, $run_store, null ) );
+		self::assertTrue( $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null ) );
 
 		$actions = $this->fired_actions();
 		self::assertSame( $expected, $actions[0]['args'][1] ?? null );
@@ -446,7 +449,7 @@ final class LifecycleEffectsTest extends TestCase {
 
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
 
-		$this->terminal_effects->fire_retry_scheduled( self::IDENTITY, self::RUN_ID, $start_args, 1, 30 );
+		$this->terminal_effects->fire_retry_scheduled( $this->identity, self::RUN_ID, $start_args, 1, 30 );
 
 		$actions = $this->fired_actions();
 		self::assertSame( 'accepted', $value );
@@ -507,14 +510,14 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @return  void
 	 */
 	private function prepare_run_action( array $start_args = self::ARGS ): void {
-		$claim = $this->guard->claim( self::IDENTITY, self::ARGS_HASH, self::RUN_ID, 900 );
+		$claim = $this->guard->claim( $this->identity, self::ARGS_HASH, self::RUN_ID, 900 );
 		self::assertSame( LockClaimOutcome::Claimed, $claim->outcome );
 
-		$run_store = $this->stores->run_store( self::IDENTITY );
+		$run_store = $this->stores->run_store( $this->identity );
 		if ( null === $run_store->create( self::RUN_ID, 'job', $start_args, self::ARGS_HASH, array() ) ) {
 			throw new \RuntimeException( 'The terminal-effect fixture could not create its running row.' );
 		}
-		if ( ! $this->stores->run_history( self::IDENTITY )->record_started( self::RUN_ID, self::ARGS_HASH ) ) {
+		if ( ! $this->stores->run_history( $this->identity )->record_started( self::RUN_ID, self::ARGS_HASH ) ) {
 			throw new \RuntimeException( 'The terminal-effect fixture could not record its started history.' );
 		}
 

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
@@ -306,7 +307,7 @@ final class ApiTest extends TestCase {
 		self::assertInstanceOf( Success::class, $latest );
 		self::assertInstanceOf( Run::class, $latest->value );
 		self::assertSame( $run_id, (string) $latest->value->id );
-		$history = $this->rig->inspection()->runs( $identity )['history'];
+		$history = $this->rig->inspection()->runs( Identity::tryFrom( $identity ) ?? throw new \LogicException( 'The test identity must be canonical.' ) )['history'];
 		self::assertIsArray( $history );
 		self::assertSame( array( $run_id ), \array_column( $history, 'run_id' ) );
 		self::assertNotContains( 'malformed-run-id', \array_column( $history, 'run_id' ) );

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
@@ -65,7 +66,6 @@ final class CleanupIntentsTest extends TestCase {
 	private const string OWNER            = 'owner-a';
 	private const string REGISTRATION_KEY = 'owner-a:nightly';
 	private const string JOB              = 'refresh-index';
-	private const string JOB_IDENTITY     = 'owner-a:refresh-index';
 
 	private ScheduleOperations $api;
 	private RecordingBackend $backend;
@@ -153,6 +153,71 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
 		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * Malformed scheduler-wire bytes retain their exact lease, intent, cleanup, and diagnostic identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_drives_exact_raw_schedule_cleanup(): void {
+		$registration_key    = 'malformed';
+		$digest              = '60ec9bb7299d85e0cdd35d4058fabd7cb6bdc9b788c6efde44427e9bb9234e13';
+		$lease_option        = OccurrenceLease::OPTION_PREFIX . $digest;
+		$intent_option       = CleanupIntents::OPTION_PREFIX . $digest;
+		$expected_lease_raw  = 'a:2:{s:11:"claim_token";s:19:"0000000000000000042";s:10:"claimed_at";i:1700000000;}';
+		$expected_intent_raw = 'a:2:{s:17:"schedule_identity";s:9:"malformed";s:10:"created_at";i:1700000000;}';
+		$before              = $this->wpdb->rows;
+
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $lease_option, $expected_lease_raw ): void {
+				self::assertSame( $expected_lease_raw, $wpdb->rows[ $lease_option ] ?? null );
+			}
+		);
+		$this->backend->before_next(
+			'unschedule',
+			function () use ( $intent_option, $expected_intent_raw ): void {
+				self::assertSame( $expected_intent_raw, $this->wpdb->rows[ $intent_option ] ?? null );
+			}
+		);
+
+		$this->delivery->handle_schedule_due( $registration_key );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'is_ready',
+					'args' => array(),
+				),
+				array(
+					'verb' => 'unschedule',
+					'args' => array(
+						'hook'  => OccurrenceDelivery::SCHEDULE_HOOK,
+						'args'  => array( $registration_key ),
+						'group' => $registration_key,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+		self::assertSame( $before, $this->wpdb->rows );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Unknown schedule registration "malformed" was delivered; re-declare the schedule or remove the leftover occurrence.',
+					'context' => array(
+						'schedule_identity' => $registration_key,
+						'converged'         => true,
+					),
+				),
+			),
+			$this->logger->records
+		);
 	}
 
 	/**
@@ -550,14 +615,16 @@ final class CleanupIntentsTest extends TestCase {
 	 * @param   string   $owner     Owner identifier.
 	 * @param   Schedule ...$schedules Schedule value objects.
 	 *
-	 * @return  array<string, array{schedule: Schedule, job: string}>
+	 * @return  array<string, array{schedule: Schedule, job: Identity}>
 	 */
 	private static function declarations( string $owner, Schedule ...$schedules ): array {
 		$declarations = array();
 		foreach ( $schedules as $schedule ) {
-			$declarations[ $owner . ':' . $schedule->name ] = array(
+			$schedule_identity = Identity::compose( $owner, $schedule->name );
+
+			$declarations[ (string) $schedule_identity ] = array(
 				'schedule' => $schedule,
-				'job'      => $owner . ':' . $schedule->job,
+				'job'      => Identity::compose( $owner, $schedule->job ),
 			);
 		}
 
@@ -591,7 +658,7 @@ final class CleanupIntentsTest extends TestCase {
 	 */
 	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
 		$job_registry = new JobRegistry();
-		$job_registry->register( self::JOB_IDENTITY, ( new RecordingJob( self::JOB ) )->definition() );
+		$job_registry->register( Identity::compose( self::OWNER, self::JOB ), ( new RecordingJob( self::JOB ) )->definition() );
 		$guard                 = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$overlap_identity      = new OverlapIdentity();
 		$stores                = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\LocksCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\LocksOutput;
@@ -96,6 +97,24 @@ final class LocksCommandTest extends TestCase {
 	// endregion.
 
 	// region TESTS.
+
+	/**
+	 * Repair requests retain typed identities while their wire bytes stay unchanged.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_repair_request_retains_a_typed_identity(): void {
+		$request = LocksCommand::request_from_args( array( 'repair', self::IDENTITY ), array( 'args-hash' => self::ARGS_HASH ) );
+
+		self::assertSame( array( 'action', 'identity', 'args_hash' ), \array_keys( $request ) );
+		self::assertSame( 'repair', $request['action'] );
+		self::assertInstanceOf( Identity::class, $request['identity'] );
+		self::assertSame( self::IDENTITY, (string) $request['identity'] );
+		self::assertSame( self::ARGS_HASH, $request['args_hash'] );
+	}
 
 	/**
 	 * JSON listing exposes owned and malformed lanes without exposing either raw value.

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
@@ -74,13 +75,13 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified job or chunked job identity.
-	 * @param   string $args_hash Stable single-flight identity.
-	 * @param   string $run_id    Lock owner run identifier.
+	 * @param   Identity $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   string   $args_hash Stable single-flight identity.
+	 * @param   string   $run_id    Lock owner run identifier.
 	 *
 	 * @return  void
 	 */
-	public function reconcile_orphaned_lock( string $identity, string $args_hash, string $run_id ): void {
+	public function reconcile_orphaned_lock( Identity $identity, string $args_hash, string $run_id ): void {
 		$run_store = $this->stores->run_store( $identity );
 		$inspected = $run_store->inspect( $run_id );
 		if ( $inspected->is_failure() ) {
@@ -101,7 +102,7 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Deleted corrupt run option while reconciling its execution-overlap lock.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -114,7 +115,7 @@ final readonly class RunReconciliation {
 		$this->logger->warning(
 			'Reclaimed stale execution-overlap lock without a valid matching run option.',
 			array(
-				'identity'  => $identity,
+				'identity'  => (string) $identity,
 				'args_hash' => $args_hash,
 				'run_id'    => $run_id,
 			)
@@ -129,13 +130,13 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity       Complete owner-qualified job or chunked job identity.
-	 * @param   string $run_id         Run identifier.
-	 * @param   int    $terminal_grace Grace before belt-and-braces terminal cleanup.
+	 * @param   Identity $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id         Run identifier.
+	 * @param   int      $terminal_grace Grace before belt-and-braces terminal cleanup.
 	 *
 	 * @return  AbstractResult<string|null, EngineError> Transferred single-flight identity whose foreign lock must remain as fence evidence.
 	 */
-	public function reconcile_run( string $identity, string $run_id, int $terminal_grace ): AbstractResult {
+	public function reconcile_run( Identity $identity, string $run_id, int $terminal_grace ): AbstractResult {
 		$run_store = $this->stores->run_store( $identity );
 		$inspected = $run_store->inspect( $run_id );
 		if ( $inspected->is_failure() ) {
@@ -152,7 +153,7 @@ final readonly class RunReconciliation {
 				$this->logger->warning(
 					'Deleted corrupt run option during maintenance sweep.',
 					array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 					)
 				);
@@ -189,7 +190,7 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Background-work run kind has no registered handler; maintenance left the run untouched.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 					'kind'     => $state->kind,
 				)
@@ -229,7 +230,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string                  $run_id       Run identifier.
 	 * @param   RunState                $state        Running state observed by maintenance.
 	 * @param   RunStore                $run_store    Name-bound run store.
@@ -239,7 +240,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, KindHandlerInterface $handler ): AbstractResult {
+	private function reconcile_executing_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, KindHandlerInterface $handler ): AbstractResult {
 		if (
 			MaintenanceFenceOutcome::Owned === $fence
 			|| MaintenanceFenceOutcome::Indeterminate === $fence
@@ -251,7 +252,7 @@ final readonly class RunReconciliation {
 		$this->logger->warning(
 			'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
 			array(
-				'identity' => $identity,
+				'identity' => (string) $identity,
 				'run_id'   => $run_id,
 			)
 		);
@@ -265,7 +266,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state observed by maintenance.
 	 * @param   RunStore             $run_store    Name-bound run store.
@@ -275,7 +276,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_non_executing_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, KindHandlerInterface $handler ): AbstractResult {
+	private function reconcile_non_executing_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, int $staleness, KindHandlerInterface $handler ): AbstractResult {
 		if ( ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) {
 			return new Success( null );
 		}
@@ -296,7 +297,7 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Reclaimed stale running run that carries no pending-action descriptor.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -305,7 +306,7 @@ final readonly class RunReconciliation {
 				$this->logger->warning(
 					'Persisted lifecycle stage is not owned by the resolved kind handler; maintenance left the run untouched.',
 					array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 						'kind'     => $state->kind,
 						'stage'    => $state->pending->stage,
@@ -333,7 +334,7 @@ final readonly class RunReconciliation {
 			$this->logger->warning(
 				'Pending-action redelivery was rejected by the scheduler; restore scheduler availability so maintenance can retry the pending action.',
 				array(
-					'identity'     => $identity,
+					'identity'     => (string) $identity,
 					'run_id'       => $run_id,
 					'error_class'  => $scheduled->error::class,
 					'error_reason' => $scheduled->error->reason->value,
@@ -354,7 +355,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Terminal state observed by maintenance.
 	 * @param   RunStore   $run_store      Name-bound run store.
@@ -363,12 +364,12 @@ final readonly class RunReconciliation {
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_terminal_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?array $failure_detail ): AbstractResult {
+	private function reconcile_terminal_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?array $failure_detail ): AbstractResult {
 		if ( $this->terminal_effects->execute_claimed_transition( $identity, $run_id, $state, $expected_raw, $run_store, $failure_detail ) ) {
 			$this->logger->warning(
 				'Reclaimed old terminal run option left behind after transition cleanup.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 					'status'   => $state->status->value,
 				)
@@ -384,7 +385,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state observed by maintenance.
 	 * @param   RunStore             $run_store    Name-bound run store.
@@ -394,7 +395,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function fail_crashed_run( string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, KindHandlerInterface $handler, string $expected_raw ): AbstractResult {
+	private function fail_crashed_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, KindHandlerInterface $handler, string $expected_raw ): AbstractResult {
 		$attempts = RunState::increment_attempts_safely( $state->failed_attempts );
 		$this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, $attempts, RunFailureStage::crash_reclamation(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ), $expected_raw );
 
@@ -407,7 +408,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id       Run identifier.
 	 * @param   RunState $state        Running state observed by maintenance.
 	 * @param   RunStore $run_store    Name-bound run store.
@@ -415,7 +416,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function supersede_transferred_run( string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw ): AbstractResult {
+	private function supersede_transferred_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw ): AbstractResult {
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$claimed       = $this->terminal_transitions->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
 		if ( \is_array( $claimed ) ) {
@@ -433,7 +434,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity  Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Stale non-executing running state.
 	 *
@@ -441,7 +442,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function redeliver_pending_action( string $identity, string $run_id, RunState $state ): AbstractResult {
+	private function redeliver_pending_action( Identity $identity, string $run_id, RunState $state ): AbstractResult {
 		$pending = $state->pending;
 		if ( null === $pending ) {
 			throw new \LogicException( 'Pending-action redelivery requires a durable descriptor.' );
@@ -456,13 +457,13 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
-	 * @param   string $run_id   Run identifier.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id   Run identifier.
 	 *
 	 * @return  EngineError
 	 */
-	private function crash_reclamation_error( string $identity, string $run_id ): EngineError {
-		return new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash reclaim path because its owned lock was stale or missing.', $run_id, $identity ) );
+	private function crash_reclamation_error( Identity $identity, string $run_id ): EngineError {
+		return new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash reclaim path because its owned lock was stale or missing.', $run_id, (string) $identity ) );
 	}
 
 	// endregion

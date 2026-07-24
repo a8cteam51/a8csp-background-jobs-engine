@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -85,12 +86,112 @@ final readonly class LockWindows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id   Run identifier.
+	 *
+	 * @return  int
+	 */
+	public function continue_delay( Identity $identity, string $run_id ): int {
+		return $this->resolve_continue_delay( (string) $identity, $run_id );
+	}
+
+	/**
+	 * Resolves the non-negative continuation delay for untrusted scheduler-wire identity bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Raw scheduler-wire identity bytes.
 	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  int
 	 */
-	public function continue_delay( string $identity, string $run_id ): int {
+	public function raw_continue_delay( string $identity, string $run_id ): int {
+		return $this->resolve_continue_delay( $identity, $run_id );
+	}
+
+	/**
+	 * Resolves the per-run lock window at least twice the continue delay.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id   Run identifier.
+	 *
+	 * @return  int
+	 */
+	public function lock_staleness( Identity $identity, string $run_id ): int {
+		return $this->resolve_lock_staleness( (string) $identity, $run_id );
+	}
+
+	/**
+	 * Resolves the per-run lock window for untrusted scheduler-wire identity bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Raw scheduler-wire identity bytes.
+	 * @param   string $run_id   Run identifier.
+	 *
+	 * @return  int
+	 */
+	public function raw_lock_staleness( string $identity, string $run_id ): int {
+		return $this->resolve_lock_staleness( $identity, $run_id );
+	}
+
+	/**
+	 * Resolves the bounded liveness credit for one execution invocation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $declared Declared execution ceiling in seconds, or null for the engine default.
+	 *
+	 * @return  int
+	 */
+	public function execution_lease( ?int $declared ): int {
+		if ( null === $declared || 1 > $declared ) {
+			return self::DEFAULT_EXECUTION_LEASE;
+		}
+
+		return \min( $declared, self::MAX_EXECUTION_LEASE );
+	}
+
+	/**
+	 * Returns whether one run heartbeat exceeds the resolved strict staleness window.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $heartbeat_at Latest run heartbeat timestamp.
+	 * @param   int $staleness    Positive staleness window.
+	 *
+	 * @return  bool
+	 */
+	public function heartbeat_is_stale( int $heartbeat_at, int $staleness ): bool {
+		$now = $this->clock->now()->getTimestamp();
+
+		return $now > \PHP_INT_MIN + $staleness
+			&& $heartbeat_at < $now - $staleness;
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Resolves continuation delay from exact identity bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Exact identity bytes exposed to filters and diagnostics.
+	 * @param   string $run_id   Run identifier.
+	 *
+	 * @return  int
+	 */
+	private function resolve_continue_delay( string $identity, string $run_id ): int {
 		/**
 		 * Filters the inter-chunk delay before work-identity-specific filtering.
 		 *
@@ -133,18 +234,18 @@ final readonly class LockWindows {
 	}
 
 	/**
-	 * Resolves the per-run lock window at least twice the continue delay.
+	 * Resolves lock staleness from exact identity bytes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string $identity Exact identity bytes exposed to filters and diagnostics.
 	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  int
 	 */
-	public function lock_staleness( string $identity, string $run_id ): int {
-		$continue_delay = $this->continue_delay( $identity, $run_id );
+	private function resolve_lock_staleness( string $identity, string $run_id ): int {
+		$continue_delay = $this->resolve_continue_delay( $identity, $run_id );
 
 		$default_staleness = 15 * \MINUTE_IN_SECONDS;
 
@@ -188,42 +289,6 @@ final readonly class LockWindows {
 			: 2 * $continue_delay;
 
 		return \max( $staleness, $floor );
-	}
-
-	/**
-	 * Resolves the bounded liveness credit for one execution invocation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int|null $declared Declared execution ceiling in seconds, or null for the engine default.
-	 *
-	 * @return  int
-	 */
-	public function execution_lease( ?int $declared ): int {
-		if ( null === $declared || 1 > $declared ) {
-			return self::DEFAULT_EXECUTION_LEASE;
-		}
-
-		return \min( $declared, self::MAX_EXECUTION_LEASE );
-	}
-
-	/**
-	 * Returns whether one run heartbeat exceeds the resolved strict staleness window.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $heartbeat_at Latest run heartbeat timestamp.
-	 * @param   int $staleness    Positive staleness window.
-	 *
-	 * @return  bool
-	 */
-	public function heartbeat_is_stale( int $heartbeat_at, int $staleness ): bool {
-		$now = $this->clock->now()->getTimestamp();
-
-		return $now > \PHP_INT_MIN + $staleness
-			&& $heartbeat_at < $now - $staleness;
 	}
 
 	// endregion

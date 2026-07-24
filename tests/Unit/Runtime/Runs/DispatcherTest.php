@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
@@ -389,7 +390,7 @@ final class DispatcherTest extends TestCase {
 		$this->assert_failure_code( $result, ErrorCode::ExecutionFailed );
 		self::assertSame( 'accepted', $value );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
-		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		$snapshot = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertSame( 'failed', $snapshot['history'][0]['outcome'] ?? null );
 		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );

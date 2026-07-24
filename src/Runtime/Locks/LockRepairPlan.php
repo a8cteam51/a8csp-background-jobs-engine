@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 
 \defined( 'ABSPATH' ) || exit;
@@ -39,15 +40,15 @@ final readonly class LockRepairPlan {
 	 *
 	 * @phpstan-param list<array{run_id: string, raw: string, state: RunState}> $running_runs
 	 *
-	 * @param   string $identity     Complete owner-qualified work identity.
-	 * @param   string $args_hash    Selected overlap-lock lane.
-	 * @param   int    $raw_length   Selected malformed raw-value length.
-	 * @param   string $raw_sha256   Selected truncated malformed raw-value digest.
-	 * @param   string $lock_raw     Exact selected malformed lock bytes.
-	 * @param   array  $running_runs Exact Running snapshots on the selected lane.
+	 * @param   Identity $identity     Complete owner-qualified work identity.
+	 * @param   string   $args_hash    Selected overlap-lock lane.
+	 * @param   int      $raw_length   Selected malformed raw-value length.
+	 * @param   string   $raw_sha256   Selected truncated malformed raw-value digest.
+	 * @param   string   $lock_raw     Exact selected malformed lock bytes.
+	 * @param   array    $running_runs Exact Running snapshots on the selected lane.
 	 */
 	public function __construct(
-		public string $identity,
+		public Identity $identity,
 		public string $args_hash,
 		public int $raw_length,
 		public string $raw_sha256,

@@ -6,7 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
@@ -55,10 +55,10 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete owner-qualified work identity.
 	 */
 	private function __construct(
-		private string $identity,
+		private Identity $identity,
 	) {}
 
 	// endregion.
@@ -77,11 +77,12 @@ final readonly class StoreFixtureBuilder {
 	 */
 	public static function for_identity( string $identity ): self {
 		EngineRig::bootstrap();
-		if ( null === JobIdentity::parts( $identity ) ) {
+		$work_identity = Identity::tryFrom( $identity );
+		if ( null === $work_identity ) {
 			throw new \InvalidArgumentException( 'Store fixtures require one canonical owner-qualified work identity.' );
 		}
 
-		return new self( $identity );
+		return new self( $work_identity );
 	}
 
 	// endregion.
@@ -182,7 +183,7 @@ final readonly class StoreFixtureBuilder {
 	public function run( string $run_id, RunState $state ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
-				$store   = new RunStore( $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
+				$store   = new RunStore( (string) $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
 				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending );
 				if ( ! $created instanceof RunState ) {
 					throw new \LogicException( 'Production RunStore rejected an isolated active-run fixture.' );
@@ -311,7 +312,7 @@ final readonly class StoreFixtureBuilder {
 	public function latest( array $entries ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $entries ): array {
-				$store = new LatestRunPointer( $this->identity, new OptionRows( $wpdb ) );
+				$store = new LatestRunPointer( (string) $this->identity, new OptionRows( $wpdb ) );
 				foreach ( $entries as $entry ) {
 					if ( ! $store->record( $entry['run_id'], $entry['args_hash'] ) ) {
 						throw new \LogicException( 'Production LatestRunPointer rejected an isolated pointer fixture.' );
@@ -342,8 +343,21 @@ final readonly class StoreFixtureBuilder {
 	public function schedule_registration( array $owner ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $owner ): array {
+				$declarations = array();
+				foreach ( $owner['declarations'] as $schedule_identity => $declaration ) {
+					$job = Identity::tryFrom( $declaration['job'] );
+					if ( null === $job ) {
+						throw new \InvalidArgumentException( 'Schedule-registration fixtures require canonical target identities.' );
+					}
+
+					$declarations[ $schedule_identity ] = array(
+						'schedule' => $declaration['schedule'],
+						'job'      => $job,
+					);
+				}
+
 				$registry = new ScheduleRegistry( new OptionRows( $wpdb ), new NullLogger() );
-				if ( OwnerReplacementOutcome::Persisted !== $registry->replace_owner( $owner['owner'], $owner['declarations'], $owner['registrations'] ) ) {
+				if ( OwnerReplacementOutcome::Persisted !== $registry->replace_owner( $owner['owner'], $declarations, $owner['registrations'] ) ) {
 					throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registration fixture.' );
 				}
 
@@ -367,7 +381,7 @@ final readonly class StoreFixtureBuilder {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $claimed_at, $claim_token ): array {
 				$rows  = new OptionRows( $wpdb );
-				$claim = ( new OccurrenceLease( $rows, new FixedClock( $claimed_at ), new RecordingRandomizer( $claim_token ) ) )->claim( $this->identity );
+				$claim = ( new OccurrenceLease( $rows, new FixedClock( $claimed_at ), new RecordingRandomizer( $claim_token ) ) )->claim( (string) $this->identity );
 				if ( OccurrenceLeaseOutcome::Claimed !== $claim->outcome ) {
 					throw new \LogicException( 'Production OccurrenceLease rejected an isolated lease fixture.' );
 				}
@@ -393,7 +407,7 @@ final readonly class StoreFixtureBuilder {
 				$rows      = new OptionRows( $wpdb );
 				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
 				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
-				$intents->record_intent( $this->identity );
+				$intents->record_intent( (string) $this->identity );
 
 				return $this->only_row_under( $rows, $wpdb, CleanupIntents::OPTION_PREFIX );
 			}
@@ -417,7 +431,7 @@ final readonly class StoreFixtureBuilder {
 				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
 				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
 				for ( $index = 0; $index < 500; ++$index ) {
-					$intents->record_intent( $this->identity . '-' . \sprintf( '%03d', $index ) );
+					$intents->record_intent( (string) $this->identity . '-' . \sprintf( '%03d', $index ) );
 				}
 
 				$intents->converge_pending_intents();

@@ -2,13 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
@@ -102,7 +103,7 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertInstanceOf( Run::class, $last_completed->value );
 		self::assertSame( $run_id, (string) $last_completed->value->id );
-		$runs = $this->inspection()->runs( self::SUCCESS_IDENTITY );
+		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::SUCCESS_NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal job success must leave no live run' );
 		self::assertSame(
 			array(
@@ -178,7 +179,7 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 		self::assertNull( $failure->details );
 		self::assertSame( array( $failure ), $failed, 'The failed hook must receive only the self-identifying failure value' );
 		self::assertSame( 0, $this->run_next_engine_action(), 'A non-retryable failure must not schedule another run attempt' );
-		$runs = $this->inspection()->runs( self::FAILURE_IDENTITY );
+		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::FAILURE_NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal job failure must leave no live run' );
 		self::assertSame(
 			array(

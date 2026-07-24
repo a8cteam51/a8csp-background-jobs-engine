@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
@@ -304,7 +305,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertIsString( $raw );
 		$this->rig->wpdb()->put( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID, $raw );
 
-		$inspection = $this->rig->inspection()->runs( self::IDENTITY );
+		$inspection = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
 		self::assertSame( 0, $inspection['live_unreadable'] );
 		self::assertNull( $inspection['live'][0]['queue_depth'] ?? null );
 

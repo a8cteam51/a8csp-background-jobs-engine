@@ -31,7 +31,7 @@ final readonly class Schedule {
 	/**
 	 * Maximum bytes accepted for an owner-local name.
 	 *
-	 * The public-model copy mirrors `Boundary\JobIdentity::NAME_MAX_BYTES` because models do not
+	 * The public-model copy mirrors `Boundary\Identity::NAME_MAX_BYTES` because models do not
 	 * import `src/` internals.
 	 *
 	 * @since   1.0.0

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
@@ -66,7 +66,7 @@ final class MaintenanceScheduleTest extends TestCase {
 		$engine = Component::get_engine();
 		self::assertNotNull( $engine );
 		$maintenance = new MaintenanceSchedule( $engine->schedules, $this->rig->logger() );
-		$option_name = ScheduleRegistry::option_name( JobIdentity::ENGINE_OWNER );
+		$option_name = ScheduleRegistry::option_name( Identity::ENGINE_OWNER );
 		$poison      = 'poison-maintenance-registry-row';
 		$this->rig->wpdb()->put( $option_name, $poison );
 		$this->rig->backend()->scheduled = true;
@@ -94,7 +94,7 @@ final class MaintenanceScheduleTest extends TestCase {
 		self::assertIsString( $raw );
 		$registrations = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $registrations );
-		self::assertArrayHasKey( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $registrations );
+		self::assertArrayHasKey( (string) Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $registrations );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_values( \array_filter( \array_column( $this->rig->backend()->calls, 'verb' ), static fn ( string $verb ): bool => \in_array( $verb, array( 'unschedule', 'schedule_recurring' ), true ) ) ) );
 		self::assertSame( array(), $this->rig->logger()->records );
 	}

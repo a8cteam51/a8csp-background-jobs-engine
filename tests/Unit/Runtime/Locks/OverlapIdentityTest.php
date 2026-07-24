@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Locks;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -53,9 +54,10 @@ final class OverlapIdentityTest extends TestCase {
 			'ratio'   => 1.0,
 			'nested'  => array( 'mode' => 'incremental' ),
 		);
+		$identity = Identity::compose( 'owner', 'catalog-sync' );
 
-		$canonical = $resolver->resolve( 'job', 'owner:catalog-sync', new JobOptions(), $args );
-		$opaque    = $resolver->resolve( 'job', 'owner:catalog-sync', new JobOptions( overlap_key: static fn ( array $start_args ): string => "catalog\0\xFF" ), $args );
+		$canonical = $resolver->resolve( 'job', $identity, new JobOptions(), $args );
+		$opaque    = $resolver->resolve( 'job', $identity, new JobOptions( overlap_key: static fn ( array $start_args ): string => "catalog\0\xFF" ), $args );
 
 		self::assertSame( '306e56a4efd7fd71db49a2a4424d410ca43f38d865b70eb605cf641ba584f24f', $canonical );
 		self::assertSame( '839bc2e28e961c09b79c9adbb7c53159e4a2a138e1dfe756247d9d45cf0a29e9', $opaque );

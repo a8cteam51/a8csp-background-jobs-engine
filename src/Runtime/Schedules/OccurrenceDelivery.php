@@ -9,7 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\SkippedJobDispatch;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -91,6 +91,9 @@ final readonly class OccurrenceDelivery {
 	 * Schedule-driven jobs must be idempotent because backend redelivery, crash reclaim, and Replace
 	 * takeover retain bounded at-least-once execution windows.
 	 *
+	 * Scheduler-wire identity bytes stay raw because they are untrusted and corrupt values still
+	 * drive exact lease and cleanup operations.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -146,18 +149,15 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key Complete owner-qualified schedule identity.
+	 * @param   Identity $identity Complete owner-qualified schedule identity.
 	 *
-	 * @return  AbstractResult<array{identity: string, run_id: string}, EngineError|SchedulingError>
+	 * @return  AbstractResult<array{identity: Identity, run_id: string}, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
-	public function dispatch_now_under_lease( string $registration_key ): AbstractResult {
-		$parts = JobIdentity::parts( $registration_key );
-		if ( null === $parts ) {
-			return new Failure( new EngineError( 'Schedule identity is invalid; pass one canonical {owner}:{name} identity.', reason: EngineErrorReason::PayloadRejected, ) );
-		}
-
-		[ $owner, $name ] = $parts;
+	public function dispatch_now_under_lease( Identity $identity ): AbstractResult {
+		$owner            = $identity->owner();
+		$name             = $identity->name();
+		$registration_key = (string) $identity;
 		$lease_claim      = $this->lease->claim( $registration_key );
 		if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim->outcome ) {
 			return new Failure(
@@ -188,7 +188,7 @@ final readonly class OccurrenceDelivery {
 		$lease_handle = $lease_claim->claimed_lease();
 
 		try {
-			return $this->dispatch_now( $registration_key, $owner, $name, $lease_handle );
+			return $this->dispatch_now( $identity, $owner, $name, $lease_handle );
 		} finally {
 			$lease_handle->release();
 		}
@@ -206,14 +206,15 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool} $registration
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 * @param   string $owner            Stable client identifier.
-	 * @param   array  $registration     Complete registration timing state.
+	 * @param   Identity $identity     Complete owner-qualified schedule identity.
+	 * @param   string   $owner        Stable client identifier.
+	 * @param   array    $registration Complete registration timing state.
 	 *
 	 * @return  void
 	 */
-	private function persist_delivery_state( string $registration_key, string $owner, array $registration ): void {
-		$outcome = $this->registry->update_registration( $registration_key, $registration['fingerprint'], $registration );
+	private function persist_delivery_state( Identity $identity, string $owner, array $registration ): void {
+		$registration_key = (string) $identity;
+		$outcome          = $this->registry->update_registration( $identity, $registration['fingerprint'], $registration );
 		if ( RegistrationUpdateOutcome::Updated === $outcome ) {
 			return;
 		}
@@ -298,6 +299,8 @@ final readonly class OccurrenceDelivery {
 	 * @param   string                $registration_key `{owner}:{name}` schedule identity.
 	 * @param   OccurrenceLeaseHandle $lease_handle     Claimed occurrence-lease handle.
 	 *
+	 * @throws  \LogicException When a resolved registration does not retain its canonical identity.
+	 *
 	 * @return  void
 	 */
 	private function handle_occurrence( string $registration_key, OccurrenceLeaseHandle $lease_handle ): void {
@@ -328,28 +331,27 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$declaration = $this->registry->declaration( $registration_key );
+		$identity = Identity::tryFrom( $registration_key ) ?? throw new \LogicException( 'A resolved schedule registration must retain its canonical identity.' );
+
+		$declaration = $this->registry->declaration( $identity );
 		if ( null === $declaration ) {
 			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'schedule_identity' => $registration_key ) );
 			// Aging is best-effort because a lost fenced increment never affects delivery and a later occurrence retries it.
-			$aging = $this->registry->record_undeclared_occurrence( $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
+			$aging = $this->registry->record_undeclared_occurrence( $identity, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
 			if ( UndeclaredOccurrenceOutcome::Escalated === $aging ) {
-				$parts = JobIdentity::parts( $registration_key );
-				if ( null !== $parts ) {
-					$this->logger->warning(
-						\sprintf(
-							'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp a8csp-bgje schedules remove %3$s".',
-							$registration_key,
-							self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
-							$parts[0]
-						),
-						array(
-							'owner'                  => $parts[0],
-							'schedule_identity'      => $registration_key,
-							'undeclared_occurrences' => self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
-						)
-					);
-				}
+				$this->logger->warning(
+					\sprintf(
+						'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp a8csp-bgje schedules remove %3$s".',
+						$registration_key,
+						self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
+						$identity->owner()
+					),
+					array(
+						'owner'                  => $identity->owner(),
+						'schedule_identity'      => $registration_key,
+						'undeclared_occurrences' => self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
+					)
+				);
 			}
 			return;
 		}
@@ -362,12 +364,7 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$parts = JobIdentity::parts( $registration_key );
-		if ( null === $parts ) {
-			return;
-		}
-		$owner = $parts[0];
-		$name  = $parts[1];
+		$owner = $identity->owner();
 		$now   = $this->clock->now()->getTimestamp();
 		if ( $now < $registration['next_due'] ) {
 			$this->logger->debug(
@@ -445,7 +442,7 @@ final readonly class OccurrenceDelivery {
 			$misfired_due                  = $registration['next_due'];
 			$registration['next_due']      = $next_due;
 			$registration['misfire_skips'] = self::increment_counter( $registration['misfire_skips'] );
-			$this->persist_delivery_state( $registration_key, $owner, $registration );
+			$this->persist_delivery_state( $identity, $owner, $registration );
 			try {
 				try {
 					/**
@@ -506,9 +503,9 @@ final readonly class OccurrenceDelivery {
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority,
-			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
+			function () use ( $identity, $owner, $accepted_registration, $lease_handle ): void {
 				try {
-					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
+					$this->persist_delivery_state( $identity, $owner, $accepted_registration );
 				} finally {
 					$lease_handle->release();
 				}
@@ -532,7 +529,7 @@ final readonly class OccurrenceDelivery {
 		if ( $dispatched->value instanceof SkippedJobDispatch ) {
 			// RunOnce makes the occurrence up, so it is not recorded as a misfire; `misfire_skips` counts Skip-policy drops, `overlap_skips` counts overlap skips.
 			$registration['overlap_skips'] = self::increment_counter( $registration['overlap_skips'] );
-			$this->persist_delivery_state( $registration_key, $owner, $registration );
+			$this->persist_delivery_state( $identity, $owner, $registration );
 			$this->logger->info(
 				'Schedule occurrence skipped because the target job lock is held.',
 				array(
@@ -552,14 +549,15 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                $registration_key Complete owner-qualified schedule identity.
+	 * @param   Identity              $identity         Complete owner-qualified schedule identity.
 	 * @param   string                $owner            Stable client identifier.
 	 * @param   string                $name             Stable schedule name.
 	 * @param   OccurrenceLeaseHandle $lease_handle     Claimed occurrence-lease handle.
 	 *
-	 * @return  AbstractResult<array{identity: string, run_id: string}, EngineError|SchedulingError>
+	 * @return  AbstractResult<array{identity: Identity, run_id: string}, EngineError|SchedulingError>
 	 */
-	private function dispatch_now( string $registration_key, string $owner, string $name, OccurrenceLeaseHandle $lease_handle ): AbstractResult {
+	private function dispatch_now( Identity $identity, string $owner, string $name, OccurrenceLeaseHandle $lease_handle ): AbstractResult {
+		$registration_key  = (string) $identity;
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
 			return new Failure( $registration_read->error );
@@ -579,7 +577,7 @@ final readonly class OccurrenceDelivery {
 			);
 		}
 
-		$declaration = $this->registry->declaration( $registration_key );
+		$declaration = $this->registry->declaration( $identity );
 		if ( null === $declaration ) {
 			return new Failure(
 				new EngineError(
@@ -614,9 +612,9 @@ final readonly class OccurrenceDelivery {
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority,
-			function () use ( $registration_key, $owner, $accepted_registration, $lease_handle ): void {
+			function () use ( $identity, $owner, $accepted_registration, $lease_handle ): void {
 				try {
-					$this->persist_delivery_state( $registration_key, $owner, $accepted_registration );
+					$this->persist_delivery_state( $identity, $owner, $accepted_registration );
 				} finally {
 					$lease_handle->release();
 				}

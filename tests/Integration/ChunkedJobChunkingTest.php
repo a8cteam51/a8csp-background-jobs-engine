@@ -2,8 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -177,7 +178,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertInstanceOf( Run::class, $last_completed->value );
 		self::assertSame( $run_id, (string) $last_completed->value->id );
-		$runs = $this->inspection()->runs( self::IDENTITY );
+		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal chunked job completion must leave no live run' );
 		self::assertSame(
 			array(

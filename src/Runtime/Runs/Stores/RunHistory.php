@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -74,12 +75,12 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity        $identity Complete owner-qualified job or chunked job identity.
 	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
 	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
 	public function __construct(
-		private string $identity,
+		private Identity $identity,
 		private OptionRows $rows,
 		private LoggerInterface $logger,
 	) {}
@@ -305,7 +306,7 @@ final readonly class RunHistory {
 		$this->logger->warning(
 			'Run-history-size filter returned an invalid value; return a positive integer to override the default retention size.',
 			array(
-				'identity'      => $this->identity,
+				'identity'      => (string) $this->identity,
 				'returned_type' => \get_debug_type( $size ),
 				'default_size'  => self::DEFAULT_SIZE,
 			)
@@ -323,7 +324,7 @@ final readonly class RunHistory {
 	 * @return  string
 	 */
 	private function option_name(): string {
-		return self::OPTION_PREFIX . $this->identity;
+		return self::OPTION_PREFIX . (string) $this->identity;
 	}
 
 	/**

@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -297,11 +297,12 @@ final class EngineRig {
 	public function assert_completed(): void {
 		$args                  = $this->latest_event( 'completed' );
 		[ $identity, $run_id ] = $this->identity_and_run_id( $args );
-		$parts                 = JobIdentity::parts( $identity );
-		Assert::assertNotNull( $parts );
-		$operations = $this->operations[ $parts[0] ] ?? null;
+
+		$work_identity = Identity::tryFrom( $identity );
+		Assert::assertNotNull( $work_identity );
+		$operations = $this->operations[ $work_identity->owner() ] ?? null;
 		Assert::assertInstanceOf( OwnerOperations::class, $operations );
-		$result = $operations->last_completed_run( $parts[1] );
+		$result = $operations->last_completed_run( $work_identity->name() );
 		Assert::assertInstanceOf( Success::class, $result );
 		Assert::assertInstanceOf( Run::class, $result->value );
 		Assert::assertSame( (string) $run_id, (string) $result->value->id );
@@ -428,7 +429,7 @@ final class EngineRig {
 
 		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 		$dispatcher->register(
-			JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
+			Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
 			JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job )
 		);
 		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );

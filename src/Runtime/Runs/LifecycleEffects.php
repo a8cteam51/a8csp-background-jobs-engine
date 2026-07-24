@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
@@ -112,13 +113,13 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity   Complete owner-qualified job or chunked job identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
 	 * @return  void
 	 */
-	public function fire_started( string $identity, string $run_id, array $start_args ): void {
+	public function fire_started( Identity $identity, string $run_id, array $start_args ): void {
 		$this->fire_lifecycle_hooks( 'started', $identity, $run_id, $start_args );
 	}
 
@@ -130,7 +131,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity   Complete owner-qualified job or chunked job identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   int                     $attempt    One-indexed number of the failed attempt.
@@ -138,7 +139,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  void
 	 */
-	public function fire_retry_scheduled( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
+	public function fire_retry_scheduled( Identity $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
 		$this->fire_lifecycle_hooks( 'retry_scheduled', $identity, $run_id, $start_args, attempt: $attempt, delay: $delay );
 	}
 
@@ -150,7 +151,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity     Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id       Run identifier.
 	 * @param   RunState $state        Terminalizing run state.
 	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
@@ -158,7 +159,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function finish_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store ): bool {
+	public function finish_claimed_transition( Identity $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store ): bool {
 		$this->overlap_guard->release( $identity, $state->args_hash, $run_id );
 		if ( array() !== \array_values( \array_diff( self::expected_effects( $state->status ), $state->effects ) ) ) {
 			return false;
@@ -182,7 +183,7 @@ final readonly class LifecycleEffects {
 		$this->logger->error(
 			'Terminal run option could not be deleted; repair WordPress option writes before cleanup retries.',
 			array(
-				'identity' => $identity,
+				'identity' => (string) $identity,
 				'run_id'   => $run_id,
 				'status'   => $state->status->value,
 			)
@@ -201,7 +202,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Terminal run state.
 	 * @param   string     $terminal_raw   Exact terminal snapshot bytes.
@@ -213,7 +214,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
-	public function execute_claimed_transition( string $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, ?array $failure_detail = null ): bool {
+	public function execute_claimed_transition( Identity $identity, string $run_id, RunState $state, string $terminal_raw, RunStore $run_store, ?array $failure_detail = null ): bool {
 		$expected       = self::expected_effects( $state->status );
 		$snapshot       = array(
 			'raw'   => $terminal_raw,
@@ -289,37 +290,37 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $fallback_details
 	 *
-	 * @param   string     $identity         Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity         Complete owner-qualified job or chunked job identity.
 	 * @param   string     $run_id           Run identifier.
 	 * @param   RunState   $state            Failed terminal state.
 	 * @param   array|null $fallback_details Kind-specific detail available when persisted detail is missing.
 	 *
 	 * @return  array{error: EngineError, failure: RunFailure}
 	 */
-	public function resolve_failure_detail( string $identity, string $run_id, RunState $state, ?array $fallback_details ): array {
+	public function resolve_failure_detail( Identity $identity, string $run_id, RunState $state, ?array $fallback_details ): array {
 		if ( null !== $state->error ) {
 			$error = new EngineError( $state->error['message'], $state->error['class'] );
 
 			// Store reads reject malformed stages before replay, while grammar-valid extension stages remain opaque.
 			return array(
 				'error'   => $error,
-				'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: \max( 1, $state->failed_attempts ), stage: RunFailureStage::from( $state->error['stage'] ), code: ErrorCode::from( $state->error['code'] ), summary: $error->message, details: $state->error['details'] ?? null, ),
+				'failure' => new RunFailure( identity: (string) $identity, run_id: RunId::from( $run_id ), attempts: \max( 1, $state->failed_attempts ), stage: RunFailureStage::from( $state->error['stage'] ), code: ErrorCode::from( $state->error['code'] ), summary: $error->message, details: $state->error['details'] ?? null, ),
 			);
 		}
 
 		$this->logger->warning(
 			'Failed terminal run has no persisted failure detail; replay uses a generic failure.',
 			array(
-				'identity' => $identity,
+				'identity' => (string) $identity,
 				'run_id'   => $run_id,
 			)
 		);
 
-		$error = new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', $run_id, $identity ) );
+		$error = new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" failed before recoverable terminal detail was persisted.', $run_id, (string) $identity ) );
 
 		return array(
 			'error'   => $error,
-			'failure' => new RunFailure( identity: $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::crash_reclamation(), code: ErrorCode::StorageFailed, summary: $error->message, details: $fallback_details, ),
+			'failure' => new RunFailure( identity: (string) $identity, run_id: RunId::from( $run_id ), attempts: RunState::increment_attempts_safely( $state->failed_attempts ), stage: RunFailureStage::crash_reclamation(), code: ErrorCode::StorageFailed, summary: $error->message, details: $fallback_details, ),
 		);
 	}
 
@@ -367,7 +368,7 @@ final readonly class LifecycleEffects {
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
 	 * @param   string     $effect         Terminal effect key.
-	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Current terminal state.
 	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
@@ -377,7 +378,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  bool Whether the effect landed and may be marked complete.
 	 */
-	private function execute_terminal_effect( string $effect, string $identity, string $run_id, RunState $state, ?array $failure_detail ): bool {
+	private function execute_terminal_effect( string $effect, Identity $identity, string $run_id, RunState $state, ?array $failure_detail ): bool {
 		return match ( $effect ) {
 			'retention' => $this->record_failed_run( $identity, $run_id, $state, $failure_detail ),
 			'hooks'     => $this->fire_terminal_hooks( $identity, $run_id, $state, $failure_detail['failure'] ?? null ),
@@ -394,7 +395,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   string     $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Failed terminal state.
 	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
@@ -403,7 +404,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  bool Whether the failed-run entry is confirmed persisted.
 	 */
-	private function record_failed_run( string $identity, string $run_id, RunState $state, ?array $failure_detail ): bool {
+	private function record_failed_run( Identity $identity, string $run_id, RunState $state, ?array $failure_detail ): bool {
 		if ( null === $failure_detail ) {
 			throw new \LogicException( 'Failed-run retention requires persisted terminal failure detail.' );
 		}
@@ -416,7 +417,7 @@ final readonly class LifecycleEffects {
 		$this->logger->warning(
 			\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
 			array(
-				'identity' => $identity,
+				'identity' => (string) $identity,
 				'run_id'   => $run_id,
 				'kind'     => $state->kind,
 			)
@@ -431,7 +432,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity        $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string          $run_id   Run identifier.
 	 * @param   RunState        $state    Terminal run state.
 	 * @param   RunFailure|null $failure  Reconstructed client failure value.
@@ -441,7 +442,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  true
 	 */
-	private function fire_terminal_hooks( string $identity, string $run_id, RunState $state, ?RunFailure $failure ): bool {
+	private function fire_terminal_hooks( Identity $identity, string $run_id, RunState $state, ?RunFailure $failure ): bool {
 		$event = match ( $state->status ) {
 			RunStatus::Completed  => 'completed',
 			RunStatus::Failed     => 'failed',
@@ -460,13 +461,13 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Terminal run state.
 	 *
 	 * @return  bool Whether the history entry is confirmed persisted.
 	 */
-	private function record_terminal_history( string $identity, string $run_id, RunState $state ): bool {
+	private function record_terminal_history( Identity $identity, string $run_id, RunState $state ): bool {
 		if ( $this->stores->run_history( $identity )->record_terminal( $run_id, $state->args_hash, $state->status ) ) {
 			return true;
 		}
@@ -474,7 +475,7 @@ final readonly class LifecycleEffects {
 		$this->logger->warning(
 			'Terminal run history could not be persisted; inspection data may be incomplete.',
 			array(
-				'identity' => $identity,
+				'identity' => (string) $identity,
 				'run_id'   => $run_id,
 			)
 		);
@@ -491,7 +492,7 @@ final readonly class LifecycleEffects {
 	 * @phpstan-param 'started'|'retry_scheduled'|'completed'|'failed'|'cancelled'|'superseded' $event
 	 *
 	 * @param   string                  $event                     Lifecycle event name.
-	 * @param   string                  $identity                  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity                  Complete owner-qualified job or chunked job identity.
 	 * @param   string                  $run_id                    Run identifier.
 	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
 	 * @param   RunFailure|null         $failure                   Failure detail for a failed event.
@@ -503,8 +504,9 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  void
 	 */
-	private function fire_lifecycle_hooks( string $event, string $identity, string $run_id, array $start_args, ?RunFailure $failure = null, ?string $previous_completed_run_id = null, ?int $attempt = null, ?int $delay = null ): void {
+	private function fire_lifecycle_hooks( string $event, Identity $identity, string $run_id, array $start_args, ?RunFailure $failure = null, ?string $previous_completed_run_id = null, ?int $attempt = null, ?int $delay = null ): void {
 		$hook                             = self::LIFECYCLE_HOOKS[ $event ];
+		$wire_identity                    = (string) $identity;
 		$public_run_id                    = RunId::from( $run_id );
 		$public_previous_completed_run_id = null === $previous_completed_run_id ? null : RunId::from( $previous_completed_run_id );
 		if ( 'failed' !== $event ) {
@@ -526,7 +528,7 @@ final readonly class LifecycleEffects {
 				 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
 				 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
 				 */
-				\do_action( $hook . '/' . $identity, $public_run_id, $start_args, $public_previous_completed_run_id );
+				\do_action( $hook . '/' . $wire_identity, $public_run_id, $start_args, $public_previous_completed_run_id );
 			} finally {
 				/**
 				 * Fires after the identity-specific completed lifecycle hook.
@@ -539,7 +541,7 @@ final readonly class LifecycleEffects {
 				 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
 				 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
 				 */
-				\do_action( $hook, $identity, $public_run_id, $start_args, $public_previous_completed_run_id );
+				\do_action( $hook, $wire_identity, $public_run_id, $start_args, $public_previous_completed_run_id );
 			}
 
 			return;
@@ -564,7 +566,7 @@ final readonly class LifecycleEffects {
 				 * @param   int                     $attempt    One-indexed number of the failed attempt.
 				 * @param   int                     $delay      Delay before the next attempt in seconds.
 				 */
-				\do_action( $hook . '/' . $identity, $public_run_id, $start_args, $attempt, $delay );
+				\do_action( $hook . '/' . $wire_identity, $public_run_id, $start_args, $attempt, $delay );
 			} finally {
 				/**
 				 * Fires after the identity-specific retry-scheduled hook.
@@ -578,7 +580,7 @@ final readonly class LifecycleEffects {
 				 * @param   int                     $attempt    One-indexed number of the failed attempt.
 				 * @param   int                     $delay      Delay before the next attempt in seconds.
 				 */
-				\do_action( $hook, $identity, $public_run_id, $start_args, $attempt, $delay );
+				\do_action( $hook, $wire_identity, $public_run_id, $start_args, $attempt, $delay );
 			}
 
 			return;
@@ -599,7 +601,7 @@ final readonly class LifecycleEffects {
 				 * @param   RunId                   $run_id     Run identifier.
 				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 				 */
-				\do_action( $hook . '/' . $identity, $public_run_id, $start_args );
+				\do_action( $hook . '/' . $wire_identity, $public_run_id, $start_args );
 			} finally {
 				/**
 				 * Fires after the identity-specific started, cancelled, or superseded lifecycle hook.
@@ -614,7 +616,7 @@ final readonly class LifecycleEffects {
 				 * @param   RunId                   $run_id     Run identifier.
 				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 				 */
-				\do_action( $hook, $identity, $public_run_id, $start_args );
+				\do_action( $hook, $wire_identity, $public_run_id, $start_args );
 			}
 
 			return;
@@ -631,7 +633,7 @@ final readonly class LifecycleEffects {
 			 *
 			 * @param   RunFailure $failure Reconstructed client failure value.
 			 */
-			\do_action( $hook . '/' . $identity, $failure );
+			\do_action( $hook . '/' . $wire_identity, $failure );
 		} finally {
 			/**
 			 * Fires after the identity-specific failed lifecycle hook.

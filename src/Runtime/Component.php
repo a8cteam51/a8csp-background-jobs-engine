@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
@@ -223,7 +223,7 @@ final class Component extends AbstractComponent {
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 			$dispatcher->register(
-				JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
+				Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
 				JobDefinition::job( MaintenanceJob::NAME, new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) )
 			);
 			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery );
@@ -293,7 +293,7 @@ final class Component extends AbstractComponent {
 	 * @return  OwnerOperations
 	 */
 	public static function operations( string $owner ): OwnerOperations {
-		JobIdentity::validate_owner( $owner );
+		Identity::validate_owner( $owner );
 		$registry   = self::$registry;
 		$schedules  = self::$schedules;
 		$dispatcher = self::$dispatcher;

@@ -19,7 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use Psr\Clock\ClockInterface;
@@ -122,15 +122,15 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
-	 * @param   string $run_id   Retained run identifier.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id   Retained run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
 	 *
 	 * @return  AbstractResult<RunStatus|null, EngineError>
 	 */
 	#[\NoDiscard( 'a run-status inspection result must be handled, not dropped' )]
-	public function run_status( string $identity, string $run_id ): AbstractResult {
+	public function run_status( Identity $identity, string $run_id ): AbstractResult {
 		if ( null === RunIdentity::parse( $run_id ) ) {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
@@ -147,7 +147,7 @@ final readonly class Inspection {
 
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
-			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . (string) $identity ), ) );
 		}
 
 		foreach ( \array_reverse( $entries ) as $entry ) {
@@ -165,15 +165,15 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run inspection result must be handled, not dropped' )]
-	public function last_completed_run_id( string $identity ): AbstractResult {
+	public function last_completed_run_id( Identity $identity ): AbstractResult {
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
-			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . (string) $identity ), ) );
 		}
 
 		return new Success( RunHistory::newest_completed_run_id( $entries ) );
@@ -203,17 +203,17 @@ final readonly class Inspection {
 
 		$entries = array();
 		foreach ( $registrations as $registration_key => $registration ) {
-			$parts = JobIdentity::parts( $registration_key );
-			if ( null === $parts ) {
+			$schedule_identity = Identity::tryFrom( $registration_key );
+			if ( null === $schedule_identity ) {
 				continue;
 			}
 
-			$registration_owner = $parts[0];
+			$registration_owner = $schedule_identity->owner();
 			if ( null !== $owner && $owner !== $registration_owner ) {
 				continue;
 			}
 
-			$declaration = $this->schedules->declaration( $registration_key );
+			$declaration = $this->schedules->declaration( $schedule_identity );
 			$entries[]   = array(
 				'owner'              => $registration_owner,
 				'identity'           => $registration_key,
@@ -257,7 +257,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @phpstan-return array{
 	 *     observed_at: int,
@@ -271,7 +271,7 @@ final readonly class Inspection {
 	 *
 	 * @return  array
 	 */
-	public function runs( string $identity ): array {
+	public function runs( Identity $identity ): array {
 		$observed_at     = $this->clock->now()->getTimestamp();
 		$run_store       = $this->stores->run_store( $identity );
 		$prefix          = RunIdentity::option_name_prefix( $identity );
@@ -287,7 +287,7 @@ final readonly class Inspection {
 					return false;
 				}
 
-				return $identity === $run_identity['identity'];
+				return (string) $identity === (string) $run_identity['identity'];
 			}
 		);
 		if ( null === $page ) {
@@ -306,7 +306,7 @@ final readonly class Inspection {
 
 		foreach ( $page['names'] as $option_name ) {
 			$run_identity = RunIdentity::from_option_name( $option_name );
-			if ( null === $run_identity || $identity !== $run_identity['identity'] ) {
+			if ( null === $run_identity || (string) $identity !== (string) $run_identity['identity'] ) {
 				// Malformed names are counted where the page filter rejects them; accepted names cannot fail here.
 				continue;
 			}
@@ -375,7 +375,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{schedule: Schedule, job: string}|null $declaration
+	 * @phpstan-param array{schedule: Schedule, job: Identity}|null $declaration
 	 *
 	 * @param   array|null $declaration Current-request schedule declaration, when available.
 	 * @param   int        $observed_at Inspection timestamp.
@@ -434,13 +434,13 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified background-work identity.
+	 * @param   Identity $identity Complete owner-qualified background-work identity.
 	 *
 	 * @phpstan-return list<HistoryEntry>|null
 	 *
 	 * @return  array|null Null when authoritative failed-run or history inspection fails.
 	 */
-	private function history( string $identity ): ?array {
+	private function history( Identity $identity ): ?array {
 		$history     = $this->stores->run_history( $identity );
 		$failed_ids  = array();
 		$entries     = array();

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -105,14 +106,14 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $identity   Complete owner-qualified work identity.
+	 * @param   Identity      $identity   Complete owner-qualified work identity.
 	 * @param   JobDefinition $definition Definition to register.
 	 *
 	 * @throws  \InvalidArgumentException When the kind is not installed or its execution role is incompatible.
 	 *
 	 * @return  void
 	 */
-	public function register( string $identity, JobDefinition $definition ): void {
+	public function register( Identity $identity, JobDefinition $definition ): void {
 		$kind    = $definition->kind->value;
 		$handler = $this->handlers[ $kind ] ?? null;
 		if ( null === $handler ) {
@@ -128,7 +129,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity Complete owner-qualified work identity.
+	 * @param   Identity                $identity Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args     Start arguments.
 	 * @param   int                     $delay    Scheduling delay in seconds.
 	 * @param   int|null                $priority Scheduler priority from 0 through 255, or null for the engine default.
@@ -136,15 +137,15 @@ final readonly class Dispatcher {
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
-	public function dispatch( string $identity, array $args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
+	public function dispatch( Identity $identity, array $args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 		}
 		$priority ??= 10;
 
@@ -157,7 +158,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $identity                        Complete owner-qualified work identity.
+	 * @param   Identity                $identity                        Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args                            Target arguments.
 	 * @param   int                     $priority                        Scheduler priority from 0 through 255.
 	 * @param   \Closure|null           $on_accepted                     Internal callback after backend acceptance and before history.
@@ -166,15 +167,15 @@ final readonly class Dispatcher {
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
-	public function dispatch_scheduled_target( string $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
+	public function dispatch_scheduled_target( Identity $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 		}
 		$handler = $this->handler( $kind );
 		$options = $handler->options( $identity );
 		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 		}
 
 		return $this->dispatch_resolved( $handler, $options, $identity, $args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted, terminalize_overlap_key_failure: $terminalize_overlap_key_failure );
@@ -186,15 +187,15 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
-	 * @param   string $run_id   Retained failed-run identifier.
+	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   string   $run_id   Retained failed-run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-	public function retry_failed( string $identity, string $run_id ): AbstractResult {
+	public function retry_failed( Identity $identity, string $run_id ): AbstractResult {
 		if ( null === RunIdentity::parse( $run_id ) ) {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
@@ -204,7 +205,7 @@ final readonly class Dispatcher {
 		$read            = $failed_store->all();
 		if ( $read->is_failure() ) {
 			if ( null === $registered_kind ) {
-				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 			}
 
 			return $read;
@@ -213,7 +214,7 @@ final readonly class Dispatcher {
 		$entry = \array_find( $read->value, static fn ( array $candidate ): bool => $run_id === $candidate['run_id'] );
 		if ( null === $entry ) {
 			if ( null === $registered_kind ) {
-				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before retrying its failed run.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 			}
 
 			$retained_run_ids = \array_column( $read->value, 'run_id' );
@@ -223,10 +224,10 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Failed run "%1$s" for background-work "%2$s" is not retained; %3$s', $run_id, $identity, $correction ),
+					\sprintf( 'Failed run "%1$s" for background-work "%2$s" is not retained; %3$s', $run_id, (string) $identity, $correction ),
 					reason: EngineErrorReason::RunNotRetained,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 					),
 				)
@@ -254,7 +255,7 @@ final readonly class Dispatcher {
 			$this->logger->warning(
 				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -269,15 +270,15 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
-	 * @param   string $run_id   Retained run identifier.
+	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   string   $run_id   Retained run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
-	public function cancel( string $identity, string $run_id ): AbstractResult {
+	public function cancel( Identity $identity, string $run_id ): AbstractResult {
 		if ( null === RunIdentity::parse( $run_id ) ) {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
@@ -287,15 +288,15 @@ final readonly class Dispatcher {
 		$inspected       = $run_store->inspect( $run_id );
 		if ( $inspected->is_failure() ) {
 			if ( null === $registered_kind ) {
-				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 			}
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, $identity ),
+					\sprintf( 'Run "%1$s" for background-work "%2$s" could not be read; retry the cancel once option reads succeed.', $run_id, (string) $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 					),
 				)
@@ -305,7 +306,7 @@ final readonly class Dispatcher {
 		$snapshot = $inspected->value;
 		if ( null === $snapshot || null === $snapshot['state'] ) {
 			if ( null === $registered_kind ) {
-				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register the matching job or chunked job before cancelling its run.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 			}
 
 			return $this->cancel_not_retained( $identity, $run_id );
@@ -336,7 +337,7 @@ final readonly class Dispatcher {
 			return new Failure( $cancellation_error );
 		}
 
-		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->scheduler->unschedule_group( $identity . '|' . $run_id ) );
+		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->scheduler->unschedule_group( (string) $identity . '|' . $run_id ) );
 		if ( $cancelled ) {
 			return new Success( $run_id );
 		}
@@ -362,7 +363,7 @@ final readonly class Dispatcher {
 	 *
 	 * @param   KindHandlerInterface    $handler                         Resolved kind handler.
 	 * @param   JobOptions              $options                         Registered policy declaration.
-	 * @param   string                  $identity                        Complete owner-qualified work identity.
+	 * @param   Identity                $identity                        Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args                            Start arguments.
 	 * @param   int                     $delay                           Scheduling delay in seconds.
 	 * @param   int                     $priority                        Scheduler priority.
@@ -375,15 +376,15 @@ final readonly class Dispatcher {
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, string $identity, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
+	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, Identity $identity, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
 		$kind = $handler->key();
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( '%1$s "%2$s" priority %3$d is invalid; pass a value from 0 through %4$d.', $kind, $identity, $priority, self::MAX_PRIORITY ),
+					\sprintf( '%1$s "%2$s" priority %3$d is invalid; pass a value from 0 through %4$d.', $kind, (string) $identity, $priority, self::MAX_PRIORITY ),
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'priority' => $priority,
 					),
 				)
@@ -405,11 +406,11 @@ final readonly class Dispatcher {
 		if ( 0 < $delay && $delay > \PHP_INT_MAX - $now ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( '%1$s "%2$s" delay %3$d exceeds supported Unix seconds; pass a smaller delay.', $kind, $identity, $delay ),
+					\sprintf( '%1$s "%2$s" delay %3$d exceeds supported Unix seconds; pass a smaller delay.', $kind, (string) $identity, $delay ),
 					reason: EngineErrorReason::PayloadRejected,
 					context: array(
 						'delay'    => $delay,
-						'identity' => $identity,
+						'identity' => (string) $identity,
 					),
 				)
 			);
@@ -436,10 +437,10 @@ final readonly class Dispatcher {
 			if ( $run_id === $claim->owner_run_id ) {
 				return new Failure(
 					new EngineError(
-						\sprintf( '%1$s "%2$s" generated run "%3$s", but that identifier already owns the selected overlap lock; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ),
+						\sprintf( '%1$s "%2$s" generated run "%3$s", but that identifier already owns the selected overlap lock; retry so the run receives a fresh identifier.', $kind, (string) $identity, $run_id ),
 						reason: EngineErrorReason::OverlapHeld,
 						context: array(
-							'identity' => $identity,
+							'identity' => (string) $identity,
 							'run_id'   => $run_id,
 							'kind'     => $kind,
 						),
@@ -447,7 +448,7 @@ final readonly class Dispatcher {
 				);
 			}
 			if ( OverlapPolicy::Allow === $overlap ) {
-				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
+				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, (string) $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => (string) $identity ), ) );
 			}
 			if ( false === $claim->stale && OverlapPolicy::Reject === $overlap ) {
 				return new Success( new SkippedJobDispatch( $claim->owner_run_id, EngineError::held( $kind, $identity, $claim->owner_run_id ) ) );
@@ -465,8 +466,8 @@ final readonly class Dispatcher {
 		if ( 0 < $delay ) {
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $identity, $args_hash, $run_id, $scheduled_at ) ) {
 				HeartbeatOutcome::Owned => null,
-				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its delayed action; dispatch it again against the current lock state.', $kind, $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ),
-				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( '%1$s "%2$s" could not confirm lock ownership while preparing its delayed action; dispatch it again after authoritative storage access recovers.', $kind, $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => $identity ), ),
+				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its delayed action; dispatch it again against the current lock state.', $kind, (string) $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => (string) $identity ), ),
+				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( '%1$s "%2$s" could not confirm lock ownership while preparing its delayed action; dispatch it again after authoritative storage access recovers.', $kind, (string) $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => (string) $identity ), ),
 			};
 			if ( null !== $heartbeat_error ) {
 				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
@@ -489,10 +490,10 @@ final readonly class Dispatcher {
 
 				return new Failure(
 					new EngineError(
-						\sprintf( '%1$s "%2$s" lost its live run state while preparing its delayed action; retry against the current run state.', $kind, $identity ),
+						\sprintf( '%1$s "%2$s" lost its live run state while preparing its delayed action; retry against the current run state.', $kind, (string) $identity ),
 						reason: EngineErrorReason::StorageFailure,
 						context: array(
-							'identity' => $identity,
+							'identity' => (string) $identity,
 							'run_id'   => $run_id,
 						),
 					)
@@ -505,7 +506,7 @@ final readonly class Dispatcher {
 			$this->logger->warning(
 				'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -540,7 +541,7 @@ final readonly class Dispatcher {
 				$this->logger->warning(
 					'Started run history could not be persisted; inspection data may be incomplete.',
 					array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 					)
 				);
@@ -559,14 +560,14 @@ final readonly class Dispatcher {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface    $handler     Resolved kind handler.
-	 * @param   string                  $identity    Complete owner-qualified work identity.
+	 * @param   Identity                $identity    Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args        Start arguments.
 	 * @param   EngineError             $error       Resolver rejection detail.
 	 * @param   \Closure|null           $on_accepted Callback after run creation and before terminalization.
 	 *
 	 * @return  AbstractResult<string, EngineError>
 	 */
-	private function terminalize_overlap_key_failure( KindHandlerInterface $handler, string $identity, array $args, EngineError $error, ?\Closure $on_accepted ): AbstractResult {
+	private function terminalize_overlap_key_failure( KindHandlerInterface $handler, Identity $identity, array $args, EngineError $error, ?\Closure $on_accepted ): AbstractResult {
 		$kind      = $handler->key();
 		$args_hash = $this->overlap_identity->canonical( $kind, $identity, $args );
 		if ( $args_hash instanceof Failure ) {
@@ -585,7 +586,7 @@ final readonly class Dispatcher {
 			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}
 		if ( LockClaimOutcome::Claimed !== $claim->outcome ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => $identity ), ) );
+			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, (string) $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => (string) $identity ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $identity );
@@ -600,10 +601,10 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, (string) $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 						'kind'     => $kind,
 					),
@@ -618,10 +619,10 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not persist its overlap-key resolver failure; repair option writes before retrying.', $run_id, $kind, $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not persist its overlap-key resolver failure; repair option writes before retrying.', $run_id, $kind, (string) $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 						'kind'     => $kind,
 					),
@@ -639,7 +640,7 @@ final readonly class Dispatcher {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface    $handler      Resolved kind handler.
-	 * @param   string                  $identity     Complete owner-qualified work identity.
+	 * @param   Identity                $identity     Complete owner-qualified work identity.
 	 * @param   string                  $run_id       Run identifier.
 	 * @param   array<array-key, mixed> $args         Start arguments.
 	 * @param   string                  $args_hash    Canonical overlap identity.
@@ -651,7 +652,7 @@ final readonly class Dispatcher {
 	 *
 	 * @return  array{state: RunState, takeover: array{run_id: string, claimed: array{raw: string, state: RunState}}|null}|Failure<EngineError>
 	 */
-	private function create_run_state_and_take_over_if_contended( KindHandlerInterface $handler, string $identity, string $run_id, array $args, string $args_hash, LockClaimResult $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): array|Failure {
+	private function create_run_state_and_take_over_if_contended( KindHandlerInterface $handler, Identity $identity, string $run_id, array $args, string $args_hash, LockClaimResult $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): array|Failure {
 		$kind  = $handler->key();
 		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $scheduled_at, $delay, $priority ) );
 		if ( $state instanceof Failure ) {
@@ -668,10 +669,10 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, (string) $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 						'kind'     => $kind,
 					),
@@ -699,10 +700,10 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not read the contended run before overlap takeover; repair option reads and retry.', $run_id, $kind, $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not read the contended run before overlap takeover; repair option reads and retry.', $run_id, $kind, (string) $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 						'kind'     => $kind,
 					),
@@ -722,10 +723,10 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm a valid matching state for the contended lock owner; repair active-run storage and retry.', $run_id, $kind, $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm a valid matching state for the contended lock owner; repair active-run storage and retry.', $run_id, $kind, (string) $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 						'kind'     => $kind,
 					),
@@ -742,10 +743,10 @@ final readonly class Dispatcher {
 
 				return new Failure(
 					new EngineError(
-						\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm the incumbent supersession before overlap transfer; repair option writes and retry.', $run_id, $kind, $identity ),
+						\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm the incumbent supersession before overlap transfer; repair option writes and retry.', $run_id, $kind, (string) $identity ),
 						reason: EngineErrorReason::StorageFailure,
 						context: array(
-							'identity' => $identity,
+							'identity' => (string) $identity,
 							'run_id'   => $run_id,
 							'kind'     => $kind,
 						),
@@ -757,10 +758,10 @@ final readonly class Dispatcher {
 
 				return new Failure(
 					new EngineError(
-						\sprintf( '%1$s "%2$s" incumbent run changed while the replacement was superseding it; retry the dispatch against the current incumbent state.', $kind, $identity ),
+						\sprintf( '%1$s "%2$s" incumbent run changed while the replacement was superseding it; retry the dispatch against the current incumbent state.', $kind, (string) $identity ),
 						reason: EngineErrorReason::OverlapHeld,
 						context: array(
-							'identity' => $identity,
+							'identity' => (string) $identity,
 							'run_id'   => $run_id,
 							'kind'     => $kind,
 						),
@@ -782,10 +783,10 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not transfer overlap lock ownership because storage failed; repair option writes before retrying.', $run_id, $kind, $identity ),
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not transfer overlap lock ownership because storage failed; repair option writes before retrying.', $run_id, $kind, (string) $identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'run_id'   => $run_id,
 						'kind'     => $kind,
 					),
@@ -800,10 +801,10 @@ final readonly class Dispatcher {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', $kind, $identity ),
+					\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', $kind, (string) $identity ),
 					reason: EngineErrorReason::OverlapHeld,
 					context: array(
-						'identity' => $identity,
+						'identity' => (string) $identity,
 						'kind'     => $kind,
 					),
 				)
@@ -827,14 +828,14 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                                                                   $identity       Complete owner-qualified work identity.
+	 * @param   Identity                                                                 $identity       Complete owner-qualified work identity.
 	 * @param   string                                                                   $replacement_id Replacement run identifier.
 	 * @param   array{run_id: string, claimed: array{raw: string, state: RunState}}|null $takeover       Claimed incumbent supersession, if any.
 	 * @param   RunStore                                                                 $run_store      Active-run store.
 	 *
 	 * @return  void
 	 */
-	private function execute_takeover_effects( string $identity, string $replacement_id, ?array $takeover, RunStore $run_store ): void {
+	private function execute_takeover_effects( Identity $identity, string $replacement_id, ?array $takeover, RunStore $run_store ): void {
 		if ( null === $takeover ) {
 			return;
 		}
@@ -846,7 +847,7 @@ final readonly class Dispatcher {
 			$this->logger->error(
 				'Superseded-run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
 				array(
-					'identity'  => $identity,
+					'identity'  => (string) $identity,
 					'run_id'    => $takeover['run_id'],
 					'exception' => $throwable,
 				)
@@ -860,19 +861,19 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $kind     Persisted work-kind key.
-	 * @param   string $identity Complete owner-qualified work identity.
-	 * @param   string $run_id   Generated run identifier.
+	 * @param   string   $kind     Persisted work-kind key.
+	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   string   $run_id   Generated run identifier.
 	 *
 	 * @return  Failure<EngineError>
 	 */
-	private function invalid_lock_selection_failure( string $kind, string $identity, string $run_id ): Failure {
+	private function invalid_lock_selection_failure( string $kind, Identity $identity, string $run_id ): Failure {
 		return new Failure(
 			new EngineError(
-				\sprintf( 'Run "%1$s" for %2$s "%3$s" could not read a valid authoritative overlap lock row; repair overlap-lock storage and retry.', $run_id, $kind, $identity ),
+				\sprintf( 'Run "%1$s" for %2$s "%3$s" could not read a valid authoritative overlap lock row; repair overlap-lock storage and retry.', $run_id, $kind, (string) $identity ),
 				reason: EngineErrorReason::StorageFailure,
 				context: array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 					'kind'     => $kind,
 				),
@@ -907,14 +908,14 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified work identity.
-	 * @param   string $run_id    Retained run identifier.
-	 * @param   string $kind      Persisted kind key.
-	 * @param   string $operation Corrective operation phrase.
+	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   string   $run_id    Retained run identifier.
+	 * @param   string   $kind      Persisted kind key.
+	 * @param   string   $operation Corrective operation phrase.
 	 *
 	 * @return  KindHandlerInterface|Failure<EngineError>
 	 */
-	private function registered_handler_for_persisted_kind( string $identity, string $run_id, string $kind, string $operation ): KindHandlerInterface|Failure {
+	private function registered_handler_for_persisted_kind( Identity $identity, string $run_id, string $kind, string $operation ): KindHandlerInterface|Failure {
 		$handler = $this->handlers[ $kind ] ?? null;
 		if ( null === $handler || $kind !== $this->registry->kind( $identity ) || null === $handler->execution( $identity ) ) {
 			return $this->incompatible_kind_registration( $identity, $run_id, $kind, $operation );
@@ -929,14 +930,14 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity  Complete owner-qualified work identity.
-	 * @param   string $run_id    Retained run identifier.
-	 * @param   string $kind      Persisted kind key.
-	 * @param   string $operation Corrective operation phrase.
+	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   string   $run_id    Retained run identifier.
+	 * @param   string   $kind      Persisted kind key.
+	 * @param   string   $operation Corrective operation phrase.
 	 *
 	 * @return  Failure<EngineError>
 	 */
-	private function incompatible_kind_registration( string $identity, string $run_id, string $kind, string $operation ): Failure {
+	private function incompatible_kind_registration( Identity $identity, string $run_id, string $kind, string $operation ): Failure {
 		$registered_kind = $this->registry->kind( $identity );
 		$registration    = null === $registered_kind
 			? 'is not registered'
@@ -944,10 +945,10 @@ final readonly class Dispatcher {
 
 		return new Failure(
 			new EngineError(
-				\sprintf( 'Background-work "%1$s" %2$s, but run "%3$s" was persisted as "%4$s"; register the matching %4$s before %5$s.', $identity, $registration, $run_id, $kind, $operation ),
+				\sprintf( 'Background-work "%1$s" %2$s, but run "%3$s" was persisted as "%4$s"; register the matching %4$s before %5$s.', (string) $identity, $registration, $run_id, $kind, $operation ),
 				reason: EngineErrorReason::UnknownJob,
 				context: array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 					'kind'     => $kind,
 				),
@@ -979,18 +980,18 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
-	 * @param   string $run_id   Retained run identifier.
+	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   string   $run_id   Retained run identifier.
 	 *
 	 * @return  Failure<EngineError>
 	 */
-	private function cancel_not_retained( string $identity, string $run_id ): Failure {
+	private function cancel_not_retained( Identity $identity, string $run_id ): Failure {
 		return new Failure(
 			new EngineError(
-				\sprintf( 'Run "%1$s" for background-work "%2$s" is not retained; nothing remains to cancel.', $run_id, $identity ),
+				\sprintf( 'Run "%1$s" for background-work "%2$s" is not retained; nothing remains to cancel.', $run_id, (string) $identity ),
 				reason: EngineErrorReason::RunNotRetained,
 				context: array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				),
 			)
@@ -1017,7 +1018,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete owner-qualified work identity.
 	 * @param   string   $args_hash Canonical overlap identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $expected  Exact provisional state admitted by this dispatch.
@@ -1025,7 +1026,7 @@ final readonly class Dispatcher {
 	 *
 	 * @return  void
 	 */
-	private function roll_back_admitted_run( string $identity, string $args_hash, string $run_id, RunState $expected, RunStore $run_store ): void {
+	private function roll_back_admitted_run( Identity $identity, string $args_hash, string $run_id, RunState $expected, RunStore $run_store ): void {
 		$run_deleted = $run_store->delete_if_unchanged( $run_id, $expected );
 		// A changed run generation keeps its overlap fence; only this exact provisional row authorizes lock cleanup.
 		$lock_release_confirmed = $run_deleted
@@ -1035,7 +1036,7 @@ final readonly class Dispatcher {
 			$this->logger->warning(
 				'Scheduling rollback could not confirm complete cleanup; the run row may be redelivered by maintenance. Repair storage reads and writes before retrying.',
 				array(
-					'identity'               => $identity,
+					'identity'               => (string) $identity,
 					'run_id'                 => $run_id,
 					'lock_release_confirmed' => $lock_release_confirmed,
 					'run_deleted'            => $run_deleted,

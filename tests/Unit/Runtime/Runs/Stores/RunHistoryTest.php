@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
@@ -49,6 +50,7 @@ final class RunHistoryTest extends TestCase {
 	private RecordingChunkedJob $chunked_job;
 	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
+	private Identity $identity;
 	private EngineRig $rig;
 	private OptionRows $rows;
 	private RecordingJob $job;
@@ -84,6 +86,7 @@ final class RunHistoryTest extends TestCase {
 
 		$this->rig         = EngineRig::set_up( self::NOW );
 		$this->client      = $this->rig->operations( self::OWNER );
+		$this->identity    = Identity::compose( self::OWNER, self::NAME );
 		$this->job         = new RecordingJob( self::NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::NAME . '-chunked-job' );
 		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
@@ -126,8 +129,10 @@ final class RunHistoryTest extends TestCase {
 	#[DataProvider( 'terminal_statuses' )]
 	public function test_every_terminal_status_is_exposed_through_inspection( string $status ): void {
 		[ $identity, $run_id ] = $this->produce_terminal_outcome( $status );
+		$boundary_identity     = Identity::tryFrom( $identity );
+		self::assertInstanceOf( Identity::class, $boundary_identity );
 
-		$history = $this->rig->inspection()->runs( $identity )['history'];
+		$history = $this->rig->inspection()->runs( $boundary_identity )['history'];
 		self::assertNotNull( $history );
 		$entry = \array_find( $history, static fn ( array $candidate ): bool => $run_id === $candidate['run_id'] );
 		self::assertNotNull( $entry );
@@ -537,7 +542,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  list<array{run_id: string, outcome: string, failed_store: bool}>
 	 */
 	private function history(): array {
-		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		$history = $this->rig->inspection()->runs( $this->identity )['history'];
 		self::assertNotNull( $history );
 
 		return $history;
@@ -569,7 +574,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  RunHistory
 	 */
 	private function store(): RunHistory {
-		return new RunHistory( self::IDENTITY, $this->rows, $this->rig->logger() );
+		return new RunHistory( $this->identity, $this->rows, $this->rig->logger() );
 	}
 
 	/**

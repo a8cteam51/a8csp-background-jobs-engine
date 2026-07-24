@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -27,6 +28,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
@@ -124,6 +126,64 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_component_registers_the_complete_command_surface(): void {
 		self::assertSame( array( 'failed-runs', 'locks', 'reset', 'runs', 'schedules' ), CliHarness::registered_subcommands() );
+	}
+
+	/**
+	 * Run command requests retain typed identities while their rendered bytes stay unchanged.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_request_seams_return_identity_values(): void {
+		$list = RunsCommand::runs_request_from_args( array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'json' ) );
+		self::assertSame( array( 'action', 'identity', 'format' ), \array_keys( $list ) );
+		self::assertSame( 'list', $list['action'] );
+		self::assertInstanceOf( Identity::class, $list['identity'] );
+		self::assertSame( 'consumer-plugin:email-digest', (string) $list['identity'] );
+
+		$cancel = RunsCommand::runs_request_from_args( array( 'cancel', 'consumer-plugin:email-digest', self::RUN_ID ), array() );
+		self::assertSame( array( 'action', 'identity', 'run_id' ), \array_keys( $cancel ) );
+		self::assertSame( 'cancel', $cancel['action'] );
+		self::assertInstanceOf( Identity::class, $cancel['identity'] );
+		self::assertSame( 'consumer-plugin:email-digest', (string) $cancel['identity'] );
+
+		$retry = RunsCommand::failed_runs_request_from_args( array( 'retry', 'consumer-plugin:email-digest', self::RUN_ID ), array() );
+		self::assertSame( array( 'action', 'identity', 'run_id' ), \array_keys( $retry ) );
+		self::assertSame( 'retry', $retry['action'] );
+		self::assertInstanceOf( Identity::class, $retry['identity'] );
+		self::assertSame( 'consumer-plugin:email-digest', (string) $retry['identity'] );
+
+		$purge = RunsCommand::failed_runs_request_from_args( array( 'purge', 'consumer-plugin:email-digest' ), array() );
+		self::assertSame( array( 'action', 'identity' ), \array_keys( $purge ) );
+		self::assertSame( 'purge', $purge['action'] );
+		self::assertInstanceOf( Identity::class, $purge['identity'] );
+		self::assertSame( 'consumer-plugin:email-digest', (string) $purge['identity'] );
+	}
+
+	/**
+	 * Failed-run option discovery returns sorted unique typed identities.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_failed_run_option_discovery_returns_identity_values(): void {
+		$identities = RunsCommand::identities_from_option_names(
+			array(
+				FailedRunStore::OPTION_PREFIX . 'zeta:job',
+				FailedRunStore::OPTION_PREFIX . 'alpha:job',
+				FailedRunStore::OPTION_PREFIX . 'zeta:job',
+				FailedRunStore::OPTION_PREFIX . 'invalid',
+				'other_alpha:job',
+				false,
+			)
+		);
+
+		self::assertContainsOnlyInstancesOf( Identity::class, $identities );
+		self::assertSame( array( 'alpha:job', 'zeta:job' ), \array_map( static fn ( Identity $identity ): string => (string) $identity, $identities ) );
 	}
 
 	/**
@@ -573,7 +633,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 0, $result->exit_code );
 		self::assertSame( 'Success: Cancelled run ' . $run_id . ' of "consumer-plugin:email-digest".' . "\n", $result->stdout );
-		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'consumer-plugin:email-digest' )['history'][0]['outcome'] ?? null );
+		self::assertSame( 'cancelled', $this->rig->inspection()->runs( Identity::compose( 'consumer-plugin', 'email-digest' ) )['history'][0]['outcome'] ?? null );
 
 		$history_result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'json' ) );
 		$history_rows   = \json_decode( $history_result->stdout, true, 512, \JSON_THROW_ON_ERROR );

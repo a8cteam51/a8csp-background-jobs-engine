@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
@@ -315,27 +316,28 @@ final class InspectionTest extends TestCase {
 	 */
 	public function test_public_job_lifecycle_is_visible_with_strict_staleness(): void {
 		$identity       = 'owner:email-digest';
+		$work_identity  = self::identity( $identity );
 		$client         = $this->rig->operations( 'owner' );
 		$job            = new RecordingJob( 'email-digest' );
 		$during         = null;
-		$job->on_handle = function () use ( $identity, &$during ): void {
-			$during = $this->rig->inspection()->runs( $identity )['live'][0] ?? null;
+		$job->on_handle = function () use ( $work_identity, &$during ): void {
+			$during = $this->rig->inspection()->runs( $work_identity )['live'][0] ?? null;
 		};
 		$client->register( $job->definition() );
 		self::assertInstanceOf( Success::class, $client->dispatch( 'email-digest' ) );
 
-		$waiting = $this->rig->inspection()->runs( $identity )['live'][0];
+		$waiting = $this->rig->inspection()->runs( $work_identity )['live'][0];
 		self::assertFalse( $waiting['executing'] );
 		$this->rig->clock()->timestamp = self::NOW + 15 * \MINUTE_IN_SECONDS;
-		self::assertFalse( $this->rig->inspection()->runs( $identity )['live'][0]['stale'] );
+		self::assertFalse( $this->rig->inspection()->runs( $work_identity )['live'][0]['stale'] );
 		$this->rig->clock()->timestamp = self::NOW + 15 * \MINUTE_IN_SECONDS + 1;
-		self::assertTrue( $this->rig->inspection()->runs( $identity )['live'][0]['stale'] );
+		self::assertTrue( $this->rig->inspection()->runs( $work_identity )['live'][0]['stale'] );
 
 		$this->rig->run_due();
 
 		self::assertIsArray( $during );
 		self::assertTrue( $during['executing'] );
-		$terminal = $this->rig->inspection()->runs( $identity );
+		$terminal = $this->rig->inspection()->runs( $work_identity );
 		self::assertSame( array(), $terminal['live'] );
 		self::assertSame( 'completed', $terminal['history'][0]['outcome'] ?? null );
 	}
@@ -386,7 +388,7 @@ final class InspectionTest extends TestCase {
 		$this->put( $fixtures->failed( self::NOW - 1, array(), $failure, new EngineError( 'Retained failure.' ) ) );
 		$this->put( $fixtures->unreadable_run( self::run_id( 99 ) ) );
 
-		$snapshot = $this->rig->inspection()->runs( $identity );
+		$snapshot = $this->rig->inspection()->runs( self::identity( $identity ) );
 
 		self::assertCount( 1, $snapshot['live'] );
 		self::assertSame( 'chunked_job', $snapshot['live'][0]['kind'] );
@@ -415,9 +417,9 @@ final class InspectionTest extends TestCase {
 		$this->put( StoreFixtureBuilder::for_identity( $job_identity )->run( self::run_id( 2 ), self::state( 'job-hash', array( array( 'page' => 1 ) ), 'chunked_job' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $chunked_job_identity )->run( self::run_id( 3 ), self::state( 'chunked-job-hash', array( array( 'page' => 1 ) ) ) ) );
 
-		$orphaned    = $this->rig->inspection()->runs( $orphaned_identity )['live'][0];
-		$job         = $this->rig->inspection()->runs( $job_identity )['live'][0];
-		$chunked_job = $this->rig->inspection()->runs( $chunked_job_identity )['live'][0];
+		$orphaned    = $this->rig->inspection()->runs( self::identity( $orphaned_identity ) )['live'][0];
+		$job         = $this->rig->inspection()->runs( self::identity( $job_identity ) )['live'][0];
+		$chunked_job = $this->rig->inspection()->runs( self::identity( $chunked_job_identity ) )['live'][0];
 
 		self::assertSame( 'chunked_job', $orphaned['kind'] );
 		self::assertSame( 2, $orphaned['queue_depth'] );
@@ -463,7 +465,7 @@ final class InspectionTest extends TestCase {
 			)
 		);
 
-		$result = $this->rig->inspection()->last_completed_run_id( $identity );
+		$result = $this->rig->inspection()->last_completed_run_id( self::identity( $identity ) );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::run_id( 1 ), $result->value );
@@ -496,9 +498,10 @@ final class InspectionTest extends TestCase {
 			)
 		);
 
-		$live     = $this->rig->inspection()->run_status( $identity, $live_run_id );
-		$terminal = $this->rig->inspection()->run_status( $identity, $terminal_run_id );
-		$missing  = $this->rig->inspection()->run_status( $identity, self::run_id( 3 ) );
+		$work_identity = self::identity( $identity );
+		$live          = $this->rig->inspection()->run_status( $work_identity, $live_run_id );
+		$terminal      = $this->rig->inspection()->run_status( $work_identity, $terminal_run_id );
+		$missing       = $this->rig->inspection()->run_status( $work_identity, self::run_id( 3 ) );
 
 		self::assertInstanceOf( Success::class, $live );
 		self::assertSame( RunStatus::Running, $live->value );
@@ -517,8 +520,9 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_status_preserves_authoritative_read_failures(): void {
-		$identity = 'owner:read-failure';
-		$run_id   = self::run_id( 1 );
+		$identity      = 'owner:read-failure';
+		$work_identity = self::identity( $identity );
+		$run_id        = self::run_id( 1 );
 		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -526,12 +530,12 @@ final class InspectionTest extends TestCase {
 			}
 		);
 
-		$live_failure = $this->rig->inspection()->run_status( $identity, $run_id );
+		$live_failure = $this->rig->inspection()->run_status( $work_identity, $run_id );
 
 		self::assertInstanceOf( Failure::class, $live_failure );
 		self::assertInstanceOf( EngineError::class, $live_failure->error );
 		self::assertSame( EngineErrorReason::StorageFailure, $live_failure->error->reason );
-		self::assertSame( array( 'option_name' => RunIdentity::option_name( $identity, $run_id ) ), $live_failure->error->context );
+		self::assertSame( array( 'option_name' => RunIdentity::option_name( $work_identity, $run_id ) ), $live_failure->error->context );
 
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
@@ -541,7 +545,7 @@ final class InspectionTest extends TestCase {
 			}
 		);
 
-		$history_failure = $this->rig->inspection()->run_status( $identity, $run_id );
+		$history_failure = $this->rig->inspection()->run_status( $work_identity, $run_id );
 
 		self::assertInstanceOf( Failure::class, $history_failure );
 		self::assertInstanceOf( EngineError::class, $history_failure->error );
@@ -570,7 +574,7 @@ final class InspectionTest extends TestCase {
 			$this->put( StoreFixtureBuilder::for_identity( $requested )->unreadable_run( \sprintf( '!%039d', $sequence ) ) );
 		}
 
-		$snapshot = $this->rig->inspection()->runs( $requested );
+		$snapshot = $this->rig->inspection()->runs( self::identity( $requested ) );
 
 		self::assertSame( array( self::run_id( 1 ) ), \array_column( $snapshot['live'], 'run_id' ) );
 		self::assertSame( 1, $snapshot['live_scanned'] );
@@ -597,7 +601,7 @@ final class InspectionTest extends TestCase {
 			$this->put( $fixtures->run( self::run_id( $sequence ), self::state( 'hash-' . $sequence ) ) );
 		}
 
-		$snapshot = $this->rig->inspection()->runs( $identity );
+		$snapshot = $this->rig->inspection()->runs( self::identity( $identity ) );
 
 		self::assertSame( 20, $snapshot['live_scanned'] );
 		self::assertSame( 4, $snapshot['live_uninspected'] );
@@ -620,7 +624,7 @@ final class InspectionTest extends TestCase {
 				$wpdb->last_error = 'enumeration failed';
 			}
 		);
-		$enumeration = $this->rig->inspection()->runs( 'owner:enumeration' );
+		$enumeration = $this->rig->inspection()->runs( self::identity( 'owner:enumeration' ) );
 		self::assertSame( 'enumeration_failed', $enumeration['live_error'] );
 		self::assertSame( array( 0, 0, 0 ), array( $enumeration['live_scanned'], $enumeration['live_uninspected'], $enumeration['live_unreadable'] ) );
 
@@ -634,7 +638,7 @@ final class InspectionTest extends TestCase {
 				$wpdb->last_error = 'row read failed';
 			}
 		);
-		$row = $this->rig->inspection()->runs( $identity );
+		$row = $this->rig->inspection()->runs( self::identity( $identity ) );
 		self::assertSame( 'read_failed', $row['live_error'] );
 		self::assertSame( array( 1, 0, 1 ), array( $row['live_scanned'], $row['live_uninspected'], $row['live_unreadable'] ) );
 
@@ -645,12 +649,23 @@ final class InspectionTest extends TestCase {
 				$wpdb->last_error = 'history read failed';
 			}
 		);
-		self::assertNull( $this->rig->inspection()->runs( 'owner:history' )['history'] );
+		self::assertNull( $this->rig->inspection()->runs( self::identity( 'owner:history' ) )['history'] );
 	}
 
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Returns one canonical identity fixture.
+	 *
+	 * @param   string $identity Complete owner-qualified identity.
+	 *
+	 * @return  Identity
+	 */
+	private static function identity( string $identity ): Identity {
+		return Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Test identity fixtures must be canonical.' );
+	}
 
 	/**
 	 * Returns one canonical fixed-width run identifier.

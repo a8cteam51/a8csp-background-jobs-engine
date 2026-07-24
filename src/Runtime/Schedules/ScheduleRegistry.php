@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
@@ -64,7 +64,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<string, array<string, array{schedule: Schedule, job: string}>>
+	 * @var     array<string, array<string, array{schedule: Schedule, job: Identity}>>
 	 */
 	private array $declarations = array();
 
@@ -204,7 +204,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, array{schedule: Schedule, job: string}> $schedules
+	 * @phpstan-param array<string, array{schedule: Schedule, job: Identity}> $schedules
 	 * @phpstan-param array<string, Registration>                            $registrations
 	 *
 	 * @param   string $owner                       Stable client identifier.
@@ -333,17 +333,12 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   Identity $identity Complete owner-qualified schedule identity.
 	 *
-	 * @return  array{schedule: Schedule, job: string}|null
+	 * @return  array{schedule: Schedule, job: Identity}|null
 	 */
-	public function declaration( string $registration_key ): ?array {
-		$parts = JobIdentity::parts( $registration_key );
-		if ( null === $parts ) {
-			return null;
-		}
-
-		return $this->declarations[ $parts[0] ][ $registration_key ] ?? null;
+	public function declaration( Identity $identity ): ?array {
+		return $this->declarations[ $identity->owner() ][ (string) $identity ] ?? null;
 	}
 
 	/**
@@ -358,12 +353,12 @@ final class ScheduleRegistry {
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
 	public function registration( string $registration_key ): AbstractResult {
-		$parts = JobIdentity::parts( $registration_key );
-		if ( null === $parts ) {
+		$identity = Identity::tryFrom( $registration_key );
+		if ( null === $identity ) {
 			return new Success( null );
 		}
 
-		$registrations = $this->registrations_for( $parts[0] );
+		$registrations = $this->registrations_for( $identity->owner() );
 		if ( $registrations->is_failure() ) {
 			return $registrations;
 		}
@@ -379,21 +374,17 @@ final class ScheduleRegistry {
 	 *
 	 * @phpstan-param Registration $registration
 	 *
-	 * @param   string $registration_key     `{owner}:{name}` schedule identity.
-	 * @param   string $observed_fingerprint Definition fingerprint observed before the update.
-	 * @param   array  $registration         Complete registration timing state.
+	 * @param   Identity $identity             Complete owner-qualified schedule identity.
+	 * @param   string   $observed_fingerprint Definition fingerprint observed before the update.
+	 * @param   array    $registration         Complete registration timing state.
 	 *
 	 * @return  RegistrationUpdateOutcome Fenced row-update outcome.
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
-	public function update_registration( string $registration_key, string $observed_fingerprint, array $registration ): RegistrationUpdateOutcome {
-		$parts = JobIdentity::parts( $registration_key );
-		if ( null === $parts ) {
-			return RegistrationUpdateOutcome::Failed;
-		}
-
-		$owner       = $parts[0];
-		$option_name = self::option_name( $owner );
+	public function update_registration( Identity $identity, string $observed_fingerprint, array $registration ): RegistrationUpdateOutcome {
+		$registration_key = (string) $identity;
+		$owner            = $identity->owner();
+		$option_name      = self::option_name( $owner );
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$expected = $this->rows->read( $option_name );
 			if ( $expected->is_failure() ) {
@@ -458,20 +449,20 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
-	 * @param   int    $warning_threshold Consecutive undeclared occurrences required for escalation.
+	 * @param   Identity $identity          Complete owner-qualified schedule identity.
+	 * @param   int      $warning_threshold Consecutive undeclared occurrences required for escalation.
 	 *
 	 * @return  UndeclaredOccurrenceOutcome Fenced aging outcome.
 	 */
 	#[\NoDiscard( 'an undeclared occurrence outcome must be handled, not dropped' )]
-	public function record_undeclared_occurrence( string $registration_key, int $warning_threshold ): UndeclaredOccurrenceOutcome {
-		$parts = JobIdentity::parts( $registration_key );
-		if ( null === $parts || 1 > $warning_threshold ) {
+	public function record_undeclared_occurrence( Identity $identity, int $warning_threshold ): UndeclaredOccurrenceOutcome {
+		if ( 1 > $warning_threshold ) {
 			return UndeclaredOccurrenceOutcome::Failed;
 		}
 
-		$owner       = $parts[0];
-		$option_name = self::option_name( $owner );
+		$registration_key = (string) $identity;
+		$owner            = $identity->owner();
+		$option_name      = self::option_name( $owner );
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$expected = $this->rows->read( $option_name );
 			if ( $expected->is_failure() ) {
@@ -553,7 +544,7 @@ final class ScheduleRegistry {
 			$rows,
 			static fn ( mixed $row, int|string $registration_key ): bool => \is_string( $registration_key )
 				&& \is_array( $row )
-				&& ( JobIdentity::parts( $registration_key )[0] ?? null ) === $owner
+				&& Identity::tryFrom( $registration_key )?->owner() === $owner
 				&& ( ! \array_key_exists( 'undeclared_occurrences', $row ) || ! \array_key_exists( 'undeclared_escalated', $row ) )
 		);
 	}
@@ -576,8 +567,8 @@ final class ScheduleRegistry {
 				continue;
 			}
 
-			$parts = JobIdentity::parts( $registration_key );
-			if ( null === $parts || $owner !== $parts[0] ) {
+			$identity = Identity::tryFrom( $registration_key );
+			if ( null === $identity || $owner !== $identity->owner() ) {
 				continue;
 			}
 
@@ -639,8 +630,8 @@ final class ScheduleRegistry {
 				return null;
 			}
 
-			$parts = JobIdentity::parts( $registration_key );
-			if ( null === $parts || $owner !== $parts[0] ) {
+			$identity = Identity::tryFrom( $registration_key );
+			if ( null === $identity || $owner !== $identity->owner() ) {
 				return null;
 			}
 
@@ -663,7 +654,7 @@ final class ScheduleRegistry {
 	 * @return  string
 	 */
 	public static function option_name( string $owner ): string {
-		JobIdentity::validate_owner( $owner, true );
+		Identity::validate_owner( $owner, true );
 
 		return self::OPTION_PREFIX . $owner;
 	}
@@ -718,7 +709,7 @@ final class ScheduleRegistry {
 	public static function owner_from_option_name( string $option_name ): ?string {
 		$owner = \substr( $option_name, \strlen( self::OPTION_PREFIX ) );
 		try {
-			JobIdentity::validate_owner( $owner, true );
+			Identity::validate_owner( $owner, true );
 		} catch ( \InvalidArgumentException ) {
 			return null;
 		}
@@ -758,8 +749,8 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                                                $owner     Stable client identifier.
-	 * @param   array<string, array{schedule: Schedule, job: string}> $schedules Declared schedules keyed by complete identity.
+	 * @param   string                                                  $owner     Stable client identifier.
+	 * @param   array<string, array{schedule: Schedule, job: Identity}> $schedules Declared schedules keyed by complete identity.
 	 *
 	 * @return  void
 	 */

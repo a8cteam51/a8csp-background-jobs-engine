@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -102,11 +102,25 @@ final class RunIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  string
 	 */
-	public static function option_name_prefix( string $identity ): string {
+	public static function option_name_prefix( Identity $identity ): string {
+		return self::option_prefix() . (string) $identity . '_';
+	}
+
+	/**
+	 * Returns the active-run option prefix for untrusted scheduler-wire identity bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Raw scheduler-wire identity bytes.
+	 *
+	 * @return  string
+	 */
+	public static function raw_option_name_prefix( string $identity ): string {
 		return self::option_prefix() . $identity . '_';
 	}
 
@@ -116,13 +130,28 @@ final class RunIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id   Run identifier.
+	 *
+	 * @return  string
+	 */
+	public static function option_name( Identity $identity, string $run_id ): string {
+		return self::option_name_prefix( $identity ) . $run_id;
+	}
+
+	/**
+	 * Returns the complete active-run option name for untrusted scheduler-wire identity bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Raw scheduler-wire identity bytes.
 	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  string
 	 */
-	public static function option_name( string $identity, string $run_id ): string {
-		return self::option_name_prefix( $identity ) . $run_id;
+	public static function raw_option_name( string $identity, string $run_id ): string {
+		return self::raw_option_name_prefix( $identity ) . $run_id;
 	}
 
 	/**
@@ -133,19 +162,21 @@ final class RunIdentity {
 	 *
 	 * @param   string $option_name Complete option name.
 	 *
-	 * @return  array{identity: string, run_id: string}|null
+	 * @return  array{identity: Identity, run_id: string}|null
 	 */
 	public static function from_option_name( string $option_name ): ?array {
 		$matched = \preg_match( '/\A' . \preg_quote( self::option_prefix(), '/' ) . '(?<identity>.+)_(?<run_id>' . self::pattern() . ')\z/D', $option_name, $matches );
-		if (
-			1 !== $matched
-			|| null === JobIdentity::parts( $matches['identity'] )
-		) {
+		if ( 1 !== $matched ) {
+			return null;
+		}
+
+		$identity = Identity::tryFrom( $matches['identity'] );
+		if ( null === $identity ) {
 			return null;
 		}
 
 		return array(
-			'identity' => $matches['identity'],
+			'identity' => $identity,
 			'run_id'   => $matches['run_id'],
 		);
 	}

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Locks;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimResult;
@@ -52,9 +53,10 @@ final class LockRowWakeupProbe {
 #[UsesClass( RawOptionDecoder::class )]
 final class OverlapGuardTest extends TestCase {
 	private const string ARGS_HASH = 'args-123';
-	private const string KEY       = 'a8csp_bgje_overlap_lock_email-digest_args-123';
-	private const string NAME      = 'email-digest';
+	private const string IDENTITY  = 'owner-a:email-digest';
+	private const string KEY       = 'a8csp_bgje_overlap_lock_owner-a:email-digest_args-123';
 
+	private Identity $identity;
 	private WpdbLockSpy $wpdb;
 
 	private OptionRows $rows;
@@ -77,6 +79,7 @@ final class OverlapGuardTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_blog_id']     = 1;
 		$GLOBALS['a8csp_bgje_test_cache']       = array();
 		$GLOBALS['a8csp_bgje_test_cache_calls'] = array();
+		$this->identity                         = Identity::compose( 'owner-a', 'email-digest' );
 		$this->wpdb                             = new WpdbLockSpy();
 		$this->rows                             = new OptionRows( $this->wpdb );
 	}
@@ -86,13 +89,11 @@ final class OverlapGuardTest extends TestCase {
 		$hash = \str_repeat( 'a', 64 );
 
 		self::assertSame( 'a8csp_bgje_overlap_lock_', OverlapGuard::OPTION_PREFIX );
-		self::assertSame(
-			array(
-				'identity'  => 'owner:under_score',
-				'args_hash' => $hash,
-			),
-			OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_owner:under_score_' . $hash )
-		);
+		$parsed = OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_owner:under_score_' . $hash );
+		self::assertIsArray( $parsed );
+		self::assertInstanceOf( Identity::class, $parsed['identity'] );
+		self::assertSame( 'owner:under_score', (string) $parsed['identity'] );
+		self::assertSame( $hash, $parsed['args_hash'] );
 		self::assertNull( OverlapGuard::identity_from_option_name( 'other_lock_owner:under_score_' . $hash ) );
 		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_invalid-owner_' . $hash ) );
 		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_owner:sync_' . \str_repeat( 'A', 64 ) ) );
@@ -101,7 +102,7 @@ final class OverlapGuardTest extends TestCase {
 
 	/** An absent lock is claimed with the exact schema and non-autoload policy. */
 	public function test_fresh_claim_inserts_the_literal_non_autoloaded_lock(): void {
-		$result = $this->guard_at( 1_700_000_100 )->claim( self::NAME, self::ARGS_HASH, 'run-new', 900 );
+		$result = $this->guard_at( 1_700_000_100 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 900 );
 
 		self::assertSame( LockClaimOutcome::Claimed, $result->outcome );
 		self::assertNull( $result->owner_run_id );
@@ -117,7 +118,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-live', 1_700_000_000, 1_700_000_090 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 1_700_000_100 )->claim( self::NAME, self::ARGS_HASH, 'run-new', 900 );
+		$result = $this->guard_at( 1_700_000_100 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 900 );
 
 		self::assertSame( LockClaimOutcome::Contended, $result->outcome );
 		self::assertSame( 'run-live', $result->owner_run_id );
@@ -138,7 +139,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$result = $this->guard_at( 200 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 );
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival', 100 );
 
 		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
 		self::assertNull( $result->owner_run_id );
@@ -157,7 +158,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-live', 1_700_000_000, 1_700_000_090 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-live', $raw, 'run-new' );
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( $this->identity, self::ARGS_HASH, 'run-live', $raw, 'run-new' );
 
 		self::assertSame( LockTransferOutcome::Transferred, $outcome );
 		self::assertSame( self::expected_lock_row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
@@ -169,7 +170,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-live', 1_700_000_000, 1_700_000_090 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-other', $raw, 'run-new' );
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( $this->identity, self::ARGS_HASH, 'run-other', $raw, 'run-new' );
 
 		self::assertSame( LockTransferOutcome::Lost, $outcome );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
@@ -179,7 +180,7 @@ final class OverlapGuardTest extends TestCase {
 	/** An absent replacement row loses the exact transfer compare-and-swap. */
 	public function test_replace_reports_lost_when_the_lock_row_is_absent(): void {
 		$raw     = self::fixture_lock_raw( 'run-live', 1_700_000_000, 1_700_000_090 );
-		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-live', $raw, 'run-new' );
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( $this->identity, self::ARGS_HASH, 'run-live', $raw, 'run-new' );
 
 		self::assertSame( LockTransferOutcome::Lost, $outcome );
 		self::assertSame( array( 'update' ), $this->operations() );
@@ -191,7 +192,7 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, $raw );
 		$this->wpdb->script_result( 'update', false );
 
-		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-live', $raw, 'run-new' );
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( $this->identity, self::ARGS_HASH, 'run-live', $raw, 'run-new' );
 
 		self::assertSame( LockTransferOutcome::Indeterminate, $outcome );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
@@ -209,7 +210,7 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, $incumbent_raw );
 		$this->wpdb->put( self::KEY, $newer_raw );
 
-		$outcome = $this->guard_at( 1_700_000_100 )->replace( self::NAME, self::ARGS_HASH, 'run-one', $incumbent_raw, 'run-two' );
+		$outcome = $this->guard_at( 1_700_000_100 )->replace( $this->identity, self::ARGS_HASH, 'run-one', $incumbent_raw, 'run-two' );
 
 		self::assertSame( LockTransferOutcome::Lost, $outcome );
 		self::assertSame( $newer_raw, $this->wpdb->rows[ self::KEY ] );
@@ -222,7 +223,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw    = self::fixture_lock_raw( 'run-dead', 1_699_999_000, 1_699_999_199 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 1_700_000_100, $logger )->claim( self::NAME, self::ARGS_HASH, 'run-new', 900 );
+		$result = $this->guard_at( 1_700_000_100, $logger )->claim( $this->identity, self::ARGS_HASH, 'run-new', 900 );
 
 		self::assertSame( LockClaimOutcome::Contended, $result->outcome );
 		self::assertSame( 'run-dead', $result->owner_run_id );
@@ -238,7 +239,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-owner', 100, 120 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 200 )->claim( self::NAME, self::ARGS_HASH, 'run-owner', 900 );
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-owner', 900 );
 
 		self::assertSame( LockClaimOutcome::Contended, $result->outcome );
 		self::assertSame( 'run-owner', $result->owner_run_id );
@@ -255,8 +256,8 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, $raw );
 		$guard = $this->guard_at( 1_000, $logger );
 
-		self::assertFalse( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
-		$result = $guard->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
+		self::assertFalse( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
+		$result = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
 
 		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
 		self::assertNull( $result->owner_run_id );
@@ -273,7 +274,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = StoreFixtureBuilder::corrupt_row( new LockRowWakeupProbe() );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 1_000 )->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
+		$result = $this->guard_at( 1_000 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
 
 		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
 		self::assertSame( $raw, $result->raw );
@@ -286,7 +287,7 @@ final class OverlapGuardTest extends TestCase {
 	public function test_heartbeat_refreshes_only_the_owned_rows_liveness_timestamp(): void {
 		$this->store_fixture_lock( 'run-owner', 100, 120 );
 
-		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Owned, $outcome );
 		self::assertSame( self::expected_lock_row( 'run-owner', 100, 200 ), $this->lock() );
@@ -304,12 +305,12 @@ final class OverlapGuardTest extends TestCase {
 
 		$this->store_fixture_lock( 'run-owner', 100, 120 );
 
-		self::assertSame( HeartbeatOutcome::Owned, $guard->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner', 1_000 ) );
+		self::assertSame( HeartbeatOutcome::Owned, $guard->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner', 1_000 ) );
 		self::assertSame( 0, $clock->calls );
 		self::assertSame( self::expected_lock_row( 'run-owner', 100, 1_000 ), $this->lock() );
-		self::assertFalse( $this->guard_at( 500 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 )->stale );
-		self::assertFalse( $this->guard_at( 1_100 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 )->stale );
-		self::assertTrue( $this->guard_at( 1_101 )->claim( self::NAME, self::ARGS_HASH, 'run-rival', 100 )->stale );
+		self::assertFalse( $this->guard_at( 500 )->claim( $this->identity, self::ARGS_HASH, 'run-rival', 100 )->stale );
+		self::assertFalse( $this->guard_at( 1_100 )->claim( $this->identity, self::ARGS_HASH, 'run-rival', 100 )->stale );
+		self::assertTrue( $this->guard_at( 1_101 )->claim( $this->identity, self::ARGS_HASH, 'run-rival', 100 )->stale );
 		self::assertSame( self::expected_lock_row( 'run-owner', 100, 1_000 ), $this->lock() );
 	}
 
@@ -319,7 +320,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-owner', 100, 200 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Owned, $outcome );
 		self::assertSame( $row, $this->lock() );
@@ -332,7 +333,7 @@ final class OverlapGuardTest extends TestCase {
 		$foreign_raw = self::fixture_lock_raw( 'run-rival', 100, 120 );
 		$this->wpdb->put( self::KEY, $foreign_raw );
 
-		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Lost, $outcome );
 		self::assertSame( $foreign_raw, $this->wpdb->rows[ self::KEY ] );
@@ -341,7 +342,7 @@ final class OverlapGuardTest extends TestCase {
 
 	/** Heartbeat does not create an absent lock row. */
 	public function test_heartbeat_is_a_no_op_when_the_lock_is_absent(): void {
-		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Lost, $outcome );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
@@ -353,7 +354,7 @@ final class OverlapGuardTest extends TestCase {
 		$malformed_raw = 'not-a-lock-row';
 		$this->wpdb->put( self::KEY, $malformed_raw );
 
-		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Lost, $outcome );
 		self::assertSame( $malformed_raw, $this->wpdb->rows[ self::KEY ] );
@@ -372,7 +373,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$outcome = $this->guard_at( 200, $logger )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200, $logger )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Indeterminate, $outcome );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
@@ -380,7 +381,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
 		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
-		self::assertSame( self::NAME, $logger->records[0]['context']['identity'] ?? null );
+		self::assertSame( self::IDENTITY, $logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
@@ -392,7 +393,7 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, $owned_raw );
 		$this->wpdb->script_result( 'update', false );
 
-		$outcome = $this->guard_at( 200, $logger )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200, $logger )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Indeterminate, $outcome );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
@@ -400,7 +401,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
 		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
-		self::assertSame( self::NAME, $logger->records[0]['context']['identity'] ?? null );
+		self::assertSame( self::IDENTITY, $logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
@@ -416,7 +417,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Lost, $outcome );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
@@ -433,7 +434,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$outcome = $this->guard_at( 200 )->heartbeat( self::NAME, self::ARGS_HASH, 'run-owner', null, 120 );
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner', null, 120 );
 
 		self::assertSame( HeartbeatOutcome::GenerationMismatch, $outcome );
 		self::assertSame( $newer_raw, $this->wpdb->rows[ self::KEY ] );
@@ -443,7 +444,7 @@ final class OverlapGuardTest extends TestCase {
 	public function test_release_deletes_an_owned_lock(): void {
 		$this->store_fixture_lock( 'run-owner', 100, 120 );
 
-		$released = $this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200 )->release( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertTrue( $released );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
@@ -455,7 +456,7 @@ final class OverlapGuardTest extends TestCase {
 		$foreign_raw = self::fixture_lock_raw( 'run-rival', 100, 120 );
 		$this->wpdb->put( self::KEY, $foreign_raw );
 
-		$released = $this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200 )->release( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertTrue( $released );
 		self::assertSame( $foreign_raw, $this->wpdb->rows[ self::KEY ] );
@@ -464,7 +465,7 @@ final class OverlapGuardTest extends TestCase {
 
 	/** Release does not write when no lock exists. */
 	public function test_release_is_a_no_op_when_the_lock_is_absent(): void {
-		$released = $this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200 )->release( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertTrue( $released );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
@@ -483,7 +484,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$released = $this->guard_at( 200, $logger )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200, $logger )->release( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertFalse( $released );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
@@ -491,7 +492,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertCount( 1, $logger->records );
 		self::assertSame( 'warning', $logger->records[0]['level'] ?? null );
 		self::assertSame( self::KEY, $logger->records[0]['context']['key'] ?? null );
-		self::assertSame( self::NAME, $logger->records[0]['context']['identity'] ?? null );
+		self::assertSame( self::IDENTITY, $logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::ARGS_HASH, $logger->records[0]['context']['args_hash'] ?? null );
 		self::assertSame( 'run-owner', $logger->records[0]['context']['run_id'] ?? null );
 	}
@@ -507,7 +508,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$released = $this->guard_at( 200 )->release( self::NAME, self::ARGS_HASH, 'run-owner' );
+		$released = $this->guard_at( 200 )->release( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertFalse( $released );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
@@ -517,16 +518,16 @@ final class OverlapGuardTest extends TestCase {
 	public function test_is_held_reports_only_parseable_fresh_locks(): void {
 		$guard = $this->guard_at( 1_000 );
 		$this->store_fixture_lock( 'run-owner', 100, 901 );
-		self::assertTrue( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertTrue( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 
 		$this->store_fixture_lock( 'run-owner', 100, 899 );
-		self::assertFalse( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertFalse( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 
 		unset( $this->wpdb->rows[ self::KEY ], $this->wpdb->autoload[ self::KEY ] );
-		self::assertFalse( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertFalse( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 
 		$this->wpdb->put( self::KEY, 'not-a-lock-row' );
-		self::assertFalse( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertFalse( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 		self::assertSame( array( 'select', 'select', 'select', 'select' ), $this->operations() );
 	}
 
@@ -544,7 +545,7 @@ final class OverlapGuardTest extends TestCase {
 			)
 		);
 
-		self::assertFalse( $this->guard_at( 200 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertFalse( $this->guard_at( 200 )->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 	}
 
 	/** A failed authoritative held-state read fails closed without writing. */
@@ -556,7 +557,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		self::assertTrue( $this->guard_at( 200 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertTrue( $this->guard_at( 200 )->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
@@ -565,7 +566,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = 'not-a-lock-row';
 		$this->wpdb->put( self::KEY, $raw );
 
-		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( self::NAME, self::ARGS_HASH );
+		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( $this->identity, self::ARGS_HASH );
 
 		self::assertNull( $sweep->run_id );
 		self::assertTrue( $sweep->malformed_preserved );
@@ -580,7 +581,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-owner', 900, 950 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( self::NAME, self::ARGS_HASH );
+		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( $this->identity, self::ARGS_HASH );
 
 		self::assertSame( 'run-owner', $sweep->run_id );
 		self::assertFalse( $sweep->malformed_preserved );
@@ -595,13 +596,13 @@ final class OverlapGuardTest extends TestCase {
 		$guard = $this->guard_at( 1_000 );
 
 		$this->store_fixture_lock( 'run-owner', 900, 950 );
-		self::assertSame( MaintenanceFenceOutcome::Owned, $guard->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 ) );
+		self::assertSame( MaintenanceFenceOutcome::Owned, $guard->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
 
 		$this->store_fixture_lock( 'run-rival', 900, 950 );
-		self::assertSame( MaintenanceFenceOutcome::Transferred, $guard->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 ) );
+		self::assertSame( MaintenanceFenceOutcome::Transferred, $guard->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
 
 		unset( $this->wpdb->rows[ self::KEY ], $this->wpdb->autoload[ self::KEY ] );
-		self::assertSame( MaintenanceFenceOutcome::Abandoned, $guard->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 ) );
+		self::assertSame( MaintenanceFenceOutcome::Abandoned, $guard->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
 	}
 
 	/** A redelivery fence classifies a stale owner without deleting its exact-generation heartbeat. */
@@ -609,7 +610,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-owner', 800, 899 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		self::assertSame( MaintenanceFenceOutcome::Owned, $this->guard_at( 1_000 )->classify_run_fence( self::NAME, self::ARGS_HASH, 'run-owner' ) );
+		self::assertSame( MaintenanceFenceOutcome::Owned, $this->guard_at( 1_000 )->classify_run_fence( $this->identity, self::ARGS_HASH, 'run-owner' ) );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
@@ -618,7 +619,7 @@ final class OverlapGuardTest extends TestCase {
 	public function test_redelivery_fence_reports_indeterminate_after_insert_failure(): void {
 		$this->wpdb->script_result( 'insert', false );
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
 		self::assertSame( array( 'select', 'insert' ), $this->operations() );
@@ -634,7 +635,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Transferred, $outcome );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
@@ -646,7 +647,7 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, 'malformed' );
 		$this->wpdb->script_result( 'update', false );
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
 		self::assertSame( array( 'select', 'update' ), $this->operations() );
@@ -658,7 +659,7 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, $owned_raw );
 		$this->wpdb->script_result( 'update', false );
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
@@ -676,7 +677,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( self::NAME, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Transferred, $outcome );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
@@ -688,11 +689,11 @@ final class OverlapGuardTest extends TestCase {
 		$credited = self::fixture_lock_row( 'run-owner', 1_000, 1_300 );
 		$this->store_fixture_lock( 'run-owner', 1_000, 1_300 );
 
-		self::assertSame( MaintenanceFenceOutcome::Owned, $this->guard_at( 1_901 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 900 ) );
+		self::assertSame( MaintenanceFenceOutcome::Owned, $this->guard_at( 1_901 )->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 900 ) );
 		self::assertSame( $credited, $this->lock() );
-		self::assertSame( MaintenanceFenceOutcome::Owned, $this->guard_at( 2_200 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 900 ) );
+		self::assertSame( MaintenanceFenceOutcome::Owned, $this->guard_at( 2_200 )->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 900 ) );
 		self::assertSame( $credited, $this->lock() );
-		self::assertSame( MaintenanceFenceOutcome::Abandoned, $this->guard_at( 2_201 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 900 ) );
+		self::assertSame( MaintenanceFenceOutcome::Abandoned, $this->guard_at( 2_201 )->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 900 ) );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 	}
 
@@ -700,7 +701,7 @@ final class OverlapGuardTest extends TestCase {
 	public function test_maintenance_fence_reports_abandoned_after_stale_delete(): void {
 		$this->store_fixture_lock( 'run-owner', 800, 899 );
 
-		self::assertSame( MaintenanceFenceOutcome::Abandoned, $this->guard_at( 1_000 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 ) );
+		self::assertSame( MaintenanceFenceOutcome::Abandoned, $this->guard_at( 1_000 )->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 	}
 
@@ -713,7 +714,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		self::assertSame( MaintenanceFenceOutcome::Indeterminate, $this->guard_at( 1_000 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 ) );
+		self::assertSame( MaintenanceFenceOutcome::Indeterminate, $this->guard_at( 1_000 )->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
 	}
 
 	/** A stale-delete CAS loss leaves maintenance unable to claim the crash decision. */
@@ -727,7 +728,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		self::assertSame( MaintenanceFenceOutcome::Indeterminate, $this->guard_at( 1_000 )->fence_abandoned_run( self::NAME, self::ARGS_HASH, 'run-owner', 100 ) );
+		self::assertSame( MaintenanceFenceOutcome::Indeterminate, $this->guard_at( 1_000 )->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
 		self::assertSame( $winner, $this->wpdb->rows[ self::KEY ] );
 	}
 
@@ -737,12 +738,12 @@ final class OverlapGuardTest extends TestCase {
 		$this->store_fixture_lock( 'run-owner', 100, 900 );
 		$guard = $this->guard_at( 1_000 );
 
-		self::assertTrue( $guard->is_held( self::NAME, self::ARGS_HASH, 100 ) );
-		$selection = $guard->claim( self::NAME, self::ARGS_HASH, 'run-new', 100 );
+		self::assertTrue( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
+		$selection = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
 		self::assertSame( LockClaimOutcome::Contended, $selection->outcome );
 		self::assertFalse( $selection->stale );
 		self::assertSame( $boundary, $this->lock() );
-		self::assertFalse( $this->guard_at( 1_001 )->is_held( self::NAME, self::ARGS_HASH, 100 ) );
+		self::assertFalse( $this->guard_at( 1_001 )->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 	}
 
 	/**
@@ -826,7 +827,7 @@ final class OverlapGuardTest extends TestCase {
 	 * @return  string
 	 */
 	private static function fixture_lock_raw( string $run_id, int $claimed_at, int $heartbeat_at ): string {
-		[ , $raw ] = StoreFixtureBuilder::for_identity( 'owner-a:' . self::NAME )->lock( self::ARGS_HASH, $run_id, $claimed_at, $heartbeat_at );
+		[ , $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->lock( self::ARGS_HASH, $run_id, $claimed_at, $heartbeat_at );
 
 		return $raw;
 	}

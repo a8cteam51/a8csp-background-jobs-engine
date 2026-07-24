@@ -20,7 +20,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTe
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -202,14 +202,14 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 			array(
 				self::MAINTENANCE_KEY => array(
 					'schedule' => new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), CatchUpPolicy::RunOnce ),
-					'job'      => self::MAINTENANCE_KEY,
+					'job'      => Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
 				),
 			)
 		);
 		self::assertInstanceOf( Success::class, $synced, 'The reserved maintenance schedule must re-synchronize' );
 		self::assertTrue( $synced->value );
 
-		$maintenance = $engine->schedules->dispatch_now( self::MAINTENANCE_KEY );
+		$maintenance = $engine->schedules->dispatch_now( Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ) );
 		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance job must be dispatchable through the schedule facade' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance job' );
 
@@ -514,7 +514,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	private function registration_next_due( string $owner, string $name ): int {
 		$owner_rows = \get_option( ScheduleRegistry::option_name( $owner ), null );
 		self::assertIsArray( $owner_rows );
-		$registration = $owner_rows[ JobIdentity::compose( $owner, $name, true ) ] ?? null;
+		$registration = $owner_rows[ (string) Identity::compose( $owner, $name, true ) ] ?? null;
 		self::assertIsArray( $registration );
 		$next_due = $registration['next_due'] ?? null;
 		self::assertIsInt( $next_due );
@@ -538,7 +538,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		$option_name = ScheduleRegistry::option_name( $owner );
 		$owner_rows  = \get_option( $option_name, null );
 		self::assertIsArray( $owner_rows );
-		$identity     = JobIdentity::compose( $owner, $name, true );
+		$identity     = (string) Identity::compose( $owner, $name, true );
 		$registration = $owner_rows[ $identity ] ?? null;
 		self::assertIsArray( $registration );
 		$registration['next_due'] = $next_due;

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
@@ -83,12 +84,12 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity        $identity Complete owner-qualified job or chunked job identity.
 	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
 	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
 	public function __construct(
-		private string $identity,
+		private Identity $identity,
 		private OptionRows $rows,
 		private LoggerInterface $logger,
 	) {}
@@ -379,7 +380,7 @@ final readonly class FailedRunStore {
 		$this->logger->warning(
 			\sprintf( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the %d-entry limit: {evicted_run_ids}.', self::ENTRY_LIMIT ),
 			array(
-				'identity'        => $this->identity,
+				'identity'        => (string) $this->identity,
 				'evicted_run_ids' => \implode( ', ', \array_column( $entries, 'run_id' ) ),
 			)
 		);
@@ -415,7 +416,7 @@ final readonly class FailedRunStore {
 	 * @return  string
 	 */
 	private function option_name(): string {
-		return self::OPTION_PREFIX . $this->identity;
+		return self::OPTION_PREFIX . (string) $this->identity;
 	}
 
 	/**
@@ -510,7 +511,7 @@ final readonly class FailedRunStore {
 				$this->logger->warning(
 					'Failed-run retention for "{identity}" is unreadable at option row "{option_name}"; repair or purge the row.',
 					array(
-						'identity'    => $this->identity,
+						'identity'    => (string) $this->identity,
 						'option_name' => $option_name,
 					)
 				);
@@ -524,7 +525,7 @@ final readonly class FailedRunStore {
 					1 === $unreadable_count ? 'it' : 'them'
 				),
 				array(
-					'identity'         => $this->identity,
+					'identity'         => (string) $this->identity,
 					'option_name'      => $option_name,
 					'unreadable_count' => $unreadable_count,
 				)

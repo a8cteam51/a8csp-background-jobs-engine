@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
@@ -84,7 +84,7 @@ final readonly class OwnerOperations {
 	 * @return  void
 	 */
 	public function register( JobDefinition $definition ): void {
-		$this->dispatcher->register( JobIdentity::compose( $this->owner, $definition->name ), $definition );
+		$this->dispatcher->register( Identity::compose( $this->owner, $definition->name ), $definition );
 	}
 
 	/**
@@ -107,7 +107,7 @@ final readonly class OwnerOperations {
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
 	public function dispatch( string $name, array $start_args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
-		$identity = JobIdentity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->owner, $name );
 		if ( 0 > $delay ) {
 			// Exception values are diagnostic data, not rendered output.
 			throw new \InvalidArgumentException( \sprintf( 'Background-work "%1$s" delay %2$d is invalid; pass a non-negative number of seconds.', $name, $delay ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
@@ -146,14 +146,14 @@ final readonly class OwnerOperations {
 				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
 			}
 
-			$identity = JobIdentity::compose( $this->owner, $schedule->name );
-			if ( isset( $declarations[ $identity ] ) ) {
+			$identity = Identity::compose( $this->owner, $schedule->name );
+			if ( isset( $declarations[ (string) $identity ] ) ) {
 				throw new \InvalidArgumentException( 'Schedule sync accepts each owner-local schedule name exactly once.' );
 			}
 
-			$declarations[ $identity ] = array(
+			$declarations[ (string) $identity ] = array(
 				'schedule' => $schedule,
-				'job'      => JobIdentity::compose( $this->owner, $schedule->job ),
+				'job'      => Identity::compose( $this->owner, $schedule->job ),
 			);
 		}
 
@@ -175,7 +175,7 @@ final readonly class OwnerOperations {
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now( string $name ): AbstractResult {
-		$result = BoundaryErrorMapper::map( $this->schedules->dispatch_now( JobIdentity::compose( $this->owner, $name ) ) );
+		$result = BoundaryErrorMapper::map( $this->schedules->dispatch_now( Identity::compose( $this->owner, $name ) ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $result->value['identity'], $result->value['run_id'], RunStatus::Running ) );
 	}
@@ -196,7 +196,7 @@ final readonly class OwnerOperations {
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 	public function inspect( string $name, string $run_id ): AbstractResult {
-		$identity = JobIdentity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->owner, $name );
 		$result   = BoundaryErrorMapper::map( $this->inspection->run_status( $identity, $run_id ) );
 		if ( $result->is_failure() ) {
 			return $result;
@@ -231,7 +231,7 @@ final readonly class OwnerOperations {
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	public function last_completed_run( string $name ): AbstractResult {
-		$identity = JobIdentity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->owner, $name );
 		$result   = BoundaryErrorMapper::map( $this->inspection->last_completed_run_id( $identity ) );
 		if ( $result->is_failure() ) {
 			return $result;
@@ -262,7 +262,7 @@ final readonly class OwnerOperations {
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, string $run_id ): AbstractResult {
-		$identity = JobIdentity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->owner, $name );
 		$result   = BoundaryErrorMapper::map( $this->dispatcher->retry_failed( $identity, $run_id ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
@@ -284,7 +284,7 @@ final readonly class OwnerOperations {
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, string $run_id ): AbstractResult {
-		$identity = JobIdentity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->owner, $name );
 		$result   = BoundaryErrorMapper::map( $this->dispatcher->cancel( $identity, $run_id ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Cancelled ) );
@@ -300,7 +300,7 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string    $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity  $identity Complete owner-qualified job or chunked job identity.
 	 * @param   string    $run_id   Run identifier.
 	 * @param   RunStatus $status   Public lifecycle state.
 	 *
@@ -308,8 +308,8 @@ final readonly class OwnerOperations {
 	 *
 	 * @return  Run
 	 */
-	private static function run( string $identity, string $run_id, RunStatus $status ): Run {
-		return new Run( $identity, RunId::from( $run_id ), $status );
+	private static function run( Identity $identity, string $run_id, RunStatus $status ): Run {
+		return new Run( (string) $identity, RunId::from( $run_id ), $status );
 	}
 
 	/**

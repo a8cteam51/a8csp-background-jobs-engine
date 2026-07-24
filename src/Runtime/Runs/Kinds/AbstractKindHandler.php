@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
@@ -52,16 +53,16 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Complete owner-qualified work identity.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Fenced running state.
+	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Fenced running state.
 	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	final protected function fail_orphaned_run( string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+	final protected function fail_orphaned_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
 		$kind  = $this->key();
-		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %1$s implementation for run "%3$s"; register that %1$s or purge the run.', $kind, $identity, $run_id ) );
+		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %1$s implementation for run "%3$s"; register that %1$s or purge the run.', $kind, (string) $identity, $run_id ) );
 
 		$this->terminal_transitions->fail_unregistered_run( $this, $identity, $run_id, $state, $run_store, $error );
 	}

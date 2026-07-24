@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
@@ -35,6 +36,7 @@ final class KindDeliveryTest extends TestCase {
 	private const int NOW             = 1_700_000_000;
 	private const string OWNER        = 'kind-tests';
 
+	private Identity $identity;
 	private EngineRig $rig;
 
 	// endregion.
@@ -66,7 +68,8 @@ final class KindDeliveryTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig = EngineRig::set_up( self::NOW );
+		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->rig      = EngineRig::set_up( self::NOW );
 	}
 
 	/**
@@ -105,7 +108,7 @@ final class KindDeliveryTest extends TestCase {
 		$state = $this->run_store()->get( $run_id );
 		self::assertNotNull( $state );
 		self::assertSame( 'acme.export', $state->kind );
-		$inspection = $this->rig->inspection()->runs( self::IDENTITY );
+		$inspection = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( 'acme.export', $inspection['live'][0]['kind'] ?? null );
 		self::assertFalse( $inspection['live'][0]['queue_known'] ?? true );
 		self::assertSame( 0, $inspection['live_unreadable'] );
@@ -184,7 +187,7 @@ final class KindDeliveryTest extends TestCase {
 		$this->replace_run_field( $run_id, 'kind', $kind );
 
 		self::assertNull( $this->run_store()->get( $run_id ) );
-		$inspection = $this->rig->inspection()->runs( self::IDENTITY );
+		$inspection = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( array(), $inspection['live'] );
 		self::assertSame( 1, $inspection['live_unreadable'] );
 
@@ -317,7 +320,7 @@ final class KindDeliveryTest extends TestCase {
 		$state[ $field ] = $value;
 		$raw             = \maybe_serialize( $state );
 		self::assertIsString( $raw );
-		$this->rig->wpdb()->put( RunIdentity::option_name( self::IDENTITY, $run_id ), $raw );
+		$this->rig->wpdb()->put( RunIdentity::option_name( $this->identity, $run_id ), $raw );
 	}
 
 	/**
@@ -338,7 +341,7 @@ final class KindDeliveryTest extends TestCase {
 		$state['pending']['stage'] = $stage;
 		$raw                       = \maybe_serialize( $state );
 		self::assertIsString( $raw );
-		$this->rig->wpdb()->put( RunIdentity::option_name( self::IDENTITY, $run_id ), $raw );
+		$this->rig->wpdb()->put( RunIdentity::option_name( $this->identity, $run_id ), $raw );
 	}
 
 	/**
@@ -352,7 +355,7 @@ final class KindDeliveryTest extends TestCase {
 	 * @return  string
 	 */
 	private function raw_run( string $run_id ): string {
-		$option_name = RunIdentity::option_name( self::IDENTITY, $run_id );
+		$option_name = RunIdentity::option_name( $this->identity, $run_id );
 		$raw         = $this->rig->wpdb()->rows[ $option_name ] ?? null;
 		if ( null === $raw ) {
 			$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
