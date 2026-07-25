@@ -145,11 +145,6 @@ add_action( 'init', static function (): void {
 }, 2 );
 
 register_deactivation_hook( __FILE__, static function (): void {
-	if ( 0 === did_action( 'init' ) && ! doing_action( 'init' ) ) {
-		error_log( 'Run: wp a8csp-bgje schedules remove my-plugin --yes' );
-		return;
-	}
-
 	$removed = a8csp_bgje_sync_schedules( 'my-plugin', array() );
 	if ( is_wp_error( $removed ) ) {
 		error_log( $removed->get_error_message() );
