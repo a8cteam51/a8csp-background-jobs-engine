@@ -8,7 +8,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 
@@ -252,7 +251,7 @@ final class DeclarativeSyncTest extends AbstractIntegrationTestCase {
 
 		$gap_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY, true, 37 );
 		self::assertGreaterThan( 0, $gap_action_id );
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		$gap_callback_calls  = 0;
 		$gap_status          = null;
 		$gap_visible         = null;

@@ -14,8 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
@@ -191,7 +190,7 @@ final class Component extends AbstractComponent {
 			 */
 			$option_rows          = new OptionRows( $wpdb );
 			$registry             = new JobRegistry();
-			$logger               = new HookLogger();
+			$logger               = new EngineLogger();
 			$schedules            = new ScheduleRegistry( $option_rows, $logger );
 			$clock                = new SystemClock();
 			$randomizer           = new Randomizer();
@@ -265,7 +264,6 @@ final class Component extends AbstractComponent {
 			return;
 		}
 
-		ErrorLogSink::register();
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();

@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTe
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\LogLevel;
 
 /**
  * Verifies cancellation fences live deliveries and isolates per-run scheduler groups.
@@ -425,6 +426,9 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		// A WP-Cron single survives the group-clear no-op only where Action Scheduler is absent;
 		// its delivery for the deleted run is then dropped as a stale delivery for a finished run.
 		if ( ! \function_exists( 'as_schedule_single_action' ) ) {
+			// The drop is recorded at debug, below the default sink floor, and the host log is the
+			// only place this survivor is observable.
+			\add_filter( 'a8csp_bgje/error_log_level', static fn (): string => LogLevel::DEBUG );
 			$this->expectOutputRegex( '/Stale delivery for a finished or cancelled run was dropped/' );
 		}
 		$args = array( 'account_id' => 46 );

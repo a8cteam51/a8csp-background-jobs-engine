@@ -121,27 +121,6 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * The diagnostic sink is registered before graph construction can register another hook.
-	 *
-	 * @load-bearing concurrency
-	 * @pin-rationale Re-entrant graph construction must expose the log sink before any later registration can emit; the public hook cannot stage this partially constructed registration window.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_boot_registers_the_sink_before_every_engine_hook(): void {
-		$component = new Component();
-		$component->initialize();
-		$component->register_hooks();
-
-		$hooks = $GLOBALS['a8csp_bgje_test_hooks'] ?? null;
-		self::assertIsArray( $hooks );
-		self::assertSame( 'a8csp_bgje/log', $hooks[0] ?? null );
-	}
-
-	/**
 	 * Re-boot retains the published graph and never duplicates callback registration.
 	 *
 	 * @load-bearing concurrency
@@ -200,7 +179,7 @@ final class EngineComponentTest extends TestCase {
 
 		self::assertTrue( $reentered );
 		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
-		self::assertCount( 4, $this->action_registrations() );
+		self::assertCount( 3, $this->action_registrations() );
 		self::assertCount( 1, $this->filter_registrations() );
 	}
 

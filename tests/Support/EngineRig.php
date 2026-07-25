@@ -613,6 +613,9 @@ final class EngineRig {
 			$GLOBALS['a8csp_bgje_test_update_option_results'],
 			$GLOBALS['a8csp_bgje_test_update_option_values']
 		);
+
+		// Rig-driven tests assert on captured output, so engine events keep the default error-log sink off.
+		$GLOBALS['a8csp_bgje_test_filter_values']['a8csp_bgje/log_to_error_log'] = false;
 	}
 
 	/**

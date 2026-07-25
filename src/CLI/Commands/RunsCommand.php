@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 
@@ -501,7 +501,7 @@ final readonly class RunsCommand {
 		 * @var \wpdb $wpdb
 		 */
 		$option_rows        = new OptionRows( $wpdb );
-		$logger             = new HookLogger();
+		$logger             = new EngineLogger();
 		$groups             = array();
 		$unreadable_entries = 0;
 		$unreadable_rows    = 0;
@@ -580,7 +580,7 @@ final readonly class RunsCommand {
 		 * @var \wpdb $wpdb
 		 */
 		$rows   = new OptionRows( $wpdb );
-		$logger = new HookLogger();
+		$logger = new EngineLogger();
 		$count  = 0;
 		foreach ( $identities as $store_identity ) {
 			$purged = new FailedRunStore( $store_identity, $rows, $logger )->purge();

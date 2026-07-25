@@ -585,11 +585,12 @@ Filters with an identity apply the generic hook first and the identity-specific 
 | `a8csp_bgje/continue_delay` · `a8csp_bgje/continue_delay/{identity}` | Generic: `(int $delay, string $identity, string $run_id)` · specific: `(int $delay, string $run_id)`; return a non-negative delay in seconds, defaulting to 60. It also floors lock staleness at twice the delay. |
 | `a8csp_bgje/lock_staleness` · `a8csp_bgje/lock_staleness/{identity}` | Generic: `(int $seconds, string $identity)` · specific: `(int $seconds)`; return a positive lock window, defaulting to 900 and at least twice the continue delay. |
 | `a8csp_bgje/history_size` | `(int $size): int`; return a positive per-buffer history cap, defaulting to 30. |
-| `a8csp_bgje/log_to_error_log` | `(bool $enabled): bool`; return whether to register the default PHP error-log sink, defaulting to `true`. |
+| `a8csp_bgje/log_to_error_log` | `(bool $enabled): bool`; return whether the current event is written to the default PHP error-log sink, defaulting to `true`. Evaluated for every event. |
+| `a8csp_bgje/error_log_level` | `(string $minimum_level): string`; return the least severe recognized PSR-3 level written to the default PHP error-log sink, defaulting to `warning`. An unrecognized return falls back to `warning`; this gates only the sink and never `a8csp_bgje/log`. |
 
 ## Bring your own PSR-3 logger
 
-The engine writes `a8csp_bgje/log` events to PHP's error log by default. To route them to a `Psr\Log\LoggerInterface`, disable the default sink and attach a three-argument listener:
+The engine publishes every log event to `a8csp_bgje/log` and writes warning-and-above events to PHP's error log by default; `notice`, `info`, and `debug` still reach hook listeners. To route every event to a `Psr\Log\LoggerInterface`, disable the default sink and attach a three-argument listener:
 
 ```php
 use Psr\Log\LoggerInterface;
@@ -606,7 +607,7 @@ add_action(
 );
 ```
 
-Top-level context throwables arrive pre-redacted as `{class, code, file, trace_hash}` arrays; listeners never receive raw exception objects or messages.
+Raw throwable values held directly in context arrays never reach listeners at any depth: encountered values arrive as redacted `{class, code, file, trace_hash}` arrays, and over-deep array subtrees are replaced wholesale.
 
 ## Priority is advisory
 

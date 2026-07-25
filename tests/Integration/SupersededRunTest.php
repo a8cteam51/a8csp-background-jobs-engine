@@ -8,7 +8,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -75,7 +74,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		$failed = array();
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		\add_action(
 			'a8csp_bgje/superseded/' . self::IDENTITY,
 			static function ( RunId $run_id, array $args ) use ( &$named_superseded ): void {

@@ -11,7 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
@@ -19,7 +19,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
@@ -106,7 +105,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		\add_action(
 			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
@@ -147,7 +146,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 
 		global $wpdb;
 		self::assertInstanceOf( \wpdb::class, $wpdb );
-		$registration = ( new ScheduleRegistry( new OptionRows( $wpdb ), new HookLogger() ) )->registration( self::ZOMBIE_KEY );
+		$registration = ( new ScheduleRegistry( new OptionRows( $wpdb ), new EngineLogger() ) )->registration( self::ZOMBIE_KEY );
 		self::assertInstanceOf( Success::class, $registration );
 		self::assertIsArray( $registration->value );
 		self::assertSame( 3, $registration->value['undeclared_occurrences'] );
@@ -168,7 +167,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		\add_action(
 			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
@@ -231,7 +230,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		$intent_option = 'a8csp_bgje_cleanup_intent_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( ScheduleRegistry::option_name( self::OWNER ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::REDECLARED_IDENTITY );
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 
 		$unknown_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::HOOK, array( self::KEY ), self::KEY, true, 10 );
 		self::assertGreaterThan( 0, $unknown_action_id );
@@ -301,7 +300,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	public function test_unknown_wp_cron_chain_converges_inline(): void {
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		\add_action(
 			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
@@ -345,7 +344,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	public function test_complete_before_repeat_race_re_records_the_intent_on_the_successor_delivery(): void {
 		$intent_option = 'a8csp_bgje_cleanup_intent_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( $intent_option );
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 
 		$cleanup_intents = $this->cleanup_intents();
 
@@ -452,7 +451,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 
 		$rows   = new OptionRows( $wpdb );
-		$logger = new HookLogger();
+		$logger = new EngineLogger();
 
 		return new CleanupIntents(
 			new ScheduleRegistry( $rows, $logger ),

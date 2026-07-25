@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -53,7 +53,7 @@ final class FailedRunStorePoison {
  * @version 1.0.0
  */
 #[CoversClass( FailedRunStore::class )]
-#[UsesClass( HookLogger::class )]
+#[UsesClass( EngineLogger::class )]
 final class FailedRunStoreTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -358,7 +358,7 @@ final class FailedRunStoreTest extends TestCase {
 	public function test_corrupt_entry_warning_is_guarded_across_reentrant_store_instances(): void {
 		$fixture = StoreFixtureBuilder::failed_runs_with_corrupt_member( $this->fixtures->failed_runs( array( self::fixture_entry( 'run-a', 100 ) ) ) );
 		$this->put_fixture( $fixture );
-		$store          = new FailedRunStore( $this->identity, $this->rows, new HookLogger() );
+		$store          = new FailedRunStore( $this->identity, $this->rows, new EngineLogger() );
 		$listener_calls = 0;
 		$nested         = null;
 		$callbacks      = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
@@ -366,7 +366,7 @@ final class FailedRunStoreTest extends TestCase {
 		$callbacks['a8csp_bgje/log']                 = function () use ( &$listener_calls, &$nested ): void {
 			++$listener_calls;
 			if ( 1 === $listener_calls ) {
-				$nested = new FailedRunStore( $this->identity, $this->rows, new HookLogger() )->all();
+				$nested = new FailedRunStore( $this->identity, $this->rows, new EngineLogger() )->all();
 			}
 		};
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;

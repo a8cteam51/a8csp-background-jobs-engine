@@ -11,7 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
@@ -51,7 +51,7 @@ final class ScheduleRegistryWakeupProbe {
  */
 #[CoversClass( ScheduleRegistry::class )]
 #[CoversClass( OwnerReplacementOutcome::class )]
-#[UsesClass( HookLogger::class )]
+#[UsesClass( EngineLogger::class )]
 final class ScheduleRegistryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -483,7 +483,7 @@ final class ScheduleRegistryTest extends TestCase {
 	public function test_corrupt_owner_warning_is_guarded_against_reentrant_listeners(): void {
 		$option_name = ScheduleRegistry::option_name( 'owner-a' );
 		$this->rig->wpdb()->put( $option_name, 'poison-registry-row' );
-		$registry       = new ScheduleRegistry( $this->rows, new HookLogger() );
+		$registry       = new ScheduleRegistry( $this->rows, new EngineLogger() );
 		$listener_calls = 0;
 		$nested         = null;
 		$callbacks      = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;

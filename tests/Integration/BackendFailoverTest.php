@@ -12,7 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
@@ -187,7 +187,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$rows                 = new OptionRows( $wpdb );
 		$job_registry         = new JobRegistry();
 		$clock                = new SystemClock();
-		$logger               = new HookLogger();
+		$logger               = new EngineLogger();
 		$registry             = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new Randomizer();
 		$guard                = new OverlapGuard( $clock, $logger, $rows );

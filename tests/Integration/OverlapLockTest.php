@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
@@ -261,7 +260,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		$generic_superseded = array();
 		$terminal_hooks     = array();
 		$log_records        = array();
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		\add_action(
 			'a8csp_bgje/superseded/' . self::RECLAIM_IDENTITY,
 			static function ( RunId $run_id, array $args ) use ( &$named_superseded ): void {
