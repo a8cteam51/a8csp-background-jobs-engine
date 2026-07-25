@@ -2,42 +2,26 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLeaseOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use Psr\Log\NullLogger;
 
 /**
@@ -370,31 +354,6 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
-	 * Returns one occurrence-lease option name and exact raw value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $claimed_at  Claim timestamp.
-	 * @param   int $claim_token Deterministic claim-token source.
-	 *
-	 * @return  array{string, string}
-	 */
-	public function occurrence_lease( int $claimed_at, int $claim_token = 42 ): array {
-		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $claimed_at, $claim_token ): array {
-				$rows  = new OptionRows( $wpdb );
-				$claim = ( new OccurrenceLease( $rows, new FixedClock( $claimed_at ), new RecordingRandomizer( $claim_token ) ) )->claim( (string) $this->identity );
-				if ( OccurrenceLeaseOutcome::Claimed !== $claim->outcome ) {
-					throw new \LogicException( 'Production OccurrenceLease rejected an isolated lease fixture.' );
-				}
-
-				return $this->only_row_under( $rows, $wpdb, OccurrenceLease::OPTION_PREFIX );
-			}
-		);
-	}
-
-	/**
 	 * Returns one cleanup-intent option name and exact raw value.
 	 *
 	 * @since   1.0.0
@@ -413,83 +372,6 @@ final readonly class StoreFixtureBuilder {
 				$intents->record_intent( (string) $this->identity );
 
 				return $this->only_row_under( $rows, $wpdb, CleanupIntents::OPTION_PREFIX );
-			}
-		);
-	}
-
-	/**
-	 * Returns the cursor row authored by one bounded production cleanup-intent sweep.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $created_at Intent timestamp.
-	 *
-	 * @return  array{string, string}
-	 */
-	public function cleanup_intent_sweep_cursor( int $created_at ): array {
-		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $created_at ): array {
-				$rows      = new OptionRows( $wpdb );
-				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
-				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
-				for ( $index = 0; $index < 500; ++$index ) {
-					$intents->record_intent( (string) $this->identity . '-' . \sprintf( '%03d', $index ) );
-				}
-
-				$intents->converge_pending_intents();
-
-				return $this->row( $wpdb, CleanupIntents::SWEEP_CURSOR_OPTION );
-			}
-		);
-	}
-
-	/**
-	 * Returns the cursor row authored by one incomplete production maintenance pass.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array{string, string}
-	 */
-	public function sweep_cursor(): array {
-		return $this->isolated(
-			function ( \wpdb $wpdb ): array {
-				$clock   = new FixedClock( 1_700_000_000 );
-				$logger  = new NullLogger();
-				$backend = new RecordingBackend();
-				$rows    = new OptionRows( $wpdb );
-				for ( $index = 0; $index < 500; ++$index ) {
-					if ( RowWriteOutcome::Won !== $rows->insert_if_absent( RunIdentity::option_prefix() . '!fixture-' . \sprintf( '%03d', $index ), 'schema-invalid-run' ) ) {
-						throw new \LogicException( 'Store fixtures could not stage the maintenance scan budget.' );
-					}
-				}
-
-				$before          = $this->option_names( $rows, '' );
-				$guard           = new OverlapGuard( $clock, $logger, $rows );
-				$stores          = new StoreFactory( $clock, $rows, $logger );
-				$windows         = new LockWindows( $clock, $logger );
-				$effects         = new LifecycleEffects( $guard, $stores, $logger );
-				$transitions     = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
-				$registry        = new JobRegistry();
-				$delivery        = new DeliveryScheduler( $backend, $clock );
-				$failure         = new FailureLifecycle( $delivery, $clock, new RecordingRandomizer( 0 ), $logger, $transitions, $effects );
-				$job_handler     = new JobKindHandler( $registry, $logger, $clock, $windows, $transitions, $effects, $failure );
-				$chunked_handler = new ChunkedJobKindHandler( $registry, $delivery, $logger, $clock, $windows, $transitions, $effects, $failure );
-				$handlers        = array(
-					$job_handler->key()     => $job_handler,
-					$chunked_handler->key() => $chunked_handler,
-				);
-				$reconciliation  = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, $handlers, $delivery );
-				$intents         = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
-
-				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( RunId::from( '00000000000000000000-0000000000000000003' ), array() ) );
-				$added = \array_values( \array_diff( $this->option_names( $rows, '' ), $before ) );
-				if ( 1 !== \count( $added ) ) {
-					throw new \LogicException( 'Production MaintenanceJob did not emit exactly one isolated cursor row.' );
-				}
-
-				return $this->row( $wpdb, $added[0] );
 			}
 		);
 	}

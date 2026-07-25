@@ -7,7 +7,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -20,7 +19,6 @@ use PHPUnit\Framework\TestCase;
  *
  * @load-bearing concurrency
  * @pin-rationale Exact-raw won, lost, and write-failed outcomes plus absent-row atomic acquisition are storage-bound concurrency contracts not observable through higher-level result objects.
- * @fixture StoreFixtureBuilder
  */
 #[CoversClass( OptionRows::class )]
 #[UsesClass( RowDeleteOutcome::class )]
@@ -686,7 +684,7 @@ final class OptionRowsTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Returns one exact production-authored overlap-lock row.
+	 * Returns one deterministic opaque row value.
 	 *
 	 * @param   string $run_id       Run identifier.
 	 * @param   int    $claimed_at   Claim timestamp.
@@ -695,9 +693,7 @@ final class OptionRowsTest extends TestCase {
 	 * @return  string
 	 */
 	private static function lock_raw( string $run_id, int $claimed_at, int $heartbeat_at ): string {
-		[ , $raw ] = StoreFixtureBuilder::for_identity( 'owner-a:email-digest' )->lock( \str_repeat( 'a', 64 ), $run_id, $claimed_at, $heartbeat_at );
-
-		return $raw;
+		return \sprintf( 'opaque-lock:%s:%d:%d', $run_id, $claimed_at, $heartbeat_at );
 	}
 
 	/** Primes both stale option-cache representations and clears their call ledger. */

@@ -64,9 +64,6 @@ final class MaintenanceJobTest extends TestCase {
 	private const int NOW          = 1_700_000_000;
 	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
 
-	/** @var array{string, string}|null */
-	private static ?array $cursor_fixture = null;
-
 	private string $cursor_option;
 	private string $cursor_raw;
 	private RecordingLogger $logger;
@@ -182,6 +179,10 @@ final class MaintenanceJobTest extends TestCase {
 
 		$this->maintenance->handle( array(), $this->run_context );
 
+		self::assertSame(
+			self::cursor_bytes( self::hostile_run_name( 499 ), self::lock_name( 499 ), self::registration_name( 499 ) ),
+			$this->wpdb->rows[ $this->cursor_option ] ?? null
+		);
 		self::assertCount( 1, $this->names_under( OverlapGuard::OPTION_PREFIX ) );
 		self::assertCount( 1, $this->names_under( ScheduleRegistry::OPTION_PREFIX ) );
 		self::assertSame( self::hostile_run_name( 499 ), $this->cursor_state()['runs'] );
@@ -511,7 +512,6 @@ final class MaintenanceJobTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A failed authoritative page read cannot advance the exact durable cursor generation without risking skipped work.
-	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -542,7 +542,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * Reconciliation failure leaves the previously persisted cursor bytes unchanged.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale A failed run reconciliation cannot publish later progress over the exact production-authored cursor generation.
+	 * @pin-rationale A failed run reconciliation cannot publish later progress over the exact selected cursor generation.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -735,14 +735,39 @@ final class MaintenanceJobTest extends TestCase {
 	}
 
 	/**
-	 * Returns one production-authored sweep cursor fixture.
+	 * Returns one independently serialized sweep cursor fixture.
+	 *
+	 * The test owns this schema so cursor preconditions do not execute MaintenanceJob::handle().
 	 *
 	 * @return array{0: string, 1: string}
 	 */
 	private static function cursor_fixture(): array {
-		self::$cursor_fixture ??= StoreFixtureBuilder::for_identity( 'sweep-tests:cursor-fixture' )->sweep_cursor();
+		return array(
+			'a8csp_bgje_maintenance_sweep',
+			self::cursor_bytes( RunStore::OPTION_PREFIX . '!fixture-499', null, null ),
+		);
+	}
 
-		return self::$cursor_fixture;
+	/**
+	 * Returns exact maintenance cursor bytes for the supplied phase positions.
+	 *
+	 * @param   string|null $runs          Active-run cursor.
+	 * @param   string|null $locks         Overlap-lock cursor.
+	 * @param   string|null $registrations Schedule-registration cursor.
+	 *
+	 * @return  string
+	 */
+	private static function cursor_bytes( ?string $runs, ?string $locks, ?string $registrations ): string {
+		$raw = \maybe_serialize(
+			array(
+				'runs'          => $runs,
+				'locks'         => $locks,
+				'registrations' => $registrations,
+			)
+		);
+		self::assertIsString( $raw );
+
+		return $raw;
 	}
 
 	/**

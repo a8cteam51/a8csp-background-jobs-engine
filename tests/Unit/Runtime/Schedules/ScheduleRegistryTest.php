@@ -286,8 +286,8 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$expected = $owner;
 
-		$expected['registrations']['owner-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
-		self::assertSame( $this->fixtures->schedule_registration( $expected )[1], $this->raw_row() );
+		$expected['registrations']['owner-a:nightly'] = self::registration( $schedule, self::NOW + 300 );
+		self::assertSame( self::registration_bytes( $expected['registrations'] ), $this->raw_row() );
 		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'INSERT ' ) );
@@ -599,7 +599,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$registry                            = $this->registry();
 
 		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
-		self::assertSame( $this->fixtures->schedule_registration( $owner_a )[1], $this->raw_row() );
+		self::assertSame( self::registration_bytes( $owner_a['registrations'] ), $this->raw_row() );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 
 		$this->put_fixture( $this->fixtures->schedule_registration( $owner_a ) );
@@ -643,8 +643,8 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
-		self::assertSame( $this->fixtures->schedule_registration( $next_a )[1], $this->raw_row( 'owner-a' ) );
-		self::assertSame( $this->fixtures->schedule_registration( $next_b )[1], $this->raw_row( 'owner-b' ) );
+		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row( 'owner-a' ) );
+		self::assertSame( self::registration_bytes( $next_b['registrations'] ), $this->raw_row( 'owner-b' ) );
 	}
 
 	/**
@@ -683,7 +683,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$expected                                     = $replacement;
 		$expected['registrations']['owner-a:nightly'] = $advanced;
-		self::assertSame( $this->fixtures->schedule_registration( $expected )[1], $this->raw_row() );
+		self::assertSame( self::registration_bytes( $expected['registrations'] ), $this->raw_row() );
 		$registrations = $registry->registrations_for( 'owner-a' );
 		self::assertInstanceOf( Success::class, $registrations );
 		self::assertIsArray( $registrations->value );
@@ -782,7 +782,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
-		self::assertSame( $this->fixtures->schedule_registration( $next_a )[1], $this->raw_row() );
+		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row() );
 		self::assertSame( $owner_b_raw, $this->raw_row( 'owner-b' ) );
 	}
 
@@ -819,7 +819,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$expected                                     = $owner;
 		$expected['registrations']['owner-a:nightly'] = $nightly_next;
 		$expected['registrations']['owner-a:hourly']  = $hourly_next;
-		self::assertSame( $this->fixtures->schedule_registration( $expected )[1], $this->raw_row() );
+		self::assertSame( self::registration_bytes( $expected['registrations'] ), $this->raw_row() );
 
 		$replacement = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 600 ), self::NOW + 1_200 );
 		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
@@ -858,8 +858,9 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registration_update_write_failure_returns_without_a_diagnostic_read(): void {
-		$owner = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
+		$owner   = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$fixture = $this->fixtures->schedule_registration( $owner );
+		$this->put_fixture( $fixture );
 		$next               = $owner['registrations']['owner-a:nightly'];
 		$next['next_due']   = self::NOW + 600;
 		$next['last_fired'] = self::NOW + 300;
@@ -868,7 +869,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 
 		self::assertSame( RegistrationUpdateOutcome::Failed, $this->registry()->update_registration( self::identity( 'nightly' ), $next['fingerprint'], $next ) );
-		self::assertSame( $this->fixtures->schedule_registration( $owner )[1], $this->raw_row() );
+		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
 	}
@@ -915,11 +916,10 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_same_owner_replace_retries_and_wins_after_an_aba_restore(): void {
-		$owner_a     = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
-		$schedule_b  = self::schedule( 'hourly', 3_600 );
-		$initial     = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_600 ) );
-		$rival       = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_601 ) );
-		$replacement = $this->fixtures->schedule_registration( $owner_a );
+		$owner_a    = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$schedule_b = self::schedule( 'hourly', 3_600 );
+		$initial    = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_600 ) );
+		$rival      = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_601 ) );
 		$this->put_fixture( $initial );
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->before_next(
@@ -939,7 +939,7 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
 		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
-		self::assertSame( $replacement[1], $this->raw_row() );
+		self::assertSame( self::registration_bytes( $owner_a['registrations'] ), $this->raw_row() );
 	}
 
 	/**
@@ -1121,7 +1121,41 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}
 	 */
 	private static function registration( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
-		return StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due, $last_fired );
+		return array(
+			'fingerprint'            => $schedule->fingerprint(),
+			'next_due'               => $next_due,
+			'last_fired'             => $last_fired,
+			'misfire_skips'          => 0,
+			'overlap_skips'          => 0,
+			'undeclared_occurrences' => 0,
+			'undeclared_escalated'   => false,
+		);
+	}
+
+	/**
+	 * Returns independently serialized schedule-registration bytes.
+	 *
+	 * The test owns this encoding so expected bytes do not execute ScheduleRegistry::replace_owner().
+	 *
+	 * @phpstan-param array<string, array{
+	 *     fingerprint: string,
+	 *     next_due: int,
+	 *     last_fired: int|null,
+	 *     misfire_skips: int,
+	 *     overlap_skips: int,
+	 *     undeclared_occurrences: int,
+	 *     undeclared_escalated: bool
+	 * }> $registrations
+	 *
+	 * @param   array $registrations Complete expected registration state.
+	 *
+	 * @return  string
+	 */
+	private static function registration_bytes( array $registrations ): string {
+		$raw = \maybe_serialize( $registrations );
+		self::assertIsString( $raw );
+
+		return $raw;
 	}
 
 	/**

@@ -323,7 +323,6 @@ final class CleanupIntentsTest extends TestCase {
 	 *
 	 * @load-bearing bounded-retry-liveness
 	 * @pin-rationale Exact option rows and scheduler calls are the only evidence that a bounded invocation persists and resumes its own cursor.
-	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -333,15 +332,26 @@ final class CleanupIntentsTest extends TestCase {
 	public function test_pending_intent_sweep_resumes_after_its_durable_cursor(): void {
 		$intents = array();
 		for ( $index = 0; $index < 501; ++$index ) {
-			$registration_key      = 'owner-a:pending-' . \sprintf( '%03d', $index );
-			[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( self::NOW );
+			$registration_key = 'owner-a:pending-' . \sprintf( '%03d', $index );
+			$option_name      = CleanupIntents::OPTION_PREFIX . \hash( 'sha256', $registration_key );
+			$raw              = \maybe_serialize(
+				array(
+					'schedule_identity' => $registration_key,
+					'created_at'        => self::NOW,
+				)
+			);
+			self::assertIsString( $raw );
 			$this->wpdb->put( $option_name, $raw );
 			$intents[ $option_name ] = $registration_key;
 		}
 		\ksort( $intents, \SORT_STRING );
 		$expected_option = \array_key_last( $intents );
 		self::assertIsString( $expected_option );
-		$expected_key = $intents[ $expected_option ];
+		$expected_key           = $intents[ $expected_option ];
+		$expected_cursor_option = \array_keys( $intents )[499] ?? null;
+		self::assertIsString( $expected_cursor_option );
+		$expected_cursor_raw = \maybe_serialize( array( 'after_name' => $expected_cursor_option ) );
+		self::assertIsString( $expected_cursor_raw );
 
 		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the first bounded page set pending.' ) );
 		$this->cleanup_intents->converge_pending_intents();
@@ -349,7 +359,7 @@ final class CleanupIntentsTest extends TestCase {
 		$first_unschedules = \array_values( \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
 		self::assertCount( 500, $first_unschedules );
 		self::assertCount( 501, \array_filter( \array_keys( $this->wpdb->rows ), static fn ( string $option_name ): bool => \str_starts_with( $option_name, CleanupIntents::OPTION_PREFIX ) ) );
-		self::assertArrayHasKey( 'a8csp_bgje_cleanup_sweep_cursor', $this->wpdb->rows );
+		self::assertSame( $expected_cursor_raw, $this->wpdb->rows[ CleanupIntents::SWEEP_CURSOR_OPTION ] ?? null );
 		self::assertArrayNotHasKey( 'a8csp_bgje_cleanup_intents_sweep', $this->wpdb->rows );
 		self::assertCount( 502, $this->wpdb->rows );
 

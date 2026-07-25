@@ -10,7 +10,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -22,7 +21,6 @@ use PHPUnit\Framework\TestCase;
  *
  * @load-bearing concurrency
  * @pin-rationale Lease-token ownership and stale takeover are raw compare-and-swap contracts whose losing-writer states cannot be forced through a public schedule delivery.
- * @fixture StoreFixtureBuilder
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -81,6 +79,7 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertSame( OccurrenceLeaseOutcome::Claimed, $claim->outcome );
 		self::assertInstanceOf( OccurrenceLeaseHandle::class, $claim->lease );
 		self::assertArrayHasKey( self::option_name(), $this->wpdb->rows );
+		self::assertSame( self::raw_lease( 42, self::NOW ), $this->wpdb->rows[ self::option_name() ] ?? null );
 		$claim->lease->release();
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
 	}
@@ -385,14 +384,21 @@ final class OccurrenceLeaseTest extends TestCase {
 	/**
 	 * Returns one exact raw lease row.
 	 *
+	 * The test owns this encoding so contention fixtures do not execute OccurrenceLease::claim().
+	 *
 	 * @param   int $claim_token Deterministic claim-token source.
 	 * @param   int $claimed_at  Lease claim timestamp.
 	 *
 	 * @return  string
 	 */
 	private static function raw_lease( int $claim_token, int $claimed_at ): string {
-		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::KEY )->occurrence_lease( $claimed_at, $claim_token );
-		self::assertSame( self::option_name(), $option_name );
+		$raw = \maybe_serialize(
+			array(
+				'claim_token' => \sprintf( '%019d', $claim_token ),
+				'claimed_at'  => $claimed_at,
+			)
+		);
+		self::assertIsString( $raw );
 
 		return $raw;
 	}

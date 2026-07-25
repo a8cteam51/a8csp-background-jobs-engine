@@ -13,7 +13,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -91,8 +90,6 @@ final class ResetCommandTest extends TestCase {
 	/**
 	 * An acknowledged reset removes production-created rows and pending engine actions.
 	 *
-	 * @fixture StoreFixtureBuilder
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -101,9 +98,7 @@ final class ResetCommandTest extends TestCase {
 	public function test_registered_reset_purges_real_engine_state_and_reports_counts(): void {
 		$this->seed_engine_state();
 		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-bgje:maintenance' );
-		[ $cursor_option, $cursor_raw ] = StoreFixtureBuilder::for_identity( 'reset-tests:cleanup-cursor' )->cleanup_intent_sweep_cursor( 1_700_000_000 );
-		self::assertSame( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_option );
-		$this->rig->wpdb()->put( $cursor_option, $cursor_raw );
+		$this->rig->wpdb()->put( CleanupIntents::SWEEP_CURSOR_OPTION, 'opaque-cleanup-cursor' );
 		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
 		$this->rig->backend()->pending_actions[ ActionDeliveries::DELIVER_HOOK ] = 5;
 		$owned_before = $this->engine_option_names();
