@@ -64,10 +64,14 @@ every surviving component is initialized before any hook can fire.
   malformed-lock repair boundary, gated on WP-CLI.
 - `languages/` contains the POT generated from the plugin's strings; the release workflow
   regenerates it so archives always ship current strings.
-- `uninstall.php` carries the persisted footprint inline — the `a8csp_bgje_` prefix sweep is the
-  complete ownership boundary, runtime-suffixed option families make a fixed-key manifest
-  impossible — and sweeps options, WP-Cron events, and Action Scheduler rows per site, in
-  bounded batches across a network.
+- `uninstall.php` loads root `footprint.php`, whose pure-data manifest records option prefixes,
+  fixed transient keys, and delivery hooks. Runtime-suffixed option names cannot be enumerated as
+  fixed keys, so the `a8csp_bgje_` prefix sweep is the complete ownership boundary. Per site,
+  uninstall preserves failed-run and run-history diagnostics by default, deletes other eligible
+  options, unschedules WP-Cron events, and marks pending Action Scheduler actions as canceled when
+  its actions table and initialized public API are available. The
+  `A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL` constant includes diagnostics in the sweep only when
+  its value is literal `true`; network uninstall applies the policy in bounded site batches.
 - `tests/` contains the automated test suite; see `tests/README.md` for the suite matrix and
   local workflow.
 - `.github/workflows/` includes quality, test, audit, CodeQL, workflow-checks, mutation, and

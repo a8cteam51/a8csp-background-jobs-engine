@@ -10,12 +10,13 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 /**
  * Verifies the real `uninstall.php` end-to-end through the documented option-prefix and lifecycle-
- * hook contracts: engine rows and scheduled work are reclaimed while an outside canary survives.
+ * hook contracts: operational rows and scheduled work are reclaimed, diagnostics follow the
+ * uninstall policy, and an outside canary survives.
  *
  * `uninstall.php` guards on `defined( 'WP_UNINSTALL_PLUGIN' )`, a constant WordPress itself
- * only defines during a real plugin-delete request. This test defines it by hand, so the one
- * test method runs `#[RunInSeparateProcess]` — the constant must not leak into the rest of
- * the suite, where its presence would be indistinguishable from an actual uninstall.
+ * only defines during a real plugin-delete request. These tests define uninstall constants by
+ * hand, so each method runs `#[RunInSeparateProcess]` — the constants must not leak into the rest
+ * of the suite, where their presence would be indistinguishable from an actual uninstall.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -93,10 +94,10 @@ final class UninstallTest extends AbstractIntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * Seeds every documented option family plus two canaries, then runs the real `uninstall.php`.
-	 * It also seeds every lifecycle hook in both scheduler stores. One canary replaces the prefix
-	 * underscores to exercise LIKE escaping; the other differs only by case to exercise the
-	 * byte-exact deletion boundary under a case-insensitive option-name collation.
+	 * Default uninstall preserves diagnostic records while deleting every other documented option
+	 * family and both scheduler stores. One canary replaces the prefix underscores to exercise LIKE
+	 * escaping; the other differs only by case to exercise the byte-exact deletion boundary under a
+	 * case-insensitive option-name collation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -104,7 +105,7 @@ final class UninstallTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	#[RunInSeparateProcess]
-	public function test_uninstall_deletes_only_its_own_footprint(): void {
+	public function test_uninstall_preserves_diagnostics_by_default_and_deletes_other_footprint(): void {
 		self::clear_scheduled_work();
 
 		foreach ( self::DOCUMENTED_OPTIONS as $option ) {
@@ -127,7 +128,14 @@ final class UninstallTest extends AbstractIntegrationTestCase {
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
-		self::assertSame( array(), self::engine_option_names(), 'uninstall.php must leave no option inside the documented a8csp_bgje_ ownership prefix' );
+		self::assertSame(
+			array(
+				'a8csp_bgje_failed_runs_uninstall-test:job',
+				'a8csp_bgje_run_history_uninstall-test',
+			),
+			self::engine_option_names(),
+			'uninstall.php must preserve only failed-run and run-history diagnostics by default'
+		);
 		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			self::assertFalse( $wp_cron->is_scheduled( $hook, self::SCHEDULE_ARGS ), "uninstall.php must remove every WP-Cron event for '{$hook}'" );
 			self::assertFalse( $action_scheduler->is_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
@@ -135,6 +143,27 @@ final class UninstallTest extends AbstractIntegrationTestCase {
 
 		self::assertSame( 'sentinel', get_option( self::LIKE_CANARY_OPTION ), 'uninstall.php must not delete keys outside its footprint' );
 		self::assertSame( 'sentinel', get_option( self::BYTE_CANARY_OPTION ), 'uninstall.php must preserve byte-distinct option names selected by a case-insensitive collation' );
+	}
+
+	/**
+	 * Literal boolean true opts into deleting the diagnostic families with the operational rows.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	public function test_uninstall_removes_diagnostics_when_explicitly_requested(): void {
+		foreach ( self::DOCUMENTED_OPTIONS as $option ) {
+			self::assertTrue( update_option( $option, 'sentinel', false ), "The '{$option}' option-family sentinel must be persisted before uninstall" );
+		}
+
+		\define( 'A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL', true );
+		\define( 'WP_UNINSTALL_PLUGIN', true );
+		require \dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		self::assertSame( array(), self::engine_option_names(), 'The uninstall opt-in must leave zero rows inside the documented a8csp_bgje_ ownership prefix' );
 	}
 
 	// endregion.

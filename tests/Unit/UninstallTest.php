@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Records the cold-uninstall option-prefix and Action Scheduler queries without requiring WordPress.
+ * Provides the database reads required by uninstall tests without loading WordPress.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -24,15 +24,6 @@ final class UninstallWpdbSpy {
 
 	/** @var list<array{query: string, args: list<mixed>}> Prepared queries. */
 	public array $prepared = array();
-
-	/** @var list<string> Executed column queries. */
-	public array $column_queries = array();
-
-	/** @var list<string> Executed single-value queries. */
-	public array $var_queries = array();
-
-	/** @var list<string> Executed write queries. */
-	public array $write_queries = array();
 
 	// endregion.
 
@@ -83,8 +74,6 @@ final class UninstallWpdbSpy {
 	 * @return  string|null
 	 */
 	public function get_var( string $query ): ?string {
-		$this->var_queries[] = $query;
-
 		$last_prepared = $this->prepared[ \count( $this->prepared ) - 1 ]['args'][0] ?? null;
 		if ( ! \is_string( $last_prepared ) ) {
 			return null;
@@ -104,29 +93,7 @@ final class UninstallWpdbSpy {
 	}
 
 	/**
-	 * Records one write query and reports the scripted affected-row count.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $query Prepared query token.
-	 *
-	 * @return  int|false
-	 */
-	public function query( string $query ): int|false {
-		$this->write_queries[] = $query;
-
-		$script = $GLOBALS['a8csp_bgje_test_uninstall_query_result'] ?? 0;
-		$result = \is_array( $script ) ? ( $script[ \count( $this->write_queries ) - 1 ] ?? 0 ) : $script;
-		if ( ! \is_int( $result ) && false !== $result ) {
-			throw new \UnexpectedValueException( 'Script each uninstall write result as an integer or false.' );
-		}
-
-		return $result;
-	}
-
-	/**
-	 * Returns scripted group identifiers or the stored engine-prefixed option names.
+	 * Returns the stored engine-prefixed option names.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -136,22 +103,6 @@ final class UninstallWpdbSpy {
 	 * @return  list<mixed>
 	 */
 	public function get_col( string $query ): array {
-		$this->column_queries[] = $query;
-
-		if ( \str_contains( $query, 'claim_id' ) ) {
-			/** @var list<mixed> $claim_ids */
-			$claim_ids = $GLOBALS['a8csp_bgje_test_uninstall_claim_ids'] ?? array();
-
-			return $claim_ids;
-		}
-
-		if ( \str_contains( $query, 'group_id' ) ) {
-			/** @var list<mixed> $group_ids */
-			$group_ids = $GLOBALS['a8csp_bgje_test_uninstall_group_ids'] ?? array();
-
-			return $group_ids;
-		}
-
 		/** @var array<string, mixed> $options */
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 
@@ -162,7 +113,31 @@ final class UninstallWpdbSpy {
 }
 
 /**
- * Exercises the real cold-bootstrap uninstall footprint against in-memory option state.
+ * Represents an initialized Action Scheduler runtime for isolated uninstall tests.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ */
+final class UninstallActionSchedulerStub {
+	// region METHODS.
+
+	/**
+	 * Reports whether the Action Scheduler data store is initialized.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	public static function is_initialized(): bool {
+		return true;
+	}
+
+	// endregion.
+}
+
+/**
+ * Exercises the real uninstall footprint against in-memory option state.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -199,7 +174,8 @@ final class UninstallTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Engine option rows and updater transients are removed while LIKE and byte-prefix near misses survive.
+	 * The explicit diagnostic-removal policy deletes all engine rows and updater transients while
+	 * LIKE and byte-prefix near misses survive.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -208,10 +184,11 @@ final class UninstallTest extends TestCase {
 	 */
 	#[RunInSeparateProcess]
 	#[PreserveGlobalState( false )]
-	public function test_uninstall_deletes_the_complete_option_footprint(): void {
+	public function test_uninstall_opt_in_deletes_the_complete_option_footprint(): void {
 		require_once __DIR__ . '/wp-options-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once __DIR__ . '/as-function-stubs.php';
 
 		$options = array_fill_keys( self::DYNAMIC_OPTIONS, 'sentinel' );
 		foreach ( self::UPDATE_TRANSIENTS as $transient ) {
@@ -230,14 +207,15 @@ final class UninstallTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_cron_array']             = array();
 		$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
 		$GLOBALS['a8csp_bgje_test_cron_event_sequence']    = 0;
-		$GLOBALS['a8csp_bgje_test_uninstall_claim_ids']    = array( '11' );
-		$GLOBALS['a8csp_bgje_test_uninstall_group_ids']    = array( '7' );
+		$GLOBALS['a8csp_bgje_test_as_calls']               = array();
 		$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
 
 		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			\a8csp_bgje_test_store_cron_event( 1_700_000_000, $hook, array( $hook ), false );
 		}
 
+		self::assertTrue( \class_alias( UninstallActionSchedulerStub::class, 'ActionScheduler' ) );
+		\define( 'A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL', true );
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
@@ -260,49 +238,24 @@ final class UninstallTest extends TestCase {
 		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			self::assertFalse( \wp_next_scheduled( $hook, array( $hook ) ) );
 		}
-
-		$wpdb = $GLOBALS['wpdb'];
-		self::assertInstanceOf( UninstallWpdbSpy::class, $wpdb );
 		self::assertSame(
 			array(
 				array(
-					'query' => 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s',
-					'args'  => array( 'wp_options', 'a8csp\\_bgje\\_%' ),
+					'function' => 'as_unschedule_all_actions',
+					'args'     => array( self::DELIVERY_HOOKS[0], array(), '' ),
 				),
-			),
-			self::prepared_matching( $wpdb, 'option_name' )
-		);
-
-		self::assertCount( 4, $wpdb->write_queries, 'Cold cleanup must delete logs, actions, orphaned claims, and orphaned groups' );
-		self::assertStringContainsString( '`action_id` IN', $wpdb->write_queries[0] );
-		self::assertStringContainsString( '`hook` IN', $wpdb->write_queries[1] );
-		self::assertStringContainsString( '`claim_id` IN', $wpdb->write_queries[2] );
-		self::assertStringContainsString( '`group_id` IN', $wpdb->write_queries[3] );
-		self::assertSame(
-			array(
 				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
-					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::DELIVERY_HOOKS ) ),
+					'function' => 'as_unschedule_all_actions',
+					'args'     => array( self::DELIVERY_HOOKS[1], array(), '' ),
 				),
 			),
-			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),
-			'The action delete must be scoped to exactly the two engine hooks'
+			$this->action_scheduler_calls(),
+			'Uninstall must unschedule both delivery hooks through Action Scheduler'
 		);
-		self::assertSame(
-			array(
-				array(
-					'query' => 'DELETE FROM %i WHERE `claim_id` IN (%d) AND `claim_id` NOT IN (SELECT `claim_id` FROM %i)',
-					'args'  => array( array( 'wp_actionscheduler_claims', 11, 'wp_actionscheduler_actions' ) ),
-				),
-			),
-			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `claim_id` IN' ),
-			'Claim deletion must stay scoped to engine claim IDs and preserve claims referenced by surviving actions'
-		);
-		self::assertStringContainsString( 'NOT IN (SELECT `group_id` FROM %i)', $wpdb->write_queries[3], 'Group deletion must keep any group still referenced by surviving actions' );
 	}
 
 	/**
-	 * Each failed Action Scheduler delete emits one cold-bootstrap breadcrumb before cleanup stops.
+	 * Default uninstall preserves diagnostic rows while deleting operational engine rows.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -311,53 +264,38 @@ final class UninstallTest extends TestCase {
 	 */
 	#[RunInSeparateProcess]
 	#[PreserveGlobalState( false )]
-	public function test_uninstall_reports_action_store_delete_failures(): void {
+	public function test_uninstall_preserves_diagnostics_by_default(): void {
 		require_once __DIR__ . '/wp-options-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once __DIR__ . '/as-function-stubs.php';
 
-		$failures = array(
-			array(
-				'script'  => array( false ),
-				'message' => 'a8csp-background-jobs-engine: uninstall left Action Scheduler actions and logs behind; actionscheduler_logs table delete failed.',
-			),
-			array(
-				'script'  => array( 0, false ),
-				'message' => 'a8csp-background-jobs-engine: uninstall left Action Scheduler actions behind; actionscheduler_actions table delete failed.',
-			),
-			array(
-				'script'  => array( 0, 0, false ),
-				'message' => 'a8csp-background-jobs-engine: uninstall left orphaned Action Scheduler claims behind; actionscheduler_claims table delete failed.',
-			),
+		$diagnostic_options = array(
+			'a8csp_bgje_run_history_consumer-plugin:email-digest' => 'sentinel',
+			'a8csp_bgje_failed_runs_consumer-plugin:email-digest' => 'sentinel',
 		);
 
+		$GLOBALS['a8csp_bgje_test_options']                = $diagnostic_options + array( 'a8csp_bgje_schedule_registrations_consumer-plugin' => 'sentinel' );
+		$GLOBALS['a8csp_bgje_test_option_calls']           = array();
+		$GLOBALS['a8csp_bgje_test_delete_transient_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']           = false;
+		$GLOBALS['a8csp_bgje_test_blog_id']                = 1;
+		$GLOBALS['a8csp_bgje_test_cron_array']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence']    = 0;
+		$GLOBALS['a8csp_bgje_test_as_calls']               = array();
+		$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
+
+		self::assertFalse( \defined( 'A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL' ) );
+		self::assertTrue( \class_alias( UninstallActionSchedulerStub::class, 'ActionScheduler' ) );
 		\define( 'WP_UNINSTALL_PLUGIN', true );
-		foreach ( $failures as $failure ) {
-			$GLOBALS['a8csp_bgje_test_options']                = array();
-			$GLOBALS['a8csp_bgje_test_option_calls']           = array();
-			$GLOBALS['a8csp_bgje_test_delete_transient_calls'] = array();
-			$GLOBALS['a8csp_bgje_test_is_multisite']           = false;
-			$GLOBALS['a8csp_bgje_test_blog_id']                = 1;
-			$GLOBALS['a8csp_bgje_test_cron_array']             = array();
-			$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
-			$GLOBALS['a8csp_bgje_test_cron_event_sequence']    = 0;
-			$GLOBALS['a8csp_bgje_test_uninstall_claim_ids']    = array( '11' );
-			$GLOBALS['a8csp_bgje_test_uninstall_group_ids']    = array( '7' );
-			$GLOBALS['a8csp_bgje_test_uninstall_query_result'] = $failure['script'];
-			$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
+		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
-			$output = $this->capture_error_log(
-				static function (): void {
-					require \dirname( __DIR__, 2 ) . '/uninstall.php';
-				}
-			);
-
-			self::assertMatchesRegularExpression( '/^(?:\[[^\r\n]+\] )?' . \preg_quote( $failure['message'], '/' ) . '\r?\n$/D', $output );
-		}
+		self::assertSame( $diagnostic_options, $GLOBALS['a8csp_bgje_test_options'] );
 	}
 
 	/**
-	 * A missing Action Scheduler table leaves every store row untouched.
+	 * A truthy non-boolean diagnostic policy preserves diagnostic rows.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -366,10 +304,51 @@ final class UninstallTest extends TestCase {
 	 */
 	#[RunInSeparateProcess]
 	#[PreserveGlobalState( false )]
-	public function test_uninstall_skips_action_store_cleanup_when_a_table_is_missing(): void {
+	public function test_uninstall_preserves_diagnostics_for_truthy_non_boolean_policy(): void {
 		require_once __DIR__ . '/wp-options-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once __DIR__ . '/as-function-stubs.php';
+
+		$diagnostic_options = array(
+			'a8csp_bgje_run_history_consumer-plugin:email-digest' => 'sentinel',
+			'a8csp_bgje_failed_runs_consumer-plugin:email-digest' => 'sentinel',
+		);
+
+		$GLOBALS['a8csp_bgje_test_options']                = $diagnostic_options + array( 'a8csp_bgje_schedule_registrations_consumer-plugin' => 'sentinel' );
+		$GLOBALS['a8csp_bgje_test_option_calls']           = array();
+		$GLOBALS['a8csp_bgje_test_delete_transient_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']           = false;
+		$GLOBALS['a8csp_bgje_test_blog_id']                = 1;
+		$GLOBALS['a8csp_bgje_test_cron_array']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence']    = 0;
+		$GLOBALS['a8csp_bgje_test_as_calls']               = array();
+		$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
+
+		self::assertTrue( \class_alias( UninstallActionSchedulerStub::class, 'ActionScheduler' ) );
+		\define( 'A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL', 1 );
+		\define( 'WP_UNINSTALL_PLUGIN', true );
+		require \dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		self::assertSame( $diagnostic_options, $GLOBALS['a8csp_bgje_test_options'] );
+	}
+
+	/**
+	 * A missing Action Scheduler actions table prevents the public cleanup call.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_uninstall_skips_action_scheduler_cleanup_when_actions_table_is_missing(): void {
+		require_once __DIR__ . '/wp-options-stubs.php';
+		require_once __DIR__ . '/wp-lock-stubs.php';
+		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once __DIR__ . '/as-function-stubs.php';
 
 		$GLOBALS['a8csp_bgje_test_options']                  = array();
 		$GLOBALS['a8csp_bgje_test_option_calls']             = array();
@@ -378,21 +357,19 @@ final class UninstallTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_cron_array']               = array();
 		$GLOBALS['a8csp_bgje_test_cron_calls']               = array();
 		$GLOBALS['a8csp_bgje_test_cron_event_sequence']      = 0;
-		$GLOBALS['a8csp_bgje_test_uninstall_claim_ids']      = array( '11' );
-		$GLOBALS['a8csp_bgje_test_uninstall_group_ids']      = array( '7' );
-		$GLOBALS['a8csp_bgje_test_uninstall_missing_tables'] = array( 'actionscheduler_groups' );
+		$GLOBALS['a8csp_bgje_test_as_calls']                 = array();
+		$GLOBALS['a8csp_bgje_test_uninstall_missing_tables'] = array( 'actionscheduler_actions' );
 		$GLOBALS['wpdb']                                     = new UninstallWpdbSpy();
 
+		self::assertTrue( \class_alias( UninstallActionSchedulerStub::class, 'ActionScheduler' ) );
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
-		$wpdb = $GLOBALS['wpdb'];
-		self::assertInstanceOf( UninstallWpdbSpy::class, $wpdb );
-		self::assertSame( array(), $wpdb->write_queries, 'An incomplete Action Scheduler schema must leave every store row untouched' );
+		self::assertSame( array(), $this->action_scheduler_calls(), 'A missing actions table must leave the Action Scheduler API untouched' );
 	}
 
 	/**
-	 * Multisite uninstall visits every site and reclaims both scheduler stores in each context.
+	 * Multisite uninstall visits every site and unschedules work through both scheduler APIs.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -407,22 +384,23 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-cron-stubs.php';
 		require_once __DIR__ . '/as-function-stubs.php';
 
-		$GLOBALS['a8csp_bgje_test_options']             = array( self::DYNAMIC_OPTIONS[0] => 'sentinel' );
-		$GLOBALS['a8csp_bgje_test_option_calls']        = array();
-		$GLOBALS['a8csp_bgje_test_is_multisite']        = true;
-		$GLOBALS['a8csp_bgje_test_site_ids']            = array( 1, 2 );
-		$GLOBALS['a8csp_bgje_test_get_sites_calls']     = array();
-		$GLOBALS['a8csp_bgje_test_blog_id']             = 1;
-		$GLOBALS['a8csp_bgje_test_blog_stack']          = array();
-		$GLOBALS['a8csp_bgje_test_blog_switch_calls']   = array();
-		$GLOBALS['a8csp_bgje_test_blog_restore_calls']  = array();
-		$GLOBALS['a8csp_bgje_test_cron_array']          = array();
-		$GLOBALS['a8csp_bgje_test_cron_calls']          = array();
-		$GLOBALS['a8csp_bgje_test_cron_site_calls']     = array();
-		$GLOBALS['a8csp_bgje_test_uninstall_claim_ids'] = array( '11' );
-		$GLOBALS['a8csp_bgje_test_uninstall_group_ids'] = array( '7' );
-		$GLOBALS['wpdb']                                = new UninstallWpdbSpy();
+		$GLOBALS['a8csp_bgje_test_options']            = array( self::DYNAMIC_OPTIONS[0] => 'sentinel' );
+		$GLOBALS['a8csp_bgje_test_option_calls']       = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']       = true;
+		$GLOBALS['a8csp_bgje_test_site_ids']           = array( 1, 2 );
+		$GLOBALS['a8csp_bgje_test_get_sites_calls']    = array();
+		$GLOBALS['a8csp_bgje_test_blog_id']            = 1;
+		$GLOBALS['a8csp_bgje_test_blog_stack']         = array();
+		$GLOBALS['a8csp_bgje_test_blog_switch_calls']  = array();
+		$GLOBALS['a8csp_bgje_test_blog_restore_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_cron_array']         = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']         = array();
+		$GLOBALS['a8csp_bgje_test_cron_site_calls']    = array();
+		$GLOBALS['a8csp_bgje_test_as_calls']           = array();
+		$GLOBALS['a8csp_bgje_test_as_site_calls']      = array();
+		$GLOBALS['wpdb']                               = new UninstallWpdbSpy();
 
+		self::assertTrue( \class_alias( UninstallActionSchedulerStub::class, 'ActionScheduler' ) );
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
@@ -442,11 +420,17 @@ final class UninstallTest extends TestCase {
 
 		$expected_cron_calls      = array();
 		$expected_cron_site_calls = array();
+		$expected_as_calls        = array();
+		$expected_as_site_calls   = array();
 		foreach ( array( 1, 2 ) as $site_id ) {
 			foreach ( self::DELIVERY_HOOKS as $hook ) {
 				$cron_call = array(
 					'function' => 'wp_unschedule_hook',
 					'args'     => array( $hook, false ),
+				);
+				$as_call   = array(
+					'function' => 'as_unschedule_all_actions',
+					'args'     => array( $hook, array(), '' ),
 				);
 
 				$expected_cron_calls[]      = $cron_call;
@@ -455,57 +439,19 @@ final class UninstallTest extends TestCase {
 					'blog_id'  => $site_id,
 					'args'     => $cron_call['args'],
 				);
+				$expected_as_calls[]        = $as_call;
+				$expected_as_site_calls[]   = array(
+					'function' => $as_call['function'],
+					'blog_id'  => $site_id,
+					'args'     => $as_call['args'],
+				);
 			}
 		}
 
 		self::assertSame( $expected_cron_calls, $GLOBALS['a8csp_bgje_test_cron_calls'] );
 		self::assertSame( $expected_cron_site_calls, $GLOBALS['a8csp_bgje_test_cron_site_calls'] );
-
-		$wpdb = $GLOBALS['wpdb'];
-		self::assertInstanceOf( UninstallWpdbSpy::class, $wpdb );
-		self::assertSame(
-			array(
-				array(
-					'query' => 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s',
-					'args'  => array( 'wp_options', 'a8csp\\_bgje\\_%' ),
-				),
-				array(
-					'query' => 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s',
-					'args'  => array( 'wp_2_options', 'a8csp\\_bgje\\_%' ),
-				),
-			),
-			self::prepared_matching( $wpdb, 'option_name' )
-		);
-
-		self::assertCount( 8, $wpdb->write_queries, 'Cold cleanup must run its four deletes on every network site' );
-		self::assertSame(
-			array(
-				array(
-					'query' => 'DELETE FROM %i WHERE `claim_id` IN (%d) AND `claim_id` NOT IN (SELECT `claim_id` FROM %i)',
-					'args'  => array( array( 'wp_actionscheduler_claims', 11, 'wp_actionscheduler_actions' ) ),
-				),
-				array(
-					'query' => 'DELETE FROM %i WHERE `claim_id` IN (%d) AND `claim_id` NOT IN (SELECT `claim_id` FROM %i)',
-					'args'  => array( array( 'wp_2_actionscheduler_claims', 11, 'wp_2_actionscheduler_actions' ) ),
-				),
-			),
-			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `claim_id` IN' ),
-			'Each site must delete only orphaned engine claims from its own site-prefixed store'
-		);
-		self::assertSame(
-			array(
-				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
-					'args'  => array( \array_merge( array( 'wp_actionscheduler_actions' ), self::DELIVERY_HOOKS ) ),
-				),
-				array(
-					'query' => 'DELETE FROM %i WHERE `hook` IN (%s, %s)',
-					'args'  => array( \array_merge( array( 'wp_2_actionscheduler_actions' ), self::DELIVERY_HOOKS ) ),
-				),
-			),
-			self::prepared_matching( $wpdb, 'DELETE FROM %i WHERE `hook` IN' ),
-			'Each site must delete engine actions from its own site-prefixed store'
-		);
+		self::assertSame( $expected_as_calls, $this->action_scheduler_calls() );
+		self::assertSame( $expected_as_site_calls, $GLOBALS['a8csp_bgje_test_as_site_calls'] );
 	}
 
 	/**
@@ -536,7 +482,7 @@ final class UninstallTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_blog_restore_calls']       = array();
 		$GLOBALS['a8csp_bgje_test_cron_array']               = array();
 		$GLOBALS['a8csp_bgje_test_cron_calls']               = array();
-		$GLOBALS['a8csp_bgje_test_uninstall_missing_tables'] = array( 'actionscheduler_logs' );
+		$GLOBALS['a8csp_bgje_test_uninstall_missing_tables'] = array( 'actionscheduler_actions' );
 		$GLOBALS['wpdb']                                     = new UninstallWpdbSpy();
 
 		\define( 'WP_UNINSTALL_PLUGIN', true );
@@ -582,66 +528,18 @@ final class UninstallTest extends TestCase {
 	}
 
 	/**
-	 * Captures PHP's configured error-log destination and restores it after uninstall runs.
+	 * Returns the Action Scheduler call ledger after verifying its runtime representation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   callable(): void $operation The uninstall operation to capture.
-	 *
-	 * @return  string
+	 * @return  array<array-key, mixed>
 	 */
-	private function capture_error_log( callable $operation ): string {
-		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-bgje-uninstall-' );
-		if ( false === $temp_file ) {
-			self::fail( 'Unable to create the uninstall error-log capture file; make the system temporary directory writable.' );
-		}
+	private function action_scheduler_calls(): array {
+		$calls = $GLOBALS['a8csp_bgje_test_as_calls'] ?? null;
+		self::assertIsArray( $calls );
 
-		$previous_error_log = \ini_get( 'error_log' );
-		if ( false === $previous_error_log ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- WordPress is not loaded in this Unit test, so its file helper is unavailable.
-			\unlink( $temp_file );
-			self::fail( 'Unable to read the error_log setting; enable the PHP error_log configuration directive.' );
-		}
-
-		// phpcs:ignore WordPress.PHP.IniSet.Risky -- The test redirects PHP's error log to its isolated capture file.
-		if ( false === \ini_set( 'error_log', $temp_file ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- WordPress is not loaded in this Unit test, so its file helper is unavailable.
-			\unlink( $temp_file );
-			self::fail( 'Unable to capture error_log output; allow the error_log setting to change at runtime.' );
-		}
-
-		try {
-			$operation();
-
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The capture is a local Unit-test file, while wp_remote_get() is for remote URLs.
-			$output = \file_get_contents( $temp_file );
-			if ( false === $output ) {
-				self::fail( 'Unable to read captured error-log output; keep the temporary file readable.' );
-			}
-
-			return $output;
-		} finally {
-			// phpcs:ignore WordPress.PHP.IniSet.Risky -- The test restores PHP's error-log destination after its isolated capture.
-			\ini_set( 'error_log', $previous_error_log );
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- WordPress is not loaded in this Unit test, so its file helper is unavailable.
-			\unlink( $temp_file );
-		}
-	}
-
-	/**
-	 * Returns the recorded prepared queries whose template contains a marker.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   UninstallWpdbSpy $wpdb   Recording connection.
-	 * @param   string           $marker Template substring selecting one query family.
-	 *
-	 * @return  list<array{query: string, args: list<mixed>}>
-	 */
-	private static function prepared_matching( UninstallWpdbSpy $wpdb, string $marker ): array {
-		return \array_values( \array_filter( $wpdb->prepared, static fn ( array $entry ): bool => \str_contains( $entry['query'], $marker ) ) );
+		return $calls;
 	}
 
 	// endregion.

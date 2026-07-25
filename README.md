@@ -628,7 +628,11 @@ Do not redefine `a8csp_bgje()` or the `a8csp_bgje_*()` aliases; the engine decla
 
 ## Multisite
 
-Network activation is supported; each site runs its own isolated engine state, bound to the request site when the engine graph is built. A storage operation after `switch_to_blog()` throws instead of writing through a graph built for another site — so enter each site through a fresh request or execution context and operate there. Network uninstall sweeps every site's engine options and pending backend work; Action Scheduler cleanup requires its complete four-table schema and leaves incomplete or migrated stores untouched.
+Network activation is supported; each site runs its own isolated engine state, bound to the request site when the engine graph is built. A storage operation after `switch_to_blog()` throws instead of writing through a graph built for another site — so enter each site through a fresh request or execution context and operate there. Network uninstall applies the same per-site option-retention policy and unschedules WP-Cron events on every site; when a site's `actionscheduler_actions` table and initialized public API are available, it marks pending engine actions as canceled without requiring the other three Action Scheduler tables.
+
+## Uninstall
+
+Uninstall removes operational engine options and unschedules WP-Cron events per site, but preserves `a8csp_bgje_failed_runs_*` and `a8csp_bgje_run_history_*` option rows by default for post-uninstall diagnosis. When the `actionscheduler_actions` table and initialized public API are available, Action Scheduler marks pending actions for the engine's delivery hooks as canceled rather than deleting them. In-progress, complete, failed, already-canceled, and newly canceled action rows survive, as do all `actionscheduler_logs` rows and orphaned `actionscheduler_claims` and `actionscheduler_groups` rows. Define `A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL` to the literal boolean `true` before deleting the plugin to remove those diagnostic rows too; an undefined constant or any other value preserves them, and `wp a8csp-bgje reset` is deliberately exempt and still deletes every engine option row, including both diagnostic families.
 
 ## WP-CLI
 
