@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
@@ -209,6 +209,23 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * WP-Cron stores no groups, so group-wide clearance has the same no-op semantics as a group-only
+	 * unschedule identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_group( string $group ): AbstractResult {
+		return $this->unschedule( '', array(), $group );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -392,11 +409,7 @@ final class WPCronBackend implements BackendInterface {
 		foreach ( $this->active_intervals() as $interval ) {
 			$schedules[ $this->schedule_name( $interval ) ] = array(
 				'interval' => $interval,
-				'display'  => \sprintf(
-					/* translators: %d: interval in seconds. */
-					\__( 'Every %d seconds', 'a8csp-background-jobs-engine' ),
-					$interval
-				),
+				'display'  => \sprintf( /* translators: %d: interval in seconds. */ \__( 'Every %d seconds', 'a8csp-background-jobs-engine' ), $interval ),
 			);
 		}
 

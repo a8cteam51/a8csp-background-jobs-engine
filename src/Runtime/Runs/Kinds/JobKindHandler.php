@@ -2,11 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
@@ -14,7 +18,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
@@ -54,7 +57,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   JobRegistry      $work                 Registered work definitions.
+	 * @param   JobRegistry      $registry             Registered work definitions.
 	 * @param   LoggerInterface  $logger               Log event sink.
 	 * @param   ClockInterface   $clock                Timestamp source.
 	 * @param   LockWindows      $lock_windows         Filterable run-lock timing policy.
@@ -63,7 +66,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @param   FailureLifecycle $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
-		private JobRegistry $work,
+		private JobRegistry $registry,
 		LoggerInterface $logger,
 		ClockInterface $clock,
 		LockWindows $lock_windows,
@@ -97,20 +100,20 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $identity   Complete owner-qualified job identity.
+	 * @param   Identity      $identity   Complete owner-qualified job identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
-	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecution.
+	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecutionInterface.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function register( string $identity, JobDefinition $definition ): void {
-		if ( ! $definition->execution instanceof JobExecution ) {
-			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, JobExecution::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+	public function register( Identity $identity, JobDefinition $definition ): void {
+		if ( ! $definition->execution instanceof JobExecutionInterface ) {
+			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, JobExecutionInterface::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
 
-		$this->work->register( $identity, $definition );
+		$this->registry->register( $identity, $definition );
 	}
 
 	/**
@@ -119,15 +122,15 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job identity.
+	 * @param   Identity $identity Complete owner-qualified job identity.
 	 *
-	 * @return  JobExecution|null
+	 * @return  JobExecutionInterface|null
 	 */
 	#[\Override]
-	public function execution( string $identity ): ?JobExecution {
-		$execution = $this->work->execution( $identity );
+	public function execution( Identity $identity ): ?JobExecutionInterface {
+		$execution = $this->registry->execution( $identity );
 
-		return self::KIND === $this->work->kind( $identity ) && $execution instanceof JobExecution ? $execution : null;
+		return self::KIND === $this->registry->kind( $identity ) && $execution instanceof JobExecutionInterface ? $execution : null;
 	}
 
 	/**
@@ -136,13 +139,13 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job identity.
+	 * @param   Identity $identity Complete owner-qualified job identity.
 	 *
 	 * @return  JobOptions|null
 	 */
 	#[\Override]
-	public function options( string $identity ): ?JobOptions {
-		return self::KIND === $this->work->kind( $identity ) ? $this->work->options( $identity ) : null;
+	public function options( Identity $identity ): ?JobOptions {
+		return self::KIND === $this->registry->kind( $identity ) ? $this->registry->options( $identity ) : null;
 	}
 
 	/**
@@ -195,25 +198,12 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Returns the job admission verb used in corrective diagnostics.
+	 * Fires started hooks after admission and terminalizes listener failure before scheduler acceptance.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  string
-	 */
-	#[\Override]
-	public function dispatch_verb(): string {
-		return 'dispatch';
-	}
-
-	/**
-	 * Fires started hooks after scheduler acceptance and terminalizes listener failure.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity  Complete owner-qualified job identity.
+	 * @param   Identity $identity  Complete owner-qualified job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Persisted running state.
 	 * @param   RunStore $run_store Active-run store.
@@ -221,18 +211,18 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @return  EngineError|null Failure returned to the admission caller, or null.
 	 */
 	#[\Override]
-	public function after_dispatch( string $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError {
+	public function after_dispatch( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError {
 		try {
 			$this->terminal_effects->fire_started( $identity, $run_id, $state->start_args );
 		} catch ( \Throwable $throwable ) {
 			$exception_type = \get_debug_type( $throwable );
 			$error          = new EngineError(
-				\sprintf( '%1$s "%2$s" started listener failed because %3$s was thrown. Fix the started-hook listener before enqueueing the job again.', self::KIND, $identity, $exception_type ),
+				\sprintf( '%1$s "%2$s" started listener failed because %3$s was thrown. Fix the started-hook listener before dispatching the job again.', self::KIND, (string) $identity, $exception_type ),
 				$exception_type,
 				reason: EngineErrorReason::ExecutionFailed,
 				context: array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => (string) $identity,
+					'run_id'   => $run_id,
 				),
 			);
 			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
@@ -265,7 +255,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Complete owner-qualified job identity.
+	 * @param   string   $identity Raw scheduler-wire identity bytes.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Persisted run-stage state.
 	 *
@@ -273,7 +263,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int {
-		$options = $this->options( $identity );
+		$options = $this->registry->raw_options( $identity, self::KIND );
 		if ( null === $options ) {
 			return null;
 		}
@@ -302,7 +292,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity  Complete owner-qualified job identity.
+	 * @param   Identity $identity  Complete owner-qualified job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
@@ -310,14 +300,14 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @return  void
 	 */
 	#[\Override]
-	public function deliver( string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+	public function deliver( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
 		$execution = $this->execution( $identity );
 		$options   = $this->options( $identity );
 		if ( null === $execution || null === $options ) {
 			$this->logger->warning(
 				'job delivery references an unregistered execution; register the job before dispatching its run action.',
 				array(
-					'job_name' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -326,9 +316,10 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$context = new RunContext( $run_id, $state->start_args );
+		$start_args = PortableArguments::without_references( $state->start_args );
+		$context    = new RunContext( RunId::from( $run_id ), $start_args );
 		try {
-			$execution->handle( $state->start_args, $context );
+			$execution->handle( $start_args, $context );
 		} catch ( \Throwable $throwable ) {
 			$this->failure_lifecycle->handle_failure( $this, $options, $identity, $run_id, $state, $run_store, $throwable, RunFailureStage::execution(), 'run' );
 

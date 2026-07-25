@@ -7,6 +7,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
 /**
  * Identifies an engine-owned background-work kind.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -15,6 +17,9 @@ final readonly class JobKind {
 
 	/**
 	 * Lexical grammar shared by installed and prospective kind keys.
+	 *
+	 * The public-model copy mirrors `Runtime\Runs\Kinds\KindHandlerInterface::KEY_PATTERN` because
+	 * models do not import Runtime internals.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -41,7 +46,7 @@ final readonly class JobKind {
 
 	// endregion
 
-	// region NAMED CONSTRUCTORS
+	// region METHODS
 
 	/**
 	 * Returns the standard job kind.
@@ -79,17 +84,34 @@ final readonly class JobKind {
 	 *
 	 * @param   string $value Opaque kind key.
 	 *
-	 * @throws  \InvalidArgumentException When the key violates the kind grammar.
+	 * @throws  \ValueError When the key violates the kind grammar.
 	 *
 	 * @return  self
 	 */
 	public static function from( string $value ): self {
-		if ( 1 !== \preg_match( self::PATTERN, $value ) ) {
-			throw new \InvalidArgumentException( 'Job kind must match [a-z][a-z0-9_]*(.[a-z][a-z0-9_]*)?.' );
+		$kind = self::tryFrom( $value );
+		if ( null === $kind ) {
+			throw new \ValueError( 'Job kind must match [a-z][a-z0-9_]*(.[a-z][a-z0-9_]*)?.' );
 		}
 
-		return new self( $value );
+		return $kind;
 	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Mirrors the backed-enum parser name; each successful call returns a fresh instance.
+	/**
+	 * Wraps one grammar-valid engine kind key, or returns null for another shape.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $value Opaque kind key.
+	 *
+	 * @return  self|null
+	 */
+	public static function tryFrom( string $value ): ?self {
+		return 1 === \preg_match( self::PATTERN, $value ) ? new self( $value ) : null;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// endregion
 }

@@ -6,6 +6,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
  * Supplies the runtime surface that static analysis receives from wordpress-stubs.
  */
 class WpdbRuntimeStub {
+	// region FIELDS AND CONSTANTS.
+
 	/** Options table name. */
 	public string $options = '';
 
@@ -14,6 +16,10 @@ class WpdbRuntimeStub {
 
 	/** Last database error reported by the modeled query boundary. */
 	public string $last_error = '';
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/**
 	 * Creates a disconnected runtime stub.
@@ -26,10 +32,14 @@ class WpdbRuntimeStub {
 		}
 	}
 
+	// endregion.
+
+	// region METHODS.
+
 	/**
 	 * Prepares a query.
 	 *
-	 * @param   mixed $query Query template.
+	 * @param   mixed $query   Query template.
 	 * @param   mixed ...$args Query arguments.
 	 *
 	 * @return  string
@@ -99,4 +109,6 @@ class WpdbRuntimeStub {
 	public function get_results( mixed $query = null, mixed $output = 'OBJECT' ): array|object|null {
 		return throw new \BadMethodCallException( 'Use WpdbLockSpy in unit tests.' );
 	}
+
+	// endregion.
 }

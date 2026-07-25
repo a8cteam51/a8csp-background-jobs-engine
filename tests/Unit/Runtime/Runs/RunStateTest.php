@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -116,6 +117,49 @@ final class RunStateTest extends TestCase {
 		$this->state( $kind );
 	}
 
+	/**
+	 * A negative lifecycle action sequence cannot enter typed run state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_negative_action_sequence_is_rejected(): void {
+		$this->expectException( \InvalidArgumentException::class );
+
+		new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: 'hash', kind_state: array(), failed_attempts: 0, action_sequence: -1, created_at: 1, heartbeat_at: 1 );
+	}
+
+	/**
+	 * Immutable pending replacement cannot bypass the typed state's priority range.
+	 *
+	 * @param   int $priority Scheduler priority outside the admitted range.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_priority_provider' )]
+	public function test_with_pending_rejects_priority_outside_the_admitted_range( int $priority ): void {
+		$state = $this->state( 'job' );
+		$this->expectException( \InvalidArgumentException::class );
+
+		$state->with_pending( PendingAction::async( 'run', $priority ) );
+	}
+
+	/**
+	 * A declared priority that disagrees with the pending delivery's priority is rejected.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_priority_disagreeing_with_the_pending_delivery_is_rejected(): void {
+		$this->expectException( \InvalidArgumentException::class );
+
+		new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: 'hash', kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: 1, heartbeat_at: 1, pending: PendingAction::async( 'run', 42 ), priority: 7 );
+	}
+
 	// endregion.
 
 	// region DATA PROVIDERS.
@@ -147,6 +191,16 @@ final class RunStateTest extends TestCase {
 		yield 'uppercase' => array( 'Job' );
 		yield 'punctuation' => array( 'Job!' );
 		yield 'double qualification' => array( 'acme.export.daily' );
+	}
+
+	/**
+	 * Returns priorities immediately outside both admitted boundaries.
+	 *
+	 * @return  iterable<string, array{int}>
+	 */
+	public static function invalid_priority_provider(): iterable {
+		yield 'below minimum' => array( -1 );
+		yield 'above maximum' => array( 256 );
 	}
 
 	// endregion.

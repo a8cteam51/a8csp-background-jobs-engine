@@ -2,18 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -91,8 +90,6 @@ final class ResetCommandTest extends TestCase {
 	/**
 	 * An acknowledged reset removes production-created rows and pending engine actions.
 	 *
-	 * @fixture StoreFixtureBuilder
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -100,10 +97,8 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_registered_reset_purges_real_engine_state_and_reports_counts(): void {
 		$this->seed_engine_state();
-		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-jobs-engine:maintenance' );
-		[ $cursor_option, $cursor_raw ] = StoreFixtureBuilder::for_identity( 'reset-tests:cleanup-cursor' )->cleanup_intent_sweep_cursor( 1_700_000_000 );
-		self::assertSame( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_option );
-		$this->rig->wpdb()->put( $cursor_option, $cursor_raw );
+		$this->rig->wpdb()->put( self::MAINTENANCE_CURSOR_OPTION, 'run:a8csp-bgje:maintenance' );
+		$this->rig->wpdb()->put( CleanupIntents::SWEEP_CURSOR_OPTION, 'opaque-cleanup-cursor' );
 		$this->rig->wpdb()->put( self::UNRELATED_OPTION, 'keep' );
 		$this->rig->backend()->pending_actions[ ActionDeliveries::DELIVER_HOOK ] = 5;
 		$owned_before = $this->engine_option_names();
@@ -180,14 +175,14 @@ final class ResetCommandTest extends TestCase {
 	 */
 	public function test_registered_reset_reports_a_row_changed_during_reset(): void {
 		$this->seed_engine_state();
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgje' ) ] );
 		$option_name = ScheduleRegistry::option_name( 'reset-tests' );
 		$before      = $this->rig->wpdb()->rows;
 		$this->rig->wpdb()->before_next(
 			'delete',
 			function (): void {
-				$client = $this->rig->client( 'reset-tests' );
-				self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
+				$client = $this->rig->operations( 'reset-tests' );
+				self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
 			}
 		);
 
@@ -236,7 +231,7 @@ final class ResetCommandTest extends TestCase {
 		$result = CliHarness::run( 'reset', array( 'extra' ), array( 'yes' => true ) );
 
 		self::assertSame( 1, $result->exit_code );
-		self::assertSame( "Error: Reset accepts only --yes; use wp background-jobs reset [--yes].\n", $result->stderr );
+		self::assertSame( "Error: Reset accepts only --yes; use wp a8csp-bgje reset [--yes].\n", $result->stderr );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 	}
 
@@ -253,10 +248,10 @@ final class ResetCommandTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_engine_state(): void {
-		$client = $this->rig->client( 'reset-tests' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		$client = $this->rig->operations( 'reset-tests' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}
 
 	/**

@@ -22,9 +22,9 @@ $a8csp_bgje_footprint = array(
 	'user_meta' => array(),
 );
 
-$a8csp_bgje_lifecycle_hooks = array(
-	'a8csp_jobs_engine/deliver',
-	'a8csp_jobs_engine/schedule_due',
+$a8csp_bgje_delivery_hooks = array(
+	'a8csp_bgje/internal/deliver',
+	'a8csp_bgje/internal/schedule_due',
 );
 
 /*
@@ -41,7 +41,7 @@ $a8csp_bgje_lifecycle_hooks = array(
  * complete per-site cleanup stays in one closure so the single-site and network paths cannot
  * drift apart.
  */
-$a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_lifecycle_hooks ): void {
+$a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_delivery_hooks ): void {
 	global $wpdb;
 
 	/**
@@ -66,8 +66,8 @@ $a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_lifecycle_hook
 	 * custom-table deletes cover every engine action status and its logs. Requiring the complete
 	 * four-table schema keeps incomplete or migrated stores untouched.
 	 */
-	foreach ( $a8csp_bgje_lifecycle_hooks as $a8csp_bgje_lifecycle_hook ) {
-		wp_unschedule_hook( $a8csp_bgje_lifecycle_hook );
+	foreach ( $a8csp_bgje_delivery_hooks as $a8csp_bgje_delivery_hook ) {
+		wp_unschedule_hook( $a8csp_bgje_delivery_hook );
 	}
 
 	$a8csp_bgje_action_scheduler_tables = array();
@@ -88,7 +88,7 @@ $a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_lifecycle_hook
 		$a8csp_bgje_action_scheduler_tables[ $a8csp_bgje_action_scheduler_table_suffix ] = $a8csp_bgje_action_scheduler_table;
 	}
 
-	$a8csp_bgje_hook_placeholders = \implode( ', ', \array_fill( 0, \count( $a8csp_bgje_lifecycle_hooks ), '%s' ) );
+	$a8csp_bgje_hook_placeholders = \implode( ', ', \array_fill( 0, \count( $a8csp_bgje_delivery_hooks ), '%s' ) );
 
 	// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- IN-list placeholders are array_fill()-built literals; every value still binds through prepare().
 
@@ -96,7 +96,7 @@ $a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_lifecycle_hook
 	 * Candidate claim and group IDs must be captured before their matching actions disappear. The
 	 * final unreferenced checks keep rows shared with surviving foreign actions out of scope.
 	 */
-	$a8csp_bgje_claim_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `claim_id` FROM %i WHERE `hook` IN (' . $a8csp_bgje_hook_placeholders . ')', \array_merge( array( $a8csp_bgje_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgje_lifecycle_hooks ) ) );
+	$a8csp_bgje_claim_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `claim_id` FROM %i WHERE `hook` IN (' . $a8csp_bgje_hook_placeholders . ')', \array_merge( array( $a8csp_bgje_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgje_delivery_hooks ) ) );
 	$a8csp_bgje_claim_ids     = array();
 	foreach ( $a8csp_bgje_claim_id_rows as $a8csp_bgje_claim_id ) {
 		if ( ! \is_numeric( $a8csp_bgje_claim_id ) ) {
@@ -109,7 +109,7 @@ $a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_lifecycle_hook
 		}
 	}
 
-	$a8csp_bgje_group_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgje_hook_placeholders . ')', \array_merge( array( $a8csp_bgje_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgje_lifecycle_hooks ) ) );
+	$a8csp_bgje_group_id_rows = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT `group_id` FROM %i WHERE `hook` IN (' . $a8csp_bgje_hook_placeholders . ')', \array_merge( array( $a8csp_bgje_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgje_delivery_hooks ) ) );
 	$a8csp_bgje_group_ids     = array();
 	foreach ( $a8csp_bgje_group_id_rows as $a8csp_bgje_group_id ) {
 		if ( ! \is_numeric( $a8csp_bgje_group_id ) ) {
@@ -133,7 +133,7 @@ $a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_lifecycle_hook
 				$a8csp_bgje_action_scheduler_tables['actionscheduler_logs'],
 				$a8csp_bgje_action_scheduler_tables['actionscheduler_actions'],
 			),
-			$a8csp_bgje_lifecycle_hooks
+			$a8csp_bgje_delivery_hooks
 		)
 	);
 	if ( false === $wpdb->query( $a8csp_bgje_log_delete_query ) ) { // @phpstan-ignore argument.type
@@ -142,7 +142,7 @@ $a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_lifecycle_hook
 		return;
 	}
 
-	$a8csp_bgje_action_delete_query = $wpdb->prepare( 'DELETE FROM %i WHERE `hook` IN (' . $a8csp_bgje_hook_placeholders . ')', \array_merge( array( $a8csp_bgje_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgje_lifecycle_hooks ) );
+	$a8csp_bgje_action_delete_query = $wpdb->prepare( 'DELETE FROM %i WHERE `hook` IN (' . $a8csp_bgje_hook_placeholders . ')', \array_merge( array( $a8csp_bgje_action_scheduler_tables['actionscheduler_actions'] ), $a8csp_bgje_delivery_hooks ) );
 	if ( false === $wpdb->query( $a8csp_bgje_action_delete_query ) ) { // @phpstan-ignore argument.type
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The cold uninstall cannot use the plugin logger.
 		\error_log( 'a8csp-background-jobs-engine: uninstall left Action Scheduler actions behind; actionscheduler_actions table delete failed.' );

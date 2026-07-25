@@ -16,7 +16,7 @@ final readonly class Format {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Formats accepted by every list command.
+	 * Formats accepted by schedule, run, and failed-run list commands.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

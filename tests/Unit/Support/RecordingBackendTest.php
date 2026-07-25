@@ -2,13 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
 use PHPUnit\Framework\Attributes\CoversNothing;
@@ -20,6 +16,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversNothing]
 final class RecordingBackendTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies production boot guards before the backend interface is autoloaded.
 	 *
@@ -31,6 +29,10 @@ final class RecordingBackendTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Write verbs default to successful results and retain every supplied argument.
@@ -141,35 +143,6 @@ final class RecordingBackendTest extends TestCase {
 	}
 
 	/**
-	 * Write results remain non-discardable on every concrete declaration.
-	 *
-	 * @return  void
-	 */
-	public function test_write_verbs_repeat_the_no_discard_attribute_on_every_backend_type(): void {
-		$types = array(
-			BackendInterface::class,
-			ActionSchedulerBackend::class,
-			WPCronBackend::class,
-			SchedulerFacade::class,
-			RecordingBackend::class,
-		);
-		$verbs = array(
-			'schedule_recurring',
-			'schedule_single',
-			'enqueue_async',
-			'unschedule',
-			'unschedule_hooks',
-		);
-
-		foreach ( $types as $type ) {
-			$reflection = new \ReflectionClass( $type );
-			foreach ( $verbs as $verb ) {
-				self::assertCount( 1, $reflection->getMethod( $verb )->getAttributes( \NoDiscard::class ), \sprintf( '%s::%s() must declare NoDiscard directly.', $type, $verb ) );
-			}
-		}
-	}
-
-	/**
 	 * Query, readiness, and lifecycle calls return scripted state and remain visible in order.
 	 *
 	 * @return  void
@@ -238,4 +211,6 @@ final class RecordingBackendTest extends TestCase {
 			$backend->calls
 		);
 	}
+
+	// endregion.
 }

@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
  * @version 1.0.0
  */
 #[CoversClass( Runs::class )]
-final class RunsTest extends CapabilityManagerTestCase {
+final class RunsTest extends AbstractCapabilityManagerTestCase {
 	// region TESTS.
 
 	/**
@@ -32,7 +32,7 @@ final class RunsTest extends CapabilityManagerTestCase {
 		self::assertTrue( $engine->jobs()->register( self::job( 'inspect' ) ) );
 		self::assertNull( $engine->runs()->last_completed( 'inspect' ) );
 
-		$admitted = self::assert_run( $engine->jobs()->enqueue( 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
+		$admitted = self::assert_run( $engine->jobs()->dispatch( 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
 		$live     = self::assert_run( $engine->runs()->inspect( 'inspect', $admitted->id ), self::OWNER . ':inspect', RunStatus::Running, $admitted->id );
 		$this->rig->run_due();
 		$terminal = self::assert_run( $engine->runs()->inspect( 'inspect', $admitted->id ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
@@ -60,7 +60,7 @@ final class RunsTest extends CapabilityManagerTestCase {
 			}
 		);
 		self::assertTrue( $engine->jobs()->register( $failed_job ) );
-		$failed = self::assert_run( $engine->jobs()->enqueue( 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
+		$failed = self::assert_run( $engine->jobs()->dispatch( 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
 		$this->rig->run_due();
 		self::assert_run( $engine->runs()->inspect( 'failed', $failed->id ), self::OWNER . ':failed', RunStatus::Failed, $failed->id );
 
@@ -70,7 +70,7 @@ final class RunsTest extends CapabilityManagerTestCase {
 		self::assert_wp_error( $engine->runs()->retry_failed( 'failed', RunId::from( self::MISSING_RUN_ID ) ), ErrorCode::RunNotRetained->value );
 
 		self::assertTrue( $engine->jobs()->register( self::job( 'cancel' ) ) );
-		$pending   = self::assert_run( $engine->jobs()->enqueue( 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
+		$pending   = self::assert_run( $engine->jobs()->dispatch( 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
 		$cancelled = self::assert_run( $engine->runs()->cancel( 'cancel', $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
 		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 		self::assert_wp_error( $engine->runs()->cancel( 'cancel', $pending->id ), ErrorCode::RunNotRetained->value );

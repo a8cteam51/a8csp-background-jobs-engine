@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
@@ -28,11 +28,11 @@ final readonly class MaintenanceSchedule {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Schedules       $schedules Client schedule API with the reserved-owner service entry.
-	 * @param   LoggerInterface $logger    Log event sink.
+	 * @param   ScheduleOperations $schedules Client schedule API with the reserved-owner service entry.
+	 * @param   LoggerInterface    $logger    Log event sink.
 	 */
 	public function __construct(
-		private Schedules $schedules,
+		private ScheduleOperations $schedules,
 		private LoggerInterface $logger,
 	) {}
 
@@ -86,13 +86,13 @@ final readonly class MaintenanceSchedule {
 		}
 
 		try {
-			$owner                = JobIdentity::ENGINE_OWNER;
-			$schedule_identity    = JobIdentity::compose( $owner, MaintenanceJob::NAME, true );
+			$owner                = Identity::ENGINE_OWNER;
+			$schedule_identity    = Identity::compose( $owner, MaintenanceJob::NAME, true );
 			$maintenance_schedule = new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), CatchUpPolicy::RunOnce );
 			$result               = $this->schedules->sync_owner(
 				$owner,
 				array(
-					$schedule_identity => array(
+					(string) $schedule_identity => array(
 						'schedule' => $maintenance_schedule,
 						'job'      => $schedule_identity,
 					),

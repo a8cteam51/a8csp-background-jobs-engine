@@ -11,6 +11,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 \WP_CLI::add_hook(
 	'after_wp_load',
 	static function (): void {
-		\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( 'integration-cli-command' )->jobs()->register( ( new RecordingChunkedJob( 'integration-cli-command-cancel-chunked-job' ) )->definition() );
+		\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( 'integration-cli-command' )->register( ( new RecordingChunkedJob( 'integration-cli-command-cancel-chunked-job' ) )->definition() );
 	}
 );

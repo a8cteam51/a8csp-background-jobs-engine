@@ -6,6 +6,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
  * In-memory wpdb fake for execution-overlap lock statements.
  */
 final class WpdbLockSpy extends \wpdb {
+	// region FIELDS AND CONSTANTS.
+
 	/** @var array<string, string> Raw option values keyed by option name. */
 	public array $rows = array();
 
@@ -27,11 +29,19 @@ final class WpdbLockSpy extends \wpdb {
 	/** @var array<string, list<0|false>> */
 	private array $scripted_results = array();
 
+	// endregion.
+
+	// region MAGIC METHODS.
+
 	/** Creates a disconnected options-table fake. */
 	public function __construct() {
 		parent::__construct( '', '', '', '' );
 		$this->options = 'wp_options';
 	}
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * Stores a raw lock row as a test precondition.
@@ -429,6 +439,10 @@ final class WpdbLockSpy extends \wpdb {
 		return (string) \count( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && \strlen( $name ) === $total_length && 0 === \strncasecmp( $name, $prefix, \strlen( $prefix ) ) ) );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Models INSERT IGNORE against option_name's unique key.
 	 *
@@ -711,4 +725,6 @@ final class WpdbLockSpy extends \wpdb {
 
 		return "\x60" . \str_replace( "\x60", "\x60\x60", $value ) . "\x60";
 	}
+
+	// endregion.
 }

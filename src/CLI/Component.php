@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\LocksCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\RunsCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\SchedulesCommand;
@@ -44,9 +45,10 @@ final class Component extends AbstractComponent {
 	#[\Override]
 	public function register_hooks(): void {
 		// The last registration supplies the namespace description, so the inspection surface registers last.
-		\WP_CLI::add_command( 'background-jobs', SchedulesCommand::class );
-		\WP_CLI::add_command( 'background-jobs', ResetCommand::class );
-		\WP_CLI::add_command( 'background-jobs', RunsCommand::class );
+		\WP_CLI::add_command( 'a8csp-bgje', SchedulesCommand::class );
+		\WP_CLI::add_command( 'a8csp-bgje', ResetCommand::class );
+		\WP_CLI::add_command( 'a8csp-bgje', LocksCommand::class );
+		\WP_CLI::add_command( 'a8csp-bgje', RunsCommand::class );
 	}
 
 	// endregion

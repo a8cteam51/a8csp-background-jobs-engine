@@ -2,8 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext as ChunkContextContract;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 
@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class ChunkContext implements ChunkContextContract {
+final class ChunkContext implements ChunkContextInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -28,7 +28,7 @@ final class ChunkContext implements ChunkContextContract {
 	 *
 	 * @var     int
 	 */
-	private const int MAX_CHUNK_BYTES = 8_192;
+	public const int MAX_CHUNK_BYTES = 8_192;
 
 	/**
 	 * Maximum persisted serialization bytes accepted for one context-mutated chunked job queue.
@@ -117,7 +117,7 @@ final class ChunkContext implements ChunkContextContract {
 	 * @version 1.0.0
 	 */
 	#[\Override]
-	public function enqueue( array $chunk_args ): void {
+	public function append_chunk( array $chunk_args ): void {
 		$chunk_args = self::snapshot_arguments( $chunk_args );
 		self::assert_valid_chunk( $chunk_args );
 		self::assert_queue_within_persisted_byte_limit( array( ...$this->get_queue(), $chunk_args ) );
@@ -132,7 +132,7 @@ final class ChunkContext implements ChunkContextContract {
 	 * @version 1.0.0
 	 */
 	#[\Override]
-	public function prepend( array $chunk_args ): void {
+	public function prepend_chunk( array $chunk_args ): void {
 		$chunk_args = self::snapshot_arguments( $chunk_args );
 		self::assert_valid_chunk( $chunk_args );
 		self::assert_queue_within_persisted_byte_limit( array( $chunk_args, ...$this->get_queue() ) );
@@ -199,18 +199,18 @@ final class ChunkContext implements ChunkContextContract {
 	 */
 	private static function snapshot_arguments( array $arguments ): array {
 		if ( ! PortableArguments::is_valid( $arguments ) ) {
-			throw InvalidChunkException::nonPortable();
+			throw InvalidChunkException::non_portable();
 		}
 
 		try {
 			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize, WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- The round trip detaches the snapshot from caller-owned containers before recursive rebuilding removes repeated aliases.
 			$snapshot = \unserialize( \serialize( $arguments ), array( 'allowed_classes' => false ) );
 		} catch ( \Throwable ) {
-			throw InvalidChunkException::nonPortable();
+			throw InvalidChunkException::non_portable();
 		}
 
 		if ( ! \is_array( $snapshot ) || ! PortableArguments::is_valid( $snapshot ) ) {
-			throw InvalidChunkException::nonPortable();
+			throw InvalidChunkException::non_portable();
 		}
 
 		return PortableArguments::without_references( $snapshot );
@@ -249,22 +249,22 @@ final class ChunkContext implements ChunkContextContract {
 	 */
 	private static function assert_valid_chunk( array $chunk_args ): void {
 		if ( ! PortableArguments::is_valid( $chunk_args ) ) {
-			throw InvalidChunkException::nonPortable();
+			throw InvalidChunkException::non_portable();
 		}
 
 		try {
 			$encoded_chunk = \wp_json_encode( $chunk_args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
 		} catch ( \JsonException ) {
-			throw InvalidChunkException::nonPortable();
+			throw InvalidChunkException::non_portable();
 		}
 		if ( ! \is_string( $encoded_chunk ) ) {
-			throw InvalidChunkException::nonPortable();
+			throw InvalidChunkException::non_portable();
 		}
 
 		$chunk_bytes = \strlen( $encoded_chunk );
 		if ( self::MAX_CHUNK_BYTES < $chunk_bytes ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-			throw InvalidChunkException::chunkTooLarge( $chunk_bytes, self::MAX_CHUNK_BYTES );
+			throw InvalidChunkException::chunk_too_large( $chunk_bytes, self::MAX_CHUNK_BYTES );
 		}
 	}
 
@@ -288,12 +288,12 @@ final class ChunkContext implements ChunkContextContract {
 		if ( ! \is_string( $serialized_queue ) ) {
 			// Core serializes arrays to strings; the smallest rejected count keeps a violated storage contract fail-closed.
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-			throw InvalidChunkException::queueTooLarge( self::MAX_QUEUE_BYTES + 1, self::MAX_QUEUE_BYTES );
+			throw InvalidChunkException::queue_too_large( self::MAX_QUEUE_BYTES + 1, self::MAX_QUEUE_BYTES );
 		}
 		$queue_bytes = \strlen( $serialized_queue );
 		if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-			throw InvalidChunkException::queueTooLarge( $queue_bytes, self::MAX_QUEUE_BYTES );
+			throw InvalidChunkException::queue_too_large( $queue_bytes, self::MAX_QUEUE_BYTES );
 		}
 	}
 

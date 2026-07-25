@@ -2,10 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -26,12 +30,13 @@ use PHPUnit\Framework\TestCase;
 final class KindDeliveryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string DELIVER_HOOK = 'a8csp_jobs_engine/deliver';
+	private const string DELIVER_HOOK = 'a8csp_bgje/internal/deliver';
 	private const string IDENTITY     = self::OWNER . ':' . self::NAME;
 	private const string NAME         = 'export';
 	private const int NOW             = 1_700_000_000;
 	private const string OWNER        = 'kind-tests';
 
+	private Identity $identity;
 	private EngineRig $rig;
 
 	// endregion.
@@ -63,7 +68,8 @@ final class KindDeliveryTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig = EngineRig::set_up( self::NOW );
+		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->rig      = EngineRig::set_up( self::NOW );
 	}
 
 	/**
@@ -95,14 +101,14 @@ final class KindDeliveryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_unknown_kind_hydrates_and_delivery_drops_without_mutating_state(): void {
+	public function test_running_unknown_kind_delivery_reports_missing_handler_without_mutating_state(): void {
 		$run_id = $this->enqueue_job();
 		$this->replace_run_field( $run_id, 'kind', 'acme.export' );
 
 		$state = $this->run_store()->get( $run_id );
 		self::assertNotNull( $state );
 		self::assertSame( 'acme.export', $state->kind );
-		$inspection = $this->rig->inspection()->runs( self::IDENTITY );
+		$inspection = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( 'acme.export', $inspection['live'][0]['kind'] ?? null );
 		self::assertFalse( $inspection['live'][0]['queue_known'] ?? true );
 		self::assertSame( 0, $inspection['live_unreadable'] );
@@ -112,16 +118,66 @@ final class KindDeliveryTest extends TestCase {
 		\do_action( self::DELIVER_HOOK, self::IDENTITY, $run_id, $state->action_sequence );
 
 		self::assertSame( $before, $this->raw_run( $run_id ) );
-		$this->assert_warning_logged( 'handler', 'acme.export' );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Persisted run kind has no registered handler; the delivery was dropped without changing the run.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => $run_id,
+						'kind'     => 'acme.export',
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
+	 * A terminal unknown kind is classified without resolving handler-owned lifecycle data.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_unknown_kind_delivery_reports_terminal_status_without_mutating_state(): void {
+		$run_id = $this->enqueue_job();
+		$this->replace_run_field( $run_id, 'kind', 'acme.export' );
+		$run_store = $this->run_store();
+		$running   = $run_store->get( $run_id );
+		self::assertNotNull( $running );
+		$terminal_raw = $run_store->replace_if_state_matches( $run_id, $running, $running->with_status( RunStatus::Superseded )->with_pending( null ) );
+		self::assertIsString( $terminal_raw );
+
+		$this->rig->logger()->records = array();
+		\do_action( self::DELIVER_HOOK, self::IDENTITY, $run_id, $running->action_sequence );
+
+		self::assertSame( $terminal_raw, $this->raw_run( $run_id ) );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'acme.export run is already terminal; allow the reconciliation sweep to finish its cleanup.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => $run_id,
+						'status'   => 'superseded',
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
 	}
 
 	/**
 	 * A malformed persisted kind remains corruption and cannot mutate during delivery.
 	 *
-	 * @param   string $kind Malformed kind value.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $kind Malformed kind value.
 	 *
 	 * @return  void
 	 */
@@ -131,7 +187,7 @@ final class KindDeliveryTest extends TestCase {
 		$this->replace_run_field( $run_id, 'kind', $kind );
 
 		self::assertNull( $this->run_store()->get( $run_id ) );
-		$inspection = $this->rig->inspection()->runs( self::IDENTITY );
+		$inspection = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( array(), $inspection['live'] );
 		self::assertSame( 1, $inspection['live_unreadable'] );
 
@@ -176,7 +232,7 @@ final class KindDeliveryTest extends TestCase {
 	public function test_one_deliver_hook_is_registered_and_enqueued_with_the_run_group(): void {
 		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'] ?? null;
 		self::assertIsArray( $registrations );
-		$lifecycle_hooks = array( self::DELIVER_HOOK, 'a8csp_jobs_engine/run_job', 'a8csp_jobs_engine/start_chunked_job', 'a8csp_jobs_engine/continue_chunked_job', 'a8csp_jobs_engine/cleanup_chunked_job' );
+		$lifecycle_hooks = array( self::DELIVER_HOOK, 'a8csp_bgje/run_job', 'a8csp_bgje/start_chunked_job', 'a8csp_bgje/continue_chunked_job', 'a8csp_bgje/cleanup_chunked_job' );
 		$registered      = \array_values( \array_filter( $registrations, static fn ( mixed $registration ): bool => \is_array( $registration ) && \in_array( $registration['hook_name'] ?? null, $lifecycle_hooks, true ) ) );
 
 		self::assertCount( 1, $registered );
@@ -224,13 +280,14 @@ final class KindDeliveryTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$client = $this->rig->client( self::OWNER );
-		$client->jobs()->register( ( new RecordingJob( self::NAME ) )->definition() );
-		$result = $client->jobs()->enqueue( self::NAME );
+		$client = $this->rig->operations( self::OWNER );
+		$client->register( ( new RecordingJob( self::NAME ) )->definition() );
+		$result = $client->dispatch( self::NAME );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**
@@ -248,12 +305,12 @@ final class KindDeliveryTest extends TestCase {
 	/**
 	 * Replaces one top-level field in a persisted run row.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $run_id Run identifier.
 	 * @param   string $field  Persisted field name.
 	 * @param   mixed  $value  Replacement value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -263,17 +320,17 @@ final class KindDeliveryTest extends TestCase {
 		$state[ $field ] = $value;
 		$raw             = \maybe_serialize( $state );
 		self::assertIsString( $raw );
-		$this->rig->wpdb()->put( RunIdentity::option_name( self::IDENTITY, $run_id ), $raw );
+		$this->rig->wpdb()->put( RunIdentity::option_name( $this->identity, $run_id ), $raw );
 	}
 
 	/**
 	 * Replaces the stage in a persisted pending action.
 	 *
-	 * @param   string $run_id Run identifier.
-	 * @param   string $stage  Replacement lifecycle stage.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $run_id Run identifier.
+	 * @param   string $stage  Replacement lifecycle stage.
 	 *
 	 * @return  void
 	 */
@@ -284,21 +341,21 @@ final class KindDeliveryTest extends TestCase {
 		$state['pending']['stage'] = $stage;
 		$raw                       = \maybe_serialize( $state );
 		self::assertIsString( $raw );
-		$this->rig->wpdb()->put( RunIdentity::option_name( self::IDENTITY, $run_id ), $raw );
+		$this->rig->wpdb()->put( RunIdentity::option_name( $this->identity, $run_id ), $raw );
 	}
 
 	/**
 	 * Returns the exact authoritative run bytes.
 	 *
-	 * @param   string $run_id Run identifier.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $run_id Run identifier.
 	 *
 	 * @return  string
 	 */
 	private function raw_run( string $run_id ): string {
-		$option_name = RunIdentity::option_name( self::IDENTITY, $run_id );
+		$option_name = RunIdentity::option_name( $this->identity, $run_id );
 		$raw         = $this->rig->wpdb()->rows[ $option_name ] ?? null;
 		if ( null === $raw ) {
 			$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
@@ -316,11 +373,11 @@ final class KindDeliveryTest extends TestCase {
 	/**
 	 * Asserts that delivery emitted one warning carrying the requested evidence.
 	 *
-	 * @param   string      $message_fragment Required message fragment.
-	 * @param   string|null $context_value    Required context value, or null.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string      $message_fragment Required message fragment.
+	 * @param   string|null $context_value    Required context value, or null.
 	 *
 	 * @return  void
 	 */

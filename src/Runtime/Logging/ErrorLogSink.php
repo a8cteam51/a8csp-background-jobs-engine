@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -48,12 +48,12 @@ final class ErrorLogSink {
 		 *
 		 * @param   bool $log_to_error_log Whether to register the default error-log handler.
 		 */
-		$log_to_error_log = \apply_filters( 'a8csp_jobs_engine/log_to_error_log', true );
+		$log_to_error_log = \apply_filters( 'a8csp_bgje/log_to_error_log', true );
 		if ( false === $log_to_error_log ) {
 			return;
 		}
 
-		\add_action( 'a8csp_jobs_engine/log', array( self::class, 'log' ), 10, 3 );
+		\add_action( 'a8csp_bgje/log', array( self::class, 'log' ), 10, 3 );
 	}
 
 	// endregion

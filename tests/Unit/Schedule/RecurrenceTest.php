@@ -12,6 +12,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( Recurrence::class )]
 final class RecurrenceTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
@@ -25,6 +26,10 @@ final class RecurrenceTest extends TestCase {
 		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * The minimum fixed interval remains valid.
 	 *
@@ -37,8 +42,8 @@ final class RecurrenceTest extends TestCase {
 		self::assertNull( $recurrence->anchor );
 		self::assertSame(
 			array(
-				'type'  => 'every',
-				'value' => 1,
+				'kind'     => 'every',
+				'interval' => 1,
 			),
 			$recurrence->fingerprint_value()
 		);
@@ -56,9 +61,9 @@ final class RecurrenceTest extends TestCase {
 		self::assertSame( 3_600, $recurrence->anchor );
 		self::assertSame(
 			array(
-				'type'   => 'every',
-				'value'  => 86_400,
-				'anchor' => 3_600,
+				'kind'     => 'every',
+				'interval' => 86_400,
+				'anchor'   => 3_600,
 			),
 			$recurrence->fingerprint_value()
 		);
@@ -123,4 +128,6 @@ final class RecurrenceTest extends TestCase {
 
 		Recurrence::every_anchored( 300, -1 );
 	}
+
+	// endregion.
 }

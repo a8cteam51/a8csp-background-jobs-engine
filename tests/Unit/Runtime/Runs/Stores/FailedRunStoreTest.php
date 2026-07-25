@@ -2,36 +2,48 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /** Detects unsafe class construction while corrupt failed-run storage is inspected. */
 final class FailedRunStorePoison {
+	// region FIELDS AND CONSTANTS.
+
 	public static int $wakeups = 0;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/** Records an unsafe native object construction. */
 	public function __wakeup(): void {
 		++self::$wakeups;
 	}
+
+	// endregion.
 }
 
 /**
@@ -51,8 +63,9 @@ final class FailedRunStoreTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
+	private Identity $identity;
 	private EngineRig $rig;
 	private OptionRows $rows;
 	private RecordingJob $job;
@@ -87,10 +100,11 @@ final class FailedRunStoreTest extends TestCase {
 		parent::setUp();
 
 		$this->rig            = EngineRig::set_up( self::NOW );
-		$this->client         = $this->rig->client( self::OWNER );
+		$this->client         = $this->rig->operations( self::OWNER );
+		$this->identity       = Identity::compose( self::OWNER, self::NAME );
 		$this->job            = new RecordingJob( self::NAME );
 		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
-		$this->client->jobs()->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
+		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -132,7 +146,7 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertCount( 2, $this->rig->logger()->records );
 		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( $terminal_run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
 		self::assertSame( 'warning', $this->rig->logger()->records[1]['level'] ?? null );
 		self::assertSame( self::IDENTITY, $this->rig->logger()->records[1]['context']['identity'] ?? null );
@@ -149,8 +163,147 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( $run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+	}
+
+	/**
+	 * Failed-run recording persists and hydrates the admitted run kind.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_record_persists_and_hydrates_the_run_kind(): void {
+		self::assertTrue( $this->record_entry( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+
+		$persisted = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $persisted );
+		$entry = $persisted[0] ?? null;
+		self::assertIsArray( $entry );
+		self::assertSame( array( 'run_id', 'kind', 'failed_at', 'start_args', 'priority', 'attempts', 'error' ), \array_keys( $entry ) );
+		self::assertSame( 'job', $entry['kind'] ?? null );
+		$stored = $this->store()->all();
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertIsArray( $stored->value );
+		$hydrated = $stored->value[0] ?? null;
+		self::assertIsArray( $hydrated );
+		self::assertSame( 'job', $hydrated['kind'] ?? null );
+	}
+
+	/**
+	 * A terminal failure retains the admitted scheduler priority for manual retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_failure_retains_the_admitted_priority(): void {
+		$this->fail_job( array( 'scope' => 'priority-retention' ), 7, 42 );
+
+		$persisted = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $persisted );
+		$entry = $persisted[0] ?? null;
+		self::assertIsArray( $entry );
+		self::assertSame( 42, $entry['priority'] ?? null );
+		$stored = $this->store()->all();
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertIsArray( $stored->value );
+		$hydrated = $stored->value[0] ?? null;
+		self::assertIsArray( $hydrated );
+		self::assertSame( 42, $hydrated['priority'] ?? null );
+	}
+
+	/**
+	 * A retained row written before priority persistence hydrates at the engine default for manual retry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_legacy_entry_without_priority_hydrates_the_engine_default(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+		$value   = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $value );
+		self::assertIsArray( $value[0] ?? null );
+		unset( $value[0]['priority'] );
+		$raw = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+		$this->put_fixture( array( $fixture[0], $raw ) );
+
+		$stored = $this->store()->all();
+
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertIsArray( $stored->value );
+		$hydrated = $stored->value[0] ?? null;
+		self::assertIsArray( $hydrated );
+		self::assertSame( 10, $hydrated['priority'] ?? null );
+	}
+
+	/**
+	 * Out-of-range retained priorities are unreadable and cannot reach fresh admission.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $priority Persisted priority outside the admitted scheduler range.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'out_of_range_priorities' )]
+	public function test_out_of_range_persisted_priorities_cannot_reach_retry( int $priority ): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+		$value   = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $value );
+		self::assertIsArray( $value[0] ?? null );
+		$value[0]['priority'] = $priority;
+		$raw                  = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+		$this->put_fixture( array( $fixture[0], $raw ) );
+		$this->rig->backend()->calls = array();
+
+		$stored  = $this->store()->all();
+		$retried = $this->client->retry_failed( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $stored );
+		self::assertSame( array(), $stored->value );
+		self::assertInstanceOf( Failure::class, $retried );
+		self::assertInstanceOf( BoundaryError::class, $retried->error );
+		self::assertSame( ErrorCode::RunNotRetained, $retried->error->code );
+		self::assertSame( array(), $this->rig->backend()->calls );
+	}
+
+	/**
+	 * Manual retry reuses the terminal failure's retained scheduler priority.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_reuses_retained_priority_for_delivery_and_pending_state(): void {
+		$failed                         = $this->fail_job( array( 'scope' => 'priority-retry' ), 7, 42 );
+		$this->job->throwable           = null;
+		$this->rig->clock()->timestamp  = self::NOW + 1;
+		$this->rig->randomizer()->value = 8;
+		$this->rig->backend()->calls    = array();
+
+		$retried = $this->client->retry_failed( self::NAME, $failed );
+
+		self::assertInstanceOf( Success::class, $retried );
+		self::assertInstanceOf( Run::class, $retried->value );
+		$deliveries = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] ) );
+		self::assertCount( 1, $deliveries );
+		self::assertSame( 42, $deliveries[0]['args']['priority'] ?? null );
+		$run_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . (string) $retried->value->id;
+		$run        = \get_option( $run_option );
+		self::assertIsArray( $run );
+		$pending = $run['pending'] ?? null;
+		self::assertIsArray( $pending );
+		self::assertSame( 42, $pending['priority'] ?? null );
 	}
 
 	/**
@@ -205,15 +358,15 @@ final class FailedRunStoreTest extends TestCase {
 	public function test_corrupt_entry_warning_is_guarded_across_reentrant_store_instances(): void {
 		$fixture = StoreFixtureBuilder::failed_runs_with_corrupt_member( $this->fixtures->failed_runs( array( self::fixture_entry( 'run-a', 100 ) ) ) );
 		$this->put_fixture( $fixture );
-		$store          = new FailedRunStore( self::IDENTITY, $this->rows, new HookLogger() );
+		$store          = new FailedRunStore( $this->identity, $this->rows, new HookLogger() );
 		$listener_calls = 0;
 		$nested         = null;
 		$callbacks      = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
-		$callbacks['a8csp_jobs_engine/log']          = function () use ( &$listener_calls, &$nested ): void {
+		$callbacks['a8csp_bgje/log']                 = function () use ( &$listener_calls, &$nested ): void {
 			++$listener_calls;
 			if ( 1 === $listener_calls ) {
-				$nested = new FailedRunStore( self::IDENTITY, $this->rows, new HookLogger() )->all();
+				$nested = new FailedRunStore( $this->identity, $this->rows, new HookLogger() )->all();
 			}
 		};
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
@@ -233,7 +386,7 @@ final class FailedRunStoreTest extends TestCase {
 			1,
 			\array_filter(
 				$fired,
-				static fn ( mixed $action ): bool => \is_array( $action ) && 'a8csp_jobs_engine/log' === ( $action['hook_name'] ?? null )
+				static fn ( mixed $action ): bool => \is_array( $action ) && 'a8csp_bgje/log' === ( $action['hook_name'] ?? null )
 			)
 		);
 	}
@@ -252,25 +405,25 @@ final class FailedRunStoreTest extends TestCase {
 			$run_ids[] = $this->fail_job( array( 'index' => $index ), $index + 1 );
 		}
 
-		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		$history = $this->rig->inspection()->runs( $this->identity )['history'];
 		self::assertNotNull( $history );
 		$retained = \array_column( $history, 'failed_store', 'run_id' );
 		self::assertFalse( $retained[ $run_ids[0] ] );
 		self::assertTrue( $retained[ $run_ids[1] ] );
 		self::assertCount( 20, \array_filter( $retained ) );
 
-		$evicted = $this->client->runs()->retry_failed( self::NAME, $run_ids[0] );
+		$evicted = $this->client->retry_failed( self::NAME, $run_ids[0] );
 		self::assertInstanceOf( Failure::class, $evicted );
-		self::assertInstanceOf( ApiError::class, $evicted->error );
+		self::assertInstanceOf( BoundaryError::class, $evicted->error );
 		self::assertSame( ErrorCode::RunNotRetained, $evicted->error->code );
 
 		$this->job->throwable           = null;
 		$this->rig->randomizer()->value = 99;
-		$retried                        = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
+		$retried                        = $this->client->retry_failed( self::NAME, $run_ids[1] );
 		self::assertInstanceOf( Success::class, $retried );
-		$consumed = $this->client->runs()->retry_failed( self::NAME, $run_ids[1] );
+		$consumed = $this->client->retry_failed( self::NAME, $run_ids[1] );
 		self::assertInstanceOf( Failure::class, $consumed );
-		self::assertInstanceOf( ApiError::class, $consumed->error );
+		self::assertInstanceOf( BoundaryError::class, $consumed->error );
 		self::assertSame( ErrorCode::RunNotRetained, $consumed->error->code );
 		$this->rig->run_due();
 		self::assertSame( array( 'index' => 1 ), $this->job->calls[21] ?? null );
@@ -293,13 +446,14 @@ final class FailedRunStoreTest extends TestCase {
 		$this->job->throwable           = null;
 		$this->rig->randomizer()->value = 8;
 
-		$retried = $this->client->runs()->retry_failed( self::NAME, $failed );
+		$retried = $this->client->retry_failed( self::NAME, $failed );
 		self::assertInstanceOf( Success::class, $retried );
-		self::assertNotSame( $failed, $retried->value );
+		self::assertInstanceOf( Run::class, $retried->value );
+		self::assertNotSame( $failed, (string) $retried->value->id );
 		$this->rig->run_due();
 
 		self::assertSame( array( $args, $args ), $this->job->calls );
-		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		$history = $this->rig->inspection()->runs( $this->identity )['history'];
 		self::assertNotNull( $history );
 		$failed_entry = \array_find( $history, static fn ( array $entry ): bool => $failed === $entry['run_id'] );
 		self::assertNotNull( $failed_entry );
@@ -318,11 +472,11 @@ final class FailedRunStoreTest extends TestCase {
 	public function test_malformed_failed_rows_are_tolerated_by_inspection_and_retry(): void {
 		$this->put_fixture( $this->fixtures->unreadable_failed_runs() );
 
-		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		$snapshot = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( array(), $snapshot['history'] );
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
 	}
 
@@ -350,7 +504,7 @@ final class FailedRunStoreTest extends TestCase {
 		$error = $entry['error'] ?? null;
 		self::assertIsArray( $error );
 		self::assertSame( 'acme.export_sync', $error['stage'] ?? null );
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Success::class, $result );
 	}
 
@@ -370,10 +524,10 @@ final class FailedRunStoreTest extends TestCase {
 		$fixture = StoreFixtureBuilder::failed_runs_with_stage( $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) ), 'acme.invalid-stage' );
 		$this->put_fixture( $fixture );
 
-		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['history'] );
-		$result = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
+		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['history'] );
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( ApiError::class, $result->error );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
 	}
 
@@ -636,6 +790,25 @@ final class FailedRunStoreTest extends TestCase {
 
 	// endregion.
 
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies persisted priorities immediately outside both inclusive admission boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return array<string, array{priority: int}>
+	 */
+	public static function out_of_range_priorities(): array {
+		return array(
+			'below minimum' => array( 'priority' => -1 ),
+			'above maximum' => array( 'priority' => 256 ),
+		);
+	}
+
+	// endregion.
+
 	// region HELPERS.
 
 	/**
@@ -646,18 +819,19 @@ final class FailedRunStoreTest extends TestCase {
 	 *
 	 * @param   array<array-key, mixed> $args       Job arguments.
 	 * @param   int                     $randomness Deterministic run-id entropy.
+	 * @param   int|null                $priority   Advisory scheduler priority, or null for the engine default.
 	 *
 	 * @return  string
 	 */
-	private function fail_job( array $args, int $randomness ): string {
+	private function fail_job( array $args, int $randomness, ?int $priority = null ): string {
 		$this->rig->randomizer()->value = $randomness;
-		$result                         = $this->client->jobs()->enqueue( self::NAME, $args );
+		$result                         = $this->client->dispatch( self::NAME, $args, priority: $priority );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
 		$this->rig->run_due();
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**
@@ -671,15 +845,17 @@ final class FailedRunStoreTest extends TestCase {
 	 * @param   array<array-key, mixed> $start_args Original run arguments.
 	 * @param   string                  $summary    Failure summary.
 	 *
-	 * @return  array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError}
+	 * @return  array{kind: string, failed_at: int, start_args: array<array-key, mixed>, priority: int, failure: RunFailure, error: EngineError}
 	 */
 	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
-		$wire_id = null === RunId::try_from( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
+		$wire_id = null === RunId::tryFrom( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: $summary, details: null );
 
 		return array(
+			'kind'       => 'job',
 			'failed_at'  => $failed_at,
 			'start_args' => $start_args,
+			'priority'   => 10,
 			'failure'    => $failure,
 			'error'      => new EngineError( $summary ),
 		);
@@ -705,12 +881,12 @@ final class FailedRunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{failed_at: int, start_args: array<array-key, mixed>, failure: RunFailure, error: EngineError} $entry Failed-run request.
+	 * @param   array{kind: string, failed_at: int, start_args: array<array-key, mixed>, priority: int, failure: RunFailure, error: EngineError} $entry Failed-run request.
 	 *
 	 * @return  bool
 	 */
 	private function record_entry( array $entry ): bool {
-		return $this->store()->record( (string) $entry['failure']->run_id, $entry['failed_at'], $entry['start_args'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
+		return $this->store()->record( (string) $entry['failure']->run_id, $entry['kind'], $entry['failed_at'], $entry['start_args'], $entry['priority'], $entry['failure']->attempts, $entry['error'], $entry['failure'] );
 	}
 
 	/**
@@ -722,7 +898,7 @@ final class FailedRunStoreTest extends TestCase {
 	 * @return  FailedRunStore
 	 */
 	private function store(): FailedRunStore {
-		return new FailedRunStore( self::IDENTITY, $this->rows, $this->rig->logger() );
+		return new FailedRunStore( $this->identity, $this->rows, $this->rig->logger() );
 	}
 
 	/**

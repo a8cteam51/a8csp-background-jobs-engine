@@ -22,11 +22,15 @@ final readonly class MaintenanceLockSweep {
 	 * @version 1.0.0
 	 *
 	 * @param   string|null $run_id              Valid persisted-lock owner, or null when none is actionable.
-	 * @param   bool        $malformed_reclaimed Whether an exact malformed row was deleted.
+	 * @param   bool        $malformed_preserved Whether a malformed row remains for explicit repair.
+	 * @param   int|null    $raw_length          Malformed raw-value length, or null for a valid or absent row.
+	 * @param   string|null $raw_sha256          Truncated malformed raw-value digest, or null for a valid or absent row.
 	 */
 	public function __construct(
 		public ?string $run_id,
-		public bool $malformed_reclaimed,
+		public bool $malformed_preserved,
+		public ?int $raw_length,
+		public ?string $raw_sha256,
 	) {}
 
 	// endregion

@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -24,6 +25,9 @@ interface KindHandlerInterface {
 
 	/**
 	 * Lexical grammar for persisted kind and lifecycle stage keys.
+	 *
+	 * `Job\JobKind` and `Run\RunFailureStage` carry frozen public copies of this grammar; a change
+	 * here must be mirrored in both.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -52,14 +56,14 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $identity   Complete owner-qualified work identity.
+	 * @param   Identity      $identity   Complete owner-qualified work identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
 	 * @throws  \InvalidArgumentException When the execution object does not implement this kind's execution role.
 	 *
 	 * @return  void
 	 */
-	public function register( string $identity, JobDefinition $definition ): void;
+	public function register( Identity $identity, JobDefinition $definition ): void;
 
 	/**
 	 * Returns the registered execution object owned by this kind.
@@ -67,11 +71,11 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete owner-qualified work identity.
 	 *
 	 * @return  object|null
 	 */
-	public function execution( string $identity ): ?object;
+	public function execution( Identity $identity ): ?object;
 
 	/**
 	 * Returns the registered policy declaration owned by this kind.
@@ -79,14 +83,17 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete owner-qualified work identity.
 	 *
 	 * @return  JobOptions|null
 	 */
-	public function options( string $identity ): ?JobOptions;
+	public function options( Identity $identity ): ?JobOptions;
 
 	/**
 	 * Returns whether this handler owns one persisted lifecycle stage.
+	 *
+	 * Each handler keeps this predicate synchronized with its `deliver()` stages by hand; the stage
+	 * vocabulary gains a single authority at the handler SPI milestone, not before.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -124,29 +131,19 @@ interface KindHandlerInterface {
 	public function initial_pending( int $scheduled_at, int $delay, int $priority ): PendingAction;
 
 	/**
-	 * Returns the admission verb rendered in corrective diagnostics.
+	 * Runs kind-owned admission effects before the first scheduler action is accepted.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  string
-	 */
-	public function dispatch_verb(): string;
-
-	/**
-	 * Runs kind-owned effects after the first scheduler action is accepted.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity Complete owner-qualified work identity.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Persisted running state.
+	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Persisted running state.
 	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @return  EngineError|null Failure returned to the admission caller, or null.
 	 */
-	public function after_dispatch( string $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError;
+	public function after_dispatch( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError;
 
 	/**
 	 * Returns a kind-specific cancellation refusal for the current state.
@@ -167,7 +164,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Complete owner-qualified work identity.
+	 * @param   string   $identity Raw scheduler-wire identity bytes.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Persisted state admitted for delivery.
 	 *
@@ -193,14 +190,14 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Complete owner-qualified work identity.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Fenced executing state.
+	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	public function deliver( string $identity, string $run_id, RunState $state, RunStore $run_store ): void;
+	public function deliver( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void;
 
 	/**
 	 * Converts an execution throwable to kind-owned failure detail.

@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -109,7 +109,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * Clears every pending action in one backend group.
+	 * Unschedules every pending action in one backend group.
 	 *
 	 * @internal Engine run cancellation only.
 	 *
@@ -120,6 +120,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
+	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule_group( string $group ): AbstractResult {
 		return $this->unschedule_snapshot( $this->ready_backends(), '', array(), $group );

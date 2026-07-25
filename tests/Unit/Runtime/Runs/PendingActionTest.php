@@ -13,6 +13,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( PendingAction::class )]
 final class PendingActionTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production file's ABSPATH boot guard before first autoload.
 	 *
@@ -24,6 +26,10 @@ final class PendingActionTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Every grammar-valid stage supports immediate asynchronous delivery.
@@ -87,6 +93,10 @@ final class PendingActionTest extends TestCase {
 		PendingAction::single( $stage, 175, 10 );
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Returns grammar-valid stages: the engine's own plus vendor-qualified extensions.
 	 *
@@ -116,4 +126,6 @@ final class PendingActionTest extends TestCase {
 		yield 'double dot' => array( 'a..b' );
 		yield 'leading underscore' => array( '_private' );
 	}
+
+	// endregion.
 }

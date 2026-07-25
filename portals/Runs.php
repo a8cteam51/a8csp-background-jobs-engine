@@ -3,13 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -19,26 +15,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
  * Owner validation and engine resolution remain lazy until a verb is invoked. Every expected
  * validation, readiness, or engine failure crosses this boundary as a `WP_Error`.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class Runs {
-	// region MAGIC METHODS
-
-	/**
-	 * Constructor.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $owner Client plugin owner.
-	 */
-	public function __construct(
-		private string $owner,
-	) {}
-
-	// endregion
-
+final readonly class Runs extends AbstractPortal {
 	// region METHODS
 
 	/**
@@ -50,12 +32,14 @@ final readonly class Runs {
 	 * @param   string $name   Owner-local job or chunked job name.
 	 * @param   RunId  $run_id Run identifier.
 	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
+	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 	public function inspect( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->inspect( $name, (string) $run_id );
+			$result = $this->operations()->inspect( $name, (string) $run_id );
 			if ( $result->is_failure() ) {
 				return self::wp_error( $result->error );
 			}
@@ -63,11 +47,10 @@ final readonly class Runs {
 				return new \WP_Error( ErrorCode::RunNotRetained->value, 'The requested run is not retained.' );
 			}
 
-			// The public projection covers every internal run status, so from() always resolves here.
-			return $this->run( $name, (string) $run_id, RunStatus::from( $result->value->value ) );
+			return $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
+		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
 	}
@@ -80,23 +63,19 @@ final readonly class Runs {
 	 *
 	 * @param   string $name Owner-local job or chunked job name.
 	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
+	 *
 	 * @return  Run|null|\WP_Error
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	public function last_completed( string $name ): Run|null|\WP_Error {
 		try {
-			$result = $this->client()->runs()->last_completed_run_id( $name );
-			if ( $result->is_failure() ) {
-				return self::wp_error( $result->error );
-			}
-			if ( null === $result->value ) {
-				return null;
-			}
+			$result = $this->operations()->last_completed_run( $name );
 
-			return $this->run( $name, $result->value, RunStatus::Completed );
+			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
+		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
 	}
@@ -110,20 +89,19 @@ final readonly class Runs {
 	 * @param   string $name   Owner-local job or chunked job name.
 	 * @param   RunId  $run_id Retained failed-run identifier.
 	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
+	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->retry_failed( $name, (string) $run_id );
-			if ( $result->is_failure() ) {
-				return self::wp_error( $result->error );
-			}
+			$result = $this->operations()->retry_failed( $name, (string) $run_id );
 
-			return $this->run( $name, $result->value, RunStatus::Running );
+			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
+		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
 	}
@@ -137,73 +115,21 @@ final readonly class Runs {
 	 * @param   string $name   Owner-local job or chunked job name.
 	 * @param   RunId  $run_id Retained run identifier.
 	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
+	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->client()->runs()->cancel( $name, (string) $run_id );
-			if ( $result->is_failure() ) {
-				return self::wp_error( $result->error );
-			}
+			$result = $this->operations()->cancel( $name, (string) $run_id );
 
-			return $this->run( $name, (string) $run_id, RunStatus::Cancelled );
+			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
-		} catch ( \LogicException $exception ) {
+		} catch ( EngineUnavailableException $exception ) {
 			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
 		}
-	}
-
-	// endregion
-
-	// region HELPERS
-
-	/**
-	 * Resolves the internal client for the bound owner.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @throws  \InvalidArgumentException When the owner violates the client-owner contract.
-	 * @throws  \LogicException           When the internal graph is unavailable.
-	 *
-	 * @return  Client
-	 */
-	private function client(): Client {
-		return Component::client( $this->owner );
-	}
-
-	/**
-	 * Projects one internal run identifier into the public value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string    $name   Owner-local job or chunked job name.
-	 * @param   string    $run_id Run identifier.
-	 * @param   RunStatus $status Public lifecycle state.
-	 *
-	 * @throws  \InvalidArgumentException When the owner or name violates the identity contract.
-	 *
-	 * @return  Run
-	 */
-	private function run( string $name, string $run_id, RunStatus $status ): Run {
-		return new Run( JobIdentity::compose( $this->owner, $name ), RunId::from( $run_id ), $status );
-	}
-
-	/**
-	 * Converts one internal client failure to the WordPress error boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   ApiError $error Internal client failure.
-	 *
-	 * @return  \WP_Error
-	 */
-	private static function wp_error( ApiError $error ): \WP_Error {
-		return new \WP_Error( $error->code->value, $error->message, $error->context );
 	}
 
 	// endregion

@@ -102,8 +102,8 @@ final readonly class DemoClient {
 	 */
 	public function boot(): void {
 		\add_action( 'init', array( $this, 'register_background_work' ) );
-		\add_action( 'a8csp_jobs_engine/completed/' . self::COMMENT_COUNT_RECOUNT_IDENTITY, array( $this, 'publish_comment_count_recount_success' ), 10, 2 );
-		\add_action( 'a8csp_jobs_engine/failed', array( $this, 'publish_comment_count_recount_failure' ) );
+		\add_action( 'a8csp_bgje/completed/' . self::COMMENT_COUNT_RECOUNT_IDENTITY, array( $this, 'publish_comment_count_recount_success' ), 10, 2 );
+		\add_action( 'a8csp_bgje/failed', array( $this, 'publish_comment_count_recount_failure' ) );
 	}
 
 	/**
@@ -177,7 +177,7 @@ final readonly class DemoClient {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   RunId                         $run_id     Engine-assigned chunked job run identifier.
+	 * @param   RunId                          $run_id     Engine-assigned chunked job run identifier.
 	 * @param   array<array-key, mixed>        $start_args Original chunked job start arguments.
 	 *
 	 * @return  void

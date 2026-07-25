@@ -7,6 +7,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 /**
  * Complete declarative definition of one recurring job schedule.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -15,6 +17,9 @@ final readonly class Schedule {
 
 	/**
 	 * Maximum encoded JSON bytes accepted for persisted arguments.
+	 *
+	 * The public-model copy mirrors `Runtime\OwnerOperations::MAX_ARGUMENTS_BYTES` because models do
+	 * not import `src/` internals.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -26,6 +31,9 @@ final readonly class Schedule {
 	/**
 	 * Maximum bytes accepted for an owner-local name.
 	 *
+	 * The public-model copy mirrors `Boundary\Identity::NAME_MAX_BYTES` because models do not
+	 * import `src/` internals.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -35,6 +43,9 @@ final readonly class Schedule {
 
 	/**
 	 * Highest scheduler priority accepted by the schedule contract.
+	 *
+	 * The public-model copy mirrors `Runtime\Runs\Dispatcher::MAX_PRIORITY` because models do not
+	 * import `src/` internals.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -75,10 +86,10 @@ final readonly class Schedule {
 	 *
 	 * @param   string                  $name       Stable schedule name.
 	 * @param   Recurrence              $recurrence Recurrence definition.
-	 * @param   string                  $job       Stable target job name.
+	 * @param   string                  $job        Stable target job name.
 	 * @param   array<array-key, mixed> $args       Target job arguments.
 	 * @param   CatchUpPolicy           $catch_up   Missed-occurrence policy.
-	 * @param   int                     $priority   Advisory priority from 0 through 255.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
 	 *
 	 * @throws  \InvalidArgumentException When a schedule or target job name is invalid, or the definition is not portable or violates a boundary.
 	 */
@@ -88,12 +99,14 @@ final readonly class Schedule {
 		public string $job,
 		array $args = array(),
 		public CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce,
-		public int $priority = 10,
+		public ?int $priority = null,
 	) {
 		self::validate_name( $this->name );
 		self::validate_name( $this->job );
 		$this->args = self::snapshot_arguments( $args, $this->name );
-		self::assert_priority( $this->priority, $this->name );
+		if ( null !== $this->priority ) {
+			self::assert_priority( $this->priority, $this->name );
+		}
 		self::assert_portable_args( $this->args, $this->name );
 
 		try {
@@ -118,10 +131,6 @@ final readonly class Schedule {
 
 		$this->fingerprint = \hash( 'sha256', $encoded );
 	}
-
-	// endregion
-
-	// region METHODS
 
 	// endregion
 

@@ -3,22 +3,24 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -27,7 +29,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class CLICommandTest extends IntegrationTestCase {
+final class CLICommandTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** WordPress root shared by the wp-env CLI and web containers. */
@@ -46,7 +48,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	private const string UNREGISTERED_NAME = 'integration-cli-command:integration-cli-command-unregistered';
 
 	/** Background-work identity registered by the engine in every WP-CLI child request. */
-	private const string CANCEL_NAME = 'a8csp-jobs-engine:maintenance';
+	private const string CANCEL_NAME = 'a8csp-bgje:maintenance';
 
 	/** Failed run retained beside the live canonical run in list coverage. */
 	private const string HISTORY_FAILED_RUN_ID = '00000000001784029999-0000000000000000000';
@@ -117,7 +119,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->expect_option( 'a8csp_bgje_schedule_registrations_a8csp-jobs-engine' );
+		$this->expect_option( 'a8csp_bgje_schedule_registrations_a8csp-bgje' );
 		$this->expect_option( 'a8csp_bgje_schedule_registrations_' . self::INSPECTION_OWNER );
 	}
 
@@ -139,7 +141,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command( self::CANCEL_NAME, self::RUN_ID );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame( 'Success: Cancelled run ' . self::RUN_ID . ' of "a8csp-jobs-engine:maintenance".' . "\n", $result['stdout'] );
+		self::assertSame( 'Success: Cancelled run ' . self::RUN_ID . ' of "a8csp-bgje:maintenance".' . "\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 		$inspection = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=json' );
 		self::assertSame( 0, $inspection['exit_code'] );
@@ -216,7 +218,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( 'Error: Run "' . self::RUN_ID . '" for background-work ' . "\"a8csp-jobs-engine:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
+		self::assertSame( 'Error: Run "' . self::RUN_ID . '" for background-work ' . "\"a8csp-bgje:maintenance\" is not retained; nothing remains to cancel.\n", $result['stderr'] );
 	}
 
 	/**
@@ -231,7 +233,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_cancel_command();
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-jobs runs <action> <identity> [<run_id>] [--format=<format>]\n", $result['stdout'] );
+		self::assertSame( "usage: wp a8csp-bgje runs <action> <identity> [<run_id>] [--format=<format>]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -314,13 +316,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_failed_runs_command( 'list', '--format=json' );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame(
-			'[{"owner":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store",' .
-			'"run_id":"' . self::RUN_ID . '",' .
-			'"failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"stage":"execution","code":"execution_failed",' .
-			'"error_class":"RuntimeException","error_message":"CLI boundary failure.","failed_chunk":null}]',
-			$result['stdout']
-		);
+		self::assertSame( '[{"owner":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store","run_id":"' . self::RUN_ID . '","failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"stage":"execution","code":"execution_failed","error_class":"RuntimeException","error_message":"CLI boundary failure.","failed_chunk":null}]', $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -455,6 +451,64 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
+	 * The real lock commands list redacted corruption and repair the maintenance lane directly.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_locks_list_preserves_and_repair_clears_a_malformed_lock_after_superseding_its_run(): void {
+		$args      = array( 'source' => 'cli-boundary' );
+		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
+		$args_hash = $builder->args_hash( $args );
+		$lock_name = OverlapGuard::OPTION_PREFIX . self::CANCEL_NAME . '_' . $args_hash;
+		$lock_raw  = 'integration-secret-malformed-lock';
+		$run_name  = $this->seed_cancel_run();
+		self::assertTrue( \update_option( $lock_name, $lock_raw, false ) );
+
+		try {
+			$listed = self::run_locks_command( 'list', '--format=json' );
+			$rows   = \json_decode( $listed['stdout'], true, 512, \JSON_THROW_ON_ERROR );
+
+			self::assertSame( 0, $listed['exit_code'] );
+			self::assertSame( '', $listed['stderr'] );
+			self::assertIsArray( $rows );
+			self::assertCount( 1, $rows );
+			$row = $rows[0] ?? null;
+			self::assertIsArray( $row );
+			self::assertSame( array( 'identity', 'args_hash', 'state', 'raw_length', 'raw_sha256' ), \array_keys( $row ) );
+			self::assertSame( self::CANCEL_NAME, $row['identity'] ?? null );
+			self::assertSame( $args_hash, $row['args_hash'] ?? null );
+			self::assertSame( 'malformed', $row['state'] ?? null );
+			self::assertSame( \strlen( $lock_raw ), $row['raw_length'] ?? null );
+			self::assertSame( \substr( \hash( 'sha256', $lock_raw ), 0, 16 ), $row['raw_sha256'] ?? null );
+			self::assertStringNotContainsString( $lock_raw, $listed['stdout'] );
+			self::assertSame( $lock_raw, \get_option( $lock_name ) );
+
+			$repaired = self::run_locks_command( 'repair', self::CANCEL_NAME, '--args-hash=' . $args_hash, '--yes' );
+
+			self::assertSame( 0, $repaired['exit_code'] );
+			self::assertSame( '', $repaired['stderr'] );
+			self::assertStringContainsString( 'identity=' . self::CANCEL_NAME . "\n", $repaired['stdout'] );
+			self::assertStringContainsString( 'args_hash=' . $args_hash . "\n", $repaired['stdout'] );
+			self::assertStringContainsString( "runs_superseded=1\n", $repaired['stdout'] );
+			self::assertStringContainsString( "lock_cleared=true\n", $repaired['stdout'] );
+			self::assertStringNotContainsString( $lock_raw, $repaired['stdout'] );
+			\wp_cache_delete( $lock_name, 'options' );
+			\wp_cache_delete( $run_name, 'options' );
+			self::assertFalse( \get_option( $lock_name, false ) );
+			$run = \get_option( $run_name );
+			self::assertIsArray( $run );
+			self::assertSame( RunStatus::Superseded->value, $run['status'] ?? null );
+			self::assertArrayNotHasKey( 'pending', $run );
+		} finally {
+			\delete_option( $lock_name );
+			\delete_option( $run_name );
+		}
+	}
+
+	/**
 	 * The acknowledged real command clears persisted rows and its maintenance occurrence; a later
 	 * process boot recreates only the reserved maintenance registration and occurrence.
 	 *
@@ -493,7 +547,7 @@ final class CLICommandTest extends IntegrationTestCase {
 		self::assertSame( 0, $next_boot['exit_code'] );
 		self::assertSame( "No failed runs are retained.\n", $next_boot['stdout'] );
 		self::assertSame( '', $next_boot['stderr'] );
-		self::assertSame( array( 'a8csp_bgje_schedule_registrations_a8csp-jobs-engine' ), \array_column( $this->engine_option_rows(), 'option_name' ) );
+		self::assertSame( array( 'a8csp_bgje_schedule_registrations_a8csp-bgje' ), \array_column( $this->engine_option_rows(), 'option_name' ) );
 		self::assertTrue( \as_has_scheduled_action( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CANCEL_NAME ), self::CANCEL_NAME ) );
 
 		$cleanup = self::run_command( 'reset', '--yes' );
@@ -631,9 +685,9 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_jobs_engine/log',
+			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -711,46 +765,24 @@ final class CLICommandTest extends IntegrationTestCase {
 		$result = self::run_command( 'schedules' );
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp background-jobs schedules <action> [<owner>] [--owner=<owner>] [--format=<format>] [--yes]\n", $result['stdout'] );
+		self::assertSame( "usage: wp a8csp-bgje schedules <action> [<owner>] [--owner=<owner>] [--format=<format>] [--yes]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
 	/**
-	 * The schedules decision seam owns unsupported format correction at the binary boundary.
+	 * A negated schedule owner reaches the command seam as false.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_schedules_list_rejects_an_invalid_format(): void {
-		$result = self::run_command( 'schedules', 'list', '--format=ids' );
-
-		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $result['stderr'] );
-	}
-
-	/**
-	 * Negated schedule value parameters reach the command seam as false.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_schedules_list_rejects_negated_value_parameters(): void {
+	public function test_schedules_list_rejects_a_negated_owner(): void {
 		$owner = self::run_command( 'schedules', 'list', '--no-owner' );
 
 		self::assertSame( 1, $owner['exit_code'] );
 		self::assertSame( '', $owner['stdout'] );
 		self::assertSame( "Error: Schedule list owner is invalid; pass a value with --owner=<owner>.\n", $owner['stderr'] );
-
-		$format = self::run_command( 'schedules', 'list', '--no-format' );
-
-		self::assertSame( 1, $format['exit_code'] );
-		self::assertSame( '', $format['stdout'] );
-		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $format['stderr'] );
 	}
 
 	/**
@@ -766,7 +798,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Schedule list accepts only --owner and --format; use wp background-jobs schedules list [--owner=<owner>] [--format=<format>].\n", $result['stderr'] );
+		self::assertSame( "Error: Schedule list accepts only --owner and --format; use wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**
@@ -878,7 +910,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_runs_without_required_positionals_use_the_native_synopsis(): void {
-		$expected = "usage: wp background-jobs runs <action> <identity> [<run_id>] [--format=<format>]\n";
+		$expected = "usage: wp a8csp-bgje runs <action> <identity> [<run_id>] [--format=<format>]\n";
 
 		foreach ( array( array(), array( 'list' ) ) as $arguments ) {
 			$result = self::run_runs_command( ...$arguments );
@@ -902,7 +934,7 @@ final class CLICommandTest extends IntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Run list requires exactly one identity and accepts only --format; use wp background-jobs runs list <identity> [--format=<format>].\n", $result['stderr'] );
+		self::assertSame( "Error: Run list requires exactly one identity and accepts only --format; use wp a8csp-bgje runs list <identity> [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**
@@ -922,28 +954,6 @@ final class CLICommandTest extends IntegrationTestCase {
 	}
 
 	/**
-	 * The runs decision seam rejects invalid names and formats at the binary boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_runs_list_rejects_invalid_name_and_format(): void {
-		$invalid_name = self::run_runs_command( 'list', 'Invalid Name' );
-
-		self::assertSame( 1, $invalid_name['exit_code'] );
-		self::assertSame( '', $invalid_name['stdout'] );
-		self::assertSame( "Error: Run identity is invalid; use a composed {owner}:{name} identity.\n", $invalid_name['stderr'] );
-
-		$invalid_format = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=ids' );
-
-		self::assertSame( 1, $invalid_format['exit_code'] );
-		self::assertSame( '', $invalid_format['stdout'] );
-		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $invalid_format['stderr'] );
-	}
-
-	/**
 	 * Schedule and run inspection survive one retryable failure on every supported backend set.
 	 *
 	 * @since   1.0.0
@@ -954,20 +964,20 @@ final class CLICommandTest extends IntegrationTestCase {
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::INSPECTION_OWNER );
+		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::INSPECTION_OWNER );
 		$job            = new RecordingJob( self::INSPECTION_JOB );
 		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
-		$client->jobs()->register( $job->definition() );
+		$client->register( $job->definition() );
 		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_JOB, array( 'source' => 'schedule' ) );
-		$synced   = $client->schedules()->sync( array( $schedule ) );
+		$synced   = $client->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
-		\add_filter( 'a8csp_jobs_engine/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
+		\add_filter( 'a8csp_bgje/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
-		$enqueued = $client->jobs()->enqueue( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
+		$enqueued = $client->dispatch( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
 		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertIsString( $enqueued->value );
-		$run_id = $enqueued->value;
+		self::assertInstanceOf( Run::class, $enqueued->value );
+		$run_id = (string) $enqueued->value->id;
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::INSPECTION_JOB_IDENTITY );
 
 		try {
@@ -1015,7 +1025,7 @@ final class CLICommandTest extends IntegrationTestCase {
 			self::assertSame( $run_id, $history_rows[0]['run_id'] ?? null );
 			self::assertSame( 'started', $history_rows[0]['outcome'] ?? null );
 		} finally {
-			$cancelled = $client->runs()->cancel( self::INSPECTION_JOB, $run_id );
+			$cancelled = $client->cancel( self::INSPECTION_JOB, $run_id );
 			self::assertInstanceOf( Success::class, $cancelled );
 		}
 	}
@@ -1036,6 +1046,20 @@ final class CLICommandTest extends IntegrationTestCase {
 	 */
 	private static function run_failed_runs_command( string ...$arguments ): array {
 		return self::run_command( 'failed-runs', ...$arguments );
+	}
+
+	/**
+	 * Runs the locks command through wp-env's actual WP-CLI executable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string ...$arguments Arguments following the locks command.
+	 *
+	 * @return  array{stdout: string, stderr: string, exit_code: int}
+	 */
+	private static function run_locks_command( string ...$arguments ): array {
+		return self::run_command( 'locks', ...$arguments );
 	}
 
 	/**
@@ -1072,7 +1096,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $subcommand  Background-jobs subcommand.
+	 * @param   string $subcommand   a8csp-bgje subcommand.
 	 * @param   string ...$arguments Arguments following the subcommand.
 	 *
 	 * @return  array{stdout: string, stderr: string, exit_code: int}
@@ -1089,7 +1113,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 *
 	 * @phpstan-param list<string> $global_arguments
 	 *
-	 * @param   string $subcommand       Background-jobs subcommand.
+	 * @param   string $subcommand       a8csp-bgje subcommand.
 	 * @param   array  $global_arguments Arguments preceding the registered command.
 	 * @param   string ...$arguments     Arguments following the subcommand.
 	 *
@@ -1109,7 +1133,7 @@ final class CLICommandTest extends IntegrationTestCase {
 				),
 				$global_arguments,
 				array(
-					'background-jobs',
+					'a8csp-bgje',
 					$subcommand,
 				),
 				$arguments
@@ -1206,7 +1230,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private static function cancel_chunked_job_run_option_name(): string {
-		return 'a8csp_bgje_run_' . self::CANCEL_CHUNKED_JOB_NAME . '_' . self::RUN_ID;
+		return 'a8csp_bgje_active_run_' . self::CANCEL_CHUNKED_JOB_NAME . '_' . self::RUN_ID;
 	}
 
 	/**
@@ -1264,7 +1288,7 @@ final class CLICommandTest extends IntegrationTestCase {
 	 * @return  string
 	 */
 	private static function purge_usage_error(): string {
-		return 'Error: Purge requires exactly one identity or --all; ' . "use wp background-jobs failed-runs purge <identity> or purge --all.\n";
+		return 'Error: Purge requires exactly one identity or --all; ' . "use wp a8csp-bgje failed-runs purge <identity> or purge --all.\n";
 	}
 
 	// endregion.

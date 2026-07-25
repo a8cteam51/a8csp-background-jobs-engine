@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
@@ -27,11 +27,17 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
 #[UsesClass( ScheduleRegistry::class )]
-#[UsesClass( Schedules::class )]
+#[UsesClass( ScheduleOperations::class )]
 final class MaintenanceScheduleTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
 	private const int NOW = 1_700_000_000;
 
 	private EngineRig $rig;
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/** Loads the guarded WordPress seams before the production graph is built. */
 	#[\Override]
@@ -57,6 +63,10 @@ final class MaintenanceScheduleTest extends TestCase {
 		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * Corruption cannot cancel the maintenance chain, and the next sync recreates a reclaimed row.
 	 *
@@ -66,7 +76,7 @@ final class MaintenanceScheduleTest extends TestCase {
 		$engine = Component::get_engine();
 		self::assertNotNull( $engine );
 		$maintenance = new MaintenanceSchedule( $engine->schedules, $this->rig->logger() );
-		$option_name = ScheduleRegistry::option_name( JobIdentity::ENGINE_OWNER );
+		$option_name = ScheduleRegistry::option_name( Identity::ENGINE_OWNER );
 		$poison      = 'poison-maintenance-registry-row';
 		$this->rig->wpdb()->put( $option_name, $poison );
 		$this->rig->backend()->scheduled = true;
@@ -94,8 +104,10 @@ final class MaintenanceScheduleTest extends TestCase {
 		self::assertIsString( $raw );
 		$registrations = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $registrations );
-		self::assertArrayHasKey( JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $registrations );
+		self::assertArrayHasKey( (string) Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $registrations );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_values( \array_filter( \array_column( $this->rig->backend()->calls, 'verb' ), static fn ( string $verb ): bool => \in_array( $verb, array( 'unschedule', 'schedule_recurring' ), true ) ) ) );
 		self::assertSame( array(), $this->rig->logger()->records );
 	}
+
+	// endregion.
 }

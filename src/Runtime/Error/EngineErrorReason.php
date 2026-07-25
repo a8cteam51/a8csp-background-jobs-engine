@@ -18,11 +18,11 @@ enum EngineErrorReason: string {
 	// region FIELDS AND CONSTANTS
 
 	case EngineUnavailable    = 'engine_unavailable';
-	case UnknownWork          = 'unknown_work';
+	case UnknownJob           = 'unknown_job';
 	case UnknownSchedule      = 'unknown_schedule';
 	case OverlapHeld          = 'overlap_held';
 	case PayloadRejected      = 'payload_rejected';
-	case StorageFailure       = 'storage_failure';
+	case StorageFailure       = 'storage_failed';
 	case RunNotRetained       = 'run_not_retained';
 	case RunNotCancellable    = 'run_not_cancellable';
 	case UnsupportedOperation = 'unsupported_operation';

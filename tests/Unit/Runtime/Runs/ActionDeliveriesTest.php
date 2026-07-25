@@ -2,13 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Error\ApiError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
@@ -22,7 +23,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -45,7 +45,7 @@ final class ActionDeliveriesTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -117,8 +117,8 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_registered_delivery_hooks_drive_every_chunked_job_stage(): void {
 		$chunked_job        = new RecordingChunkedJob( 'hook-registration-probe' );
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
-		$this->client->jobs()->register( $chunked_job->definition() );
-		$result = $this->client->chunked_jobs()->start( 'hook-registration-probe', self::ARGS );
+		$this->client->register( $chunked_job->definition() );
+		$result = $this->client->dispatch( 'hook-registration-probe', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
@@ -127,12 +127,54 @@ final class ActionDeliveriesTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $chunked_job->generate_calls );
 		self::assertCount( 1, $chunked_job->generate_contexts );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
 		self::assertInstanceOf( RunId::class, $chunked_job->generate_contexts[0]->get_run_id() );
-		self::assertSame( $result->value, (string) $chunked_job->generate_contexts[0]->get_run_id() );
+		self::assertSame( (string) $result->value->id, (string) $chunked_job->generate_contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $chunked_job->generate_contexts[0]->get_start_args() );
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] );
 		$this->rig->assert_completed();
+	}
+
+	/**
+	 * A malformed lifecycle-action identity performs the exact raw lookup before stale-drop handling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_uses_the_exact_raw_lookup_before_stale_drop(): void {
+		$identity = 'malformed';
+		$before   = $this->rig->wpdb()->rows;
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->logger()->records        = array();
+
+		\do_action( ActionDeliveries::DELIVER_HOOK, $identity, self::RUN_ID, 1 );
+
+		self::assertSame(
+			array(
+				"SELECT `option_value` FROM `wp_options` WHERE `option_name` = 'a8csp_bgje_active_run_malformed_" . self::RUN_ID . "' LIMIT 1",
+			),
+			$this->rig->wpdb()->recorded_queries
+		);
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->job->calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'Stale delivery for a finished or cancelled run was dropped.',
+					'context' => array(
+						'identity' => $identity,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
 	}
 
 	/**
@@ -150,18 +192,18 @@ final class ActionDeliveriesTest extends TestCase {
 			'site_id' => 8,
 			'mode'    => 'delta',
 		);
-		$first          = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$first          = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $first );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$duplicate                     = $this->client->jobs()->enqueue( self::NAME, $successor_args );
+		$duplicate                     = $this->client->dispatch( self::NAME, $successor_args );
 		$this->assert_failure_code( $duplicate, ErrorCode::OverlapHeld );
 		self::assertCount( 1, $this->run_delivery_calls() );
 
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->clock()->timestamp = self::NOW + 2;
-		$reused                        = $this->client->jobs()->enqueue( self::NAME, $successor_args );
+		$reused                        = $this->client->dispatch( self::NAME, $successor_args );
 		self::assertInstanceOf( Success::class, $reused );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS, $successor_args ), $this->job->calls );
@@ -184,7 +226,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertCount( 1, $this->job->contexts );
 		self::assertSame( $run_id, (string) $this->job->contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $this->job->contexts[0]->get_start_args() );
-		$named_completed = $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed/' . self::IDENTITY );
+		$named_completed = $this->rig->hooks()->fired( 'a8csp_bgje/completed/' . self::IDENTITY );
 		$public_run_id   = $named_completed[0][0] ?? null;
 		self::assertInstanceOf( RunId::class, $public_run_id );
 		self::assertSame( $run_id, (string) $public_run_id );
@@ -198,8 +240,43 @@ final class ActionDeliveriesTest extends TestCase {
 			array(
 				array( self::IDENTITY, $public_run_id, self::ARGS, null ),
 			),
-			$this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' )
+			$this->rig->hooks()->fired( 'a8csp_bgje/completed' )
 		);
+		$this->rig->assert_completed();
+	}
+
+	/**
+	 * Run delivery detaches referenced start arguments before sharing them with the handler and context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_delivery_detaches_referenced_start_arguments_before_consumer_access(): void {
+		$value      = 'accepted';
+		$start_args = array(
+			'value'  => &$value,
+			'mirror' => &$value,
+		);
+		$expected   = array(
+			'value'  => 'accepted',
+			'mirror' => 'accepted',
+		);
+
+		$this->job->on_handle = static function ( array $args ): void {
+			$args['value'] = 'execution-mutated';
+		};
+
+		$result = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $result );
+
+		$this->rig->run_due();
+
+		self::assertSame( array( $expected ), $this->job->calls );
+		self::assertCount( 1, $this->job->contexts );
+		self::assertSame( $expected, $this->job->contexts[0]->get_start_args() );
+		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/completed' ) );
 		$this->rig->assert_completed();
 	}
 
@@ -218,7 +295,7 @@ final class ActionDeliveriesTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failed = $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' );
+		$failed = $this->rig->hooks()->fired( 'a8csp_bgje/failed' );
 		self::assertCount( 1, $failed );
 		$failure = $failed[0][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
@@ -243,7 +320,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Delivery clamps invalid and runaway declarations before crediting execution liveness.
+	 * Delivery clamps a runaway declaration before crediting execution liveness.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The execution-time lock generation is the concurrency contract that prevents a long-running owner from being reclaimed early.
@@ -251,15 +328,11 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $declared       Declared execution runtime.
-	 * @param   int $expected_lease Expected credited runtime.
-	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'bounded_runtime_values' )]
-	public function test_run_delivery_bounds_the_declared_runtime( int $declared, int $expected_lease ): void {
-		$this->restart_with_options( new JobOptions( max_runtime: $declared ) );
-		$this->assert_execution_lease( $expected_lease );
+	public function test_run_delivery_clamps_declared_runtime_to_the_effective_ceiling(): void {
+		$this->restart_with_options( new JobOptions( max_runtime: 24 * 60 * 60 ) );
+		$this->assert_execution_lease( 6 * 60 * 60 );
 	}
 
 	/**
@@ -293,8 +366,8 @@ final class ActionDeliveriesTest extends TestCase {
 
 		self::assertSame( array(), $this->job->calls );
 		self::assertSame( $before, $this->relevant_rows() );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/completed' ) );
-		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_jobs_engine/failed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/completed' ) );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
 		foreach ( $this->rig->wpdb()->recorded_queries as $query ) {
 			self::assertStringStartsWith( 'SELECT ', $query );
 		}
@@ -405,7 +478,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->enqueue_job();
 		$this->job->throwable = new \RuntimeException( 'Attempt failed before retry-policy resolution.' );
 		$this->set_filter_value(
-			'a8csp_jobs_engine/retry_policy/' . self::IDENTITY,
+			'a8csp_bgje/retry_policy/' . self::IDENTITY,
 			function ( RetryPolicy $policy ): RetryPolicy {
 				$this->install_replacement_generation();
 
@@ -429,15 +502,15 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_unregistered_job_delivery_terminalizes_the_live_run(): void {
 		$this->rig->tear_down();
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client   = $this->rig->client( self::OWNER );
+		$this->client   = $this->rig->operations( self::OWNER );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->seed_pending_run();
 
 		\do_action( ActionDeliveries::DELIVER_HOOK, self::IDENTITY, self::RUN_ID, 1 );
 
-		$this->rig->assert_failed( ErrorCode::UnknownWork );
-		$retry = $this->client->runs()->retry_failed( self::NAME, self::RUN_ID );
-		$this->assert_failure_code( $retry, ErrorCode::UnknownWork );
+		$this->rig->assert_failed( ErrorCode::UnknownJob );
+		$retry = $this->client->retry_failed( self::NAME, self::RUN_ID );
+		$this->assert_failure_code( $retry, ErrorCode::UnknownJob );
 	}
 
 	/**
@@ -473,34 +546,9 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
-		$last_completed = $this->client->runs()->last_completed_run_id( self::NAME );
+		$last_completed = $this->client->last_completed_run( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertNull( $last_completed->value );
-	}
-
-	/**
-	 * Supplies invalid and runaway runtime declarations.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return array<string, array{declared: int, expected_lease: int}>
-	 */
-	public static function bounded_runtime_values(): array {
-		return array(
-			'zero uses default'      => array(
-				'declared'       => 0,
-				'expected_lease' => 300,
-			),
-			'negative uses default'  => array(
-				'declared'       => -1,
-				'expected_lease' => 300,
-			),
-			'twenty-four hours caps' => array(
-				'declared'       => 24 * 60 * 60,
-				'expected_lease' => 6 * 60 * 60,
-			),
-		);
 	}
 
 	// endregion.
@@ -520,7 +568,7 @@ final class ActionDeliveriesTest extends TestCase {
 	private function boot( ?JobOptions $options = null ): void {
 		$this->overlap_key_resolver = null;
 		$this->rig                  = EngineRig::set_up( self::NOW );
-		$this->client               = $this->rig->client( self::OWNER );
+		$this->client               = $this->rig->operations( self::OWNER );
 		$this->job                  = new RecordingJob( self::NAME );
 		if ( null === $options ) {
 			$options = new JobOptions(
@@ -533,7 +581,7 @@ final class ActionDeliveriesTest extends TestCase {
 				}
 			);
 		}
-		$this->client->jobs()->register( $this->job->definition( $options ) );
+		$this->client->register( $this->job->definition( $options ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
@@ -561,11 +609,13 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$result = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::RUN_ID, $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertSame( self::RUN_ID, (string) $result->value->id );
 
-		return $result->value;
+		return (string) $result->value->id;
 	}
 
 	/**
@@ -644,7 +694,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertIsArray( $lock );
 		self::assertSame( self::RUN_ID, $lock['run_id'] ?? null );
 		self::assertSame( $credit, $lock['heartbeat_at'] ?? null );
-		$run = $this->decoded_row( 'a8csp_bgje_run_' . self::IDENTITY . '_' . self::RUN_ID );
+		$run = $this->decoded_row( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		self::assertTrue( $run['executing'] ?? false );
 		self::assertSame( $credit, $run['heartbeat_at'] ?? null );
@@ -770,15 +820,15 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   mixed        $result Facade result.
+	 * @param   mixed     $result Facade result.
 	 * @param   ErrorCode $code   Expected public code.
 	 *
-	 * @return  ApiError
+	 * @return  BoundaryError
 	 */
-	private function assert_failure_code( mixed $result, ErrorCode $code ): ApiError {
+	private function assert_failure_code( mixed $result, ErrorCode $code ): BoundaryError {
 		self::assertInstanceOf( Failure::class, $result );
 		$error = $result->error;
-		self::assertInstanceOf( ApiError::class, $error );
+		self::assertInstanceOf( BoundaryError::class, $error );
 		self::assertSame( $code, $error->code );
 
 		return $error;

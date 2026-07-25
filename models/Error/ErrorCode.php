@@ -9,6 +9,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Error;
  *
  * Minor releases may add cases. Clients treat unknown backing values as generic failures.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -24,11 +26,8 @@ enum ErrorCode: string {
 	/** The engine cannot prepare or continue the requested operation. */
 	case EngineUnavailable = 'engine_unavailable';
 
-	/** The required Composer autoloader is absent during bootstrap. */
-	case MissingAutoloader = 'missing_autoloader';
-
 	/** The requested job or chunked job is not registered. */
-	case UnknownWork = 'unknown_work';
+	case UnknownJob = 'unknown_job';
 
 	/** The requested schedule is unsynchronized, inactive, or stale. */
 	case UnknownSchedule = 'unknown_schedule';
@@ -46,7 +45,7 @@ enum ErrorCode: string {
 	case BackendRejected = 'backend_rejected';
 
 	/** A required durable read or write failed. */
-	case StorageFailure = 'storage_failure';
+	case StorageFailed = 'storage_failed';
 
 	/** The requested run is absent from recoverable storage. */
 	case RunNotRetained = 'run_not_retained';

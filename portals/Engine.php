@@ -10,6 +10,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
  * Handle and portal construction is infallible; owner validation and engine resolution remain
  * lazy until a manager verb is invoked, where every expected failure surfaces as a `WP_Error`.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

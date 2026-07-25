@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 
@@ -16,11 +16,17 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
  * @version 1.0.0
  */
 final class ReadinessControlledBackend implements BackendInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/** Live Action Scheduler adapter receiving every delegated operation. */
 	private readonly ActionSchedulerBackend $backend;
 
 	/** Whether the backend reports itself ready. */
 	public bool $ready = true;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/**
 	 * Creates a readiness-controlled live adapter.
@@ -31,6 +37,10 @@ final class ReadinessControlledBackend implements BackendInterface {
 	public function __construct() {
 		$this->backend = new ActionSchedulerBackend();
 	}
+
+	// endregion.
+
+	// region METHODS.
 
 	/** {@inheritDoc} */
 	#[\Override]
@@ -58,6 +68,13 @@ final class ReadinessControlledBackend implements BackendInterface {
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult {
 		return $this->backend->unschedule( $hook, $args, $group );
+	}
+
+	/** {@inheritDoc} */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_group( string $group ): AbstractResult {
+		return $this->backend->unschedule_group( $group );
 	}
 
 	/** {@inheritDoc} */
@@ -108,4 +125,6 @@ final class ReadinessControlledBackend implements BackendInterface {
 	public function register_hooks(): void {
 		$this->backend->register_hooks();
 	}
+
+	// endregion.
 }

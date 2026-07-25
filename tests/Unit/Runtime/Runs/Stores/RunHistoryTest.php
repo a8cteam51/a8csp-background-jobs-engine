@@ -2,11 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -22,12 +24,20 @@ use PHPUnit\Framework\TestCase;
 
 /** Detects unsafe class construction while corrupt history storage is inspected. */
 final class RunHistoryWakeupProbe {
+	// region FIELDS AND CONSTANTS.
+
 	public static int $wakeups = 0;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/** Records an unsafe native object construction. */
 	public function __wakeup(): void {
 		++self::$wakeups;
 	}
+
+	// endregion.
 }
 
 /**
@@ -46,8 +56,9 @@ final class RunHistoryTest extends TestCase {
 	private const string OWNER    = 'runs-tests';
 
 	private RecordingChunkedJob $chunked_job;
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
+	private Identity $identity;
 	private EngineRig $rig;
 	private OptionRows $rows;
 	private RecordingJob $job;
@@ -82,11 +93,12 @@ final class RunHistoryTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->client( self::OWNER );
+		$this->client      = $this->rig->operations( self::OWNER );
+		$this->identity    = Identity::compose( self::OWNER, self::NAME );
 		$this->job         = new RecordingJob( self::NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::NAME . '-chunked-job' );
-		$this->client->jobs()->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
-		$this->client->jobs()->register( $this->chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
+		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
+		$this->client->register( $this->chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -125,8 +137,10 @@ final class RunHistoryTest extends TestCase {
 	#[DataProvider( 'terminal_statuses' )]
 	public function test_every_terminal_status_is_exposed_through_inspection( string $status ): void {
 		[ $identity, $run_id ] = $this->produce_terminal_outcome( $status );
+		$boundary_identity     = Identity::tryFrom( $identity );
+		self::assertInstanceOf( Identity::class, $boundary_identity );
 
-		$history = $this->rig->inspection()->runs( $identity )['history'];
+		$history = $this->rig->inspection()->runs( $boundary_identity )['history'];
 		self::assertNotNull( $history );
 		$entry = \array_find( $history, static fn ( array $candidate ): bool => $run_id === $candidate['run_id'] );
 		self::assertNotNull( $entry );
@@ -184,10 +198,10 @@ final class RunHistoryTest extends TestCase {
 	public function test_invalid_history_size_filter_result_logs_a_warning(): void {
 		$this->set_history_size( '30' );
 
-		self::assertTrue( $this->store()->record_started( 'run-invalid-filter', 'hash-a' ) );
+		self::assertTrue( $this->store()->record_started( self::run_id( 1 ), 'hash-a' ) );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['name'] ?? null );
+		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( 'string', $this->rig->logger()->records[0]['context']['returned_type'] ?? null );
 		self::assertSame( 30, $this->rig->logger()->records[0]['context']['default_size'] ?? null );
 	}
@@ -204,8 +218,8 @@ final class RunHistoryTest extends TestCase {
 		$entries = self::started_entries( 0, 19 );
 		$this->put_fixture( $this->fixtures->history( $entries ) );
 		$history = $this->store();
-		self::assertTrue( $history->record_started( 'run-refreshed', self::hash( 0 ) ) );
-		self::assertTrue( $history->record_started( 'run-20', self::hash( 20 ) ) );
+		self::assertTrue( $history->record_started( self::run_id( 100 ), self::hash( 0 ) ) );
+		self::assertTrue( $history->record_started( self::run_id( 20 ), self::hash( 20 ) ) );
 
 		$decoded = RawOptionDecoder::decode( $this->raw_row() );
 		self::assertIsArray( $decoded );
@@ -229,13 +243,19 @@ final class RunHistoryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_malformed_history_is_tolerated_without_constructing_classes(): void {
-		$raw = \maybe_serialize(
+		$started_run_id = '00000000001700000000-0000000000000000001';
+		$failed_run_id  = '00000000001700000000-0000000000000000002';
+		$raw            = \maybe_serialize(
 			array(
-				'started'  => array( 'started-safe', 42, new RunHistoryWakeupProbe() ),
+				'started'  => array( $started_run_id, 'malformed-started-run-id', 42, new RunHistoryWakeupProbe() ),
 				'terminal' => array(
 					array(
-						'run_id' => 'failed-safe',
+						'run_id' => $failed_run_id,
 						'status' => 'failed',
+					),
+					array(
+						'run_id' => 'malformed-completed-run-id',
+						'status' => 'completed',
 					),
 					array(
 						'run_id' => 'running-invalid',
@@ -252,9 +272,68 @@ final class RunHistoryTest extends TestCase {
 
 		$history = $this->history();
 
-		self::assertSame( array( 'failed-safe', 'started-safe' ), \array_column( $history, 'run_id' ) );
+		self::assertSame( array( $failed_run_id, $started_run_id ), \array_column( $history, 'run_id' ) );
 		self::assertSame( array( 'failed', 'started' ), \array_column( $history, 'outcome' ) );
 		self::assertSame( 0, RunHistoryWakeupProbe::$wakeups );
+	}
+
+	/**
+	 * Malformed identifiers are removed from argument-scoped buffers during hydration.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Argument-scoped buffers share the persisted identifier boundary but are not exposed through public history inspection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_argument_history_run_ids_are_dropped_during_hydration(): void {
+		$started_run_id  = self::run_id( 1 );
+		$terminal_run_id = self::run_id( 2 );
+		$appended_run_id = self::run_id( 3 );
+		$raw             = \maybe_serialize(
+			array(
+				'started'  => array(),
+				'terminal' => array(),
+				'by_hash'  => array(
+					'hash-a' => array(
+						'started'  => array( $started_run_id, 'malformed-started-run-id' ),
+						'terminal' => array(
+							array(
+								'run_id' => $terminal_run_id,
+								'status' => 'completed',
+							),
+							array(
+								'run_id' => 'malformed-terminal-run-id',
+								'status' => 'completed',
+							),
+						),
+					),
+				),
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( RunHistory::OPTION_PREFIX . self::IDENTITY, $raw );
+
+		self::assertTrue( $this->store()->record_started( $appended_run_id, 'hash-a' ) );
+
+		$decoded = RawOptionDecoder::decode( $this->raw_row() );
+		self::assertIsArray( $decoded );
+		$by_hash = $decoded['by_hash'] ?? null;
+		self::assertIsArray( $by_hash );
+		$buffers = $by_hash['hash-a'] ?? null;
+		self::assertIsArray( $buffers );
+		self::assertSame( array( $started_run_id, $appended_run_id ), $buffers['started'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => $terminal_run_id,
+					'status' => 'completed',
+				),
+			),
+			$buffers['terminal'] ?? null
+		);
 	}
 
 	// endregion.
@@ -278,11 +357,11 @@ final class RunHistoryTest extends TestCase {
 		$expected = array(
 			...$initial,
 			array(
-				'run_id'    => 'run-rival',
+				'run_id'    => self::run_id( 30 ),
 				'args_hash' => 'hash-a',
 			),
 			array(
-				'run_id'    => 'run-caller',
+				'run_id'    => self::run_id( 31 ),
 				'args_hash' => 'hash-a',
 			),
 		);
@@ -290,11 +369,11 @@ final class RunHistoryTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function (): void {
-				self::assertTrue( $this->store()->record_started( 'run-rival', 'hash-a' ) );
+				self::assertTrue( $this->store()->record_started( self::run_id( 30 ), 'hash-a' ) );
 			}
 		);
 
-		self::assertTrue( $this->store()->record_started( 'run-caller', 'hash-a' ) );
+		self::assertTrue( $this->store()->record_started( self::run_id( 31 ), 'hash-a' ) );
 
 		self::assertSame( $this->fixtures->history( $expected )[1], $this->raw_row() );
 	}
@@ -303,7 +382,7 @@ final class RunHistoryTest extends TestCase {
 	 * A lost exact update retries from fresh rival bytes without dropping its append.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Production serialization supplies every generation, including a rival identifier with null bytes that exposes normalization or stale-overwrite shortcuts.
+	 * @pin-rationale Production serialization supplies every generation, including a rival argument hash with null bytes that exposes normalization or stale-overwrite shortcuts.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -314,21 +393,21 @@ final class RunHistoryTest extends TestCase {
 	public function test_lost_cas_preserves_fixture_built_rival_bytes(): void {
 		$initial  = array(
 			array(
-				'run_id'    => 'run-existing',
+				'run_id'    => self::run_id( 1 ),
 				'args_hash' => 'hash-a',
 			),
 		);
 		$rival    = array(
 			...$initial,
 			array(
-				'run_id'    => "run-rival-\0bytes",
-				'args_hash' => 'hash-rival',
+				'run_id'    => self::run_id( 2 ),
+				'args_hash' => "hash-rival-\0bytes",
 			),
 		);
 		$expected = array(
 			...$rival,
 			array(
-				'run_id'    => 'run-caller',
+				'run_id'    => self::run_id( 3 ),
 				'args_hash' => 'hash-a',
 			),
 		);
@@ -342,7 +421,7 @@ final class RunHistoryTest extends TestCase {
 		);
 		$this->rig->wpdb()->recorded_queries = array();
 
-		self::assertTrue( $this->store()->record_started( 'run-caller', 'hash-a' ) );
+		self::assertTrue( $this->store()->record_started( self::run_id( 3 ), 'hash-a' ) );
 
 		self::assertSame( $this->fixtures->history( $expected )[1], $this->raw_row() );
 		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
@@ -365,7 +444,7 @@ final class RunHistoryTest extends TestCase {
 		$fixture = $this->fixtures->history(
 			array(
 				array(
-					'run_id'    => 'run-existing',
+					'run_id'    => self::run_id( 1 ),
 					'args_hash' => 'hash-a',
 				),
 			)
@@ -379,13 +458,13 @@ final class RunHistoryTest extends TestCase {
 			}
 		);
 
-		self::assertFalse( $this->store()->record_started( 'run-new', 'hash-a' ) );
+		self::assertFalse( $this->store()->record_started( self::run_id( 2 ), 'hash-a' ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertSame( array(), $this->queries_starting_with( 'UPDATE ' ) );
 
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
-		self::assertFalse( $this->store()->record_started( 'run-new', 'hash-a' ) );
+		self::assertFalse( $this->store()->record_started( self::run_id( 2 ), 'hash-a' ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
@@ -410,31 +489,31 @@ final class RunHistoryTest extends TestCase {
 		if ( 'superseded' === $status ) {
 			$name     = self::NAME . '-chunked-job';
 			$identity = self::OWNER . ':' . $name;
-			$first    = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ) );
+			$first    = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $first );
-			self::assertIsString( $first->value );
+			self::assertInstanceOf( Run::class, $first->value );
 			$this->rig->randomizer()->value = 8;
-			$second                         = $this->client->chunked_jobs()->start( $name, array( 'scope' => 'all' ) );
+			$second                         = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $second );
 			$this->rig->run_due();
 
-			return array( $identity, $first->value );
+			return array( $identity, (string) $first->value->id );
 		}
 
 		if ( 'failed' === $status ) {
 			$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		}
-		$result = $this->client->jobs()->enqueue( self::NAME, array( 'scope' => $status ) );
+		$result = $this->client->dispatch( self::NAME, array( 'scope' => $status ) );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
+		self::assertInstanceOf( Run::class, $result->value );
 		if ( 'cancelled' === $status ) {
-			$cancelled = $this->client->runs()->cancel( self::NAME, $result->value );
+			$cancelled = $this->client->cancel( self::NAME, (string) $result->value->id );
 			self::assertInstanceOf( Success::class, $cancelled );
 		} else {
 			$this->rig->run_due();
 		}
 
-		return array( self::IDENTITY, $result->value );
+		return array( self::IDENTITY, (string) $result->value->id );
 	}
 
 	/**
@@ -452,10 +531,10 @@ final class RunHistoryTest extends TestCase {
 		$run_ids = array();
 		foreach ( \range( 1, $count ) as $index ) {
 			$this->rig->randomizer()->value = $offset + $index;
-			$result                         = $this->client->jobs()->enqueue( self::NAME, array( 'index' => $offset + $index ) );
+			$result                         = $this->client->dispatch( self::NAME, array( 'index' => $offset + $index ) );
 			self::assertInstanceOf( Success::class, $result );
-			self::assertIsString( $result->value );
-			$run_ids[] = $result->value;
+			self::assertInstanceOf( Run::class, $result->value );
+			$run_ids[] = (string) $result->value->id;
 			$this->rig->run_due();
 		}
 
@@ -471,7 +550,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  list<array{run_id: string, outcome: string, failed_store: bool}>
 	 */
 	private function history(): array {
-		$history = $this->rig->inspection()->runs( self::IDENTITY )['history'];
+		$history = $this->rig->inspection()->runs( $this->identity )['history'];
 		self::assertNotNull( $history );
 
 		return $history;
@@ -490,8 +569,8 @@ final class RunHistoryTest extends TestCase {
 	private function set_history_size( mixed $size ): void {
 		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
-		$filters['a8csp_jobs_engine/history_size'] = $size;
-		$GLOBALS['a8csp_bgje_test_filter_values']  = $filters;
+		$filters['a8csp_bgje/history_size']       = $size;
+		$GLOBALS['a8csp_bgje_test_filter_values'] = $filters;
 	}
 
 	/**
@@ -503,7 +582,7 @@ final class RunHistoryTest extends TestCase {
 	 * @return  RunHistory
 	 */
 	private function store(): RunHistory {
-		return new RunHistory( self::IDENTITY, $this->rows, $this->rig->logger() );
+		return new RunHistory( $this->identity, $this->rows, $this->rig->logger() );
 	}
 
 	/**
@@ -549,7 +628,7 @@ final class RunHistoryTest extends TestCase {
 	private static function started_entries( int $first, int $last ): array {
 		return \array_map(
 			static fn ( int $index ): array => array(
-				'run_id'    => 'run-' . $index,
+				'run_id'    => self::run_id( $index ),
 				'args_hash' => self::hash( $index ),
 			),
 			\range( $first, $last )
@@ -570,11 +649,25 @@ final class RunHistoryTest extends TestCase {
 	private static function same_hash_entries( int $first, int $last ): array {
 		return \array_map(
 			static fn ( int $index ): array => array(
-				'run_id'    => 'run-' . $index,
+				'run_id'    => self::run_id( $index ),
 				'args_hash' => 'hash-a',
 			),
 			\range( $first, $last )
 		);
+	}
+
+	/**
+	 * Returns one canonical deterministic run identifier.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $index Fixture index.
+	 *
+	 * @return  string
+	 */
+	private static function run_id( int $index ): string {
+		return \sprintf( '00000000001700000000-%019d', $index );
 	}
 
 	/**

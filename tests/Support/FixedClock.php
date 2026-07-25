@@ -9,20 +9,30 @@ use Psr\Clock\ClockInterface;
  * Mutable deterministic clock with observable reads.
  */
 final class FixedClock implements ClockInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/** Number of clock reads. */
 	public int $calls = 0;
 
 	/** Current Unix timestamp. */
 	public int $timestamp;
 
+	// endregion.
+
+	// region MAGIC METHODS.
+
 	/**
 	 * Constructor.
 	 *
-	 * @param   int|DateTimeImmutable $instant Current Unix timestamp or instant.
+	 * @param   int $timestamp Current Unix timestamp.
 	 */
-	public function __construct( int|DateTimeImmutable $instant ) {
-		$this->timestamp = \is_int( $instant ) ? $instant : $instant->getTimestamp();
+	public function __construct( int $timestamp ) {
+		$this->timestamp = $timestamp;
 	}
+
+	// endregion.
+
+	// region METHODS.
 
 	/** {@inheritDoc} */
 	#[\Override]
@@ -31,4 +41,6 @@ final class FixedClock implements ClockInterface {
 
 		return new DateTimeImmutable( '@' . $this->timestamp );
 	}
+
+	// endregion.
 }

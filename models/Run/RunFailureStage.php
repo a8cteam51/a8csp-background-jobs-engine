@@ -9,6 +9,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
  *
  * Engine and third-party stages share the persisted kind and lifecycle-stage key grammar.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -17,6 +19,9 @@ final readonly class RunFailureStage {
 
 	/**
 	 * Lexical grammar for persisted kind and lifecycle stage keys.
+	 *
+	 * The public-model copy mirrors `Runtime\Runs\Kinds\KindHandlerInterface::KEY_PATTERN` because
+	 * models do not import Runtime internals.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -53,7 +58,7 @@ final readonly class RunFailureStage {
 
 	// endregion
 
-	// region FACTORIES
+	// region METHODS
 
 	/**
 	 * Returns the client-work execution stage.
@@ -87,8 +92,8 @@ final readonly class RunFailureStage {
 	 *
 	 * @return  self
 	 */
-	public static function crash_reclaim(): self {
-		return self::from( 'crash_reclaim' );
+	public static function crash_reclamation(): self {
+		return self::from( 'crash_reclamation' );
 	}
 
 	/**
@@ -147,9 +152,8 @@ final readonly class RunFailureStage {
 		 */
 		static $instances = array();
 
-		// The cache grows one entry per distinct grammar-valid stage read in a process; storage
-		// gates keep those to declared stage values, so growth is bounded by legitimate variety.
-		// Identity comparisons hold within one process — compare ->value across serialization.
+		// Process-local interning preserves identity comparisons for repeated stage values; comparisons
+		// across serialization use ->value.
 		return $instances[ $value ] ??= new self( $value );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid

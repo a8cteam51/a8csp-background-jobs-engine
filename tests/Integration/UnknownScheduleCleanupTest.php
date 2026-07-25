@@ -6,22 +6,22 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -30,11 +30,11 @@ use PHPUnit\Framework\Attributes\Group;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class UnknownScheduleCleanupTest extends IntegrationTestCase {
+final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Schedule-delivery hook shared with the live engine. */
-	private const string HOOK = 'a8csp_jobs_engine/schedule_due';
+	private const string HOOK = 'a8csp_bgje/internal/schedule_due';
 
 	/** Unknown registration identity isolated to this integration test. */
 	private const string KEY = 'integration-owner:unknown-cleanup';
@@ -55,7 +55,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	private const string WP_CRON_KEY = 'integration-owner:unknown-wp-cron-cleanup';
 
 	/** Engine-reserved maintenance registration identity. */
-	private const string MAINTENANCE_KEY = 'a8csp-jobs-engine:maintenance';
+	private const string MAINTENANCE_KEY = 'a8csp-bgje:maintenance';
 
 	/** Owner isolated to undeclared-registration aging. */
 	private const string ZOMBIE_OWNER = 'integration-zombie-owner';
@@ -106,9 +106,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_jobs_engine/log',
+			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -136,7 +136,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			self::assertCount( 3 > $occurrence ? 0 : 1, $warnings );
 		}
 
-		self::assertStringContainsString( 'wp background-jobs schedules remove ' . self::ZOMBIE_OWNER, $warnings[0][1] ?? '' );
+		self::assertStringContainsString( 'wp a8csp-bgje schedules remove ' . self::ZOMBIE_OWNER, $warnings[0][1] ?? '' );
 		$debug_records = \array_values(
 			\array_filter(
 				$log_records,
@@ -163,14 +163,14 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_live_maintenance_sweep_converges_the_unknown_recurring_chain(): void {
-		$this->expect_option( ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) );
+		$this->expect_option( ScheduleRegistry::option_name( 'a8csp-bgje' ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::MAINTENANCE_KEY );
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_jobs_engine/log',
+			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -188,8 +188,8 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			\array_any(
 				$log_records,
 				static fn ( array $record ): bool => 'warning' === $record[0] && array(
-					'registration_key' => self::KEY,
-					'converged'        => false,
+					'schedule_identity' => self::KEY,
+					'converged'         => false,
 				) === $record[2]
 			),
 			'The public log hook must report deferred convergence for the unknown registration'
@@ -198,18 +198,18 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$engine = Component::get_engine();
 		self::assertNotNull( $engine, 'The live plugin must publish its engine before maintenance convergence' );
 		$synced = $engine->schedules->sync_owner(
-			'a8csp-jobs-engine',
+			'a8csp-bgje',
 			array(
 				self::MAINTENANCE_KEY => array(
 					'schedule' => new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), CatchUpPolicy::RunOnce ),
-					'job'      => self::MAINTENANCE_KEY,
+					'job'      => Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
 				),
 			)
 		);
 		self::assertInstanceOf( Success::class, $synced, 'The reserved maintenance schedule must re-synchronize' );
 		self::assertTrue( $synced->value );
 
-		$maintenance = $engine->schedules->dispatch_now( self::MAINTENANCE_KEY );
+		$maintenance = $engine->schedules->dispatch_now( Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ) );
 		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance job must be dispatchable through the schedule facade' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance job' );
 
@@ -231,7 +231,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$intent_option = 'a8csp_bgje_cleanup_intent_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( ScheduleRegistry::option_name( self::OWNER ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::REDECLARED_IDENTITY );
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 
 		$unknown_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::HOOK, array( self::KEY ), self::KEY, true, 10 );
 		self::assertGreaterThan( 0, $unknown_action_id );
@@ -239,18 +239,18 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 
 		$intent = \get_option( $intent_option, null );
 		self::assertIsArray( $intent, 'The unknown delivery must leave its cleanup intent for the sweep' );
-		self::assertSame( self::KEY, $intent['key'] ?? null );
+		self::assertSame( self::KEY, $intent['schedule_identity'] ?? null );
 
 		$store                 = $this->action_scheduler_store();
 		$unknown_successor_ids = $this->pending_schedule_action_ids( self::KEY );
 		self::assertCount( 1, $unknown_successor_ids, 'The unknown recurrence must birth one successor' );
 		$unknown_successor_id = $unknown_successor_ids[0];
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
 		$job    = new RecordingJob( self::REDECLARED_JOB );
-		$client->jobs()->register( $job->definition() );
+		$client->register( $job->definition() );
 		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), CatchUpPolicy::RunOnce );
-		$synced   = $client->schedules()->sync( array( $schedule ) );
+		$synced   = $client->sync( array( $schedule ) );
 		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertTrue( $synced->value );
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $unknown_successor_id ), 'Redeclaration must cancel the stale unknown-chain successor before creating its live chain' );
@@ -285,7 +285,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertGreaterThanOrEqual( $registry_next_due, $advanced_due, 'The retained occurrence must advance to the original live window or a later recurrence' );
 		self::assertSame( 0, ( $advanced_due - $forced_due ) % 300, 'The advanced due time must remain aligned to the persisted recurrence' );
 		self::assertCount( 1, $this->pending_schedule_action_ids( self::KEY ), 'The retained recurring action must create its live successor after delivery' );
-		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_jobs_engine/deliver' === $hook && self::REDECLARED_IDENTITY === ( $args[0] ?? null ) ), 'The retained schedule occurrence must dispatch its declared job' );
+		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $args ): bool => 'a8csp_bgje/internal/deliver' === $hook && self::REDECLARED_IDENTITY === ( $args[0] ?? null ) ), 'The retained schedule occurrence must dispatch its declared job' );
 		self::assertSame( array( array( 'generation' => 'redeclared' ) ), $job->calls );
 	}
 
@@ -301,9 +301,9 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	public function test_unknown_wp_cron_chain_converges_inline(): void {
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_jobs_engine/log',
+			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -323,8 +323,8 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 			\array_any(
 				$log_records,
 				static fn ( array $record ): bool => 'warning' === $record[0] && array(
-					'registration_key' => self::WP_CRON_KEY,
-					'converged'        => true,
+					'schedule_identity' => self::WP_CRON_KEY,
+					'converged'         => true,
 				) === $record[2]
 			),
 			'The public log hook must report authoritative inline convergence'
@@ -345,7 +345,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	public function test_complete_before_repeat_race_re_records_the_intent_on_the_successor_delivery(): void {
 		$intent_option = 'a8csp_bgje_cleanup_intent_' . \hash( 'sha256', self::KEY );
 		$this->expect_option( $intent_option );
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 
 		$cleanup_intents = $this->cleanup_intents();
 
@@ -389,7 +389,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		self::assertSame( 1, $completed_hook_calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $gap_status );
 		self::assertIsArray( $gap_intent_before_convergence );
-		self::assertSame( self::KEY, $gap_intent_before_convergence['key'] ?? null );
+		self::assertSame( self::KEY, $gap_intent_before_convergence['schedule_identity'] ?? null );
 		self::assertFalse( $gap_chain_present, 'The completed action is clear before repeat creates its successor' );
 		self::assertSame( $missing_intent, $gap_intent_after_convergence );
 		self::assertSame( array(), $gap_pending_ids );
@@ -428,7 +428,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$re_recorded_intent = \get_option( $intent_option, null );
 		self::assertIsArray( $re_recorded_intent );
 		self::assertCount( 2, $re_recorded_intent );
-		self::assertSame( self::KEY, $re_recorded_intent['key'] ?? null );
+		self::assertSame( self::KEY, $re_recorded_intent['schedule_identity'] ?? null );
 		self::assertIsInt( $re_recorded_intent['created_at'] ?? null );
 	}
 
@@ -514,7 +514,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 	private function registration_next_due( string $owner, string $name ): int {
 		$owner_rows = \get_option( ScheduleRegistry::option_name( $owner ), null );
 		self::assertIsArray( $owner_rows );
-		$registration = $owner_rows[ JobIdentity::compose( $owner, $name, true ) ] ?? null;
+		$registration = $owner_rows[ (string) Identity::compose( $owner, $name, true ) ] ?? null;
 		self::assertIsArray( $registration );
 		$next_due = $registration['next_due'] ?? null;
 		self::assertIsInt( $next_due );
@@ -538,7 +538,7 @@ final class UnknownScheduleCleanupTest extends IntegrationTestCase {
 		$option_name = ScheduleRegistry::option_name( $owner );
 		$owner_rows  = \get_option( $option_name, null );
 		self::assertIsArray( $owner_rows );
-		$identity     = JobIdentity::compose( $owner, $name, true );
+		$identity     = (string) Identity::compose( $owner, $name, true );
 		$registration = $owner_rows[ $identity ] ?? null;
 		self::assertIsArray( $registration );
 		$registration['next_due'] = $next_due;

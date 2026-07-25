@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
@@ -17,6 +17,8 @@ use PHPUnit\Framework\Assert;
  * defaults prove nothing about a real backend.
  */
 final class RecordingBackend implements BackendInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/**
 	 * Deliveries accepted by successful scheduling writes.
 	 *
@@ -49,6 +51,7 @@ final class RecordingBackend implements BackendInterface {
 	 *     schedule_single?: AbstractResult<true, SchedulingError>,
 	 *     enqueue_async?: AbstractResult<true, SchedulingError>,
 	 *     unschedule?: AbstractResult<true, SchedulingError>,
+	 *     unschedule_group?: AbstractResult<true, SchedulingError>,
 	 *     unschedule_hooks?: AbstractResult<int, SchedulingError>
 	 * }
 	 */
@@ -79,6 +82,10 @@ final class RecordingBackend implements BackendInterface {
 	 * @var list<bool>
 	 */
 	public array $readiness_results = array();
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * Records a recurring-schedule request and returns its scripted result.
@@ -225,6 +232,32 @@ final class RecordingBackend implements BackendInterface {
 	}
 
 	/**
+	 * Records group-wide clearance and removes every matching accepted delivery.
+	 *
+	 * @phpstan-return AbstractResult<true, SchedulingError>
+	 *
+	 * @param   string $group Group name.
+	 *
+	 * @return  AbstractResult
+	 */
+	#[\Override]
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule_group( string $group ): AbstractResult {
+		$this->calls[] = array(
+			'verb' => 'unschedule_group',
+			'args' => array( 'group' => $group ),
+		);
+		$this->run_before( 'unschedule_group' );
+
+		$result = $this->result_for( 'unschedule_group' );
+		if ( $result->is_success() ) {
+			$this->deliveries = \array_values( \array_filter( $this->deliveries, static fn ( array $delivery ): bool => $group !== $delivery['group'] ) );
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Records hook-wide clearance and removes every matching pending action.
 	 *
 	 * @phpstan-param list<non-empty-string> $hooks
@@ -259,7 +292,7 @@ final class RecordingBackend implements BackendInterface {
 	/**
 	 * Registers an interleaving before the next matching write result resolves.
 	 *
-	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_hooks' $verb
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_group'|'unschedule_hooks' $verb
 	 *
 	 * @param   string               $verb     Write verb.
 	 * @param   callable(self): void $callback Interleaving callback.
@@ -507,18 +540,19 @@ final class RecordingBackend implements BackendInterface {
 	public function assert_no_duplicate(): void {
 		foreach ( $this->deliveries as $index => $delivery ) {
 			foreach ( \array_slice( $this->deliveries, $index + 1 ) as $candidate ) {
-				Assert::assertFalse(
-					$delivery['hook'] === $candidate['hook'] && $delivery['args'] === $candidate['args'] && $delivery['group'] === $candidate['group'],
-					'The backend retained duplicate deliveries for one hook, argument list, and group.'
-				);
+				Assert::assertFalse( $delivery['hook'] === $candidate['hook'] && $delivery['args'] === $candidate['args'] && $delivery['group'] === $candidate['group'], 'The backend retained duplicate deliveries for one hook, argument list, and group.' );
 			}
 		}
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Returns the scripted result for a write verb.
 	 *
-	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule' $verb
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_group' $verb
 	 *
 	 * @param   string $verb Write verb.
 	 *
@@ -564,7 +598,7 @@ final class RecordingBackend implements BackendInterface {
 	/**
 	 * Runs and consumes the next matching interleaving callback.
 	 *
-	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_hooks' $verb
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_group'|'unschedule_hooks' $verb
 	 *
 	 * @param   string $verb Write verb.
 	 *
@@ -578,4 +612,6 @@ final class RecordingBackend implements BackendInterface {
 			$callback( $this );
 		}
 	}
+
+	// endregion.
 }

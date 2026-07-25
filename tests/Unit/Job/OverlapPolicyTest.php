@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( OverlapPolicy::class )]
 final class OverlapPolicyTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
@@ -30,6 +31,10 @@ final class OverlapPolicyTest extends TestCase {
 		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * The public backing values remain an exact order-independent set.
 	 *
@@ -41,4 +46,6 @@ final class OverlapPolicyTest extends TestCase {
 	public function test_backing_values_are_an_exact_set(): void {
 		self::assertEqualsCanonicalizing( array( 'allow', 'reject', 'replace' ), \array_map( static fn ( OverlapPolicy $policy ): string => $policy->value, OverlapPolicy::cases() ) );
 	}
+
+	// endregion.
 }

@@ -3,13 +3,14 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
@@ -18,9 +19,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use Psr\Clock\ClockInterface;
 
@@ -36,14 +36,14 @@ use Psr\Clock\ClockInterface;
  *
  * @phpstan-type ScheduleEntry array{
  *     owner: string,
- *     name: string,
+ *     identity: string,
  *     recurrence: int|null,
  *     next_due: int,
  *     last_fired: int|null,
  *     misfire_skips: int,
  *     overlap_skips: int,
  *     occurrence_visible: bool,
- *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}
+ *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
  *         |array{state: 'held', run_id: string, stale: bool}
  * }
  * @phpstan-type LiveRunEntry array{
@@ -76,16 +76,6 @@ final readonly class Inspection {
 	 */
 	private const int LIVE_RUN_LIMIT = 20;
 
-	/**
-	 * Maximum bytes accepted from a custom overlap-key resolver.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_OVERLAP_KEY_BYTES = 64;
-
 	// endregion
 
 	// region MAGIC METHODS
@@ -98,22 +88,24 @@ final readonly class Inspection {
 	 *
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
-	 * @param   ScheduleRegistry $schedules    Persisted and request-local schedule state.
-	 * @param   JobRegistry      $work         Registered Job instances.
-	 * @param   array            $handlers     Kind handlers keyed by their persisted keys.
-	 * @param   SchedulerFacade  $scheduler    Union scheduling reads.
-	 * @param   OverlapGuard     $guard        Persisted overlap-lock reads.
-	 * @param   StoreFactory     $stores       Name-bound run stores.
-	 * @param   OptionRows       $option_rows  Active-run option enumeration.
-	 * @param   LockWindows      $lock_windows Effective heartbeat staleness policy.
-	 * @param   ClockInterface   $clock        Inspection timestamp source.
+	 * @param   ScheduleRegistry $schedules        Persisted and request-local schedule state.
+	 * @param   JobRegistry      $registry         Registered Job instances.
+	 * @param   array            $handlers         Kind handlers keyed by their persisted keys.
+	 * @param   SchedulerFacade  $scheduler        Union scheduling reads.
+	 * @param   OverlapGuard     $guard            Persisted overlap-lock reads.
+	 * @param   OverlapIdentity  $overlap_identity Stable single-flight identity resolver.
+	 * @param   StoreFactory     $stores           Name-bound run stores.
+	 * @param   OptionRows       $option_rows      Active-run option enumeration.
+	 * @param   LockWindows      $lock_windows     Effective heartbeat staleness policy.
+	 * @param   ClockInterface   $clock            Inspection timestamp source.
 	 */
 	public function __construct(
 		private ScheduleRegistry $schedules,
-		private JobRegistry $work,
+		private JobRegistry $registry,
 		private array $handlers,
 		private SchedulerFacade $scheduler,
 		private OverlapGuard $guard,
+		private OverlapIdentity $overlap_identity,
 		private StoreFactory $stores,
 		private OptionRows $option_rows,
 		private LockWindows $lock_windows,
@@ -130,15 +122,15 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
-	 * @param   string $run_id   Retained run identifier.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string   $run_id   Retained run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
 	 *
 	 * @return  AbstractResult<RunStatus|null, EngineError>
 	 */
 	#[\NoDiscard( 'a run-status inspection result must be handled, not dropped' )]
-	public function run_status( string $identity, string $run_id ): AbstractResult {
+	public function run_status( Identity $identity, string $run_id ): AbstractResult {
 		if ( null === RunIdentity::parse( $run_id ) ) {
 			throw new \InvalidArgumentException( 'Run identifier is malformed; pass a run ID the engine returned.' );
 		}
@@ -155,7 +147,7 @@ final readonly class Inspection {
 
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
-			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . (string) $identity ), ) );
 		}
 
 		foreach ( \array_reverse( $entries ) as $entry ) {
@@ -173,15 +165,15 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run inspection result must be handled, not dropped' )]
-	public function last_completed_run_id( string $identity ): AbstractResult {
+	public function last_completed_run_id( Identity $identity ): AbstractResult {
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
-			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . $identity ), ) );
+			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . (string) $identity ), ) );
 		}
 
 		return new Success( RunHistory::newest_completed_run_id( $entries ) );
@@ -211,20 +203,20 @@ final readonly class Inspection {
 
 		$entries = array();
 		foreach ( $registrations as $registration_key => $registration ) {
-			$parts = JobIdentity::parts( $registration_key );
-			if ( null === $parts ) {
+			$schedule_identity = Identity::tryFrom( $registration_key );
+			if ( null === $schedule_identity ) {
 				continue;
 			}
 
-			$registration_owner = $parts[0];
+			$registration_owner = $schedule_identity->owner();
 			if ( null !== $owner && $owner !== $registration_owner ) {
 				continue;
 			}
 
-			$declaration = $this->schedules->declaration( $registration_key );
+			$declaration = $this->schedules->declaration( $schedule_identity );
 			$entries[]   = array(
 				'owner'              => $registration_owner,
-				'name'               => $registration_key,
+				'identity'           => $registration_key,
 				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval,
 				'next_due'           => $registration['next_due'],
 				'last_fired'         => $registration['last_fired'],
@@ -265,7 +257,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @phpstan-return array{
 	 *     observed_at: int,
@@ -279,7 +271,7 @@ final readonly class Inspection {
 	 *
 	 * @return  array
 	 */
-	public function runs( string $identity ): array {
+	public function runs( Identity $identity ): array {
 		$observed_at     = $this->clock->now()->getTimestamp();
 		$run_store       = $this->stores->run_store( $identity );
 		$prefix          = RunIdentity::option_name_prefix( $identity );
@@ -295,7 +287,7 @@ final readonly class Inspection {
 					return false;
 				}
 
-				return $identity === $run_identity['identity'];
+				return (string) $identity === (string) $run_identity['identity'];
 			}
 		);
 		if ( null === $page ) {
@@ -314,7 +306,7 @@ final readonly class Inspection {
 
 		foreach ( $page['names'] as $option_name ) {
 			$run_identity = RunIdentity::from_option_name( $option_name );
-			if ( null === $run_identity || $identity !== $run_identity['identity'] ) {
+			if ( null === $run_identity || (string) $identity !== (string) $run_identity['identity'] ) {
 				// Malformed names are counted where the page filter rejects them; accepted names cannot fail here.
 				continue;
 			}
@@ -383,12 +375,12 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{schedule: Schedule, job: string}|null $declaration
+	 * @phpstan-param array{schedule: Schedule, job: Identity}|null $declaration
 	 *
 	 * @param   array|null $declaration Current-request schedule declaration, when available.
 	 * @param   int        $observed_at Inspection timestamp.
 	 *
-	 * @return  array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}
+	 * @return  array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
 	 *          |array{state: 'held', run_id: string, stale: bool}
 	 */
 	private function schedule_lock( ?array $declaration, int $observed_at ): array {
@@ -397,35 +389,20 @@ final readonly class Inspection {
 		}
 
 		$schedule = $declaration['schedule'];
-		$options  = $this->work->options( $declaration['job'] );
-		if ( JobKindHandler::KIND !== $this->work->kind( $declaration['job'] ) || null === $this->work->execution( $declaration['job'] ) || null === $options ) {
+		$kind     = $this->registry->kind( $declaration['job'] );
+		$handler  = null === $kind ? null : ( $this->handlers[ $kind ] ?? null );
+		$options  = $handler?->options( $declaration['job'] );
+		if ( null === $handler || null === $handler->execution( $declaration['job'] ) || null === $options ) {
 			return array( 'state' => 'invalid' );
 		}
 		if ( OverlapPolicy::Allow === ( $options->overlap ?? OverlapPolicy::Reject ) ) {
 			return array( 'state' => 'overlap_allowed' );
 		}
 
-		$overlap_key = null === $options->overlap_key ? null : ( $options->overlap_key )( $schedule->args );
-		if ( null !== $overlap_key ) {
-			if ( '' === $overlap_key || self::MAX_OVERLAP_KEY_BYTES < \strlen( $overlap_key ) ) {
-				return array( 'state' => 'invalid' );
-			}
-
-			// Both sites share one lock namespace, so this formula remains byte-identical to the Dispatcher overlap-key lane.
-			$args_hash = \hash( 'sha256', 'dedup:' . $overlap_key );
-		} else {
-			// Both sites feed the same lock namespace, so this formula remains byte-identical to PortableArguments::hash();
-			// it stays inline to bypass PortableArguments::is_valid() and report the invalid state instead.
-			try {
-				$encoded_args = \wp_json_encode( $schedule->args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-			} catch ( \JsonException ) {
-				return array( 'state' => 'invalid' );
-			}
-			if ( ! \is_string( $encoded_args ) ) {
-				return array( 'state' => 'invalid' );
-			}
-
-			$args_hash = \hash( 'sha256', $encoded_args );
+		$args_hash = $this->overlap_identity->resolve( $kind, $declaration['job'], $options, $schedule->args );
+		if ( $args_hash instanceof Failure ) {
+			// The resolver reports a consumer overlap-key fault as ExecutionFailed and every other rejection as PayloadRejected, so that reason is what separates a broken resolver from an unusable declaration.
+			return array( 'state' => EngineErrorReason::ExecutionFailed === $args_hash->error->reason ? 'resolver_failed' : 'invalid' );
 		}
 		$inspected = $this->guard->inspect_persisted_lock( $declaration['job'], $args_hash );
 		if ( $inspected->is_failure() ) {
@@ -457,13 +434,13 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified background-work identity.
+	 * @param   Identity $identity Complete owner-qualified background-work identity.
 	 *
 	 * @phpstan-return list<HistoryEntry>|null
 	 *
 	 * @return  array|null Null when authoritative failed-run or history inspection fails.
 	 */
-	private function history( string $identity ): ?array {
+	private function history( Identity $identity ): ?array {
 		$history     = $this->stores->run_history( $identity );
 		$failed_ids  = array();
 		$entries     = array();

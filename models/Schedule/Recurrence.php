@@ -10,6 +10,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
  * An optional anchor is a canonical phase offset in UTC Unix seconds. Anchored occurrences retain
  * that phase modulo the interval without introducing site-local or calendar-time semantics.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -32,7 +34,7 @@ final readonly class Recurrence {
 
 	// endregion
 
-	// region FACTORIES
+	// region METHODS
 
 	/**
 	 * Creates a fixed elapsed-time recurrence.
@@ -80,22 +82,18 @@ final readonly class Recurrence {
 		return new self( $seconds, $anchor % $seconds );
 	}
 
-	// endregion
-
-	// region METHODS
-
 	/**
 	 * Returns the stable recurrence representation included in schedule fingerprints.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array{type: 'every', value: int, anchor?: int}
+	 * @return  array{kind: 'every', interval: int, anchor?: int}
 	 */
 	public function fingerprint_value(): array {
 		$value = array(
-			'type'  => 'every',
-			'value' => $this->interval,
+			'kind'     => 'every',
+			'interval' => $this->interval,
 		);
 		if ( null !== $this->anchor ) {
 			$value['anchor'] = $this->anchor;

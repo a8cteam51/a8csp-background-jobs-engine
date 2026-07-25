@@ -2,18 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use Psr\Clock\ClockInterface;
@@ -38,18 +37,20 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BackendInterface    $scheduler            Scheduling facade boundary.
+	 * @param   DeliveryScheduler   $delivery_scheduler   Lifecycle-delivery scheduler.
 	 * @param   ClockInterface      $clock                Timestamp source.
 	 * @param   RandomizerInterface $randomizer           Retry-delay randomness.
 	 * @param   LoggerInterface     $logger               Log event sink.
 	 * @param   RunTransitions      $terminal_transitions Fenced terminal-write coordinator.
+	 * @param   LifecycleEffects    $lifecycle_effects    Client lifecycle-hook dispatcher.
 	 */
 	public function __construct(
-		private BackendInterface $scheduler,
+		private DeliveryScheduler $delivery_scheduler,
 		private ClockInterface $clock,
 		private RandomizerInterface $randomizer,
 		private LoggerInterface $logger,
 		private RunTransitions $terminal_transitions,
+		private LifecycleEffects $lifecycle_effects,
 	) {}
 
 	// endregion
@@ -64,7 +65,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @param   KindHandlerInterface         $handler        Handler selected by the persisted kind.
 	 * @param   JobOptions                   $options        Registered policy declaration.
-	 * @param   string                       $identity       Complete owner-qualified work identity.
+	 * @param   Identity                     $identity       Complete owner-qualified work identity.
 	 * @param   string                       $run_id         Run identifier.
 	 * @param   RunState                     $state          Fenced running state.
 	 * @param   RunStore                     $run_store      Active-run store.
@@ -75,7 +76,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	public function handle_failure( KindHandlerInterface $handler, JobOptions $options, string $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, ?array $details = null ): void {
+	public function handle_failure( KindHandlerInterface $handler, JobOptions $options, Identity $identity, string $run_id, RunState $state, RunStore $run_store, \Throwable $throwable, RunFailureStage $terminal_stage, string $retry_stage, ?array $details = null ): void {
 		$reset_at = $this->clock->now()->getTimestamp();
 		if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
@@ -133,7 +134,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface         $handler       Handler selected by the persisted kind.
-	 * @param   string                       $identity      Complete owner-qualified work identity.
+	 * @param   Identity                     $identity      Complete owner-qualified work identity.
 	 * @param   string                       $run_id        Run identifier.
 	 * @param   RunState                     $state         Fenced running state.
 	 * @param   RunStore                     $run_store     Active-run store.
@@ -145,7 +146,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @return  void
 	 */
-	private function fail_terminally( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $details ): void {
+	private function fail_terminally( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts_used, RunFailureStage $stage, ErrorCode $code, ?array $details ): void {
 		$this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, $attempts_used, $stage, $code, $details );
 	}
 
@@ -155,12 +156,23 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string      $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   Identity    $identity    Complete owner-qualified job or chunked job identity.
 	 * @param   RetryPolicy $base_policy Registered or engine-default policy.
 	 *
 	 * @return  RetryPolicy
 	 */
-	private function retry_policy( string $identity, RetryPolicy $base_policy ): RetryPolicy {
+	private function retry_policy( Identity $identity, RetryPolicy $base_policy ): RetryPolicy {
+		/**
+		 * Filters the retry policy before work-identity-specific filtering.
+		 *
+		 * @since   1.0.0
+		 * @version 1.0.0
+		 *
+		 * @param   RetryPolicy $base_policy Registered or engine-default retry policy.
+		 * @param   string      $identity    Complete owner-qualified work identity.
+		 */
+		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy', $base_policy, (string) $identity );
+
 		/**
 		 * Filters the retry policy for one work identity.
 		 *
@@ -169,9 +181,9 @@ final readonly class FailureLifecycle {
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
-		 * @param   RetryPolicy $base_policy Registered or engine-default retry policy.
+		 * @param   RetryPolicy $filtered_policy Generic-filtered retry policy.
 		 */
-		$filtered_policy = \apply_filters( 'a8csp_jobs_engine/retry_policy/' . $identity, $base_policy );
+		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy/' . (string) $identity, $filtered_policy );
 		if ( $filtered_policy instanceof RetryPolicy ) {
 			return $filtered_policy;
 		}
@@ -179,7 +191,7 @@ final readonly class FailureLifecycle {
 		$this->logger->warning(
 			'Retry policy filter returned an invalid value; return a RetryPolicy instance to override the registered policy.',
 			array(
-				'name'          => $identity,
+				'identity'      => (string) $identity,
 				'returned_type' => \get_debug_type( $filtered_policy ),
 			)
 		);
@@ -194,7 +206,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler     Handler selected by the persisted kind.
-	 * @param   string               $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity    Complete owner-qualified job or chunked job identity.
 	 * @param   string               $run_id      Run identifier.
 	 * @param   RunState             $state       Exact persisted state before the retry transition.
 	 * @param   RunStore             $run_store   Active-run store.
@@ -203,10 +215,12 @@ final readonly class FailureLifecycle {
 	 * @param   EngineError          $error       Failed-attempt detail.
 	 * @param   string               $retry_stage Pending-action stage for another attempt.
 	 *
+	 * @throws  \LogicException When the claimed delivery has no durable pending-action descriptor.
+	 *
 	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ErrorCode}|null Exact failed state and
 	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
-	private function reschedule_retry( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, string $retry_stage ): ?array {
+	private function reschedule_retry( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, string $retry_stage ): ?array {
 		$kind = $handler->key();
 		try {
 			$delay = $this->randomizer->int( 0, $policy->delay_ceiling_for_attempt( $attempt ) );
@@ -214,7 +228,7 @@ final readonly class FailureLifecycle {
 			if ( $delay > \PHP_INT_MAX - $now ) {
 				return array(
 					'state' => $state,
-					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $kind, $identity ) ),
+					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $kind, (string) $identity ) ),
 					'stage' => RunFailureStage::scheduling(),
 					'code'  => ErrorCode::BackendRejected,
 				);
@@ -233,8 +247,10 @@ final readonly class FailureLifecycle {
 			return null;
 		}
 
+		$priority = $state->pending->priority ?? throw new \LogicException( 'Claimed retry delivery requires a durable pending-action descriptor.' );
 		try {
-			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( PendingAction::single( $retry_stage, $fire_at, 10 ) );
+			$pending     = PendingAction::single( $retry_stage, $fire_at, $priority );
+			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
@@ -247,12 +263,12 @@ final readonly class FailureLifecycle {
 		try {
 			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 		} catch ( \Throwable $throwable ) {
-			$context_name = $kind . '_name';
 			$this->logger->warning(
 				'Retry state could not be persisted; the reconciliation sweep retains the run until storage recovers.',
 				array(
-					$context_name     => $identity,
+					'identity'        => (string) $identity,
 					'run_id'          => $run_id,
+					'kind'            => $kind,
 					'exception_class' => \get_debug_type( $throwable ),
 				)
 			);
@@ -265,7 +281,7 @@ final readonly class FailureLifecycle {
 		$state = $replacement;
 
 		try {
-			$this->fire_retry_scheduled_hooks( $identity, $run_id, $state->start_args, $attempt, $delay );
+			$this->lifecycle_effects->fire_retry_scheduled( $identity, $run_id, $state->start_args, $attempt, $delay );
 		} catch ( \Throwable $throwable ) {
 			return array(
 				'state' => $state,
@@ -280,20 +296,20 @@ final readonly class FailureLifecycle {
 		}
 
 		try {
-			$scheduled = $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, $fire_at, array( $identity, $run_id, $state->action_sequence ), $identity . '|' . $run_id, 10 );
+			$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 			if ( $scheduled->is_failure() ) {
 				return array(
 					'state' => $state,
 					'error' => EngineError::scheduling( $kind, $identity, 'retry', $scheduled->error ),
 					'stage' => RunFailureStage::scheduling(),
-					'code'  => EngineError::api_code_for_scheduling( $scheduled->error ),
+					'code'  => $scheduled->error->reason->api_code(),
 				);
 			}
 
 			$this->logger->warning(
 				'Run attempt failed and was scheduled for retry; correct recurring failures before the retry policy is exhausted.',
 				array(
-					'name'         => $identity,
+					'identity'     => (string) $identity,
 					'run_id'       => $run_id,
 					'attempt'      => $attempt,
 					'max_attempts' => $policy->max_attempts,
@@ -310,57 +326,6 @@ final readonly class FailureLifecycle {
 				'stage' => RunFailureStage::scheduling(),
 				'code'  => ErrorCode::BackendUnavailable,
 			);
-		}
-	}
-
-	/**
-	 * Fires the retry-scheduled hooks after the retry state persists.
-	 *
-	 * The identity-specific hook precedes its generic companion and the retry action scheduling write.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 * @param   int                     $attempt    One-indexed number of the failed attempt.
-	 * @param   int                     $delay      Delay before the next attempt in seconds.
-	 *
-	 * @return  void
-	 */
-	private function fire_retry_scheduled_hooks( string $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
-		$public_run_id = RunId::from( $run_id );
-
-		try {
-			/**
-			 * Fires after retry state is persisted for one failed work attempt.
-			 *
-			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   RunId                   $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-			 * @param   int                     $attempt    One-indexed number of the failed attempt.
-			 * @param   int                     $delay      Delay before the next attempt in seconds.
-			 */
-			\do_action( 'a8csp_jobs_engine/retry_scheduled/' . $identity, $public_run_id, $start_args, $attempt, $delay );
-		} finally {
-			/**
-			 * Fires after the identity-specific retry-scheduled hook.
-			 *
-			 * @since   1.0.0
-			 * @version 1.0.0
-			 *
-			 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
-			 * @param   RunId                   $run_id     Run identifier.
-			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-			 * @param   int                     $attempt    One-indexed number of the failed attempt.
-			 * @param   int                     $delay      Delay before the next attempt in seconds.
-			 */
-			\do_action( 'a8csp_jobs_engine/retry_scheduled', $identity, $public_run_id, $start_args, $attempt, $delay );
 		}
 	}
 

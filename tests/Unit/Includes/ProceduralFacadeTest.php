@@ -1,0 +1,447 @@
+<?php declare( strict_types=1 );
+
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Includes;
+
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use PHPUnit\Framework\Attributes\CoversFunction;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Exercises the procedural facade through the production engine graph.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ */
+#[CoversFunction( 'a8csp_bgje_register_job' )]
+#[CoversFunction( 'a8csp_bgje_dispatch_job' )]
+#[CoversFunction( 'a8csp_bgje_sync_schedules' )]
+#[CoversFunction( 'a8csp_bgje_dispatch_schedule' )]
+#[CoversFunction( 'a8csp_bgje_inspect_run' )]
+#[CoversFunction( 'a8csp_bgje_last_completed_run' )]
+#[CoversFunction( 'a8csp_bgje_retry_failed_run' )]
+#[CoversFunction( 'a8csp_bgje_cancel_run' )]
+final class ProceduralFacadeTest extends TestCase {
+	// region FIELDS AND CONSTANTS.
+
+	private const int NOW      = 1_700_000_000;
+	private const string OWNER = 'procedural-facade';
+
+	private EngineRig $rig;
+
+	// endregion.
+
+	// region LIFECYCLE.
+
+	/**
+	 * Loads the public functions, deterministic engine seams, and WordPress error stand-in.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	public static function setUpBeforeClass(): void {
+		EngineRig::bootstrap();
+		require_once \dirname( __DIR__ ) . '/wp-cron-stubs.php';
+	}
+
+	/**
+	 * Publishes one isolated production graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->rig = EngineRig::set_up( self::NOW );
+	}
+
+	/**
+	 * Clears request-local engine and WordPress state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		try {
+			$this->rig->tear_down();
+		} finally {
+			parent::tearDown();
+		}
+	}
+
+	// endregion.
+
+	// region TESTS.
+
+	/**
+	 * Registration aliases preserve the public success and error result shapes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registration_aliases_delegate_to_the_bound_engine(): void {
+		$job         = self::job( 'job' );
+		$chunked_job = self::chunked_job( 'chunked-job' );
+
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $job ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $chunked_job ) );
+		self::assert_wp_error( \a8csp_bgje_register_job( self::OWNER, $job ), 'already_registered' );
+	}
+
+	/**
+	 * Admission aliases preserve arguments and return running run projections.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_admission_aliases_delegate_every_argument(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'job' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::chunked_job( 'chunked-job' ) ) );
+		$job_args   = array( 'site_id' => 7 );
+		$start_args = array( 'scope' => 'all' );
+
+		$job_run     = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
+		$chunked_run = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'chunked-job', $start_args, priority: 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
+
+		self::assertNotSame( '', (string) $job_run->id );
+		self::assertNotSame( '', (string) $chunked_run->id );
+		self::assertSame( self::NOW + 15, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['timestamp'] ?? null );
+		self::assertSame( 23, self::latest_backend_call( $this->rig, 'schedule_single' )['args']['priority'] ?? null );
+		self::assertSame( 31, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
+		self::assertEquals( array( array( $job_run->id, $job_args ) ), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::OWNER . ':job' ) );
+
+		$this->rig->run_due();
+		self::assertEquals( array( array( $chunked_run->id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::OWNER . ':chunked-job' ) );
+	}
+
+	/**
+	 * One procedural dispatch verb executes registered plain and chunked jobs through their resolved kinds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_executes_registered_plain_and_chunked_jobs_through_the_procedural_facade(): void {
+		$job                = new RecordingJob( 'plain-job' );
+		$chunked_job        = new RecordingChunkedJob( 'chunked-job' );
+		$chunked_job->queue = array( array( 'page' => 1 ) );
+
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $job->definition() ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $chunked_job->definition() ) );
+		$job_args     = array( 'site_id' => 7 );
+		$chunked_args = array( 'scope' => 'all' );
+
+		self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'plain-job', $job_args ), self::OWNER . ':plain-job', RunStatus::Running );
+		self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'chunked-job', $chunked_args ), self::OWNER . ':chunked-job', RunStatus::Running );
+		for ( $delivery = 0; 5 > $delivery; ++$delivery ) {
+			$this->rig->run_due();
+		}
+
+		self::assertSame( array( $job_args ), $job->calls );
+		self::assertSame( array( $chunked_args ), $chunked_job->generate_calls );
+		self::assertSame( array( array( 'page' => 1 ) ), \array_column( $chunked_job->process_calls, 'chunk_args' ) );
+	}
+
+	/**
+	 * Schedule aliases preserve declarations and return the dispatched run projection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_aliases_delegate_to_the_bound_engine(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'scheduled-job' ) ) );
+		$schedules = array(
+			array(
+				'name'     => 'nightly',
+				'every'    => 300,
+				'job'      => 'scheduled-job',
+				'args'     => array( 'scope' => 'all' ),
+				'catch_up' => 'skip',
+				'priority' => 41,
+			),
+		);
+
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, $schedules ) );
+		$run = self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
+
+		self::assertNotSame( '', (string) $run->id );
+		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );
+		self::assertSame( 41, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+		self::assertSame( 41, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
+	}
+
+	/**
+	 * An omitted procedural priority remains unspecified while both backend boundaries use today's default.
+	 *
+	 * @return  void
+	 */
+	public function test_omitted_schedule_priority_defers_to_the_engine_default(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'scheduled-job' ) ) );
+		$schedule = array(
+			'name'  => 'nightly',
+			'every' => 300,
+			'job'   => 'scheduled-job',
+		);
+
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, array( $schedule ) ) );
+		self::assertSame( 10, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+		self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
+		self::assertSame( 10, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
+
+		$this->rig->backend()->calls = array();
+		$schedule['priority']        = 10;
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, array( $schedule ) ) );
+		$writes = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'unschedule', 'schedule_recurring' ), true ) ) );
+		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $writes, 'verb' ) );
+		self::assertSame( 10, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+	}
+
+	/**
+	 * Malformed schedule declarations remain inside the invalid-argument boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $schedules Invalid schedule specifications.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_schedules' )]
+	public function test_sync_rejects_malformed_entries( array $schedules ): void {
+		self::assert_wp_error( \a8csp_bgje_sync_schedules( self::OWNER, $schedules ), 'invalid_argument' );
+	}
+
+	/**
+	 * Inspection aliases preserve null and retained run projections.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspection_aliases_delegate_to_the_bound_engine(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'inspect' ) ) );
+		self::assertNull( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ) );
+
+		$admitted = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Running );
+		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Running, $admitted->id );
+		$this->rig->run_due();
+		self::assert_run( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', (string) $admitted->id ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
+		self::assert_run( \a8csp_bgje_last_completed_run( self::OWNER, 'inspect' ), self::OWNER . ':inspect', RunStatus::Completed, $admitted->id );
+	}
+
+	/**
+	 * Run aliases retain the invalid-argument boundary for malformed wire identifiers.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_aliases_reject_malformed_identifiers(): void {
+		self::assert_wp_error( \a8csp_bgje_inspect_run( self::OWNER, 'inspect', 'malformed' ), 'invalid_argument' );
+		self::assert_wp_error( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', 'malformed' ), 'invalid_argument' );
+		self::assert_wp_error( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', 'malformed' ), 'invalid_argument' );
+	}
+
+	/**
+	 * Mutation aliases preserve replacement and terminal run projections.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_mutation_aliases_delegate_to_the_bound_engine(): void {
+		$failed_job = self::job(
+			'failed',
+			static function ( array $start_args, RunContextInterface $context ): void {
+				throw new NonRetryableException( 'Retain this failed run.' );
+			}
+		);
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, $failed_job ) );
+		$failed = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'failed', array( 'site_id' => 7 ) ), self::OWNER . ':failed', RunStatus::Running );
+		$this->rig->run_due();
+
+		++$this->rig->clock()->timestamp;
+		$retry = self::assert_run( \a8csp_bgje_retry_failed_run( self::OWNER, 'failed', (string) $failed->id ), self::OWNER . ':failed', RunStatus::Running );
+		self::assertNotSame( (string) $failed->id, (string) $retry->id );
+
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'cancel' ) ) );
+		$pending   = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
+		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', (string) $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
+		self::assertSame( (string) $pending->id, (string) $cancelled->id );
+	}
+
+	// endregion.
+
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies representative malformed schedule shapes and fields.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{schedules: array<array-key, mixed>}>
+	 */
+	public static function invalid_schedules(): array {
+		return array(
+			'non-array entry'  => array( 'schedules' => array( 'nightly' ) ),
+			'unknown key'      => array(
+				'schedules' => array(
+					array(
+						'name'      => 'nightly',
+						'every'     => 300,
+						'job'       => 'job',
+						'prioritry' => 5,
+					),
+				),
+			),
+			'missing name'     => array(
+				'schedules' => array(
+					array(
+						'every' => 300,
+						'job'   => 'job',
+					),
+				),
+			),
+			'invalid catch up' => array(
+				'schedules' => array(
+					array(
+						'name'     => 'nightly',
+						'every'    => 300,
+						'job'      => 'job',
+						'catch_up' => 'replay_all',
+					),
+				),
+			),
+		);
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Returns a minimal consumer-authored one-off job.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param (\Closure(array<array-key, mixed>, RunContextInterface): void)|null $handler
+	 *
+	 * @param   string        $name    Stable owner-local job name.
+	 * @param   \Closure|null $handler Optional invocation behavior.
+	 *
+	 * @return  JobDefinition
+	 */
+	private static function job( string $name, ?\Closure $handler = null ): JobDefinition {
+		return JobDefinition::closure( $name, $handler ?? static function ( array $start_args, RunContextInterface $context ): void {} );
+	}
+
+	/**
+	 * Returns a minimal consumer-authored chunked job.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Stable owner-local chunked job name.
+	 *
+	 * @return  JobDefinition
+	 */
+	private static function chunked_job( string $name ): JobDefinition {
+		return ( new RecordingChunkedJob( $name ) )->definition();
+	}
+
+	/**
+	 * Asserts one public run projection and returns it for identity chaining.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed      $value    Expected run value.
+	 * @param   string     $identity Expected owner-qualified identity.
+	 * @param   RunStatus  $status   Expected public lifecycle state.
+	 * @param   RunId|null $id       Expected run identifier, or null to accept the generated identifier.
+	 *
+	 * @return  Run
+	 */
+	private static function assert_run( mixed $value, string $identity, RunStatus $status, ?RunId $id = null ): Run {
+		self::assertInstanceOf( Run::class, $value );
+		self::assertSame( $identity, $value->identity );
+		self::assertSame( $status, $value->status );
+		self::assertNotSame( '', (string) $value->id );
+		if ( null !== $id ) {
+			self::assertSame( (string) $id, (string) $value->id );
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Asserts one WordPress error result.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed  $value Expected error value.
+	 * @param   string $code  Expected stable error code.
+	 *
+	 * @return  \WP_Error
+	 */
+	private static function assert_wp_error( mixed $value, string $code ): \WP_Error {
+		self::assertInstanceOf( \WP_Error::class, $value );
+		self::assertSame( $code, $value->get_error_code(), $value->get_error_message() );
+
+		return $value;
+	}
+
+	/**
+	 * Returns the latest scheduler call for one write verb.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   EngineRig $rig  Active production graph rig.
+	 * @param   string    $verb Scheduler write verb.
+	 *
+	 * @return  array{verb: string, args: array<string, mixed>}
+	 */
+	private static function latest_backend_call( EngineRig $rig, string $verb ): array {
+		foreach ( \array_reverse( $rig->backend()->calls ) as $call ) {
+			if ( $verb === $call['verb'] ) {
+				return $call;
+			}
+		}
+
+		self::fail( 'Expected a backend call for verb ' . $verb . '.' );
+	}
+
+	// endregion.
+}

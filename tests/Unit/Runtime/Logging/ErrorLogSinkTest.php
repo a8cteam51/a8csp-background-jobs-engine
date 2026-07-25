@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Logging;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ThrowableContextNormalizer;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -17,6 +17,8 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( PortableArguments::class )]
 #[UsesClass( ThrowableContextNormalizer::class )]
 final class ErrorLogSinkTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording action stub.
 	 *
@@ -47,6 +49,10 @@ final class ErrorLogSinkTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * Registration adds exactly one callable for all three channel arguments.
 	 *
@@ -58,7 +64,7 @@ final class ErrorLogSinkTest extends TestCase {
 		self::assertSame(
 			array(
 				array(
-					'hook_name'     => 'a8csp_jobs_engine/log',
+					'hook_name'     => 'a8csp_bgje/log',
 					'callback'      => array( ErrorLogSink::class, 'log' ),
 					'priority'      => 10,
 					'accepted_args' => 3,
@@ -89,8 +95,8 @@ final class ErrorLogSinkTest extends TestCase {
 	public function test_filter_false_disables_the_default_error_log_handler(): void {
 		$filter_values = $GLOBALS['a8csp_bgje_test_filter_values'] ?? array();
 		self::assertIsArray( $filter_values );
-		$filter_values['a8csp_jobs_engine/log_to_error_log'] = false;
-		$GLOBALS['a8csp_bgje_test_filter_values']            = $filter_values;
+		$filter_values['a8csp_bgje/log_to_error_log'] = false;
+		$GLOBALS['a8csp_bgje_test_filter_values']     = $filter_values;
 
 		ErrorLogSink::register();
 
@@ -278,6 +284,10 @@ final class ErrorLogSinkTest extends TestCase {
 		$this->assert_error_log_line( 'a8csp-background-jobs-engine.debug: Recursive context {"value":"array"}', $output );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Captures PHP's configured error-log destination and restores it after the assertion input runs.
 	 *
@@ -289,7 +299,7 @@ final class ErrorLogSinkTest extends TestCase {
 	 * @return  string
 	 */
 	private function capture_error_log( string $level, string $message, array $context, bool $through_registered_handler = false ): string {
-		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-jobs-engine-log-' );
+		$temp_file = \tempnam( \sys_get_temp_dir(), 'a8csp-bgje-log-' );
 		if ( false === $temp_file ) {
 			self::fail( 'Unable to create the error-log capture file; make the system temporary directory writable.' );
 		}
@@ -317,7 +327,7 @@ final class ErrorLogSinkTest extends TestCase {
 						self::fail( 'Action registrations must be arrays.' );
 					}
 
-					if ( 'a8csp_jobs_engine/log' === ( $registration['hook_name'] ?? null ) ) {
+					if ( 'a8csp_bgje/log' === ( $registration['hook_name'] ?? null ) ) {
 						$callback = $registration['callback'] ?? null;
 						if ( ! \is_callable( $callback ) ) {
 							self::fail( 'The default log handler must be callable.' );
@@ -356,4 +366,6 @@ final class ErrorLogSinkTest extends TestCase {
 	private function assert_error_log_line( string $expected, string $actual ): void {
 		self::assertMatchesRegularExpression( '/^(?:\[[^\r\n]+\] )?' . \preg_quote( $expected, '/' ) . '\r?\n$/D', $actual );
 	}
+
+	// endregion.
 }

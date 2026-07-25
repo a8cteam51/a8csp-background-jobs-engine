@@ -18,6 +18,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Recurrence::class )]
 #[UsesClass( CatchUpPolicy::class )]
 final class ScheduleTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Loads the WordPress JSON seam before schedule classes are first autoloaded.
@@ -33,6 +34,10 @@ final class ScheduleTest extends TestCase {
 		require_once \dirname( __DIR__ ) . '/Runtime/Backends/wp-json-encode-stub.php';
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * Constructor defaults and supplied values remain directly observable.
 	 *
@@ -47,7 +52,7 @@ final class ScheduleTest extends TestCase {
 		self::assertSame( 'refresh-index', $schedule->job );
 		self::assertSame( array( 'site_id' => 7 ), $schedule->args );
 		self::assertSame( CatchUpPolicy::RunOnce, $schedule->catch_up );
-		self::assertSame( 10, $schedule->priority );
+		self::assertNull( $schedule->priority );
 	}
 
 	/**
@@ -131,6 +136,10 @@ final class ScheduleTest extends TestCase {
 		new Schedule( \str_repeat( 'a', 65 ), Recurrence::every( 300 ), 'refresh-index' );
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Supplies names outside the complete stable-name grammar.
 	 *
@@ -145,6 +154,10 @@ final class ScheduleTest extends TestCase {
 			'non-ASCII' => array( 'name' => 'réindex' ),
 		);
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Target job names obey the same stable grammar at definition construction.
@@ -246,6 +259,21 @@ final class ScheduleTest extends TestCase {
 	}
 
 	/**
+	 * An unspecified priority remains distinct from an explicit engine-default priority.
+	 *
+	 * @return  void
+	 */
+	public function test_unspecified_priority_fingerprints_as_json_null(): void {
+		$unspecified = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
+		$explicit    = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', priority: 10 );
+		$encoded     = '{"name":"nightly","recurrence":{"kind":"every","interval":300},"job":"refresh-index","args":[],"catch_up":"run_once","priority":null}';
+
+		self::assertNull( $unspecified->priority );
+		self::assertSame( \hash( 'sha256', $encoded ), $unspecified->fingerprint() );
+		self::assertNotSame( $explicit->fingerprint(), $unspecified->fingerprint() );
+	}
+
+	/**
 	 * Every behavioral field contributes to the stable fingerprint.
 	 *
 	 * @return  void
@@ -279,6 +307,10 @@ final class ScheduleTest extends TestCase {
 		self::assertNotSame( $integer->fingerprint(), $float->fingerprint() );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Creates the baseline definition used by fingerprint assertions.
 	 *
@@ -287,4 +319,6 @@ final class ScheduleTest extends TestCase {
 	private function schedule(): Schedule {
 		return new Schedule( name: 'nightly', recurrence: Recurrence::every( 300 ), job: 'refresh-index', args: array( 'site_id' => 7 ), );
 	}
+
+	// endregion.
 }

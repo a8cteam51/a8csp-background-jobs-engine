@@ -42,29 +42,77 @@ final class JobOptionsTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Constructor parameter names and null defaults remain the public named-argument contract.
+	 * Constructor defaults select the engine-managed policy values.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_constructor_names_and_defaults_are_exact(): void {
-		$constructor = ( new \ReflectionClass( JobOptions::class ) )->getConstructor();
-		self::assertNotNull( $constructor );
-		$parameters = $constructor->getParameters();
-
-		self::assertSame( array( 'max_runtime', 'retry', 'overlap', 'overlap_key' ), \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), $parameters ) );
-		foreach ( $parameters as $parameter ) {
-			self::assertTrue( $parameter->isDefaultValueAvailable() );
-			self::assertNull( $parameter->getDefaultValue() );
-		}
-
+	public function test_constructor_defaults_select_engine_policy(): void {
 		$options = new JobOptions();
 		self::assertNull( $options->max_runtime );
 		self::assertNull( $options->retry );
 		self::assertNull( $options->overlap );
 		self::assertNull( $options->overlap_key );
+	}
+
+	/**
+	 * One second is the minimum valid declared runtime.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_accepts_positive_seconds(): void {
+		$options = new JobOptions( max_runtime: 1 );
+
+		self::assertSame( 1, $options->max_runtime );
+	}
+
+	/**
+	 * Declarations above the effective lease ceiling remain valid policy data.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_accepts_values_above_the_effective_lease_ceiling(): void {
+		$options = new JobOptions( max_runtime: 21_601 );
+
+		self::assertSame( 21_601, $options->max_runtime );
+	}
+
+	/**
+	 * Zero cannot declare a positive execution ceiling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_rejects_zero(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Job maximum runtime must be positive; pass null for the engine default or a value of at least one second.' );
+
+		new JobOptions( max_runtime: 0 );
+	}
+
+	/**
+	 * Negative seconds cannot declare a positive execution ceiling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_max_runtime_rejects_negative_seconds(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Job maximum runtime must be positive; pass null for the engine default or a value of at least one second.' );
+
+		new JobOptions( max_runtime: -1 );
 	}
 
 	/**

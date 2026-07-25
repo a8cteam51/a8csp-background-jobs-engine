@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -25,7 +25,7 @@ use Psr\Log\LoggerInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class MaintenanceJob implements JobExecution {
+final class MaintenanceJob implements JobExecutionInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -122,22 +122,18 @@ final class MaintenanceJob implements JobExecution {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $args    Unused schedule arguments.
-	 * @param   RunContext              $context Maintenance run context.
+	 * @param   array<array-key, mixed> $start_args Unused schedule arguments.
+	 * @param   RunContextInterface     $context    Maintenance run context.
 	 *
 	 * @throws  \LogicException When the site changes or WordPress cannot serialize cursor state.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function handle( array $args, RunContext $context ): void {
+	public function handle( array $start_args, RunContextInterface $context ): void {
 		$selected_cursor = $this->rows->read( self::SWEEP_CURSOR_OPTION );
 		if ( $selected_cursor->is_failure() ) {
-			$this->log_sweep_abort(
-				'Maintenance sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.',
-				'cursor-read',
-				$selected_cursor->error
-			);
+			$this->log_sweep_abort( 'Maintenance sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.', 'cursor-read', $selected_cursor->error );
 
 			return;
 		}
@@ -172,11 +168,7 @@ final class MaintenanceJob implements JobExecution {
 		while ( $run_count < self::RUN_SWEEP_BUDGET ) {
 			$run_page = $this->rows->option_names_after( RunIdentity::option_prefix(), $runs_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $run_page->is_failure() ) {
-				$this->log_sweep_abort(
-					'Maintenance run sweep aborted while enumerating run rows; repair WordPress option reads and retry the sweep.',
-					'run-enumeration',
-					$run_page->error
-				);
+				$this->log_sweep_abort( 'Maintenance run sweep aborted while enumerating run rows; repair WordPress option reads and retry the sweep.', 'run-enumeration', $run_page->error );
 
 				return;
 			}
@@ -191,11 +183,11 @@ final class MaintenanceJob implements JobExecution {
 				try {
 					$reconciled = $this->reconciliation->reconcile_run( $identity['identity'], $identity['run_id'], self::TERMINAL_GRACE );
 				} catch ( \Throwable $throwable ) {
-					$deferred_lock_names[ $identity['identity'] ] = true;
+					$deferred_lock_names[ (string) $identity['identity'] ] = true;
 					$this->logger->warning(
 						'Run reconciliation item could not converge during maintenance; retry on the next sweep.',
 						array(
-							'name'      => $identity['identity'],
+							'identity'  => (string) $identity['identity'],
 							'run_id'    => $identity['run_id'],
 							'exception' => $throwable,
 						)
@@ -209,8 +201,8 @@ final class MaintenanceJob implements JobExecution {
 						'run-reconciliation',
 						$reconciled->error,
 						array(
-							'name'   => $identity['identity'],
-							'run_id' => $identity['run_id'],
+							'identity' => (string) $identity['identity'],
+							'run_id'   => $identity['run_id'],
 						)
 					);
 
@@ -219,7 +211,7 @@ final class MaintenanceJob implements JobExecution {
 
 				$transferred_hash = $reconciled->value;
 				if ( null !== $transferred_hash ) {
-					$protected_transfers[ $identity['identity'] . '|' . $transferred_hash ] = true;
+					$protected_transfers[ (string) $identity['identity'] . '|' . $transferred_hash ] = true;
 				}
 			}
 
@@ -234,11 +226,7 @@ final class MaintenanceJob implements JobExecution {
 		while ( $lock_count < self::LOCK_SWEEP_BUDGET ) {
 			$lock_page = $this->rows->option_names_after( OverlapGuard::OPTION_PREFIX, $locks_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $lock_page->is_failure() ) {
-				$this->log_sweep_abort(
-					'Maintenance lock sweep aborted while enumerating overlap-lock rows; repair WordPress option reads and retry the sweep.',
-					'lock-enumeration',
-					$lock_page->error
-				);
+				$this->log_sweep_abort( 'Maintenance lock sweep aborted while enumerating overlap-lock rows; repair WordPress option reads and retry the sweep.', 'lock-enumeration', $lock_page->error );
 
 				return;
 			}
@@ -250,14 +238,14 @@ final class MaintenanceJob implements JobExecution {
 					continue;
 				}
 
-				$identity  = $lock_identity['name'];
+				$identity  = $lock_identity['identity'];
 				$args_hash = $lock_identity['args_hash'];
-				if ( isset( $deferred_lock_names[ $identity ] ) ) {
+				if ( isset( $deferred_lock_names[ (string) $identity ] ) ) {
 					// An unclassified run can still depend on every same-name lock as authoritative fence evidence.
 					continue;
 				}
 
-				if ( isset( $protected_transfers[ $identity . '|' . $args_hash ] ) ) {
+				if ( isset( $protected_transfers[ (string) $identity . '|' . $args_hash ] ) ) {
 					// A fresh displaced run still needs the foreign lock as authoritative takeover evidence.
 					continue;
 				}
@@ -266,13 +254,15 @@ final class MaintenanceJob implements JobExecution {
 				try {
 					$sweep  = $this->guard->sweep_persisted_lock( $identity, $args_hash );
 					$run_id = $sweep->run_id;
-					if ( $sweep->malformed_reclaimed ) {
+					if ( $sweep->malformed_preserved ) {
 						$this->logger->warning(
-							'Reclaimed schema-invalid execution-overlap lock during maintenance sweep.',
+							'Preserved schema-invalid execution-overlap lock during maintenance sweep; inspect and repair it with WP-CLI.',
 							array(
-								'name'      => $identity,
-								'args_hash' => $args_hash,
-								'run_id'    => null,
+								'identity'   => (string) $identity,
+								'args_hash'  => $args_hash,
+								'malformed'  => true,
+								'raw_length' => $sweep->raw_length,
+								'raw_sha256' => $sweep->raw_sha256,
 							)
 						);
 					}
@@ -286,7 +276,7 @@ final class MaintenanceJob implements JobExecution {
 					$this->logger->warning(
 						'Execution-overlap lock reconciliation item could not converge during maintenance; retry on the next sweep.',
 						array(
-							'name'      => $identity,
+							'identity'  => (string) $identity,
 							'args_hash' => $args_hash,
 							'run_id'    => $run_id,
 							'exception' => $throwable,
@@ -311,11 +301,7 @@ final class MaintenanceJob implements JobExecution {
 		while ( $registration_count < self::RUN_SWEEP_BUDGET ) {
 			$registration_page = $this->rows->option_names_after( ScheduleRegistry::OPTION_PREFIX, $registrations_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $registration_page->is_failure() ) {
-				$this->log_sweep_abort(
-					'Maintenance schedule-registry sweep aborted while enumerating registration rows; repair WordPress option reads and retry the sweep.',
-					'registry-enumeration',
-					$registration_page->error
-				);
+				$this->log_sweep_abort( 'Maintenance schedule-registry sweep aborted while enumerating registration rows; repair WordPress option reads and retry the sweep.', 'registry-enumeration', $registration_page->error );
 
 				return;
 			}
@@ -329,12 +315,7 @@ final class MaintenanceJob implements JobExecution {
 
 				$selected = $this->rows->read( $option_name );
 				if ( $selected->is_failure() ) {
-					$this->log_sweep_abort(
-						'Maintenance schedule-registry sweep aborted while reading a registration row; repair WordPress option reads and retry the sweep.',
-						'registry-read',
-						$selected->error,
-						array( 'option_name' => $option_name )
-					);
+					$this->log_sweep_abort( 'Maintenance schedule-registry sweep aborted while reading a registration row; repair WordPress option reads and retry the sweep.', 'registry-read', $selected->error, array( 'option_name' => $option_name ) );
 
 					return;
 				}
@@ -353,10 +334,7 @@ final class MaintenanceJob implements JobExecution {
 
 				$delete = $this->rows->delete_if_value_matches( $option_name, $raw );
 				if ( RowDeleteOutcome::Deleted === $delete ) {
-					$this->logger->warning(
-						'Deleted corrupt schedule registry option during maintenance sweep.',
-						array( 'option_name' => $option_name )
-					);
+					$this->logger->warning( 'Deleted corrupt schedule registry option during maintenance sweep.', array( 'option_name' => $option_name ) );
 					continue;
 				}
 				if ( RowDeleteOutcome::DeleteFailed === $delete ) {

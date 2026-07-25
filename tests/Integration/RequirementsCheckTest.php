@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 
 /**
  * Verifies the requirements gate degrades gracefully on a below-floor runtime.
@@ -13,7 +13,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class RequirementsCheckTest extends IntegrationTestCase {
+final class RequirementsCheckTest extends AbstractIntegrationTestCase {
 	// region TESTS.
 
 	/**

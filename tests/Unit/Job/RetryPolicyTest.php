@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RetryPolicy::class )]
 final class RetryPolicyTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Loads WordPress constants before the retry policy is first instantiated.
@@ -31,6 +32,10 @@ final class RetryPolicyTest extends TestCase {
 
 		require_once \dirname( __DIR__ ) . '/wp-time-constant-stubs.php';
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * The constructor defaults match the engine's retry contract.
@@ -273,6 +278,10 @@ final class RetryPolicyTest extends TestCase {
 		self::assertSame( \PHP_INT_MAX, $policy->delay_ceiling_for_attempt( \PHP_INT_MAX - 1 ) );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
 	 * Expects an invalid-argument failure with one exact message.
 	 *
@@ -287,4 +296,6 @@ final class RetryPolicyTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageMatches( '/^' . \preg_quote( $message, '/' ) . '$/D' );
 	}
+
+	// endregion.
 }

@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
@@ -17,25 +17,26 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
  * @version 1.0.0
  */
 #[Group( 'multisite' )]
-final class MultisiteTest extends IntegrationTestCase {
+final class MultisiteTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** One sentinel from every option family documented for operators. */
 	private const array DOCUMENTED_OPTION_TEMPLATES = array(
 		'a8csp_bgje_schedule_registrations_multisite-%d',
-		'a8csp_bgje_run_multisite-%d:job_run-1',
+		'a8csp_bgje_active_run_multisite-%d:job_run-1',
 		'a8csp_bgje_failed_runs_multisite-%d:job',
 		'a8csp_bgje_latest_run_multisite-%d:job',
-		'a8csp_bgje_history_multisite-%d:job',
+		'a8csp_bgje_run_history_multisite-%d:job',
 		'a8csp_bgje_overlap_lock_multisite-%d:job_args-hash',
 		'a8csp_bgje_occurrence_lease_multisite-%d-registration-hash',
 		'a8csp_bgje_cleanup_intent_multisite-%d-registration-hash',
+		'a8csp_bgje_cleanup_sweep_cursor',
 	);
 
-	/** Internal lifecycle hooks that may retain scheduled work. */
-	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_jobs_engine/deliver',
-		'a8csp_jobs_engine/schedule_due',
+	/** Internal delivery hooks that may retain scheduled work. */
+	private const array DELIVERY_HOOKS = array(
+		'a8csp_bgje/internal/deliver',
+		'a8csp_bgje/internal/schedule_due',
 	);
 
 	/**
@@ -146,7 +147,7 @@ final class MultisiteTest extends IntegrationTestCase {
 					self::assertTrue( \update_option( $option, 'sentinel', false ), "Site {$site_id} must persist the '{$option}' uninstall sentinel" );
 				}
 
-				foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+				foreach ( self::DELIVERY_HOOKS as $hook ) {
 					self::assertInstanceOf( Success::class, $wp_cron->schedule_single( $hook, $scheduled_at, $schedule_args ) );
 					self::assertInstanceOf( Success::class, $action_scheduler->schedule_single( $hook, $scheduled_at, $schedule_args, $schedule_group ) );
 					self::assertSame( $scheduled_at, $wp_cron->get_next_scheduled( $hook, $schedule_args ), "Site {$site_id} must persist the '{$hook}' WP-Cron uninstall sentinel" );
@@ -171,7 +172,7 @@ final class MultisiteTest extends IntegrationTestCase {
 				$schedule_group   = \sprintf( 'multisite-uninstall|site-%d', $site_id );
 				$wp_cron          = new WPCronBackend();
 				$action_scheduler = new ActionSchedulerBackend();
-				foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+				foreach ( self::DELIVERY_HOOKS as $hook ) {
 					self::assertFalse( $wp_cron->is_scheduled( $hook, $schedule_args ), "Network uninstall must remove every '{$hook}' WP-Cron event from site {$site_id}" );
 					self::assertFalse( $action_scheduler->is_scheduled( $hook, $schedule_args, $schedule_group ), "Network uninstall must remove every pending '{$hook}' Action Scheduler action from site {$site_id}" );
 				}
@@ -200,12 +201,12 @@ final class MultisiteTest extends IntegrationTestCase {
 
 		\switch_to_blog( $other_site_id );
 		try {
-			$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( 'multisite-contract' );
-			$client->jobs()->register( ( new RecordingJob( 'site-bound-job' ) )->definition() );
+			$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( 'multisite-contract' );
+			$client->register( ( new RecordingJob( 'site-bound-job' ) )->definition() );
 
 			$this->expectException( \LogicException::class );
 
-			$result = $client->jobs()->enqueue( 'site-bound-job' );
+			$result = $client->dispatch( 'site-bound-job' );
 			self::fail( \sprintf( 'Expected storage access to fail after switch_to_blog(); got %s.', \get_debug_type( $result ) ) );
 		} finally {
 			\restore_current_blog();
@@ -243,7 +244,7 @@ final class MultisiteTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private static function clear_scheduled_work(): void {
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			\wp_unschedule_hook( $hook );
 			if ( \function_exists( 'as_unschedule_all_actions' ) ) {
 				\as_unschedule_all_actions( $hook );

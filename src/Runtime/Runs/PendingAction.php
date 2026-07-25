@@ -7,7 +7,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInter
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Durable successor delivery for one running lifecycle stage.
+ * Durable lifecycle-delivery descriptor for one running stage.
+ *
+ * A failed terminal state may retain the descriptor as manual-retry priority provenance.
  *
  * @internal
  *

@@ -23,9 +23,9 @@ every surviving component is initialized before any hook can fire.
   composition-root accessor `a8csp_bgje_plugin(): Plugin`, and a deterministic loader for the
   procedural facade files; handle and manager construction is lazy, while capability readiness
   starts at `init`.
-- `includes/` groups the procedural facade by concept: `job.php` provides registration and
-  enqueueing, `chunked-job.php` provides chunked-job starts, `schedule.php` provides schedule
-  synchronization and dispatch, and `run.php` provides run inspection, retry, and cancellation.
+- `includes/` groups the procedural facade by concept: `job.php` provides background-work
+  registration and kind-agnostic dispatch, `schedule.php` provides schedule synchronization and
+  dispatch, and `run.php` provides run inspection, retry, and cancellation.
 - `portals/` holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services; `src/` root holds
   the bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
   `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the
@@ -33,28 +33,35 @@ every surviving component is initialized before any hook can fire.
   edit when wiring a top-level component into `COMPONENTS`. The main bootstrap registers the
   request-local `Plugin` instance's `boot()` method; components boot in registration order behind a
   non-retryable latch.
-- `models/` holds the public representation under `Error\`, `Job\`, `Run\`, and `Schedule\`.
+- `models/` holds the representation layer under `Error\`, `Job\`, `Run\`, and `Schedule\`.
   `Job\JobDefinition` composes a name, `Job\JobKind`, execution object, and `Job\JobOptions`;
-  standard and chunked behavior implement `Job\JobExecution` and the standalone
-  `Job\Chunked\ChunkedJobExecution` role. `Schedule\Schedule`, `Schedule\Recurrence`, and
+  standard and chunked behavior implement `Job\JobExecutionInterface` and the standalone
+  `Job\Chunked\ChunkedJobExecutionInterface`. Execution callbacks depend on
+  `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`; `Job\RunContext` is the final
+  standard implementation. `Schedule\Schedule`, `Schedule\Recurrence`, and
   `Schedule\CatchUpPolicy` form the typed schedule declaration consumed by the public `Schedules`
   service.
-- The root services, `models/`, `a8csp_bgje()`, and the verb-noun procedural aliases form the SemVer-bound
-  consumer surface: the owner-scoped `Engine` handle and capability managers plus job definitions,
-  execution roles, policy, contexts, and input and returned value types.
-  `src/Internal/` contains the internal capability facades and contracts; the rest of the engine graph
-  is likewise `@internal`.
+- The root services, the README's public type index, `a8csp_bgje()`, and the verb-noun procedural
+  aliases form the SemVer-bound consumer surface: the owner-scoped `Engine` handle and capability
+  managers plus job definitions, execution roles, policy, contexts, and input and returned value
+  types.
+  `src/Boundary/` contains engine-owned values that cross layer boundaries; the rest of the engine
+  graph is likewise `@internal`.
 - `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the
-  request-local object graph; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the
-  root collaborators. `JobRegistry.php` retains each definition's kind key, name, execution object,
-  and options. The single kind-handler registry resolves a definition's kind; the resolved
+  request-local object graph, while `OwnerOperations.php` exposes its owner-bound verb surface to
+  the public portals; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the root
+  collaborators. `JobRegistry.php` retains each definition's kind key, name, execution object, and
+  options. The single kind-handler registry resolves a definition's kind; the resolved
   internal handler validates its execution role and owns invocation. Only engine-installed kinds are
   accepted, and the handler SPI is internal. `Backends/` (Action Scheduler preferred, WP-Cron
-  fallback), `Occurrences/`
+  fallback), `Schedules/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
-  `Locks/`, `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
+  `Locks/` (CAS-fenced execution-overlap storage, the single overlap-identity authority admission,
+  retry, and inspection all resolve through, persisted-lane inspection, and explicit malformed-lane
+  repair), `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
   on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.
-- `src/CLI/` registers the `wp background-jobs` command surface, gated on WP-CLI.
+- `src/CLI/` registers the `wp a8csp-bgje` command surface, including the operator-only
+  malformed-lock repair boundary, gated on WP-CLI.
 - `languages/` contains the POT generated from the plugin's strings; the release workflow
   regenerates it so archives always ship current strings.
 - `uninstall.php` carries the persisted footprint inline — the `a8csp_bgje_` prefix sweep is the
@@ -67,12 +74,34 @@ every surviving component is initialized before any hook can fire.
   release automation; the release pipeline builds, smoke-tests the artifact through the shared
   reusable workflow, and publishes prereleases off the stable update channel.
 
+## Naming conventions
+
+Carry a unit suffix only where a value could plausibly be mistaken for a timestamp:
+`$delay_seconds` keeps its suffix, while `Recurrence::every()`, `max_runtime`, `base_delay`, and
+`max_delay` remain unsuffixed.
+
+Every interface ends in `Interface`; every abstract class begins with `Abstract`.
+
 ## Delivery and degradation
 
 The engine writes through the first ready backend in preference order, with Action Scheduler
 before WP-Cron; WP-Cron provides the documented best-effort fallback. Delivery is at-least-once
 for terminal lifecycle hooks. Overlap locks, occurrence leases, and run generations use
 option-row compare-and-swap fences for concurrency control.
+
+Maintenance reconciles stale parseable locks against retained run state. It preserves
+schema-invalid lock values and logs only their length and truncated SHA-256 correlation so repair
+remains an explicit operator action. The WP-CLI repair path first claims `Superseded` through exact
+compare-and-swap for every matching `Running` row and only then exact-deletes the selected malformed
+lock generation; a lost run or lock fence leaves the lock in place.
+
+Consumer hooks use the `a8csp_bgje/` namespace. Hooks whose operation has an identity publish
+generic and identity-specific variants: actions fire the specific hook before the generic hook,
+while filters apply the generic hook before the specific hook so the specific return is
+authoritative. This includes the failed lifecycle action and the retry-policy, queue,
+lock-staleness, misfire-grace, and continuation-delay filters. Hooks without an identity remain
+global. Action Scheduler and WP-Cron deliveries use the private
+`a8csp_bgje/internal/deliver` and `a8csp_bgje/internal/schedule_due` hooks.
 
 ## Multisite
 

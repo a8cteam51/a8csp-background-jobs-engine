@@ -2,37 +2,41 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use PHPUnit\Framework\Assert;
 
@@ -45,13 +49,17 @@ use PHPUnit\Framework\Assert;
 final class EngineRig {
 	// region FIELDS AND CONSTANTS.
 
-	/** @var array<string, Client> */
-	private array $clients = array();
+	/** @var array<string, OwnerOperations> */
+	private array $operations = array();
 
 	/** @var non-empty-list<RecordingBackend> */
 	private array $backends;
 
 	private MaintenanceJob $maintenance_job;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/**
 	 * Retains deterministic boundaries used by one production graph.
@@ -166,20 +174,20 @@ final class EngineRig {
 	// region GETTERS.
 
 	/**
-	 * Returns an owner-bound client from the published component graph.
+	 * Returns owner-bound operations from the published component graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Client owner.
+	 * @param   string $owner Owner identifier.
 	 *
-	 * @return  Client
+	 * @return  OwnerOperations
 	 */
-	public function client( string $owner ): Client {
-		$client                  = Component::client( $owner );
-		$this->clients[ $owner ] = $client;
+	public function operations( string $owner ): OwnerOperations {
+		$operations                 = Component::operations( $owner );
+		$this->operations[ $owner ] = $operations;
 
-		return $client;
+		return $operations;
 	}
 
 	/**
@@ -283,7 +291,7 @@ final class EngineRig {
 	}
 
 	/**
-	 * Asserts the latest completed event and retained Runs-facade pointer agree.
+	 * Asserts the latest completed event and retained completion pointer agree.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -293,17 +301,19 @@ final class EngineRig {
 	public function assert_completed(): void {
 		$args                  = $this->latest_event( 'completed' );
 		[ $identity, $run_id ] = $this->identity_and_run_id( $args );
-		$parts                 = JobIdentity::parts( $identity );
-		Assert::assertNotNull( $parts );
-		$client = $this->clients[ $parts[0] ] ?? null;
-		Assert::assertInstanceOf( Client::class, $client );
-		$result = $client->runs()->last_completed_run_id( $parts[1] );
+
+		$work_identity = Identity::tryFrom( $identity );
+		Assert::assertNotNull( $work_identity );
+		$operations = $this->operations[ $work_identity->owner() ] ?? null;
+		Assert::assertInstanceOf( OwnerOperations::class, $operations );
+		$result = $operations->last_completed_run( $work_identity->name() );
 		Assert::assertInstanceOf( Success::class, $result );
-		Assert::assertSame( (string) $run_id, $result->value );
+		Assert::assertInstanceOf( Run::class, $result->value );
+		Assert::assertSame( (string) $run_id, (string) $result->value->id );
 	}
 
 	/**
-	 * Asserts the latest failed event exposes the requested client failure code.
+	 * Asserts the latest failed event exposes the requested boundary failure code.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -352,7 +362,7 @@ final class EngineRig {
 	 * @version 1.0.0
 	 */
 	public function assert_no_retry(): void {
-		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_jobs_engine/retry_scheduled' ) );
+		Assert::assertSame( array(), $this->hooks->fired( 'a8csp_bgje/retry_scheduled' ) );
 	}
 
 	/**
@@ -378,7 +388,7 @@ final class EngineRig {
 	 * @return  void
 	 */
 	public function run_maintenance(): void {
-		$this->maintenance_job->handle( array(), new RunContext( 'rig-maintenance-run', array() ) );
+		$this->maintenance_job->handle( array(), new RunContext( RunId::from( '00000000000000000000-0000000000000000002' ), array() ) );
 	}
 
 	// endregion.
@@ -396,39 +406,39 @@ final class EngineRig {
 	private function build_graph(): void {
 		// This graph mirrors Component's two phases because the component has no injection seam; wiring changes require lockstep updates here.
 		$rows                 = new OptionRows( $this->wpdb );
-		$work                 = new JobRegistry();
+		$registry             = new JobRegistry();
 		$schedules            = new ScheduleRegistry( $rows, $this->logger );
 		$guard                = new OverlapGuard( $this->clock, $this->logger, $rows );
+		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $this->clock, $rows, $this->logger );
 		$lock_windows         = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
+		$lock_repair          = new LockRepair( $rows, $guard, $stores, $lock_windows, $terminal_transitions );
 		$scheduler            = new SchedulerFacade( $this->backends );
-		$failure_lifecycle    = new FailureLifecycle( $scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions );
-		$job_handler          = new JobKindHandler( $work, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler  = new ChunkedJobKindHandler( $work, $scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$delivery_scheduler   = new DeliveryScheduler( $scheduler, $this->clock );
+		$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions, $terminal_effects );
+		$job_handler          = new JobKindHandler( $registry, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $delivery_scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $scheduler );
+		$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions );
+		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
 
 		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$dispatcher->register(
-			JobIdentity::compose( JobIdentity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
-			JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job )
-		);
-		$schedule_api         = new Schedules( $schedules, $scheduler, $this->clock, $occurrence_delivery );
+		$dispatcher->register( Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job ) );
+		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $work, $handlers, $scheduler, $guard, $stores, $rows, $lock_windows, $this->clock );
-		$engine               = new EngineFacade( $schedule_api, $dispatcher, $inspection );
+		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $this->clock );
+		$engine               = new EngineFacade( $schedule_api, $dispatcher );
 
-		self::publish_component( $engine, $inspection, $scheduler, $work, $schedule_api, $dispatcher );
+		self::publish_component( $engine, $inspection, $lock_repair, $scheduler, $registry, $schedule_api, $dispatcher );
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
@@ -509,20 +519,22 @@ final class EngineRig {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   EngineFacade    $engine     Engine facade.
-	 * @param   Inspection      $inspection Inspection facade.
-	 * @param   SchedulerFacade $scheduler  Scheduler facade.
-	 * @param   JobRegistry     $work       Registered job and chunked job instances.
-	 * @param   Schedules       $schedules  Schedule engine operations.
-	 * @param   Dispatcher      $dispatcher Background-work admission coordinator.
+	 * @param   EngineFacade       $engine      Engine facade.
+	 * @param   Inspection         $inspection  Inspection facade.
+	 * @param   LockRepair         $lock_repair Explicit malformed-lock repair.
+	 * @param   SchedulerFacade    $scheduler   Scheduler facade.
+	 * @param   JobRegistry        $registry    Registered job and chunked job instances.
+	 * @param   ScheduleOperations $schedules   Schedule engine operations.
+	 * @param   Dispatcher         $dispatcher  Background-work admission coordinator.
 	 *
 	 * @return  void
 	 */
-	private static function publish_component( EngineFacade $engine, Inspection $inspection, SchedulerFacade $scheduler, JobRegistry $work, Schedules $schedules, Dispatcher $dispatcher ): void {
+	private static function publish_component( EngineFacade $engine, Inspection $inspection, LockRepair $lock_repair, SchedulerFacade $scheduler, JobRegistry $registry, ScheduleOperations $schedules, Dispatcher $dispatcher ): void {
 		self::set_component_property( 'engine', $engine );
 		self::set_component_property( 'inspection', $inspection );
+		self::set_component_property( 'lock_repair', $lock_repair );
 		self::set_component_property( 'scheduler', $scheduler );
-		self::set_component_property( 'work', $work );
+		self::set_component_property( 'registry', $registry );
 		self::set_component_property( 'schedules', $schedules );
 		self::set_component_property( 'dispatcher', $dispatcher );
 		self::set_component_property( 'booting', false );
@@ -539,8 +551,9 @@ final class EngineRig {
 	private static function reset_component(): void {
 		self::set_component_property( 'engine', null );
 		self::set_component_property( 'inspection', null );
+		self::set_component_property( 'lock_repair', null );
 		self::set_component_property( 'scheduler', null );
-		self::set_component_property( 'work', null );
+		self::set_component_property( 'registry', null );
 		self::set_component_property( 'schedules', null );
 		self::set_component_property( 'dispatcher', null );
 		self::set_component_property( 'booting', false );
@@ -613,7 +626,7 @@ final class EngineRig {
 	 * @return list<mixed>
 	 */
 	private function latest_event( string $event ): array {
-		$latest = \array_last( $this->hooks->fired( 'a8csp_jobs_engine/' . $event ) );
+		$latest = \array_last( $this->hooks->fired( 'a8csp_bgje/' . $event ) );
 		Assert::assertNotNull( $latest, \sprintf( 'Expected the generic %s lifecycle hook to fire.', $event ) );
 
 		return $latest;

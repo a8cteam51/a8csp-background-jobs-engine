@@ -179,8 +179,8 @@ if ( ! \function_exists( 'set_transient' ) ) {
 	/**
 	 * Stores a transient value and records its expiration.
 	 *
-	 * @param   string $transient Transient name.
-	 * @param   mixed  $value     Transient value.
+	 * @param   string $transient  Transient name.
+	 * @param   mixed  $value      Transient value.
 	 * @param   int    $expiration Expiration in seconds.
 	 *
 	 * @return  true

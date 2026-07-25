@@ -15,6 +15,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversFunction( 'a8csp_bgje_output_requirements_error' )]
 final class RequirementsNoticeTest extends TestCase {
+	// region TESTS.
+
 	/**
 	 * The shared admin-notice hook covers both site and network admin headers.
 	 *
@@ -37,4 +39,6 @@ final class RequirementsNoticeTest extends TestCase {
 
 		self::assertSame( array( 'all_admin_notices' ), $GLOBALS['a8csp_bgje_test_hooks'] );
 	}
+
+	// endregion.
 }

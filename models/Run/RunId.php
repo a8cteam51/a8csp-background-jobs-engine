@@ -7,6 +7,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
 /**
  * Immutable public wrapper for one canonical run identifier.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */
@@ -63,7 +65,7 @@ final readonly class RunId implements \Stringable {
 
 	// endregion
 
-	// region FACTORIES
+	// region METHODS
 
 	/**
 	 * Wraps one canonical run identifier.
@@ -73,19 +75,20 @@ final readonly class RunId implements \Stringable {
 	 *
 	 * @param   string $value Run identifier candidate.
 	 *
-	 * @throws  \InvalidArgumentException When the candidate is not canonical.
+	 * @throws  \ValueError When the candidate is not canonical.
 	 *
 	 * @return  self
 	 */
 	public static function from( string $value ): self {
-		$id = self::try_from( $value );
+		$id = self::tryFrom( $value );
 		if ( null === $id ) {
-			throw new \InvalidArgumentException( 'Run identifier must match the canonical shape "%020d-%019d": 20 decimal timestamp digits, a dash, and 19 decimal random digits.' );
+			throw new \ValueError( 'Run identifier must match the canonical shape "%020d-%019d": 20 decimal timestamp digits, a dash, and 19 decimal random digits.' );
 		}
 
 		return $id;
 	}
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Mirrors the backed-enum API.
 	/**
 	 * Wraps one canonical run identifier, or returns null for another shape.
 	 *
@@ -96,13 +99,14 @@ final readonly class RunId implements \Stringable {
 	 *
 	 * @return  self|null
 	 */
-	public static function try_from( string $value ): ?self {
+	public static function tryFrom( string $value ): ?self {
 		if ( self::LENGTH !== \strlen( $value ) || 1 !== \preg_match( self::PATTERN, $value ) ) {
 			return null;
 		}
 
 		return new self( $value );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// endregion
 }

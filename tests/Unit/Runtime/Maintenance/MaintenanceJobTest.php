@@ -2,19 +2,21 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Maintenance;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -61,9 +63,6 @@ final class MaintenanceJobTest extends TestCase {
 	private const string ARGS_HASH = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
 	private const int NOW          = 1_700_000_000;
 	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
-
-	/** @var array{string, string}|null */
-	private static ?array $cursor_fixture = null;
 
 	private string $cursor_option;
 	private string $cursor_raw;
@@ -132,7 +131,7 @@ final class MaintenanceJobTest extends TestCase {
 		[ $this->cursor_option, $this->cursor_raw ] = self::cursor_fixture();
 
 		$backend              = new RecordingBackend();
-		$work                 = new JobRegistry();
+		$registry             = new JobRegistry();
 		$rows                 = new OptionRows( $this->wpdb );
 		$guard                = new OverlapGuard( $clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$stores               = new StoreFactory( $clock, $rows, $this->logger );
@@ -140,17 +139,18 @@ final class MaintenanceJobTest extends TestCase {
 		$lock_windows         = new LockWindows( $clock, $this->logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $this->logger, $terminal_effects );
-		$failure_lifecycle    = new FailureLifecycle( $backend, $clock, $randomizer, $this->logger, $terminal_transitions );
-		$job_handler          = new JobKindHandler( $work, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler  = new ChunkedJobKindHandler( $work, $backend, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$delivery_scheduler   = new DeliveryScheduler( $backend, $clock );
+		$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $randomizer, $this->logger, $terminal_transitions, $terminal_effects );
+		$job_handler          = new JobKindHandler( $registry, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $delivery_scheduler, $this->logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $backend );
+		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows, $this->logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $this->logger );
 		$this->maintenance    = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$this->run_context    = new RunContext( self::RUN_ID, array() );
+		$this->run_context    = new RunContext( RunId::from( self::RUN_ID ), array() );
 	}
 
 	// endregion.
@@ -179,6 +179,10 @@ final class MaintenanceJobTest extends TestCase {
 
 		$this->maintenance->handle( array(), $this->run_context );
 
+		self::assertSame(
+			self::cursor_bytes( self::hostile_run_name( 499 ), self::lock_name( 499 ), self::registration_name( 499 ) ),
+			$this->wpdb->rows[ $this->cursor_option ] ?? null
+		);
 		self::assertCount( 1, $this->names_under( OverlapGuard::OPTION_PREFIX ) );
 		self::assertCount( 1, $this->names_under( ScheduleRegistry::OPTION_PREFIX ) );
 		self::assertSame( self::hostile_run_name( 499 ), $this->cursor_state()['runs'] );
@@ -508,7 +512,6 @@ final class MaintenanceJobTest extends TestCase {
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A failed authoritative page read cannot advance the exact durable cursor generation without risking skipped work.
-	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -539,7 +542,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * Reconciliation failure leaves the previously persisted cursor bytes unchanged.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale A failed run reconciliation cannot publish later progress over the exact production-authored cursor generation.
+	 * @pin-rationale A failed run reconciliation cannot publish later progress over the exact selected cursor generation.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -569,7 +572,7 @@ final class MaintenanceJobTest extends TestCase {
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
-		self::assertSame( 'sweep-tests:read-failure', $this->logger->records[0]['context']['name'] ?? null );
+		self::assertSame( 'sweep-tests:read-failure', $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
 		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
@@ -699,7 +702,7 @@ final class MaintenanceJobTest extends TestCase {
 	 */
 	private function put_case_colliding_run_names( int $count ): void {
 		for ( $index = 0; $index < $count; ++$index ) {
-			$this->wpdb->put( 'A8CSP_BGJE_RUN_!foreign-' . \sprintf( '%03d', $index ), 'foreign-prefix-row' );
+			$this->wpdb->put( 'A8CSP_BGJE_ACTIVE_RUN_!foreign-' . \sprintf( '%03d', $index ), 'foreign-prefix-row' );
 		}
 	}
 
@@ -732,14 +735,39 @@ final class MaintenanceJobTest extends TestCase {
 	}
 
 	/**
-	 * Returns one production-authored sweep cursor fixture.
+	 * Returns one independently serialized sweep cursor fixture.
+	 *
+	 * The test owns this schema so cursor preconditions do not execute MaintenanceJob::handle().
 	 *
 	 * @return array{0: string, 1: string}
 	 */
 	private static function cursor_fixture(): array {
-		self::$cursor_fixture ??= StoreFixtureBuilder::for_identity( 'sweep-tests:cursor-fixture' )->sweep_cursor();
+		return array(
+			'a8csp_bgje_maintenance_sweep',
+			self::cursor_bytes( RunStore::OPTION_PREFIX . '!fixture-499', null, null ),
+		);
+	}
 
-		return self::$cursor_fixture;
+	/**
+	 * Returns exact maintenance cursor bytes for the supplied phase positions.
+	 *
+	 * @param   string|null $runs          Active-run cursor.
+	 * @param   string|null $locks         Overlap-lock cursor.
+	 * @param   string|null $registrations Schedule-registration cursor.
+	 *
+	 * @return  string
+	 */
+	private static function cursor_bytes( ?string $runs, ?string $locks, ?string $registrations ): string {
+		$raw = \maybe_serialize(
+			array(
+				'runs'          => $runs,
+				'locks'         => $locks,
+				'registrations' => $registrations,
+			)
+		);
+		self::assertIsString( $raw );
+
+		return $raw;
 	}
 
 	/**

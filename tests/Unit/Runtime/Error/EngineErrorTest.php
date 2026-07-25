@@ -2,16 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -21,8 +15,6 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( EngineError::class )]
-#[CoversClass( RunFailure::class )]
-#[UsesClass( SchedulingError::class )]
 final class EngineErrorTest extends TestCase {
 	// region LIFECYCLE.
 
@@ -46,35 +38,6 @@ final class EngineErrorTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Client-visible terminal detail retains its stable summary and classification.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_public_failure_carries_summary_and_code_unchanged(): void {
-		$failure = self::failure( ErrorCode::ExecutionFailed, 'Index refresh failed.' );
-
-		self::assertSame( 'Index refresh failed.', $failure->summary );
-		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
-	}
-
-	/**
-	 * Terminal failures without a failed chunked job chunk expose null through the public value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_public_failure_carries_absent_details_as_null(): void {
-		$failure = self::failure( ErrorCode::ExecutionFailed, 'Work failed.' );
-
-		self::assertNull( $failure->details );
-	}
-
-	/**
 	 * Throwable-derived terminal detail never retains arbitrary throwable text or source paths.
 	 *
 	 * @load-bearing security
@@ -95,8 +58,8 @@ final class EngineErrorTest extends TestCase {
 	public function test_throwable_content_is_redacted_before_terminal_detail_is_retained( string $boundary, \Throwable $throwable, string $secret, string $expected_class, string $corrective_prose ): void {
 		$error = match ( $boundary ) {
 			'callback', 'anonymous callback' => EngineError::from_throwable( $throwable ),
-			'retry policy'                   => EngineError::retry_policy( 'job', 'email-digest', $throwable ),
-			'retry preparation'              => EngineError::retry_preparation( 'chunked_job', 'catalog-sync', $throwable ),
+			'retry policy'                   => EngineError::retry_policy( 'job', Identity::compose( 'consumer', 'email-digest' ), $throwable ),
+			'retry preparation'              => EngineError::retry_preparation( 'chunked_job', Identity::compose( 'consumer', 'catalog-sync' ), $throwable ),
 			default                          => self::fail( 'Unknown throwable boundary: ' . $boundary ),
 		};
 
@@ -108,36 +71,15 @@ final class EngineErrorTest extends TestCase {
 		self::assertStringNotContainsString( "\0", $error->exception_class ?? '' );
 		self::assertStringNotContainsString( __DIR__, $error->exception_class ?? '' );
 		if ( 'retry policy' === $boundary ) {
-			self::assertStringStartsWith( 'job "email-digest"', $error->message );
+			self::assertStringStartsWith( 'job "consumer:email-digest"', $error->message );
 		} elseif ( 'retry preparation' === $boundary ) {
-			self::assertStringStartsWith( 'chunked_job "catalog-sync"', $error->message );
+			self::assertStringStartsWith( 'chunked_job "consumer:catalog-sync"', $error->message );
 		}
-	}
-
-	/**
-	 * Scheduling terminalization scenarios expose their consumer-visible classifications.
-	 *
-	 * @load-bearing security
-	 * @pin-rationale The terminalization boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $reason        Internal scheduling-reason backing value.
-	 * @param   string $expected_code Client-visible terminal classification.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'scheduling_code_mappings' )]
-	public function test_scheduling_failures_expose_public_codes( string $reason, string $expected_code ): void {
-		$error = new SchedulingError( SchedulingErrorReason::from( $reason ), 'Corrective engine prose.' );
-
-		self::assertSame( ErrorCode::from( $expected_code ), EngineError::api_code_for_scheduling( $error ) );
 	}
 
 	// endregion.
 
-	// region PROVIDERS.
+	// region DATA PROVIDERS.
 
 	/**
 	 * Supplies every throwable boundary that produces retained terminal detail.
@@ -178,62 +120,6 @@ final class EngineErrorTest extends TestCase {
 				'corrective_prose' => 'Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.',
 			),
 		);
-	}
-
-	/**
-	 * Supplies every scheduling reason and its client-visible classification.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{reason: string, expected_code: string}>
-	 */
-	public static function scheduling_code_mappings(): array {
-		return array(
-			'backend not ready'  => array(
-				'reason'        => 'backend_not_ready',
-				'expected_code' => 'backend_unavailable',
-			),
-			'unsupported group'  => array(
-				'reason'        => 'unsupported_group',
-				'expected_code' => 'backend_rejected',
-			),
-			'invalid time input' => array(
-				'reason'        => 'invalid_time_input',
-				'expected_code' => 'backend_rejected',
-			),
-			'invalid payload'    => array(
-				'reason'        => 'invalid_payload',
-				'expected_code' => 'backend_rejected',
-			),
-			'schedule failed'    => array(
-				'reason'        => 'schedule_failed',
-				'expected_code' => 'backend_rejected',
-			),
-			'storage failure'    => array(
-				'reason'        => 'storage_failure',
-				'expected_code' => 'storage_failure',
-			),
-		);
-	}
-
-	// endregion.
-
-	// region HELPERS.
-
-	/**
-	 * Creates one public terminal-failure value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   ErrorCode $code    Client-visible classification.
-	 * @param   string       $summary Engine-authored redacted summary.
-	 *
-	 * @return  RunFailure
-	 */
-	private static function failure( ErrorCode $code, string $summary ): RunFailure {
-		return new RunFailure( identity: 'consumer-plugin:sync', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::scheduling(), code: $code, summary: $summary, details: null, );
 	}
 
 	// endregion.

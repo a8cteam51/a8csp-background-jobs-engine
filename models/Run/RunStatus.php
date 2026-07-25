@@ -7,8 +7,13 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
 /**
  * Public, stable projection of a run's lifecycle state.
  *
+ * The public ABI mirrors every case of the persisted vocabulary in `Runtime\Runs\RunStatus` because
+ * models do not import `src/` internals.
+ *
  * Minor releases may add cases; consumers treat an unknown value as a generic
  * non-terminal or terminal state, as appropriate.
+ *
+ * @api
  *
  * @since   1.0.0
  * @version 1.0.0

@@ -29,7 +29,7 @@ final readonly class ActionDeliveries {
 	 *
 	 * @var     string
 	 */
-	public const string DELIVER_HOOK = 'a8csp_jobs_engine/deliver';
+	public const string DELIVER_HOOK = 'a8csp_bgje/internal/deliver';
 
 	// endregion
 
@@ -60,6 +60,9 @@ final readonly class ActionDeliveries {
 	/**
 	 * Resolves and executes one persisted lifecycle action.
 	 *
+	 * Scheduler-wire identity bytes stay raw because they are untrusted and corrupt values still
+	 * drive exact stale-delivery lookup and diagnostics.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -70,13 +73,13 @@ final readonly class ActionDeliveries {
 	 * @return  void
 	 */
 	public function handle_deliver_action( string $identity, string $run_id, int $action_sequence ): void {
-		$run_store = $this->stores->run_store( $identity );
+		$run_store = $this->stores->raw_run_store( $identity );
 		$claimed   = $this->terminal_transitions->claim_delivery_ownership( $this->handlers, $identity, $run_id, $action_sequence, $run_store );
 		if ( null === $claimed ) {
 			return;
 		}
 
-		$claimed->handler->deliver( $identity, $run_id, $claimed->state, $run_store );
+		$claimed->handler->deliver( $claimed->identity, $run_id, $claimed->state, $this->stores->run_store( $claimed->identity ) );
 	}
 
 	/**

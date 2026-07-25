@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -48,11 +49,25 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  RunStore
 	 */
-	public function run_store( string $identity ): RunStore {
+	public function run_store( Identity $identity ): RunStore {
+		return new RunStore( (string) $identity, $this->clock, $this->rows );
+	}
+
+	/**
+	 * Constructs an active-run store bound to untrusted scheduler-wire identity bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Raw scheduler-wire identity bytes.
+	 *
+	 * @return  RunStore
+	 */
+	public function raw_run_store( string $identity ): RunStore {
 		return new RunStore( $identity, $this->clock, $this->rows );
 	}
 
@@ -62,11 +77,25 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  LatestRunPointer
 	 */
-	public function latest_run_pointer( string $identity ): LatestRunPointer {
+	public function latest_run_pointer( Identity $identity ): LatestRunPointer {
+		return new LatestRunPointer( (string) $identity, $this->rows );
+	}
+
+	/**
+	 * Constructs a latest-run pointer bound to untrusted scheduler-wire identity bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $identity Raw scheduler-wire identity bytes.
+	 *
+	 * @return  LatestRunPointer
+	 */
+	public function raw_latest_run_pointer( string $identity ): LatestRunPointer {
 		return new LatestRunPointer( $identity, $this->rows );
 	}
 
@@ -76,11 +105,11 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  RunHistory
 	 */
-	public function run_history( string $identity ): RunHistory {
+	public function run_history( Identity $identity ): RunHistory {
 		return new RunHistory( $identity, $this->rows, $this->logger );
 	}
 
@@ -90,11 +119,11 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  FailedRunStore
 	 */
-	public function failed_run_store( string $identity ): FailedRunStore {
+	public function failed_run_store( Identity $identity ): FailedRunStore {
 		return new FailedRunStore( $identity, $this->rows, $this->logger );
 	}
 

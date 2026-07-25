@@ -57,20 +57,20 @@ final class RunIdTest extends TestCase {
 		self::assertInstanceOf( \Stringable::class, $id );
 		self::assertSame( self::CANONICAL, (string) $id );
 
-		$sibling = RunId::try_from( self::CANONICAL );
+		$sibling = RunId::tryFrom( self::CANONICAL );
 		self::assertInstanceOf( RunId::class, $sibling );
 		self::assertSame( self::CANONICAL, (string) $sibling );
 	}
 
 	/**
-	 * Malformed candidates are rejected: null from try_from(), an exception from from().
+	 * Non-throwing construction returns null for malformed candidates.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_malformed_candidates_are_rejected(): void {
+	public function test_try_from_returns_null_for_malformed_candidates(): void {
 		$malformed = array(
 			'',
 			'run-7',
@@ -83,10 +83,20 @@ final class RunIdTest extends TestCase {
 		);
 
 		foreach ( $malformed as $candidate ) {
-			self::assertNull( RunId::try_from( $candidate ), '"' . $candidate . '" must not wrap.' );
+			self::assertNull( RunId::tryFrom( $candidate ), '"' . $candidate . '" must not wrap.' );
 		}
+	}
 
-		$this->expectException( \InvalidArgumentException::class );
+	/**
+	 * Throwing construction reports malformed candidates with the enum-compatible error type.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_from_throws_value_error_for_a_malformed_candidate(): void {
+		$this->expectException( \ValueError::class );
 		RunId::from( 'run-7' );
 	}
 
@@ -110,7 +120,7 @@ final class RunIdTest extends TestCase {
 
 		foreach ( array( 0, 1_721_664_000, \PHP_INT_MAX ) as $timestamp ) {
 			$minted = RunIdentity::generate( $timestamp, $randomizer );
-			$id     = RunId::try_from( $minted );
+			$id     = RunId::tryFrom( $minted );
 
 			self::assertInstanceOf( RunId::class, $id, $minted . ' must wrap.' );
 			self::assertSame( $minted, (string) $id );

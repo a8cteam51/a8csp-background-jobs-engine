@@ -59,6 +59,7 @@ final class JobKindTest extends TestCase {
 	 */
 	public function test_from_wraps_a_grammar_valid_kind(): void {
 		self::assertSame( 'vendor.future_kind', JobKind::from( 'vendor.future_kind' )->value );
+		self::assertSame( 'vendor.future_kind', JobKind::tryFrom( 'vendor.future_kind' )?->value );
 	}
 
 	/**
@@ -73,9 +74,24 @@ final class JobKindTest extends TestCase {
 	 */
 	#[DataProvider( 'malformed_kind_keys' )]
 	public function test_from_rejects_a_malformed_kind( string $value ): void {
-		$this->expectException( \InvalidArgumentException::class );
+		$this->expectException( \ValueError::class );
 
 		JobKind::from( $value );
+	}
+
+	/**
+	 * Non-throwing construction returns null for malformed kind keys.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $value Malformed kind key.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'malformed_kind_keys' )]
+	public function test_try_from_returns_null_for_a_malformed_kind( string $value ): void {
+		self::assertNull( JobKind::tryFrom( $value ) );
 	}
 
 	/**

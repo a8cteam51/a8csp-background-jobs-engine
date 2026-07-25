@@ -2,17 +2,20 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -82,12 +85,12 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity        $identity Complete owner-qualified job or chunked job identity.
 	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
 	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
 	public function __construct(
-		private string $identity,
+		private Identity $identity,
 		private OptionRows $rows,
 		private LoggerInterface $logger,
 	) {}
@@ -103,8 +106,10 @@ final readonly class FailedRunStore {
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $run_id     Run identifier.
+	 * @param   string                  $kind       Persisted run kind.
 	 * @param   int                     $failed_at  Failure timestamp.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 * @param   int                     $priority   Admitted scheduler priority.
 	 * @param   int                     $attempts   Attempts consumed before failure.
 	 * @param   EngineError             $error      Persisted failure detail.
 	 * @param   RunFailure              $failure    Client terminal-failure value.
@@ -115,7 +120,7 @@ final readonly class FailedRunStore {
 	 * @return  bool True when the failed-run entry is already present or confirmed persisted.
 	 */
 	#[\NoDiscard( 'a failed-run persistence outcome must be handled, not dropped' )]
-	public function record( string $run_id, int $failed_at, array $start_args, int $attempts, EngineError $error, RunFailure $failure ): bool {
+	public function record( string $run_id, string $kind, int $failed_at, array $start_args, int $priority, int $attempts, EngineError $error, RunFailure $failure ): bool {
 		$key = $this->option_name();
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( $key );
@@ -142,8 +147,10 @@ final readonly class FailedRunStore {
 
 			$entries[]       = array(
 				'run_id'     => $run_id,
+				'kind'       => $kind,
 				'failed_at'  => $failed_at,
 				'start_args' => $start_args,
+				'priority'   => $priority,
 				'attempts'   => $attempts,
 				'error'      => $error_detail,
 			);
@@ -185,8 +192,10 @@ final readonly class FailedRunStore {
 	 *
 	 * @return  AbstractResult<list<array{
 	 *     run_id: string,
+	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
+	 *     priority: int,
 	 *     attempts: int,
 	 *     error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 * }>, EngineError>
@@ -214,8 +223,10 @@ final readonly class FailedRunStore {
 	 * @return  AbstractResult<array{
 	 *     entries: list<array{
 	 *         run_id: string,
+	 *         kind: string,
 	 *         failed_at: int,
 	 *         start_args: array<array-key, mixed>,
+	 *         priority: int,
 	 *         attempts: int,
 	 *         error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 *     }>,
@@ -374,7 +385,7 @@ final readonly class FailedRunStore {
 		$this->logger->warning(
 			\sprintf( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the %d-entry limit: {evicted_run_ids}.', self::ENTRY_LIMIT ),
 			array(
-				'identity'        => $this->identity,
+				'identity'        => (string) $this->identity,
 				'evicted_run_ids' => \implode( ', ', \array_column( $entries, 'run_id' ) ),
 			)
 		);
@@ -410,7 +421,7 @@ final readonly class FailedRunStore {
 	 * @return  string
 	 */
 	private function option_name(): string {
-		return self::OPTION_PREFIX . $this->identity;
+		return self::OPTION_PREFIX . (string) $this->identity;
 	}
 
 	/**
@@ -424,8 +435,10 @@ final readonly class FailedRunStore {
 	 * @return  array{
 	 *     entries: list<array{
 	 *         run_id: string,
+	 *         kind: string,
 	 *         failed_at: int,
 	 *         start_args: array<array-key, mixed>,
+	 *         priority: int,
 	 *         attempts: int,
 	 *         error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 *     }>,
@@ -504,7 +517,7 @@ final readonly class FailedRunStore {
 				$this->logger->warning(
 					'Failed-run retention for "{identity}" is unreadable at option row "{option_name}"; repair or purge the row.',
 					array(
-						'identity'    => $this->identity,
+						'identity'    => (string) $this->identity,
 						'option_name' => $option_name,
 					)
 				);
@@ -512,13 +525,9 @@ final readonly class FailedRunStore {
 			}
 
 			$this->logger->warning(
-				\sprintf(
-					'Failed-run retention for "{identity}" contains {unreadable_count} unreadable %1$s in option row "{option_name}"; this read omits %2$s, so repair or purge the row.',
-					1 === $unreadable_count ? 'entry' : 'entries',
-					1 === $unreadable_count ? 'it' : 'them'
-				),
+				\sprintf( 'Failed-run retention for "{identity}" contains {unreadable_count} unreadable %1$s in option row "{option_name}"; this read omits %2$s, so repair or purge the row.', 1 === $unreadable_count ? 'entry' : 'entries', 1 === $unreadable_count ? 'it' : 'them' ),
 				array(
-					'identity'         => $this->identity,
+					'identity'         => (string) $this->identity,
 					'option_name'      => $option_name,
 					'unreadable_count' => $unreadable_count,
 				)
@@ -538,8 +547,10 @@ final readonly class FailedRunStore {
 	 *
 	 * @return  array{
 	 *     run_id: string,
+	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
+	 *     priority: int,
 	 *     attempts: int,
 	 *     error: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>}
 	 * }|null
@@ -548,9 +559,19 @@ final readonly class FailedRunStore {
 		if (
 			! \is_array( $value )
 			|| ! \is_string( $value['run_id'] ?? null )
+			|| ! \is_string( $value['kind'] ?? null )
+			|| 1 !== \preg_match( KindHandlerInterface::KEY_PATTERN, $value['kind'] )
 			|| ! \is_int( $value['failed_at'] ?? null )
 			|| ! \is_array( $value['start_args'] ?? null )
 			|| ! PortableArguments::is_valid( $value['start_args'] )
+			|| (
+				\array_key_exists( 'priority', $value )
+				&& (
+					! \is_int( $value['priority'] )
+					|| 0 > $value['priority']
+					|| Dispatcher::MAX_PRIORITY < $value['priority']
+				)
+			)
 			|| ! \is_int( $value['attempts'] ?? null )
 			|| ! \is_array( $value['error'] ?? null )
 			|| ! \array_key_exists( 'class', $value['error'] )
@@ -590,8 +611,10 @@ final readonly class FailedRunStore {
 
 		return array(
 			'run_id'     => $value['run_id'],
+			'kind'       => $value['kind'],
 			'failed_at'  => $value['failed_at'],
 			'start_args' => $value['start_args'],
+			'priority'   => $value['priority'] ?? 10,
 			'attempts'   => $value['attempts'],
 			'error'      => $error_detail,
 		);

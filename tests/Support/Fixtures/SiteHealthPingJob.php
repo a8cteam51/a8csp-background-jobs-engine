@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 
 /**
  * Demonstrates a small job execution that stores one idempotent site-health snapshot.
@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class SiteHealthPingJob implements JobExecution {
+final class SiteHealthPingJob implements JobExecutionInterface {
 	// region FIELDS AND CONSTANTS.
 
 	/**
@@ -26,7 +26,7 @@ final class SiteHealthPingJob implements JobExecution {
 	 *
 	 * @var     string
 	 */
-	public const string NAME = 'a8csp-jobs-engine-demo-site-health-ping';
+	public const string NAME = 'a8csp-bgje-demo-site-health-ping';
 
 	/**
 	 * Default client-owned transient key for the scheduled snapshot.
@@ -48,17 +48,17 @@ final class SiteHealthPingJob implements JobExecution {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $args    Invocation arguments containing `transient`.
-	 * @param   RunContext              $context Controlled access to this run.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts, containing `transient`.
+	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @throws  NonRetryableException When `transient` is absent, invalid, or over WordPress's length limit.
-	 * @throws  \RuntimeException      When WordPress cannot persist the snapshot; retryable.
+	 * @throws  \RuntimeException     When WordPress cannot persist the snapshot; retryable.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function handle( array $args, RunContext $context ): void {
-		$transient = $args['transient'] ?? null;
+	public function handle( array $start_args, RunContextInterface $context ): void {
+		$transient = $start_args['transient'] ?? null;
 		// WordPress caps transient names at 172 characters; a longer name is a permanent input
 		// defect, so it escapes the retry ladder instead of burning attempts.
 		if ( ! \is_string( $transient ) || 1 !== \preg_match( '/\A[a-z0-9_]{1,172}\z/', $transient ) ) {

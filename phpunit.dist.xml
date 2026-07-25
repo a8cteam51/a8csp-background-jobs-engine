@@ -26,6 +26,7 @@
 	<source>
 		<include>
 			<directory>src</directory>
+			<directory>models</directory>
 			<directory>portals</directory>
 			<directory>includes</directory>
 			<file>functions-bootstrap.php</file>

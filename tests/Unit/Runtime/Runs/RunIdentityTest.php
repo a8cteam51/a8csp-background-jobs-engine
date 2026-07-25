@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
@@ -14,6 +15,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RunIdentity::class )]
 final class RunIdentityTest extends TestCase {
+	// region LIFECYCLE.
+
 	/** Satisfies the production boot guard before the identity helper is autoloaded. */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
@@ -21,6 +24,10 @@ final class RunIdentityTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/** Generation and parsing share the documented fixed-width representation. */
 	public function test_generated_run_id_round_trips_through_the_canonical_parser(): void {
@@ -45,19 +52,18 @@ final class RunIdentityTest extends TestCase {
 
 	/** Run option composition retains the exact persisted prefix and separators. */
 	public function test_option_name_composes_and_decomposes_without_changing_bytes(): void {
+		$identity    = Identity::compose( 'owner', 'sync_job' );
 		$run_id      = '00000000001700000000-0000000000000000042';
-		$option_name = 'a8csp_bgje_run_owner:sync_job_' . $run_id;
+		$option_name = 'a8csp_bgje_active_run_owner:sync_job_' . $run_id;
 
 		self::assertSame( RunStore::OPTION_PREFIX, RunIdentity::option_prefix() );
-		self::assertSame( 'a8csp_bgje_run_owner:sync_job_', RunIdentity::option_name_prefix( 'owner:sync_job' ) );
-		self::assertSame( $option_name, RunIdentity::option_name( 'owner:sync_job', $run_id ) );
-		self::assertSame(
-			array(
-				'identity' => 'owner:sync_job',
-				'run_id'   => $run_id,
-			),
-			RunIdentity::from_option_name( $option_name )
-		);
+		self::assertSame( 'a8csp_bgje_active_run_owner:sync_job_', RunIdentity::option_name_prefix( $identity ) );
+		self::assertSame( $option_name, RunIdentity::option_name( $identity, $run_id ) );
+		$parsed = RunIdentity::from_option_name( $option_name );
+		self::assertIsArray( $parsed );
+		self::assertInstanceOf( Identity::class, $parsed['identity'] );
+		self::assertSame( (string) $identity, (string) $parsed['identity'] );
+		self::assertSame( $run_id, $parsed['run_id'] );
 	}
 
 	/**
@@ -70,8 +76,12 @@ final class RunIdentityTest extends TestCase {
 	#[DataProvider( 'malformed_run_ids' )]
 	public function test_malformed_run_ids_are_rejected_everywhere( string $candidate ): void {
 		self::assertNull( RunIdentity::parse( $candidate ) );
-		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_run_owner:sync_' . $candidate ) );
+		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_active_run_owner:sync_' . $candidate ) );
 	}
+
+	// endregion.
+
+	// region DATA PROVIDERS.
 
 	/**
 	 * Supplies representative candidates rejected by both previous run-ID regular expressions.
@@ -90,19 +100,23 @@ final class RunIdentityTest extends TestCase {
 		);
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/** Legacy option-name grammar accepts only canonical work identities around valid IDs. */
 	public function test_option_name_parser_matches_the_previous_run_key_regexes(): void {
 		$run_id = '99999999999999999999-9999999999999999999';
 
-		self::assertSame(
-			array(
-				'identity' => 'owner:under_score',
-				'run_id'   => $run_id,
-			),
-			RunIdentity::from_option_name( 'a8csp_bgje_run_owner:under_score_' . $run_id )
-		);
+		$parsed = RunIdentity::from_option_name( 'a8csp_bgje_active_run_owner:under_score_' . $run_id );
+		self::assertIsArray( $parsed );
+		self::assertInstanceOf( Identity::class, $parsed['identity'] );
+		self::assertSame( 'owner:under_score', (string) $parsed['identity'] );
+		self::assertSame( $run_id, $parsed['run_id'] );
 		self::assertNull( RunIdentity::from_option_name( 'other_run_owner:under_score_' . $run_id ) );
-		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_run_invalid-owner_' . $run_id ) );
-		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_run_Owner:sync_' . $run_id ) );
+		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_active_run_invalid-owner_' . $run_id ) );
+		self::assertNull( RunIdentity::from_option_name( 'a8csp_bgje_active_run_Owner:sync_' . $run_id ) );
 	}
+
+	// endregion.
 }

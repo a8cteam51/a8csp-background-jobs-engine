@@ -96,7 +96,7 @@ final readonly class ScheduleOutput {
 			$entries,
 			static function ( array $left, array $right ): int {
 				$owner_order = $left['owner'] <=> $right['owner'];
-				return 0 !== $owner_order ? $owner_order : $left['name'] <=> $right['name'];
+				return 0 !== $owner_order ? $owner_order : $left['identity'] <=> $right['identity'];
 			}
 		);
 
@@ -104,7 +104,7 @@ final readonly class ScheduleOutput {
 		foreach ( $entries as $entry ) {
 			$rows[] = array(
 				'owner'              => $entry['owner'],
-				'identity'           => $entry['name'],
+				'identity'           => $entry['identity'],
 				'recurrence'         => $entry['recurrence'] ?? 'unknown (not declared this request)',
 				'next_due'           => self::due_label( $entry['next_due'], $observed_at ),
 				'last_fired'         => null === $entry['last_fired']
@@ -181,7 +181,7 @@ final readonly class ScheduleOutput {
 	 * @return  void
 	 */
 	public static function removal_error( string $owner, string $message ): void {
-		self::error( \sprintf( '%1$s Owner removal converges incrementally; after resolving this error, rerun "wp background-jobs schedules remove %2$s" to clear any remaining registrations.', $message, $owner ) );
+		self::error( \sprintf( '%1$s Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove %2$s" to clear any remaining registrations.', $message, $owner ) );
 	}
 
 	/**
@@ -231,7 +231,7 @@ final readonly class ScheduleOutput {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'}
+	 * @phpstan-param array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
 	 *                |array{state: 'held', run_id: string, stale: bool} $lock
 	 *
 	 * @param   array $lock Complete discriminated lock state.
@@ -246,6 +246,7 @@ final readonly class ScheduleOutput {
 				'not_declared'    => 'unknown (not declared this request)',
 				'overlap_allowed' => 'not blocking (overlap allowed)',
 				'read_failed'     => 'unknown (lock read failed)',
+				'resolver_failed' => 'unknown (overlap-key resolver failed)',
 			};
 		}
 

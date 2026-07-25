@@ -2,11 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 
 /**
@@ -15,7 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class ChunkedJobChunkingTest extends IntegrationTestCase {
+final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Public owner unique to this integration-test graph. */
@@ -32,6 +36,18 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 
 	/** Owner-qualified identity for the Action Scheduler float-fidelity regression. */
 	private const string FIDELITY_IDENTITY = self::OWNER . ':' . self::FIDELITY_NAME;
+
+	/** Chunked Job identity for generic and identity-specific queue filter ordering. */
+	private const string QUEUE_FILTER_NAME = 'integration-chunked-job-queue-filter';
+
+	/** Owner-qualified identity for generic and identity-specific queue filter ordering. */
+	private const string QUEUE_FILTER_IDENTITY = self::OWNER . ':' . self::QUEUE_FILTER_NAME;
+
+	/** Chunked Job identity for generic and identity-specific continuation-delay filter ordering. */
+	private const string CONTINUE_DELAY_FILTER_NAME = 'integration-chunked-job-continue-delay-filter';
+
+	/** Owner-qualified identity for generic and identity-specific continuation-delay filter ordering. */
+	private const string CONTINUE_DELAY_FILTER_IDENTITY = self::OWNER . ':' . self::CONTINUE_DELAY_FILTER_NAME;
 
 	// endregion.
 
@@ -56,22 +72,22 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			array( 'chunk' => 'two' ),
 			array( 'chunk' => 'three' ),
 		);
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContext $context ): void {
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ): void {
 			if ( 'one' !== ( $chunk_args['chunk'] ?? null ) ) {
 				return;
 			}
 
-			$context->enqueue( array( 'chunk' => 'tail' ) );
-			$context->prepend( array( 'chunk' => 'front' ) );
+			$context->append_chunk( array( 'chunk' => 'tail' ) );
+			$context->prepend_chunk( array( 'chunk' => 'front' ) );
 		};
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $chunked_job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		$continue_delay_calls = array();
 		\add_filter(
-			'a8csp_jobs_engine/continue_delay',
+			'a8csp_bgje/continue_delay',
 			static function ( int $delay, string $name, string $run_id ) use ( &$continue_delay_calls ): int {
 				$continue_delay_calls[] = array( $delay, $name, $run_id );
 
@@ -83,7 +99,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 
 		$completion_observations = array();
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::IDENTITY,
+			'a8csp_bgje/completed/' . self::IDENTITY,
 			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$completion_observations ): void {
 				$completion_observations[] = array(
 					'hook'    => 'named',
@@ -94,7 +110,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed',
+			'a8csp_bgje/completed',
 			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$completion_observations ): void {
 				$completion_observations[] = array(
 					'hook'    => 'generic',
@@ -105,10 +121,10 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			4
 		);
 
-		$result = $client->chunked_jobs()->start( self::NAME, $start_args );
+		$result = $client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The registered chunked job must start through the public API' );
-		self::assertIsString( $result->value );
-		$run_id = $result->value;
+		self::assertInstanceOf( Run::class, $result->value );
+		$run_id = (string) $result->value->id;
 
 		self::assertSame( array(), $chunked_job->generate_calls, 'Starting a chunked job must not generate its queue inline' );
 
@@ -158,10 +174,11 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			'Completed hooks must preserve identity-specific then generic payload order'
 		);
 
-		$last_completed = $client->runs()->last_completed_run_id( self::NAME );
+		$last_completed = $client->last_completed_run( self::NAME );
 		self::assertInstanceOf( Success::class, $last_completed );
-		self::assertSame( $run_id, $last_completed->value );
-		$runs = $this->inspection()->runs( self::IDENTITY );
+		self::assertInstanceOf( Run::class, $last_completed->value );
+		self::assertSame( $run_id, (string) $last_completed->value->id );
+		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal chunked job completion must leave no live run' );
 		self::assertSame(
 			array(
@@ -177,6 +194,164 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 	}
 
 	/**
+	 * Generic queue filtering feeds identity-specific filtering before the resulting queue persists.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_queue_filters_run_generic_then_identity_specific_before_queue_persistence(): void {
+		$start_args         = array( 'scope' => 'queue-filter-order' );
+		$generated_queue    = array( array( 'source' => 'generated' ) );
+		$generic_queue      = array( array( 'source' => 'generic' ) );
+		$specific_queue     = array( array( 'source' => 'specific' ) );
+		$chunked_job        = new RecordingChunkedJob( self::QUEUE_FILTER_NAME );
+		$chunked_job->queue = $generated_queue;
+
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition() );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::QUEUE_FILTER_IDENTITY );
+
+		$filter_calls = array();
+		\add_filter(
+			'a8csp_bgje/queue',
+			static function ( array $queue, string $identity, array $args, string $run_id ) use ( &$filter_calls, $generic_queue ): array {
+				$filter_calls[] = array( 'generic', $queue, $identity, $args, $run_id );
+
+				return $generic_queue;
+			},
+			10,
+			4
+		);
+		\add_filter(
+			'a8csp_bgje/queue/' . self::QUEUE_FILTER_IDENTITY,
+			static function ( array $queue, array $args, string $run_id ) use ( &$filter_calls, $specific_queue ): array {
+				$filter_calls[] = array( 'specific', $queue, $args, $run_id );
+
+				return $specific_queue;
+			},
+			10,
+			3
+		);
+		\add_filter(
+			'a8csp_bgje/continue_delay',
+			static fn ( int $delay, string $identity ): int => self::QUEUE_FILTER_IDENTITY === $identity ? 0 : $delay,
+			10,
+			2
+		);
+
+		$result = $client->dispatch( self::QUEUE_FILTER_NAME, $start_args );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result->value );
+		$run_id = (string) $result->value->id;
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate and filter the chunk queue' );
+		$run_state       = \get_option( RunStore::OPTION_PREFIX . self::QUEUE_FILTER_IDENTITY . '_' . $run_id, null );
+		$persisted_queue = \is_array( $run_state ) ? ( $run_state['kind_state'] ?? null ) : null;
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the identity-specific queue value' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the filtered queue as drained' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete filtered-queue cleanup' );
+
+		self::assertSame(
+			array(
+				array( 'generic', $generated_queue, self::QUEUE_FILTER_IDENTITY, $start_args, $run_id ),
+				array( 'specific', $generic_queue, $start_args, $run_id ),
+			),
+			$filter_calls,
+			'Queue filters must chain the generic value into the identity-specific filter'
+		);
+		self::assertSame( $specific_queue, $persisted_queue, 'The identity-specific queue value must be authoritative before chunk processing' );
+		self::assertSame( $specific_queue, \array_column( $chunked_job->process_calls, 'chunk_args' ), 'Chunk processing must receive the identity-specific queue value' );
+	}
+
+	/**
+	 * Generic continuation-delay filtering feeds identity-specific filtering between chunks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_continue_delay_filters_run_generic_then_identity_specific_between_chunks(): void {
+		$chunked_job        = new RecordingChunkedJob( self::CONTINUE_DELAY_FILTER_NAME );
+		$chunked_job->queue = array(
+			array( 'chunk' => 'one' ),
+			array( 'chunk' => 'two' ),
+		);
+
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition() );
+		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CONTINUE_DELAY_FILTER_IDENTITY );
+
+		$filter_calls = array();
+		\add_filter(
+			'a8csp_bgje/continue_delay',
+			static function ( int $delay, string $identity, string $run_id ) use ( &$filter_calls ): int {
+				$filter_calls[] = array( 'generic', $delay, $identity, $run_id );
+
+				return 300;
+			},
+			10,
+			3
+		);
+		\add_filter(
+			'a8csp_bgje/continue_delay/' . self::CONTINUE_DELAY_FILTER_IDENTITY,
+			static function ( int $delay, string $run_id ) use ( &$filter_calls ): int {
+				$filter_calls[] = array( 'specific', $delay, $run_id );
+
+				return 0;
+			},
+			10,
+			2
+		);
+
+		$result = $client->dispatch( self::CONTINUE_DELAY_FILTER_NAME, array() );
+		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result->value );
+		$run_id = (string) $result->value->id;
+		$this->expect_option( RunStore::OPTION_PREFIX . self::CONTINUE_DELAY_FILTER_IDENTITY . '_' . $run_id );
+		$this->expect_option( OverlapGuard::OPTION_PREFIX . self::CONTINUE_DELAY_FILTER_IDENTITY . '_' . self::args_hash( array() ) );
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the two-chunk queue' );
+		$filter_calls = array();
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the first chunk' );
+		self::assertSame(
+			array(
+				array( 'generic', 60, self::CONTINUE_DELAY_FILTER_IDENTITY, $run_id ),
+				array( 'specific', 300, $run_id ),
+			),
+			$filter_calls,
+			'Continue-delay filters must chain the generic value into the identity-specific filter'
+		);
+		self::assertSame( array( array( 'chunk' => 'one' ) ), \array_column( $chunked_job->process_calls, 'chunk_args' ) );
+		$this->assert_pending_chunk_continuation( self::CONTINUE_DELAY_FILTER_IDENTITY, $run_id, self::CONTINUE_DELAY_FILTER_IDENTITY . '|' . $run_id, array( 'chunk' => 'two' ) );
+
+		$filter_calls = array();
+		self::assertSame( 1, $this->run_next_due_action(), 'The identity-specific zero delay must make the second chunk immediately due' );
+		self::assertSame(
+			array(
+				array( 'generic', 60, self::CONTINUE_DELAY_FILTER_IDENTITY, $run_id ),
+				array( 'specific', 300, $run_id ),
+			),
+			$filter_calls,
+			'Every inter-chunk delay must preserve generic then identity-specific order'
+		);
+		self::assertSame(
+			array(
+				array( 'chunk' => 'one' ),
+				array( 'chunk' => 'two' ),
+			),
+			\array_column( $chunked_job->process_calls, 'chunk_args' )
+		);
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the queue as drained' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete continuation-delay cleanup' );
+	}
+
+	/**
 	 * Action Scheduler delivers a float chunk from the authoritative run row without numeric coercion.
 	 *
 	 * @since   1.0.0
@@ -187,14 +362,14 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 	public function test_action_scheduler_delivers_float_chunk_from_the_authoritative_run_row(): void {
 		$chunked_job        = new RecordingChunkedJob( self::FIDELITY_NAME );
 		$chunked_job->queue = array( array( 'value' => 1.0 ) );
-		$client             = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $chunked_job->definition() );
+		$client             = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FIDELITY_IDENTITY );
-		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
+		\add_filter( 'a8csp_bgje/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
 		$terminal_hooks = array();
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::FIDELITY_IDENTITY,
+			'a8csp_bgje/completed/' . self::FIDELITY_IDENTITY,
 			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$terminal_hooks ): void {
 				$terminal_hooks[] = array( 'completed', (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -202,7 +377,7 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/failed',
+			'a8csp_bgje/failed',
 			static function ( RunFailure $failure ) use ( &$terminal_hooks ): void {
 				if ( self::FIDELITY_IDENTITY === $failure->identity ) {
 					$terminal_hooks[] = array( 'failed', $failure );
@@ -212,14 +387,14 @@ final class ChunkedJobChunkingTest extends IntegrationTestCase {
 			1
 		);
 
-		$result = $client->chunked_jobs()->start( self::FIDELITY_NAME, array() );
+		$result = $client->dispatch( self::FIDELITY_NAME, array() );
 		self::assertInstanceOf( Success::class, $result );
-		self::assertIsString( $result->value );
-		$run_id = $result->value;
+		self::assertInstanceOf( Run::class, $result->value );
+		$run_id = (string) $result->value->id;
 		$group  = self::FIDELITY_IDENTITY . '|' . $run_id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the float chunk' );
-		$run_state = \get_option( 'a8csp_bgje_run_' . self::FIDELITY_IDENTITY . '_' . $run_id, null );
+		$run_state = \get_option( 'a8csp_bgje_active_run_' . self::FIDELITY_IDENTITY . '_' . $run_id, null );
 		self::assertIsArray( $run_state );
 		$queue = $run_state['kind_state'] ?? null;
 		self::assertIsArray( $queue );

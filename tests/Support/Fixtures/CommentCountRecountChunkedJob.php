@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 
 /**
  * Demonstrates a chunked job that recounts comments one post per independently retried chunk.
@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class CommentCountRecountChunkedJob implements ChunkedJobExecution {
+final class CommentCountRecountChunkedJob implements ChunkedJobExecutionInterface {
 	// region FIELDS AND CONSTANTS.
 
 	/**
@@ -28,7 +28,7 @@ final class CommentCountRecountChunkedJob implements ChunkedJobExecution {
 	 *
 	 * @var     string
 	 */
-	public const string NAME = 'a8csp-jobs-engine-demo-comment-count-recount';
+	public const string NAME = 'a8csp-bgje-demo-comment-count-recount';
 
 	/**
 	 * Client-owned action fired after one post's comment count is refreshed.
@@ -71,14 +71,14 @@ final class CommentCountRecountChunkedJob implements ChunkedJobExecution {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   RunContext     $context    Controlled access to this run.
+	 * @param   RunContextInterface     $context    Controlled access to this run.
 	 *
 	 * @throws  NonRetryableException When `post_type` is absent or not a registered post type.
 	 *
 	 * @return  iterable<array<array-key, mixed>>
 	 */
 	#[\Override]
-	public function generate_queue( array $start_args, RunContext $context ): iterable {
+	public function generate_queue( array $start_args, RunContextInterface $context ): iterable {
 		$post_type = $start_args['post_type'] ?? null;
 		// A typo'd post type would drain an empty queue and report success; failing loudly on an
 		// unregistered key is a permanent input defect, so it escapes the retry ladder.
@@ -112,15 +112,15 @@ final class CommentCountRecountChunkedJob implements ChunkedJobExecution {
 	 * @version 1.0.0
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-	 * @param   ChunkContext   $context    Controlled access to this chunk's run.
+	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
 	 *
-	 * @throws  NonRetryableException When the queued post identifier is invalid or its post is gone.
+	 * @throws  NonRetryableException     When the queued post identifier is invalid or its post is gone.
 	 * @throws  \RuntimeException         When the refreshed comment count is not persisted.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function process_chunk( array $chunk_args, ChunkContext $context ): void {
+	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {
 		$post_id = $chunk_args['post_id'] ?? null;
 		if ( ! \is_int( $post_id ) || 1 > $post_id ) {
 			throw new NonRetryableException( 'Comment-count chunks require a positive integer post_id; generate each chunk from a persisted post ID.' );

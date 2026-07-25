@@ -16,7 +16,6 @@
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
 		<properties>
 			<property name="prefixes" type="array">
-				<element value="a8csp_jobs_engine"/>
 				<element value="a8csp_bgje"/>
 				<element value="A8C\SpecialProjects\BackgroundJobsEngine"/>
 			</property>

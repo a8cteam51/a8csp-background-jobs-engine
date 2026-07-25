@@ -2,13 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Job\ClosureJobExecution;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecution;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Composes a stable job identity, execution role, kind, and policy declaration.
+ * Composes a stable owner-local job name, execution role, kind, and policy declaration.
+ *
+ * @api
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -36,7 +37,7 @@ final readonly class JobDefinition {
 
 	// endregion
 
-	// region NAMED CONSTRUCTORS
+	// region METHODS
 
 	/**
 	 * Defines a standard job.
@@ -44,13 +45,13 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $name      Stable owner-local job name.
-	 * @param   JobExecution    $execution Job execution.
-	 * @param   JobOptions|null $options   Optional policy declaration.
+	 * @param   string                $name      Stable owner-local job name.
+	 * @param   JobExecutionInterface $execution Job execution.
+	 * @param   JobOptions|null       $options   Optional policy declaration.
 	 *
 	 * @return  self
 	 */
-	public static function job( string $name, JobExecution $execution, ?JobOptions $options = null ): self {
+	public static function job( string $name, JobExecutionInterface $execution, ?JobOptions $options = null ): self {
 		return self::for_kind( $name, JobKind::job(), $execution, $options );
 	}
 
@@ -60,13 +61,13 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string              $name      Stable owner-local job name.
-	 * @param   ChunkedJobExecution $execution Chunked job execution.
-	 * @param   JobOptions|null     $options   Optional policy declaration.
+	 * @param   string                       $name      Stable owner-local job name.
+	 * @param   ChunkedJobExecutionInterface $execution Chunked job execution.
+	 * @param   JobOptions|null              $options   Optional policy declaration.
 	 *
 	 * @return  self
 	 */
-	public static function chunked_job( string $name, ChunkedJobExecution $execution, ?JobOptions $options = null ): self {
+	public static function chunked_job( string $name, ChunkedJobExecutionInterface $execution, ?JobOptions $options = null ): self {
 		return self::for_kind( $name, JobKind::chunked_job(), $execution, $options );
 	}
 
@@ -76,7 +77,7 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param \Closure(array<array-key, mixed>, RunContext): mixed $handler
+	 * @phpstan-param \Closure(array<array-key, mixed>, RunContextInterface): mixed $handler
 	 *
 	 * @param   string   $name    Stable owner-local job name.
 	 * @param   \Closure $handler Job handler.

@@ -13,6 +13,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
  * redacted; it never contains a raw client exception message. Details carry an optional generic
  * diagnostic payload.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  */

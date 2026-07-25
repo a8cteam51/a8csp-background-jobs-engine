@@ -19,6 +19,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( ComponentCollection::class )]
 final class ComponentCollectionTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Starts each test with empty construction and phase ledgers.
 	 *
@@ -34,6 +36,10 @@ final class ComponentCollectionTest extends TestCase {
 		CollectionOpenComponent::$events   = array();
 		CollectionClosedComponent::$events = array();
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Gates run before construction and only open components enter the collection.
@@ -71,6 +77,8 @@ final class ComponentCollectionTest extends TestCase {
 			CollectionOpenComponent::$events
 		);
 	}
+
+	// endregion.
 }
 
 /**
@@ -80,8 +88,14 @@ final class ComponentCollectionTest extends TestCase {
  * @version 1.0.0
  */
 final class CollectionOpenComponent implements ComponentInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/** @var list<string> */
 	public static array $events = array();
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/**
 	 * Records component construction.
@@ -92,6 +106,10 @@ final class CollectionOpenComponent implements ComponentInterface {
 	public function __construct() {
 		self::$events[] = 'construct:open';
 	}
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * {@inheritDoc}
@@ -125,6 +143,8 @@ final class CollectionOpenComponent implements ComponentInterface {
 	public function register_hooks(): void {
 		self::$events[] = 'hooks:open';
 	}
+
+	// endregion.
 }
 
 /**
@@ -134,8 +154,14 @@ final class CollectionOpenComponent implements ComponentInterface {
  * @version 1.0.0
  */
 final class CollectionClosedComponent implements ComponentInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/** @var list<string> */
 	public static array $events = array();
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/**
 	 * Records any construction that crosses the closed gate.
@@ -146,6 +172,10 @@ final class CollectionClosedComponent implements ComponentInterface {
 	public function __construct() {
 		self::$events[] = 'construct:closed';
 	}
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * {@inheritDoc}
@@ -175,6 +205,8 @@ final class CollectionClosedComponent implements ComponentInterface {
 	 */
 	#[\Override]
 	public function register_hooks(): void {}
+
+	// endregion.
 }
 
 /**
@@ -184,6 +216,8 @@ final class CollectionClosedComponent implements ComponentInterface {
  * @version 1.0.0
  */
 final class CollectionSecondOpenComponent implements ComponentInterface {
+	// region METHODS.
+
 	/**
 	 * {@inheritDoc}
 	 *
@@ -216,4 +250,6 @@ final class CollectionSecondOpenComponent implements ComponentInterface {
 	public function register_hooks(): void {
 		CollectionOpenComponent::$events[] = 'hooks:second';
 	}
+
+	// endregion.
 }

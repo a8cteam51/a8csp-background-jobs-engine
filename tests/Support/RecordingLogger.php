@@ -8,12 +8,18 @@ use Psr\Log\AbstractLogger;
  * Records PSR-3 calls without interpreting their context.
  */
 final class RecordingLogger extends AbstractLogger {
+	// region FIELDS AND CONSTANTS.
+
 	/**
 	 * Calls in invocation order.
 	 *
 	 * @var list<array{level: mixed, message: string, context: array<array-key, mixed>}>
 	 */
 	public array $records = array();
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * Records a log call.
@@ -32,4 +38,6 @@ final class RecordingLogger extends AbstractLogger {
 			'context' => $context,
 		);
 	}
+
+	// endregion.
 }

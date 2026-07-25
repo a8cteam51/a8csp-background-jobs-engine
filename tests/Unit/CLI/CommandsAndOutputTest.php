@@ -2,28 +2,33 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\LocksCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\RunsCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\SchedulesCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\LocksOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ScheduleOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
@@ -41,9 +46,11 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( Component::class )]
+#[CoversClass( LocksCommand::class )]
 #[CoversClass( RunsCommand::class )]
 #[CoversClass( SchedulesCommand::class )]
 #[CoversClass( FailedRunOutput::class )]
+#[CoversClass( LocksOutput::class )]
 #[CoversClass( RunOutput::class )]
 #[CoversClass( ScheduleOutput::class )]
 final class CommandsAndOutputTest extends TestCase {
@@ -118,7 +125,65 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_component_registers_the_complete_command_surface(): void {
-		self::assertSame( array( 'failed-runs', 'reset', 'runs', 'schedules' ), CliHarness::registered_subcommands() );
+		self::assertSame( array( 'failed-runs', 'locks', 'reset', 'runs', 'schedules' ), CliHarness::registered_subcommands() );
+	}
+
+	/**
+	 * Run command requests retain typed identities while their rendered bytes stay unchanged.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_request_seams_return_identity_values(): void {
+		$list = RunsCommand::runs_request_from_args( array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'json' ) );
+		self::assertSame( array( 'action', 'identity', 'format' ), \array_keys( $list ) );
+		self::assertSame( 'list', $list['action'] );
+		self::assertInstanceOf( Identity::class, $list['identity'] );
+		self::assertSame( 'consumer-plugin:email-digest', (string) $list['identity'] );
+
+		$cancel = RunsCommand::runs_request_from_args( array( 'cancel', 'consumer-plugin:email-digest', self::RUN_ID ), array() );
+		self::assertSame( array( 'action', 'identity', 'run_id' ), \array_keys( $cancel ) );
+		self::assertSame( 'cancel', $cancel['action'] );
+		self::assertInstanceOf( Identity::class, $cancel['identity'] );
+		self::assertSame( 'consumer-plugin:email-digest', (string) $cancel['identity'] );
+
+		$retry = RunsCommand::failed_runs_request_from_args( array( 'retry', 'consumer-plugin:email-digest', self::RUN_ID ), array() );
+		self::assertSame( array( 'action', 'identity', 'run_id' ), \array_keys( $retry ) );
+		self::assertSame( 'retry', $retry['action'] );
+		self::assertInstanceOf( Identity::class, $retry['identity'] );
+		self::assertSame( 'consumer-plugin:email-digest', (string) $retry['identity'] );
+
+		$purge = RunsCommand::failed_runs_request_from_args( array( 'purge', 'consumer-plugin:email-digest' ), array() );
+		self::assertSame( array( 'action', 'identity' ), \array_keys( $purge ) );
+		self::assertSame( 'purge', $purge['action'] );
+		self::assertInstanceOf( Identity::class, $purge['identity'] );
+		self::assertSame( 'consumer-plugin:email-digest', (string) $purge['identity'] );
+	}
+
+	/**
+	 * Failed-run option discovery returns sorted unique typed identities.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_failed_run_option_discovery_returns_identity_values(): void {
+		$identities = RunsCommand::identities_from_option_names(
+			array(
+				FailedRunStore::OPTION_PREFIX . 'zeta:job',
+				FailedRunStore::OPTION_PREFIX . 'alpha:job',
+				FailedRunStore::OPTION_PREFIX . 'zeta:job',
+				FailedRunStore::OPTION_PREFIX . 'invalid',
+				'other_alpha:job',
+				false,
+			)
+		);
+
+		self::assertContainsOnlyInstancesOf( Identity::class, $identities );
+		self::assertSame( array( 'alpha:job', 'zeta:job' ), \array_map( static fn ( Identity $identity ): string => (string) $identity, $identities ) );
 	}
 
 	/**
@@ -165,9 +230,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_registered_schedule_remove_clears_only_the_named_owner_and_then_reports_not_found(): void {
 		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-			$client = $this->rig->client( $owner );
-			$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+			$client = $this->rig->operations( $owner );
+			$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+			self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
@@ -180,7 +245,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertNotNull( $removed );
 		self::assertNotNull( $sibling );
 		self::assertSame( array(), $removed['entries'] );
-		self::assertSame( array( 'other-plugin:nightly' ), \array_column( $sibling['entries'], 'name' ) );
+		self::assertSame( array( 'other-plugin:nightly' ), \array_column( $sibling['entries'], 'identity' ) );
 		$this->rig->assert_no_delivery( 'consumer-plugin:nightly' );
 		$this->rig->backend()->assert_scheduled( 'other-plugin:nightly' );
 
@@ -220,7 +285,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertSame( '', $result->stdout );
-		self::assertSame( 'Error: Schedule registry option row "a8csp_bgje_schedule_registrations_consumer-plugin" is unreadable; maintenance reclaims it, then re-declare schedules on the next init. Owner removal converges incrementally; after resolving this error, rerun "wp background-jobs schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
+		self::assertSame( 'Error: Schedule registry option row "a8csp_bgje_schedule_registrations_consumer-plugin" is unreadable; maintenance reclaims it, then re-declare schedules on the next init. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
 		self::assertSame( $incomplete[1], $this->rig->wpdb()->rows[ $incomplete[0] ] ?? null );
 	}
 
@@ -252,19 +317,19 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_remove_reports_first_backend_failure_without_deleting_the_registry(): void {
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Backend clearance failed.' ) );
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertSame( '', $result->stdout );
-		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp background-jobs schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
+		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
-		self::assertSame( array( 'consumer-plugin:nightly' ), \array_column( $snapshot['entries'], 'name' ) );
+		self::assertSame( array( 'consumer-plugin:nightly' ), \array_column( $snapshot['entries'], 'identity' ) );
 		$this->rig->backend()->assert_scheduled( 'consumer-plugin:nightly' );
 	}
 
@@ -280,9 +345,9 @@ final class CommandsAndOutputTest extends TestCase {
 		$this->rig->tear_down();
 		$this->rig = EngineRig::set_up( self::NOW, 2 );
 		CliHarness::set_up();
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		$this->rig->backend()->ready = false;
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
@@ -305,11 +370,11 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_remove_reports_partial_progress_and_converges_on_retry(): void {
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		self::assertInstanceOf(
 			Success::class,
-			$client->schedules()->sync(
+			$client->sync(
 				array(
 					new Schedule( 'alpha', Recurrence::every( 300 ), 'refresh' ),
 					new Schedule( 'beta', Recurrence::every( 600 ), 'refresh' ),
@@ -333,10 +398,10 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $failed->exit_code );
 		self::assertSame( '', $failed->stdout );
-		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp background-jobs schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $failed->stderr );
+		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $failed->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
-		self::assertSame( array( 'consumer-plugin:beta' ), \array_column( $snapshot['entries'], 'name' ) );
+		self::assertSame( array( 'consumer-plugin:beta' ), \array_column( $snapshot['entries'], 'identity' ) );
 		$this->rig->assert_no_delivery( 'consumer-plugin:alpha' );
 		$this->rig->backend()->assert_scheduled( 'consumer-plugin:beta' );
 
@@ -431,9 +496,9 @@ final class CommandsAndOutputTest extends TestCase {
 		if ( 'csv' === $format ) {
 			$result = CliHarness::run_csv( 'runs' );
 		} else {
-			$client = $this->rig->client( 'consumer-plugin' );
-			$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'email-digest' ) );
+			$client = $this->rig->operations( 'consumer-plugin' );
+			$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+			self::assertInstanceOf( Success::class, $client->dispatch( 'email-digest' ) );
 			$result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), $assoc_args );
 		}
 
@@ -471,27 +536,32 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_lock_labels_are_discriminated(): void {
-		$client        = $this->rig->client( 'lock-tests' );
+		$client        = $this->rig->operations( 'lock-tests' );
 		$schedules     = array(
-			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
-			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
-			'free'    => new Schedule( 'free', Recurrence::every( 300 ), 'free-job', array( 'case' => 'free' ) ),
-			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-job', array( 'case' => 'invalid' ) ),
+			'allow'    => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
+			'failed'   => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
+			'free'     => new Schedule( 'free', Recurrence::every( 300 ), 'free-job', array( 'case' => 'free' ) ),
+			'invalid'  => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-job', array( 'case' => 'invalid' ) ),
+			'resolver' => new Schedule( 'resolver', Recurrence::every( 300 ), 'resolver-job', array( 'case' => 'resolver' ) ),
 		);
 		$declarations  = array();
 		$registrations = array( 'lock-tests:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
 			$job     = new RecordingJob( $schedule->job );
-			$options = 'allow' === $name ? new JobOptions( overlap: OverlapPolicy::Allow ) : null;
+			$options = match ( $name ) {
+				'allow' => new JobOptions( overlap: OverlapPolicy::Allow ),
+				'resolver' => new JobOptions( overlap_key: static fn ( array $args ): never => throw new \RuntimeException( 'Consumer resolver failed.' ) ),
+				default => null,
+			};
 
-			$client->jobs()->register( $job->definition( $options ) );
+			$client->register( $job->definition( $options ) );
 			$declarations[ 'lock-tests:' . $name ]  = array(
 				'schedule' => $schedule,
 				'job'      => 'lock-tests:' . $schedule->job,
 			);
 			$registrations[ 'lock-tests:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'lock-tests:invalid-job' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -502,7 +572,7 @@ final class CommandsAndOutputTest extends TestCase {
 				)
 			)
 		);
-		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-jobs-engine' ) ] );
+		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgje' ) ] );
 		$this->rig->wpdb()->put( 'a8csp_bgje_overlap_lock_lock-tests:invalid-job_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
@@ -516,7 +586,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 0, $result->exit_code );
 		self::assertSame( '', $result->stderr );
-		foreach ( array( 'not blocking (overlap allowed)', 'unknown (lock read failed)', 'free', 'unknown (invalid lock row)', 'unknown (not declared this request)' ) as $label ) {
+		foreach ( array( 'not blocking (overlap allowed)', 'unknown (lock read failed)', 'unknown (overlap-key resolver failed)', 'free', 'unknown (invalid lock row)', 'unknown (not declared this request)' ) as $label ) {
 			self::assertStringContainsString( $label, $result->stdout );
 		}
 	}
@@ -552,19 +622,18 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registered_runs_cancel_action_terminalizes_a_real_run(): void {
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-		$enqueued = $client->jobs()->enqueue( 'email-digest' );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+		$enqueued = $client->dispatch( 'email-digest' );
 		self::assertInstanceOf( Success::class, $enqueued );
-		if ( ! \is_string( $enqueued->value ) ) {
-			throw new \LogicException( 'A successful enqueue must publish a run identifier.' );
-		}
+		self::assertInstanceOf( Run::class, $enqueued->value );
+		$run_id = (string) $enqueued->value->id;
 
-		$result = CliHarness::run( 'runs', array( 'cancel', 'consumer-plugin:email-digest', $enqueued->value ) );
+		$result = CliHarness::run( 'runs', array( 'cancel', 'consumer-plugin:email-digest', $run_id ) );
 
 		self::assertSame( 0, $result->exit_code );
-		self::assertSame( 'Success: Cancelled run ' . $enqueued->value . ' of "consumer-plugin:email-digest".' . "\n", $result->stdout );
-		self::assertSame( 'cancelled', $this->rig->inspection()->runs( 'consumer-plugin:email-digest' )['history'][0]['outcome'] ?? null );
+		self::assertSame( 'Success: Cancelled run ' . $run_id . ' of "consumer-plugin:email-digest".' . "\n", $result->stdout );
+		self::assertSame( 'cancelled', $this->rig->inspection()->runs( Identity::compose( 'consumer-plugin', 'email-digest' ) )['history'][0]['outcome'] ?? null );
 
 		$history_result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'json' ) );
 		$history_rows   = \json_decode( $history_result->stdout, true, 512, \JSON_THROW_ON_ERROR );
@@ -737,9 +806,9 @@ final class CommandsAndOutputTest extends TestCase {
 	#[DataProvider( 'heartbeat_boundaries' )]
 	public function test_registered_runs_command_renders_every_heartbeat_boundary( int $heartbeat_at, string $expected ): void {
 		$this->rig->clock()->timestamp = $heartbeat_at;
-		$client                        = $this->rig->client( 'clock-tests' );
-		$client->jobs()->register( ( new RecordingJob( 'heartbeat' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'heartbeat' ) );
+		$client                        = $this->rig->operations( 'clock-tests' );
+		$client->register( ( new RecordingJob( 'heartbeat' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'heartbeat' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$result = CliHarness::run( 'runs', array( 'list', 'clock-tests:heartbeat' ) );
@@ -758,9 +827,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_registered_runs_command_handles_clock_skew_and_integer_extremes(): void {
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$client                        = $this->rig->client( 'clock-skew' );
-		$client->jobs()->register( ( new RecordingJob( 'future' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'future' ) );
+		$client                        = $this->rig->operations( 'clock-skew' );
+		$client->register( ( new RecordingJob( 'future' ) )->definition() );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'future' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$future = CliHarness::run( 'runs', array( 'list', 'clock-skew:future' ) );
@@ -785,14 +854,14 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registered_schedule_command_renders_due_boundaries_in_utc(): void {
-		$client = $this->rig->client( 'due-tests' );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		$client = $this->rig->operations( 'due-tests' );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		$schedules = array(
 			'future'  => new Schedule( 'future', Recurrence::every( 300 ), 'refresh' ),
 			'now'     => new Schedule( 'now', Recurrence::every( 300 ), 'refresh' ),
 			'overdue' => new Schedule( 'overdue', Recurrence::every( 300 ), 'refresh' ),
 		);
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( \array_values( $schedules ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
 		$declarations = array();
 		foreach ( $schedules as $name => $schedule ) {
 			$declarations[ 'due-tests:' . $name ] = array(
@@ -901,9 +970,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	private function register_schedules(): void {
 		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-			$client = $this->rig->client( $owner );
-			$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+			$client = $this->rig->operations( $owner );
+			$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+			self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
 	}
 
@@ -916,8 +985,8 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	private function seed_failed_runs(): void {
-		$client = $this->rig->client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'email-digest' ) )->definition() );
+		$client = $this->rig->operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		foreach ( array( 'consumer-plugin:email-digest', 'consumer-plugin:email_digest-2' ) as $identity ) {
 			$failed_chunk   = 'consumer-plugin:email_digest-2' === $identity ? array( 'post_id' => 42 ) : null;
 			$details        = null === $failed_chunk ? null : array( 'failed_chunk' => $failed_chunk );
@@ -1038,8 +1107,8 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_schedule_requests(): array {
-		$usage        = 'Schedule list accepts only --owner and --format; use wp background-jobs schedules list [--owner=<owner>] [--format=<format>].';
-		$remove_usage = 'Schedule removal requires exactly one owner and accepts only --yes; use wp background-jobs schedules remove <owner> [--yes].';
+		$usage        = 'Schedule list accepts only --owner and --format; use wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>].';
+		$remove_usage = 'Schedule removal requires exactly one owner and accepts only --yes; use wp a8csp-bgje schedules remove <owner> [--yes].';
 		return array(
 			'missing action'         => array(
 				'args'       => array(),
@@ -1107,7 +1176,7 @@ final class CommandsAndOutputTest extends TestCase {
 				'message'    => 'Schedule removal owner is invalid; pass a canonical client owner.',
 			),
 			'remove reserved owner'  => array(
-				'args'       => array( 'remove', 'a8csp-jobs-engine' ),
+				'args'       => array( 'remove', 'a8csp-bgje' ),
 				'assoc_args' => array( 'yes' => true ),
 				'message'    => 'Schedule removal owner is invalid; pass a canonical client owner.',
 			),
@@ -1156,7 +1225,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_run_requests(): array {
-		$usage = 'Run list requires exactly one identity and accepts only --format; use wp background-jobs runs list <identity> [--format=<format>].';
+		$usage = 'Run list requires exactly one identity and accepts only --format; use wp a8csp-bgje runs list <identity> [--format=<format>].';
 		return array(
 			'missing action' => array(
 				'args'       => array(),
@@ -1347,9 +1416,9 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_failed_run_requests(): array {
-		$list_usage  = 'List accepts only --owner and --format; use wp background-jobs failed-runs list [--owner=<owner>] [--format=<format>].';
-		$retry_usage = 'Retry requires exactly an identity and run_id; use wp background-jobs failed-runs retry <identity> <run_id>.';
-		$purge_usage = 'Purge requires exactly one identity or --all; use wp background-jobs failed-runs purge <identity> or purge --all.';
+		$list_usage  = 'List accepts only --owner and --format; use wp a8csp-bgje failed-runs list [--owner=<owner>] [--format=<format>].';
+		$retry_usage = 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.';
+		$purge_usage = 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.';
 		return array(
 			'missing action'         => array(
 				'args'       => array(),
@@ -1449,7 +1518,7 @@ final class CommandsAndOutputTest extends TestCase {
 			'purge flag'             => array(
 				'args'       => array( 'purge' ),
 				'assoc_args' => array( 'format' => 'json' ),
-				'message'    => 'Purge accepts only --all; use wp background-jobs failed-runs purge <identity> or purge --all.',
+				'message'    => 'Purge accepts only --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.',
 			),
 		);
 	}

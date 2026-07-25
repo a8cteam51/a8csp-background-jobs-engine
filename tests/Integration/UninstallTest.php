@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 /**
@@ -20,7 +20,7 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class UninstallTest extends IntegrationTestCase {
+final class UninstallTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/**
@@ -40,19 +40,20 @@ final class UninstallTest extends IntegrationTestCase {
 	 */
 	private const array DOCUMENTED_OPTIONS = array(
 		'a8csp_bgje_schedule_registrations_uninstall-test',
-		'a8csp_bgje_run_uninstall-test:job_run-1',
+		'a8csp_bgje_active_run_uninstall-test:job_run-1',
 		'a8csp_bgje_failed_runs_uninstall-test:job',
 		'a8csp_bgje_latest_run_uninstall-test',
-		'a8csp_bgje_history_uninstall-test',
+		'a8csp_bgje_run_history_uninstall-test',
 		'a8csp_bgje_overlap_lock_uninstall-test_args-hash',
 		'a8csp_bgje_occurrence_lease_registration-hash',
 		'a8csp_bgje_cleanup_intent_registration-hash',
+		'a8csp_bgje_cleanup_sweep_cursor',
 	);
 
-	/** Internal lifecycle hooks that may retain scheduled work. */
-	private const array LIFECYCLE_HOOKS = array(
-		'a8csp_jobs_engine/deliver',
-		'a8csp_jobs_engine/schedule_due',
+	/** Internal delivery hooks that may retain scheduled work. */
+	private const array DELIVERY_HOOKS = array(
+		'a8csp_bgje/internal/deliver',
+		'a8csp_bgje/internal/schedule_due',
 	);
 
 	/** Runtime arguments prove uninstall clears each hook without requiring an exact identity. */
@@ -116,7 +117,7 @@ final class UninstallTest extends IntegrationTestCase {
 		$scheduled_at     = \time() + \HOUR_IN_SECONDS;
 		$wp_cron          = new WPCronBackend();
 		$action_scheduler = new ActionSchedulerBackend();
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			self::assertInstanceOf( Success::class, $wp_cron->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS ) );
 			self::assertInstanceOf( Success::class, $action_scheduler->schedule_single( $hook, $scheduled_at, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ) );
 			self::assertSame( $scheduled_at, $wp_cron->get_next_scheduled( $hook, self::SCHEDULE_ARGS ) );
@@ -127,7 +128,7 @@ final class UninstallTest extends IntegrationTestCase {
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
 		self::assertSame( array(), self::engine_option_names(), 'uninstall.php must leave no option inside the documented a8csp_bgje_ ownership prefix' );
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			self::assertFalse( $wp_cron->is_scheduled( $hook, self::SCHEDULE_ARGS ), "uninstall.php must remove every WP-Cron event for '{$hook}'" );
 			self::assertFalse( $action_scheduler->is_scheduled( $hook, self::SCHEDULE_ARGS, self::SCHEDULE_GROUP ), "uninstall.php must remove every pending Action Scheduler action for '{$hook}'" );
 		}
@@ -149,7 +150,7 @@ final class UninstallTest extends IntegrationTestCase {
 	 * @return  void
 	 */
 	private static function clear_scheduled_work(): void {
-		foreach ( self::LIFECYCLE_HOOKS as $hook ) {
+		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			\wp_unschedule_hook( $hook );
 			if ( \function_exists( 'as_unschedule_all_actions' ) ) {
 				\as_unschedule_all_actions( $hook );

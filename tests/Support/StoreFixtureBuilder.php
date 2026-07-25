@@ -3,39 +3,25 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\JobIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLeaseOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OwnerReplacementOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use Psr\Log\NullLogger;
 
 /**
@@ -53,10 +39,10 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete owner-qualified work identity.
 	 */
 	private function __construct(
-		private string $identity,
+		private Identity $identity,
 	) {}
 
 	// endregion.
@@ -75,11 +61,12 @@ final readonly class StoreFixtureBuilder {
 	 */
 	public static function for_identity( string $identity ): self {
 		EngineRig::bootstrap();
-		if ( null === JobIdentity::parts( $identity ) ) {
+		$work_identity = Identity::tryFrom( $identity );
+		if ( null === $work_identity ) {
 			throw new \InvalidArgumentException( 'Store fixtures require one canonical owner-qualified work identity.' );
 		}
 
-		return new self( $identity );
+		return new self( $work_identity );
 	}
 
 	// endregion.
@@ -180,8 +167,8 @@ final readonly class StoreFixtureBuilder {
 	public function run( string $run_id, RunState $state ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
-				$store   = new RunStore( $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
-				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending );
+				$store   = new RunStore( (string) $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
+				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending, $state->priority );
 				if ( ! $created instanceof RunState ) {
 					throw new \LogicException( 'Production RunStore rejected an isolated active-run fixture.' );
 				}
@@ -208,15 +195,19 @@ final readonly class StoreFixtureBuilder {
 	 * @param   array<array-key, mixed> $start_args Original run arguments.
 	 * @param   RunFailure              $failure    Client failure payload.
 	 * @param   EngineError|null        $error      Internal failure detail.
+	 * @param   string                  $kind       Persisted run kind.
+	 * @param   int                     $priority   Admitted scheduler priority.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function failed( int $failed_at, array $start_args, RunFailure $failure, ?EngineError $error = null ): array {
+	public function failed( int $failed_at, array $start_args, RunFailure $failure, ?EngineError $error = null, string $kind = 'job', int $priority = 10 ): array {
 		return $this->failed_runs(
 			array(
 				array(
+					'kind'       => $kind,
 					'failed_at'  => $failed_at,
 					'start_args' => $start_args,
+					'priority'   => $priority,
 					'failure'    => $failure,
 					'error'      => $error,
 				),
@@ -231,8 +222,10 @@ final readonly class StoreFixtureBuilder {
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param list<array{
+	 *     kind: string,
 	 *     failed_at: int,
 	 *     start_args: array<array-key, mixed>,
+	 *     priority?: int,
 	 *     failure: RunFailure,
 	 *     error?: EngineError|null
 	 * }> $entries
@@ -252,7 +245,7 @@ final readonly class StoreFixtureBuilder {
 				foreach ( $entries as $entry ) {
 					$failure = $entry['failure'];
 					$error   = $entry['error'] ?? null;
-					if ( ! $store->record( (string) $failure->run_id, $entry['failed_at'], $entry['start_args'], $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
+					if ( ! $store->record( (string) $failure->run_id, $entry['kind'], $entry['failed_at'], $entry['start_args'], $entry['priority'] ?? 10, $failure->attempts, $error ?? new EngineError( $failure->summary ), $failure ) ) {
 						throw new \LogicException( 'Production FailedRunStore rejected an isolated failed-run fixture.' );
 					}
 				}
@@ -306,7 +299,7 @@ final readonly class StoreFixtureBuilder {
 	public function latest( array $entries ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $entries ): array {
-				$store = new LatestRunPointer( $this->identity, new OptionRows( $wpdb ) );
+				$store = new LatestRunPointer( (string) $this->identity, new OptionRows( $wpdb ) );
 				foreach ( $entries as $entry ) {
 					if ( ! $store->record( $entry['run_id'], $entry['args_hash'] ) ) {
 						throw new \LogicException( 'Production LatestRunPointer rejected an isolated pointer fixture.' );
@@ -337,37 +330,25 @@ final readonly class StoreFixtureBuilder {
 	public function schedule_registration( array $owner ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $owner ): array {
+				$declarations = array();
+				foreach ( $owner['declarations'] as $schedule_identity => $declaration ) {
+					$job = Identity::tryFrom( $declaration['job'] );
+					if ( null === $job ) {
+						throw new \InvalidArgumentException( 'Schedule-registration fixtures require canonical target identities.' );
+					}
+
+					$declarations[ $schedule_identity ] = array(
+						'schedule' => $declaration['schedule'],
+						'job'      => $job,
+					);
+				}
+
 				$registry = new ScheduleRegistry( new OptionRows( $wpdb ), new NullLogger() );
-				if ( OwnerReplacementOutcome::Persisted !== $registry->replace_owner( $owner['owner'], $owner['declarations'], $owner['registrations'] ) ) {
+				if ( OwnerReplacementOutcome::Persisted !== $registry->replace_owner( $owner['owner'], $declarations, $owner['registrations'] ) ) {
 					throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registration fixture.' );
 				}
 
 				return $this->row( $wpdb, ScheduleRegistry::option_name( $owner['owner'] ) );
-			}
-		);
-	}
-
-	/**
-	 * Returns one occurrence-lease option name and exact raw value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $claimed_at  Claim timestamp.
-	 * @param   int $claim_token Deterministic claim-token source.
-	 *
-	 * @return  array{string, string}
-	 */
-	public function occurrence_lease( int $claimed_at, int $claim_token = 42 ): array {
-		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $claimed_at, $claim_token ): array {
-				$rows  = new OptionRows( $wpdb );
-				$claim = ( new OccurrenceLease( $rows, new FixedClock( $claimed_at ), new RecordingRandomizer( $claim_token ) ) )->claim( $this->identity );
-				if ( OccurrenceLeaseOutcome::Claimed !== $claim->outcome ) {
-					throw new \LogicException( 'Production OccurrenceLease rejected an isolated lease fixture.' );
-				}
-
-				return $this->only_row_under( $rows, $wpdb, OccurrenceLease::OPTION_PREFIX );
 			}
 		);
 	}
@@ -388,85 +369,9 @@ final readonly class StoreFixtureBuilder {
 				$rows      = new OptionRows( $wpdb );
 				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
 				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
-				$intents->record_intent( $this->identity );
+				$intents->record_intent( (string) $this->identity );
 
 				return $this->only_row_under( $rows, $wpdb, CleanupIntents::OPTION_PREFIX );
-			}
-		);
-	}
-
-	/**
-	 * Returns the cursor row authored by one bounded production cleanup-intent sweep.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $created_at Intent timestamp.
-	 *
-	 * @return  array{string, string}
-	 */
-	public function cleanup_intent_sweep_cursor( int $created_at ): array {
-		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $created_at ): array {
-				$rows      = new OptionRows( $wpdb );
-				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
-				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
-				for ( $index = 0; $index < 500; ++$index ) {
-					$intents->record_intent( $this->identity . '-' . \sprintf( '%03d', $index ) );
-				}
-
-				$intents->converge_pending_intents();
-
-				return $this->row( $wpdb, CleanupIntents::SWEEP_CURSOR_OPTION );
-			}
-		);
-	}
-
-	/**
-	 * Returns the cursor row authored by one incomplete production maintenance pass.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array{string, string}
-	 */
-	public function sweep_cursor(): array {
-		return $this->isolated(
-			function ( \wpdb $wpdb ): array {
-				$clock   = new FixedClock( 1_700_000_000 );
-				$logger  = new NullLogger();
-				$backend = new RecordingBackend();
-				$rows    = new OptionRows( $wpdb );
-				for ( $index = 0; $index < 500; ++$index ) {
-					if ( RowWriteOutcome::Won !== $rows->insert_if_absent( RunIdentity::option_prefix() . '!fixture-' . \sprintf( '%03d', $index ), 'schema-invalid-run' ) ) {
-						throw new \LogicException( 'Store fixtures could not stage the maintenance scan budget.' );
-					}
-				}
-
-				$before          = $this->option_names( $rows, '' );
-				$guard           = new OverlapGuard( $clock, $logger, $rows );
-				$stores          = new StoreFactory( $clock, $rows, $logger );
-				$windows         = new LockWindows( $clock, $logger );
-				$effects         = new LifecycleEffects( $guard, $stores, $logger );
-				$transitions     = new RunTransitions( $guard, $stores, $clock, $windows, $logger, $effects );
-				$work            = new JobRegistry();
-				$failure         = new FailureLifecycle( $backend, $clock, new RecordingRandomizer( 0 ), $logger, $transitions );
-				$job_handler     = new JobKindHandler( $work, $logger, $clock, $windows, $transitions, $effects, $failure );
-				$chunked_handler = new ChunkedJobKindHandler( $work, $backend, $logger, $clock, $windows, $transitions, $effects, $failure );
-				$handlers        = array(
-					$job_handler->key()     => $job_handler,
-					$chunked_handler->key() => $chunked_handler,
-				);
-				$reconciliation  = new RunReconciliation( $guard, $stores, $clock, $logger, $windows, $transitions, $effects, $handlers, $backend );
-				$intents         = new CleanupIntents( new ScheduleRegistry( $rows, $logger ), new SchedulerFacade( array( $backend ) ), $rows, $clock, $logger );
-
-				( new MaintenanceJob( $rows, $reconciliation, $guard, $intents, $logger ) )->handle( array(), new RunContext( 'fixture-maintenance-run', array() ) );
-				$added = \array_values( \array_diff( $this->option_names( $rows, '' ), $before ) );
-				if ( 1 !== \count( $added ) ) {
-					throw new \LogicException( 'Production MaintenanceJob did not emit exactly one isolated cursor row.' );
-				}
-
-				return $this->row( $wpdb, $added[0] );
 			}
 		);
 	}
@@ -477,9 +382,9 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $args_hash   Stable single-flight identity.
-	 * @param   string $run_id      Lock owner.
-	 * @param   int    $claimed_at  Claim timestamp.
+	 * @param   string $args_hash    Stable single-flight identity.
+	 * @param   string $run_id       Lock owner.
+	 * @param   int    $claimed_at   Claim timestamp.
 	 * @param   int    $heartbeat_at Latest liveness timestamp.
 	 *
 	 * @return  array{string, string}
@@ -489,7 +394,7 @@ final readonly class StoreFixtureBuilder {
 			function ( \wpdb $wpdb ) use ( $args_hash, $run_id, $claimed_at, $heartbeat_at ): array {
 				$clock = new FixedClock( $claimed_at );
 				$guard = new OverlapGuard( $clock, new RecordingLogger(), new OptionRows( $wpdb ) );
-				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id, 0 ) ) {
+				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id, 0 )->outcome ) {
 					throw new \LogicException( 'Production OverlapGuard rejected an isolated lock fixture.' );
 				}
 
@@ -806,6 +711,7 @@ final readonly class StoreFixtureBuilder {
 			&& $left->action_sequence === $right->action_sequence
 			&& $left->created_at === $right->created_at
 			&& $left->heartbeat_at === $right->heartbeat_at
+			&& $left->priority === $right->priority
 			&& ( $left->pending === $right->pending || ( null !== $left->pending && null !== $right->pending && $left->pending->stage === $right->pending->stage && $left->pending->mode === $right->pending->mode && $left->pending->fire_at === $right->pending->fire_at && $left->pending->priority === $right->pending->priority ) )
 			&& $left->error === $right->error
 			&& $left->previous_completed_run_id === $right->previous_completed_run_id

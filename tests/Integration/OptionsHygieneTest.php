@@ -2,9 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
@@ -16,7 +17,7 @@ use PHPUnit\Framework\Attributes\Group;
  * @version 1.0.0
  */
 #[Group( 'degraded' )]
-final class OptionsHygieneTest extends IntegrationTestCase {
+final class OptionsHygieneTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Public owner unique to this integration-test graph. */
@@ -53,17 +54,17 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 		$chunked_job        = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition() );
-		$client->jobs()->register( $chunked_job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition() );
+		$client->register( $chunked_job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::JOB_IDENTITY );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CHUNKED_JOB_IDENTITY );
-		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
+		\add_filter( 'a8csp_bgje/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
 		$chunked_completed = array();
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::CHUNKED_JOB_IDENTITY,
+			'a8csp_bgje/completed/' . self::CHUNKED_JOB_IDENTITY,
 			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( &$chunked_completed ): void {
 				$chunked_completed[] = array( (string) $run_id, $start_args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -71,16 +72,16 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 			3
 		);
 
-		$job_result = $client->jobs()->enqueue( self::JOB_NAME, $job_args );
+		$job_result = $client->dispatch( self::JOB_NAME, $job_args );
 		self::assertInstanceOf( Success::class, $job_result, 'The census job must enqueue through the public API' );
-		self::assertIsString( $job_result->value );
-		$job_run_id = $job_result->value;
+		self::assertInstanceOf( Run::class, $job_result->value );
+		$job_run_id = (string) $job_result->value->id;
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must complete the census job' );
 
-		$chunked_job_result = $client->chunked_jobs()->start( self::CHUNKED_JOB_NAME, $chunked_job_args );
+		$chunked_job_result = $client->dispatch( self::CHUNKED_JOB_NAME, $chunked_job_args );
 		self::assertInstanceOf( Success::class, $chunked_job_result, 'The census chunked job must start through the public API' );
-		self::assertIsString( $chunked_job_result->value );
-		$chunked_job_run_id = $chunked_job_result->value;
+		self::assertInstanceOf( Run::class, $chunked_job_result->value );
+		$chunked_job_run_id = (string) $chunked_job_result->value->id;
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must generate the census chunked job queue' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must process the census chunked job chunk inline' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The available scheduler must observe the drained census chunked job queue' );
@@ -106,12 +107,14 @@ final class OptionsHygieneTest extends IntegrationTestCase {
 			self::assertNotContains( $row['autoload'], $autoloaded_values, \sprintf( 'Engine option "%s" must persist with autoload=false', $row['option_name'] ) );
 		}
 
-		$job_latest = $client->runs()->last_completed_run_id( self::JOB_NAME );
+		$job_latest = $client->last_completed_run( self::JOB_NAME );
 		self::assertInstanceOf( Success::class, $job_latest );
-		self::assertSame( $job_run_id, $job_latest->value );
-		$chunked_job_latest = $client->runs()->last_completed_run_id( self::CHUNKED_JOB_NAME );
+		self::assertInstanceOf( Run::class, $job_latest->value );
+		self::assertSame( $job_run_id, (string) $job_latest->value->id );
+		$chunked_job_latest = $client->last_completed_run( self::CHUNKED_JOB_NAME );
 		self::assertInstanceOf( Success::class, $chunked_job_latest );
-		self::assertSame( $chunked_job_run_id, $chunked_job_latest->value );
+		self::assertInstanceOf( Run::class, $chunked_job_latest->value );
+		self::assertSame( $chunked_job_run_id, (string) $chunked_job_latest->value->id );
 	}
 
 	// endregion.

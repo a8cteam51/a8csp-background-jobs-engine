@@ -14,6 +14,8 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( InvalidChunkException::class )]
 final class InvalidChunkExceptionTest extends TestCase {
+	// region LIFECYCLE.
+
 	/**
 	 * Defines the guarded plugin runtime before the internal exception is autoloaded.
 	 *
@@ -28,6 +30,10 @@ final class InvalidChunkExceptionTest extends TestCase {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/**
 	 * Consumers cannot inject arbitrary text through direct construction.
@@ -59,8 +65,10 @@ final class InvalidChunkExceptionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_factories_produce_byte_exact_engine_authored_messages(): void {
-		self::assertSame( 'Chunked Job chunk arguments must contain only null, scalar, or nested array values.', InvalidChunkException::nonPortable()->getMessage() );
-		self::assertSame( 'Chunked Job chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.', InvalidChunkException::chunkTooLarge( 8_193, 8_192 )->getMessage() );
-		self::assertSame( 'Chunked Job queue contains 1048577 persisted serialization bytes; the limit is 1048576 bytes.', InvalidChunkException::queueTooLarge( 1_048_577, 1_048_576 )->getMessage() );
+		self::assertSame( 'Chunked Job chunk arguments must contain only null, scalar, or nested array values.', InvalidChunkException::non_portable()->getMessage() );
+		self::assertSame( 'Chunked Job chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.', InvalidChunkException::chunk_too_large( 8_193, 8_192 )->getMessage() );
+		self::assertSame( 'Chunked Job queue contains 1048577 persisted serialization bytes; the limit is 1048576 bytes.', InvalidChunkException::queue_too_large( 1_048_577, 1_048_576 )->getMessage() );
 	}
+
+	// endregion.
 }

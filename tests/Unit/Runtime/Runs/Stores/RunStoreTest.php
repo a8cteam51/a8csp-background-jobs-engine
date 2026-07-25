@@ -2,10 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
@@ -25,12 +26,20 @@ use PHPUnit\Framework\TestCase;
 
 /** Detects unsafe class construction while corrupt run storage is inspected. */
 final class RunStoreWakeupProbe {
+	// region FIELDS AND CONSTANTS.
+
 	public static int $wakeups = 0;
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/** Records an unsafe native object construction. */
 	public function __wakeup(): void {
 		++self::$wakeups;
 	}
+
+	// endregion.
 }
 
 /**
@@ -43,18 +52,20 @@ final class RunStoreWakeupProbe {
 final class RunStoreTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const array ARGS      = array(
+	private const array ARGS             = array(
 		'scope'   => 'all',
 		'site_id' => 7,
 	);
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
-	private const string NAME     = 'reports';
-	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
-	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
+	private const string IDENTITY        = self::OWNER . ':' . self::NAME;
+	private const string NAME            = 'reports';
+	private const int NOW                = 1_700_000_000;
+	private const string OWNER           = 'runs-tests';
+	private const string PREVIOUS_RUN_ID = '00000000001699999999-0000000000000000041';
+	private const string RUN_ID          = '00000000001700000000-0000000000000000042';
 
-	private Client $client;
+	private OwnerOperations $client;
 	private StoreFixtureBuilder $fixtures;
+	private Identity $identity;
 	private EngineRig $rig;
 	private OptionRows $rows;
 	private RecordingJob $job;
@@ -88,10 +99,11 @@ final class RunStoreTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->client( self::OWNER );
-		$this->job    = new RecordingJob( self::NAME );
-		$this->client->jobs()->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 ) ) ) );
+		$this->rig      = EngineRig::set_up( self::NOW );
+		$this->client   = $this->rig->operations( self::OWNER );
+		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->job      = new RecordingJob( self::NAME );
+		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 ) ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
@@ -130,7 +142,7 @@ final class RunStoreTest extends TestCase {
 		$this->job->on_handle = function () use ( &$during_execution ): void {
 			$during_execution = $this->single_live_run();
 		};
-		$result               = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result               = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$queued = $this->single_live_run();
@@ -144,7 +156,7 @@ final class RunStoreTest extends TestCase {
 		self::assertIsArray( $during_execution );
 		self::assertTrue( $during_execution['executing'] );
 		self::assertGreaterThanOrEqual( self::NOW, $during_execution['heartbeat_at'] );
-		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		$snapshot = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertSame( 'completed', $snapshot['history'][0]['outcome'] ?? null );
 		self::assertSame( self::RUN_ID, $snapshot['history'][0]['run_id'] ?? null );
@@ -161,7 +173,7 @@ final class RunStoreTest extends TestCase {
 	public function test_retry_transition_is_visible_through_live_run_inspection(): void {
 		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
-		$result                         = $this->client->jobs()->enqueue( self::NAME, self::ARGS );
+		$result                         = $this->client->dispatch( self::NAME, self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->rig->run_due();
@@ -171,7 +183,7 @@ final class RunStoreTest extends TestCase {
 		self::assertFalse( $retrying['executing'] );
 		self::assertGreaterThanOrEqual( self::NOW, $retrying['heartbeat_at'] );
 		$this->rig->run_due();
-		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['live'] );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 	}
 
@@ -184,10 +196,10 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_malformed_live_rows_are_tolerated_by_inspection(): void {
-		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['live'] );
 		$this->rig->wpdb()->put( $this->run_option_name(), 'legacy-corrupt-run-row' );
 
-		$snapshot = $this->rig->inspection()->runs( self::IDENTITY );
+		$snapshot = $this->rig->inspection()->runs( $this->identity );
 
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertNull( $snapshot['live_error'] );
@@ -214,6 +226,68 @@ final class RunStoreTest extends TestCase {
 		self::assertIsArray( $inspected->value );
 		self::assertSame( $raw, $inspected->value['raw'] ?? null );
 		self::assertNull( $inspected->value['state'] ?? null );
+	}
+
+	/**
+	 * Exhaustive repair inspection returns every canonical identity-bound row without hiding corruption.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_all_returns_every_identity_bound_snapshot_and_preserves_corruption(): void {
+		$other_run_id = '00000000001700000000-0000000000000000043';
+		$valid        = $this->fixtures->run( self::RUN_ID, $this->state() );
+		$corrupt_name = RunIdentity::option_name( $this->identity, $other_run_id );
+		$corrupt_raw  = 'corrupt-run-row';
+		$this->put_fixture( $valid );
+		$this->rig->wpdb()->put( $corrupt_name, $corrupt_raw );
+
+		$foreign_identity = self::IDENTITY . '_other';
+		$foreign          = StoreFixtureBuilder::for_identity( $foreign_identity )->run( self::RUN_ID, $this->state() );
+		$this->put_fixture( $foreign );
+
+		$inspected = $this->store()->inspect_all();
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		$snapshots = $inspected->value;
+		self::assertCount( 2, $snapshots );
+		$valid_snapshot   = $snapshots[0] ?? null;
+		$corrupt_snapshot = $snapshots[1] ?? null;
+		self::assertIsArray( $valid_snapshot );
+		self::assertIsArray( $corrupt_snapshot );
+		self::assertSame( self::RUN_ID, $valid_snapshot['run_id'] ?? null );
+		self::assertSame( $other_run_id, $corrupt_snapshot['run_id'] ?? null );
+		self::assertSame( $valid[1], $valid_snapshot['raw'] ?? null );
+		self::assertInstanceOf( RunState::class, $valid_snapshot['state'] ?? null );
+		self::assertSame( $corrupt_raw, $corrupt_snapshot['raw'] ?? null );
+		self::assertNull( $corrupt_snapshot['state'] ?? null );
+	}
+
+	/**
+	 * Exhaustive repair inspection propagates an authoritative candidate-read failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_all_fails_when_any_candidate_read_is_indeterminate(): void {
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $this->state() ) );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'candidate read failed';
+			}
+		);
+
+		$inspected = $this->store()->inspect_all();
+
+		self::assertInstanceOf( Failure::class, $inspected );
+		self::assertInstanceOf( EngineError::class, $inspected->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $inspected->error->reason );
 	}
 
 	/**
@@ -347,6 +421,35 @@ final class RunStoreTest extends TestCase {
 		self::assertFalse( $store->delete_exact( self::RUN_ID, $after[1] ) );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'DELETE ' )[0] );
+	}
+
+	/**
+	 * Typed exact deletion removes only the generation represented by the supplied state.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Fixture-built bytes prove typed serialization deletes a matching row and rejects a stale typed generation after a rival advances it.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_delete_if_unchanged_is_conditioned_on_the_expected_typed_generation(): void {
+		$expected = $this->state();
+		$rival    = $expected->with_action_sequence( 2 );
+		$matching = $this->fixtures->run( self::RUN_ID, $expected );
+		$winner   = $this->fixtures->run( self::RUN_ID, $rival );
+		$store    = $this->store();
+		$this->put_fixture( $matching );
+
+		self::assertTrue( $store->delete_if_unchanged( self::RUN_ID, $expected ) );
+		self::assertArrayNotHasKey( $matching[0], $this->rig->wpdb()->rows );
+
+		$this->put_fixture( $winner );
+
+		self::assertFalse( $store->delete_if_unchanged( self::RUN_ID, $expected ) );
+		self::assertSame( $winner[1], $this->raw_row() );
 	}
 
 	/**
@@ -484,18 +587,42 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_completed_state_round_trips_its_previous_completed_run_id(): void {
-		$terminal = $this->state()->with_status( RunStatus::Completed )->with_previous_completed_run_id( 'previous-run-id' );
+		$terminal = $this->state()->with_status( RunStatus::Completed )->with_previous_completed_run_id( self::PREVIOUS_RUN_ID );
 		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
 		$this->put_fixture( $fixture );
 
 		$stored = \maybe_unserialize( $fixture[1] );
 		self::assertIsArray( $stored );
-		self::assertSame( 'previous-run-id', $stored['previous_completed_run_id'] ?? null );
+		self::assertSame( self::PREVIOUS_RUN_ID, $stored['previous_completed_run_id'] ?? null );
 		$inspected = $this->store()->inspect( self::RUN_ID );
 		self::assertInstanceOf( Success::class, $inspected );
 		self::assertIsArray( $inspected->value );
 		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
-		self::assertSame( 'previous-run-id', $inspected->value['state']->previous_completed_run_id );
+		self::assertSame( self::PREVIOUS_RUN_ID, $inspected->value['state']->previous_completed_run_id );
+	}
+
+	/**
+	 * A malformed frozen predecessor is dropped without discarding its completed state.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale The malformed predecessor is persisted below the typed store boundary; retaining the completed state allows terminal effects to deliver with a null predecessor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_state_drops_a_malformed_previous_completed_run_id_during_hydration(): void {
+		$terminal = $this->state()->with_status( RunStatus::Completed )->with_previous_completed_run_id( 'malformed-run-id' );
+		$fixture  = $this->fixtures->run( self::RUN_ID, $terminal );
+		$this->put_fixture( $fixture );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertNull( $inspected->value['state']->previous_completed_run_id );
 	}
 
 	/**
@@ -528,7 +655,7 @@ final class RunStoreTest extends TestCase {
 		$this->rig->wpdb()->put( $this->run_option_name(), $raw );
 		RunStoreWakeupProbe::$wakeups = 0;
 
-		self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['live'] );
 		self::assertSame( 0, RunStoreWakeupProbe::$wakeups );
 		$inspected = $this->store()->inspect( self::RUN_ID );
 		self::assertInstanceOf( Success::class, $inspected );
@@ -578,6 +705,76 @@ final class RunStoreTest extends TestCase {
 		self::assertSame( 'single', $inspected->value['state']->pending->mode );
 		self::assertSame( $fire_at, $inspected->value['state']->pending->fire_at );
 		self::assertSame( 10, $inspected->value['state']->pending->priority );
+	}
+
+	/**
+	 * Priority provenance uses the pending descriptor or one pendingless top-level field, never both.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale A single canonical representation keeps typed-state compare-and-swap bytes stable while preserving priority after successor removal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_priority_provenance_uses_one_canonical_wire_location(): void {
+		$pending_state   = $this->state()->with_pending( PendingAction::async( 'run', 42 ) );
+		$pending_fixture = $this->fixtures->run( self::RUN_ID, $pending_state );
+		$pending_row     = \maybe_unserialize( $pending_fixture[1] );
+		self::assertIsArray( $pending_row );
+		self::assertArrayNotHasKey( 'priority', $pending_row );
+		$stored_pending = $pending_row['pending'] ?? null;
+		self::assertIsArray( $stored_pending );
+		self::assertSame( 42, $stored_pending['priority'] ?? null );
+		$this->put_fixture( $pending_fixture );
+		$pending_inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $pending_inspected );
+		self::assertIsArray( $pending_inspected->value );
+		self::assertInstanceOf( RunState::class, $pending_inspected->value['state'] );
+		self::assertSame( 42, $pending_inspected->value['state']->priority );
+
+		$pendingless_fixture = $this->fixtures->run( self::RUN_ID, $pending_state->with_pending( null ) );
+		$pendingless_row     = \maybe_unserialize( $pendingless_fixture[1] );
+		self::assertIsArray( $pendingless_row );
+		self::assertArrayNotHasKey( 'pending', $pendingless_row );
+		self::assertSame( 42, $pendingless_row['priority'] ?? null );
+		$this->put_fixture( $pendingless_fixture );
+		$pendingless_inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $pendingless_inspected );
+		self::assertIsArray( $pendingless_inspected->value );
+		self::assertInstanceOf( RunState::class, $pendingless_inspected->value['state'] );
+		self::assertSame( 42, $pendingless_inspected->value['state']->priority );
+	}
+
+	/**
+	 * A redundant top-level priority is corrupt raw evidence.
+	 *
+	 * @return  void
+	 */
+	public function test_redundant_priority_representation_never_hydrates(): void {
+		$pending_fixture   = $this->fixtures->run( self::RUN_ID, $this->state()->with_pending( PendingAction::async( 'run', 42 ) ) );
+		$pending_row       = \maybe_unserialize( $pending_fixture[1] );
+		$pendingless_state = $this->state()->with_pending( null );
+		$default_fixture   = $this->fixtures->run( self::RUN_ID, $pendingless_state );
+		$default_row       = \maybe_unserialize( $default_fixture[1] );
+		self::assertIsArray( $pending_row );
+		self::assertIsArray( $default_row );
+		$pending_row['priority'] = 42;
+		$default_row['priority'] = 10;
+
+		foreach ( array( $pending_row, $default_row ) as $stored ) {
+			$raw = \maybe_serialize( $stored );
+			self::assertIsString( $raw );
+			$this->rig->wpdb()->put( $pending_fixture[0], $raw );
+
+			$inspected = $this->store()->inspect( self::RUN_ID );
+
+			self::assertInstanceOf( Success::class, $inspected );
+			self::assertIsArray( $inspected->value );
+			self::assertSame( $raw, $inspected->value['raw'] ?? null );
+			self::assertNull( $inspected->value['state'] ?? null );
+		}
 	}
 
 	/**
@@ -681,7 +878,7 @@ final class RunStoreTest extends TestCase {
 
 		foreach ( $invalid as $pending ) {
 			$this->put_corrupt_state( array( 'pending' => $pending ) );
-			self::assertSame( array(), $this->rig->inspection()->runs( self::IDENTITY )['live'] );
+			self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['live'] );
 		}
 	}
 
@@ -802,7 +999,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  array{run_id: string, kind: string, status: string, executing: bool, attempts: int, queue_depth: int|null, queue_known: bool, heartbeat_at: int, stale: bool}
 	 */
 	private function single_live_run(): array {
-		$live = $this->rig->inspection()->runs( self::IDENTITY )['live'];
+		$live = $this->rig->inspection()->runs( $this->identity )['live'];
 		self::assertCount( 1, $live );
 
 		return $live[0];
@@ -903,7 +1100,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  string
 	 */
 	private function run_option_name(): string {
-		return RunIdentity::option_name( self::IDENTITY, self::RUN_ID );
+		return RunIdentity::option_name( $this->identity, self::RUN_ID );
 	}
 
 	/**

@@ -10,15 +10,16 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -47,7 +48,7 @@ final readonly class RunStore {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgje_run_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_active_run_';
 
 	/**
 	 * Maximum persisted serialization bytes accepted for one kind-owned state payload.
@@ -105,23 +106,25 @@ final readonly class RunStore {
 	 * @param   string                  $args_hash  Stable single-flight identity.
 	 * @param   array<array-key, mixed> $kind_state Initial opaque kind-owned state payload.
 	 * @param   PendingAction|null      $pending    Durable successor delivery, or null when none exists.
+	 * @param   int|null                $priority   Admitted scheduler priority, or null to derive it from the pending descriptor
+	 *                                               or engine default.
 	 *
-	 * @throws  \InvalidArgumentException When the kind key is lexically malformed.
+	 * @throws  \InvalidArgumentException When the kind key or priority is invalid.
 	 * @throws  \LogicException           When WordPress does not serialize the kind-owned state to a string.
 	 *
 	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned state cannot cross the persistence boundary, or null when the run option cannot be added.
 	 */
-	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null ): RunState|Failure|null {
+	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null ): RunState|Failure|null {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $this->clock->now()->getTimestamp();
-		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, );
+		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, priority: $priority, );
 
 		$rejected = self::kind_state_failure( $state->kind_state );
 		if ( null !== $rejected ) {
 			return $rejected;
 		}
 
-		if ( ! \add_option( RunIdentity::option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
+		if ( ! \add_option( RunIdentity::raw_option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
 			return null;
 		}
 
@@ -139,7 +142,7 @@ final readonly class RunStore {
 	 * @return  RunState|null
 	 */
 	public function get( string $run_id ): ?RunState {
-		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return null;
 		}
@@ -172,7 +175,7 @@ final readonly class RunStore {
 	 */
 	#[\NoDiscard( 'a run-state read outcome must be handled, not dropped' )]
 	public function inspect( string $run_id ): AbstractResult {
-		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return $selected;
 		}
@@ -188,6 +191,49 @@ final readonly class RunStore {
 				'state' => self::from_option( RawOptionDecoder::decode( $raw ) ),
 			)
 		);
+	}
+
+	/**
+	 * Returns every canonical active-run snapshot for the bound identity.
+	 *
+	 * @internal Explicit lock repair only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  AbstractResult<list<array{run_id: string, raw: string, state: RunState|null}>, EngineError>
+	 */
+	#[\NoDiscard( 'an exhaustive run-state read outcome must be handled, not dropped' )]
+	public function inspect_all(): AbstractResult {
+		$names = $this->rows->option_names( RunIdentity::raw_option_name_prefix( $this->identity ) );
+		if ( $names->is_failure() ) {
+			return $names;
+		}
+
+		$snapshots = array();
+		foreach ( $names->value as $option_name ) {
+			$run_identity = RunIdentity::from_option_name( $option_name );
+			if ( null === $run_identity || $this->identity !== (string) $run_identity['identity'] ) {
+				continue;
+			}
+
+			$run_id    = $run_identity['run_id'];
+			$inspected = $this->inspect( $run_id );
+			if ( $inspected->is_failure() ) {
+				return $inspected;
+			}
+			if ( null === $inspected->value ) {
+				continue;
+			}
+
+			$snapshots[] = array(
+				'run_id' => $run_id,
+				'raw'    => $inspected->value['raw'],
+				'state'  => $inspected->value['state'],
+			);
+		}
+
+		return new Success( $snapshots );
 	}
 
 	/**
@@ -208,17 +254,33 @@ final readonly class RunStore {
 	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned state cannot cross the persistence boundary, otherwise null.
 	 */
 	public function replace_if_raw_matches( string $run_id, string $expected_raw, RunState $replacement ): string|Failure|null {
-		$rejected = self::kind_state_failure( $replacement->kind_state );
-		if ( null !== $rejected ) {
-			return $rejected;
+		$write = $this->replace_if_raw_matches_classified( $run_id, $expected_raw, $replacement );
+		if ( $write instanceof Failure ) {
+			return $write;
 		}
 
-		$replacement_raw = self::serialize_state( $replacement );
-		if ( RowWriteOutcome::Won !== $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ) ) {
-			return null;
-		}
+		return RowWriteOutcome::Won === $write['outcome'] ? $write['raw'] : null;
+	}
 
-		return $replacement_raw;
+	/**
+	 * Classifies an exact raw-state replacement without collapsing write failure into contention.
+	 *
+	 * @internal Engine terminalization only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $run_id       Run identifier.
+	 * @param   string   $expected_raw Exact observed state.
+	 * @param   RunState $replacement  Replacement state.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the run state to a string.
+	 *
+	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned state cannot cross the persistence boundary.
+	 */
+	public function replace_if_raw_matches_classified( string $run_id, string $expected_raw, RunState $replacement ): array|Failure {
+		return $this->replace_if_matches_classified( $run_id, $expected_raw, $replacement );
 	}
 
 	/**
@@ -239,17 +301,33 @@ final readonly class RunStore {
 	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned state cannot cross the persistence boundary, otherwise null.
 	 */
 	public function replace_if_state_matches( string $run_id, RunState $expected, RunState $replacement ): string|Failure|null {
-		$rejected = self::kind_state_failure( $replacement->kind_state );
-		if ( null !== $rejected ) {
-			return $rejected;
+		$write = $this->replace_if_state_matches_classified( $run_id, $expected, $replacement );
+		if ( $write instanceof Failure ) {
+			return $write;
 		}
 
-		$replacement_raw = self::serialize_state( $replacement );
-		if ( RowWriteOutcome::Won !== $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), self::serialize_state( $expected ), $replacement_raw ) ) {
-			return null;
-		}
+		return RowWriteOutcome::Won === $write['outcome'] ? $write['raw'] : null;
+	}
 
-		return $replacement_raw;
+	/**
+	 * Classifies a typed-state replacement without collapsing write failure into contention.
+	 *
+	 * @internal Engine terminalization only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $run_id      Run identifier.
+	 * @param   RunState $expected    Complete state observed before the transition.
+	 * @param   RunState $replacement Complete replacement state.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the run state to a string.
+	 *
+	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned state cannot cross the persistence boundary.
+	 */
+	public function replace_if_state_matches_classified( string $run_id, RunState $expected, RunState $replacement ): array|Failure {
+		return $this->replace_if_matches_classified( $run_id, $expected, $replacement );
 	}
 
 	/**
@@ -338,7 +416,27 @@ final readonly class RunStore {
 	 * @return  bool Whether this caller deleted the exact row.
 	 */
 	public function delete_exact( string $run_id, string $expected_raw ): bool {
-		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw );
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::raw_option_name( $this->identity, $run_id ), $expected_raw );
+	}
+
+	/**
+	 * Deletes a run only while its complete typed state still matches.
+	 *
+	 * @internal Engine provisional-state compensation only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string   $run_id   Run identifier.
+	 * @param   RunState $expected Complete state written before compensation.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the run state to a string.
+	 *
+	 * @return  bool Whether this caller deleted the exact row.
+	 */
+	public function delete_if_unchanged( string $run_id, RunState $expected ): bool {
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::raw_option_name( $this->identity, $run_id ), self::serialize_state( $expected ) );
 	}
 
 	/**
@@ -381,29 +479,39 @@ final readonly class RunStore {
 		return null !== $replacement_raw ? $replacement : null;
 	}
 
+	// endregion
+
+	// region HELPERS
+
 	/**
-	 * Deletes a run's consolidated option.
+	 * Returns one classified exact replacement and its deterministic replacement bytes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $run_id Run identifier.
+	 * @param   string          $run_id      Run identifier.
+	 * @param   string|RunState $expected    Exact raw or complete typed state observed before the transition.
+	 * @param   RunState        $replacement Complete replacement state.
 	 *
-	 * @return  bool True when the run option is confirmed absent.
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the run state to a string.
+	 *
+	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned state cannot cross the persistence boundary.
 	 */
-	public function delete( string $run_id ): bool {
-		\delete_option( RunIdentity::option_name( $this->identity, $run_id ) );
-		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
-		if ( $selected->is_failure() ) {
-			return false;
+	private function replace_if_matches_classified( string $run_id, string|RunState $expected, RunState $replacement ): array|Failure {
+		$rejected = self::kind_state_failure( $replacement->kind_state );
+		if ( null !== $rejected ) {
+			return $rejected;
 		}
 
-		return null === $selected->value;
+		$expected_raw    = $expected instanceof RunState ? self::serialize_state( $expected ) : $expected;
+		$replacement_raw = self::serialize_state( $replacement );
+
+		return array(
+			'outcome' => $this->rows->compare_and_swap( RunIdentity::raw_option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ),
+			'raw'     => $replacement_raw,
+		);
 	}
-
-	// endregion
-
-	// region HELPERS
 
 	/**
 	 * Converts typed state to its persisted option shape.
@@ -426,6 +534,7 @@ final readonly class RunStore {
 	 *     action_sequence: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
+	 *     priority?: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>},
 	 *     previous_completed_run_id?: string,
@@ -452,6 +561,9 @@ final readonly class RunStore {
 				'fire_at'  => $state->pending->fire_at,
 				'priority' => $state->pending->priority,
 			);
+		} elseif ( 10 !== $state->priority ) {
+			// A retained descriptor owns the canonical wire priority; pendingless non-default runs need separate provenance.
+			$option['priority'] = $state->priority;
 		}
 		if ( null !== $state->error ) {
 			$option['error'] = $state->error;
@@ -516,6 +628,9 @@ final readonly class RunStore {
 		) {
 			return null;
 		}
+		if ( null !== $previous_completed_run_id && null === RunIdentity::parse( $previous_completed_run_id ) ) {
+			$previous_completed_run_id = null;
+		}
 		$stored_pending = $value['pending'] ?? null;
 		$pending        = null;
 		if ( null !== $stored_pending ) {
@@ -524,7 +639,7 @@ final readonly class RunStore {
 				: PendingAction::single( $stored_pending['stage'], $stored_pending['fire_at'], $stored_pending['priority'] );
 		}
 
-		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], kind_state: $value['kind_state'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, );
+		return new RunState( status: $status, kind: $value['kind'], executing: $value['executing'], start_args: $value['start_args'], args_hash: $value['args_hash'], kind_state: $value['kind_state'], failed_attempts: $value['failed_attempts'], action_sequence: $value['action_sequence'], created_at: $value['created_at'], heartbeat_at: $value['heartbeat_at'], pending: $pending, error: $error, previous_completed_run_id: $previous_completed_run_id, effects: $effects, priority: $value['priority'] ?? null, );
 	}
 
 	/**
@@ -546,6 +661,7 @@ final readonly class RunStore {
 	 *     action_sequence: int,
 	 *     created_at: int,
 	 *     heartbeat_at: int,
+	 *     priority?: int,
 	 *     pending?: StoredPendingAction,
 	 *     error?: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>},
 	 *     previous_completed_run_id?: string,
@@ -572,6 +688,16 @@ final readonly class RunStore {
 			|| ! \is_int( $value['action_sequence'] ?? null )
 			|| ! \is_int( $value['created_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
+			|| (
+				\array_key_exists( 'priority', $value )
+				&& (
+					! \is_int( $value['priority'] )
+					|| 0 > $value['priority']
+					|| Dispatcher::MAX_PRIORITY < $value['priority']
+					|| 10 === $value['priority']
+					|| \array_key_exists( 'pending', $value )
+				)
+			)
 			|| ( \array_key_exists( 'pending', $value ) && ! self::is_stored_pending( $value['pending'] ) )
 			|| ( \array_key_exists( 'error', $value ) && ! self::is_stored_error( $value['error'] ) )
 			|| ( \array_key_exists( 'previous_completed_run_id', $value ) && ! \is_string( $value['previous_completed_run_id'] ) )
@@ -597,12 +723,7 @@ final readonly class RunStore {
 	 */
 	private static function kind_state_failure( array $kind_state ): ?Failure {
 		if ( ! PortableArguments::is_valid( $kind_state ) ) {
-			return new Failure(
-				new EngineError(
-					'Run kind state must contain only null, scalar, or nested array values.',
-					reason: EngineErrorReason::PayloadRejected,
-				)
-			);
+			return new Failure( new EngineError( 'Run kind state must contain only null, scalar, or nested array values.', reason: EngineErrorReason::PayloadRejected, ) );
 		}
 
 		$serialized = \maybe_serialize( $kind_state );
@@ -650,6 +771,8 @@ final readonly class RunStore {
 			|| ! \array_key_exists( 'fire_at', $value )
 			|| ( null !== $value['fire_at'] && ! \is_int( $value['fire_at'] ) )
 			|| ! \is_int( $value['priority'] ?? null )
+			|| 0 > $value['priority']
+			|| Dispatcher::MAX_PRIORITY < $value['priority']
 		) {
 			return false;
 		}

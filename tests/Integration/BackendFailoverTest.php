@@ -2,7 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
@@ -10,12 +11,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
@@ -23,11 +26,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\Schedules;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ReadinessControlledBackend;
 
 /**
@@ -36,17 +39,17 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ReadinessControlledBa
  * @since   1.0.0
  * @version 1.0.0
  */
-final class BackendFailoverTest extends IntegrationTestCase {
+final class BackendFailoverTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Hook isolated to the backend-readiness transition. */
 	private const string HOOK = 'a8csp_bgje/integration/backend_failover';
 
 	/** Action Scheduler group isolated to the dormant occurrence. */
-	private const string ACTION_SCHEDULER_GROUP = 'a8csp-jobs-engine-integration-backend-failover-as';
+	private const string ACTION_SCHEDULER_GROUP = 'a8csp-bgje-integration-backend-failover-as';
 
 	/** Advisory group isolated to the WP-Cron fallback occurrence. */
-	private const string WP_CRON_GROUP = 'a8csp-jobs-engine-integration-backend-failover-cron';
+	private const string WP_CRON_GROUP = 'a8csp-bgje-integration-backend-failover-cron';
 
 	/** Owner isolated to recurring-chain convergence. */
 	private const string CONVERGENCE_OWNER = 'integration-backend-convergence';
@@ -135,7 +138,7 @@ final class BackendFailoverTest extends IntegrationTestCase {
 		$declarations           = array(
 			self::CONVERGENCE_IDENTITY => array(
 				'schedule' => $schedule,
-				'job'      => self::CONVERGENCE_OWNER . ':' . self::CONVERGENCE_JOB,
+				'job'      => Identity::compose( self::CONVERGENCE_OWNER, self::CONVERGENCE_JOB ),
 			),
 		);
 		$action_scheduler_probe = new SchedulerFacade( array( new ActionSchedulerBackend() ) );
@@ -175,36 +178,38 @@ final class BackendFailoverTest extends IntegrationTestCase {
 	 *
 	 * @param   SchedulerFacade $scheduler Scheduling facade under test.
 	 *
-	 * @return  Schedules
+	 * @return  ScheduleOperations
 	 */
-	private function schedules_with_scheduler( SchedulerFacade $scheduler ): Schedules {
+	private function schedules_with_scheduler( SchedulerFacade $scheduler ): ScheduleOperations {
 		global $wpdb;
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
 		$rows                 = new OptionRows( $wpdb );
-		$work                 = new JobRegistry();
+		$job_registry         = new JobRegistry();
 		$clock                = new SystemClock();
 		$logger               = new HookLogger();
 		$registry             = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new Randomizer();
 		$guard                = new OverlapGuard( $clock, $logger, $rows );
+		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock, $logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
 		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
-		$failure_lifecycle    = new FailureLifecycle( $scheduler, $clock, $randomizer, $logger, $terminal_transitions );
-		$job_handler          = new JobKindHandler( $work, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler  = new ChunkedJobKindHandler( $work, $scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$delivery_scheduler   = new DeliveryScheduler( $scheduler, $clock );
+		$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
+		$job_handler          = new JobKindHandler( $job_registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+		$chunked_job_handler  = new ChunkedJobKindHandler( $job_registry, $delivery_scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$handlers             = array(
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher           = new Dispatcher( $work, $handlers, $scheduler, $guard, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
 		$occurrence_lease     = new OccurrenceLease( $rows, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 
-		return new Schedules( $registry, $scheduler, $clock, $occurrence_delivery );
+		return new ScheduleOperations( $registry, $scheduler, $clock, $occurrence_delivery );
 	}
 
 	// endregion.

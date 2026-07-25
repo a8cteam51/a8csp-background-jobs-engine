@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Client;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -138,7 +138,7 @@ final class EngineComponentTest extends TestCase {
 
 		$hooks = $GLOBALS['a8csp_bgje_test_hooks'] ?? null;
 		self::assertIsArray( $hooks );
-		self::assertSame( 'a8csp_jobs_engine/log', $hooks[0] ?? null );
+		self::assertSame( 'a8csp_bgje/log', $hooks[0] ?? null );
 	}
 
 	/**
@@ -205,23 +205,6 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * Applying a filter cannot silently bypass an uninitialized registration ledger.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_apply_filters_rejects_an_unset_registration_ledger(): void {
-		unset( $GLOBALS['a8csp_bgje_test_filter_registrations'] );
-
-		$this->expectException( \UnexpectedValueException::class );
-		$this->expectExceptionMessageIs( 'Initialize the test filter ledger before applying a filter.' );
-
-		\apply_filters( 'unregistered-filter', 'value' );
-	}
-
-	/**
 	 * Mid-init boot waits for wp_loaded before synchronizing maintenance.
 	 *
 	 * @load-bearing concurrency
@@ -273,7 +256,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertNotContains( 'wp_loaded', $hook_names );
 		$registry = $this->schedule_registry();
 		self::assertIsArray( $registry );
-		self::assertArrayHasKey( 'a8csp-jobs-engine:maintenance', $registry );
+		self::assertArrayHasKey( 'a8csp-bgje:maintenance', $registry );
 	}
 
 	/**
@@ -323,14 +306,14 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$client = Component::client( 'consumer-plugin' );
-		self::assertInstanceOf( Client::class, $client );
-		$client->jobs()->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		$client->jobs()->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
+		$client = Component::operations( 'consumer-plugin' );
+		self::assertInstanceOf( OwnerOperations::class, $client );
+		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
+		$client->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
 
-		self::assertInstanceOf( Success::class, $client->jobs()->enqueue( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->chunked_jobs()->start( 'catalog-sync', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->schedules()->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->dispatch( 'catalog-sync', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 
 		$cron = \get_option( 'cron', array() );
 		self::assertIsArray( $cron );
@@ -356,12 +339,12 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$client = Component::client( 'consumer-plugin' );
-		$client->jobs()->register( ( new RecordingJob( 'preferred' ) )->definition() );
+		$client = Component::operations( 'consumer-plugin' );
+		$client->register( ( new RecordingJob( 'preferred' ) )->definition() );
 		$GLOBALS['a8csp_bgje_test_as_calls']   = array();
 		$GLOBALS['a8csp_bgje_test_cron_calls'] = array();
 
-		$result = $client->jobs()->enqueue( 'preferred' );
+		$result = $client->dispatch( 'preferred' );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $GLOBALS['a8csp_bgje_test_as_calls'], 'function' ) );
@@ -383,7 +366,7 @@ final class EngineComponentTest extends TestCase {
 	private function schedule_registry(): ?array {
 		$wpdb = $GLOBALS['wpdb'] ?? null;
 		self::assertInstanceOf( WpdbLockSpy::class, $wpdb );
-		$option_name = ScheduleRegistry::option_name( 'a8csp-jobs-engine' );
+		$option_name = ScheduleRegistry::option_name( 'a8csp-bgje' );
 		$raw         = $wpdb->rows[ $option_name ] ?? null;
 		if ( \is_string( $raw ) ) {
 			$registry = \maybe_unserialize( $raw );

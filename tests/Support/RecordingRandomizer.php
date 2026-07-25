@@ -8,12 +8,18 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
  * Returns one deterministic integer while recording requested boundaries.
  */
 final class RecordingRandomizer implements RandomizerInterface {
+	// region FIELDS AND CONSTANTS.
+
 	/**
 	 * Requested boundaries in call order.
 	 *
 	 * @var list<array{min: int, max: int}>
 	 */
 	public array $calls = array();
+
+	// endregion.
+
+	// region MAGIC METHODS.
 
 	/**
 	 * Constructor.
@@ -23,6 +29,10 @@ final class RecordingRandomizer implements RandomizerInterface {
 	public function __construct(
 		public int $value,
 	) {}
+
+	// endregion.
+
+	// region METHODS.
 
 	/**
 	 * Returns the deterministic result within the requested boundaries.
@@ -45,4 +55,6 @@ final class RecordingRandomizer implements RandomizerInterface {
 
 		return $this->value;
 	}
+
+	// endregion.
 }

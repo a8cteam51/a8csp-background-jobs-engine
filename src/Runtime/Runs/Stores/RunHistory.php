@@ -2,6 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
@@ -49,7 +51,7 @@ final readonly class RunHistory {
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgje_history_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_run_history_';
 
 	/**
 	 * Distinct single-flight identities are evicted least-recently-recorded past this count; without
@@ -73,12 +75,12 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity        $identity Complete owner-qualified job or chunked job identity.
 	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
 	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
 	public function __construct(
-		private string $identity,
+		private Identity $identity,
 		private OptionRows $rows,
 		private LoggerInterface $logger,
 	) {}
@@ -296,7 +298,7 @@ final readonly class RunHistory {
 		 *
 		 * @param   int $size Default per-buffer history cap.
 		 */
-		$size = \apply_filters( 'a8csp_jobs_engine/history_size', self::DEFAULT_SIZE );
+		$size = \apply_filters( 'a8csp_bgje/history_size', self::DEFAULT_SIZE );
 		if ( \is_int( $size ) && 0 < $size ) {
 			return $size;
 		}
@@ -304,7 +306,7 @@ final readonly class RunHistory {
 		$this->logger->warning(
 			'Run-history-size filter returned an invalid value; return a positive integer to override the default retention size.',
 			array(
-				'name'          => $this->identity,
+				'identity'      => (string) $this->identity,
 				'returned_type' => \get_debug_type( $size ),
 				'default_size'  => self::DEFAULT_SIZE,
 			)
@@ -322,7 +324,7 @@ final readonly class RunHistory {
 	 * @return  string
 	 */
 	private function option_name(): string {
-		return self::OPTION_PREFIX . $this->identity;
+		return self::OPTION_PREFIX . (string) $this->identity;
 	}
 
 	/**
@@ -422,7 +424,7 @@ final readonly class RunHistory {
 	}
 
 	/**
-	 * Returns only string entries from a persisted list value.
+	 * Returns only canonical run identifiers from a persisted list value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -436,7 +438,7 @@ final readonly class RunHistory {
 			return array();
 		}
 
-		return \array_values( \array_filter( $value, static fn ( mixed $entry ): bool => \is_string( $entry ) ) );
+		return \array_values( \array_filter( $value, static fn ( mixed $entry ): bool => \is_string( $entry ) && null !== RunIdentity::parse( $entry ) ) );
 	}
 
 	/**
@@ -459,6 +461,7 @@ final readonly class RunHistory {
 			if (
 				! \is_array( $entry )
 				|| ! \is_string( $entry['run_id'] ?? null )
+				|| null === RunIdentity::parse( $entry['run_id'] )
 				|| ! \is_string( $entry['status'] ?? null )
 			) {
 				continue;

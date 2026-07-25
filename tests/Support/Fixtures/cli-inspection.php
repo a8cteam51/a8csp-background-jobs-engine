@@ -13,9 +13,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 \WP_CLI::add_hook(
 	'after_wp_load',
 	static function (): void {
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( 'integration-cli-inspection-owner' );
-		$client->jobs()->register( ( new RecordingJob( 'integration-cli-inspection-job' ) )->definition() );
-		$result = $client->schedules()->sync(
+		$operations = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( 'integration-cli-inspection-owner' );
+		$operations->register( ( new RecordingJob( 'integration-cli-inspection-job' ) )->definition() );
+		$result = $operations->sync(
 			array(
 				new Schedule( 'inspection-schedule', Recurrence::every( 300 ), 'integration-cli-inspection-job', array( 'source' => 'schedule' ) ),
 			)

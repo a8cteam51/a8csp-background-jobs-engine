@@ -2,13 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
 /**
@@ -17,7 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class NonRetryableTest extends IntegrationTestCase {
+final class NonRetryableTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Public owner unique to this integration-test graph. */
@@ -53,8 +55,8 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$job            = new RecordingJob( self::NAME );
 		$job->throwable = new NonRetryableException( 'The requested record is permanently unavailable.' );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $job->definition() );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY );
@@ -63,7 +65,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		$generic_retry_scheduled = array();
 		$failed                  = array();
 		\add_action(
-			'a8csp_jobs_engine/retry_scheduled/' . self::IDENTITY,
+			'a8csp_bgje/retry_scheduled/' . self::IDENTITY,
 			static function ( RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$named_retry_scheduled ): void {
 				$named_retry_scheduled[] = array( (string) $run_id, $start_args, $attempt, $delay );
 			},
@@ -71,7 +73,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			4
 		);
 		\add_action(
-			'a8csp_jobs_engine/retry_scheduled',
+			'a8csp_bgje/retry_scheduled',
 			static function ( string $name, RunId $run_id, array $start_args, int $attempt, int $delay ) use ( &$generic_retry_scheduled ): void {
 				$generic_retry_scheduled[] = array( $name, (string) $run_id, $start_args, $attempt, $delay );
 			},
@@ -79,7 +81,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 			5
 		);
 		\add_action(
-			'a8csp_jobs_engine/failed',
+			'a8csp_bgje/failed',
 			static function ( RunFailure $failure ) use ( &$failed ): void {
 				$failed[] = $failure;
 			},
@@ -87,10 +89,10 @@ final class NonRetryableTest extends IntegrationTestCase {
 			1
 		);
 
-		$result = $client->jobs()->enqueue( self::NAME, $args );
+		$result = $client->dispatch( self::NAME, $args );
 		self::assertInstanceOf( Success::class, $result, 'The non-retryable job must enqueue before its handler fails' );
-		self::assertIsString( $result->value );
-		$run_id = $result->value;
+		self::assertInstanceOf( Run::class, $result->value );
+		$run_id = (string) $result->value->id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the non-retryable job action' );
 
@@ -113,7 +115,7 @@ final class NonRetryableTest extends IntegrationTestCase {
 		self::assertSame( array( $failure ), $failed, 'The failed hook must receive only the self-identifying failure value' );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'A non-retryable failure must not schedule another attempt' );
-		$runs = $this->inspection()->runs( self::IDENTITY );
+		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal non-retryable failure must leave no live run' );
 		self::assertSame(
 			array(

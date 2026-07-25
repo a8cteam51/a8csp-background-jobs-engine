@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( ErrorCode::class )]
 final class ErrorCodeTest extends TestCase {
+	// region LIFECYCLE.
 
 	/**
 	 * Satisfies the production files' `ABSPATH` boot guard before first autoload.
@@ -30,6 +31,10 @@ final class ErrorCodeTest extends TestCase {
 		}
 	}
 
+	// endregion.
+
+	// region TESTS.
+
 	/**
 	 * The required vocabulary and additive execution classification retain stable backing values.
 	 *
@@ -44,14 +49,13 @@ final class ErrorCodeTest extends TestCase {
 				'invalid_argument',
 				'already_registered',
 				'engine_unavailable',
-				'missing_autoloader',
-				'unknown_work',
+				'unknown_job',
 				'unknown_schedule',
 				'overlap_held',
 				'payload_rejected',
 				'backend_unavailable',
 				'backend_rejected',
-				'storage_failure',
+				'storage_failed',
 				'run_not_retained',
 				'run_not_cancellable',
 				'unsupported_operation',
@@ -60,4 +64,6 @@ final class ErrorCodeTest extends TestCase {
 			\array_map( static fn ( ErrorCode $code ): string => $code->value, ErrorCode::cases() )
 		);
 	}
+
+	// endregion.
 }

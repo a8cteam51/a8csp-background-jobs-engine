@@ -2,10 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -13,6 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInter
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -58,6 +61,9 @@ final readonly class RunTransitions {
 	/**
 	 * Claims delivery ownership of one recoverable running state for a lifecycle action.
 	 *
+	 * Scheduler-wire identity bytes stay raw because corrupt values still drive exact run lookup and
+	 * stale-delivery diagnostics until a run state is claimed.
+	 *
 	 * @internal Engine product service.
 	 *
 	 * @since   1.0.0
@@ -71,6 +77,8 @@ final readonly class RunTransitions {
 	 * @param   int|null $action_sequence Received lifecycle action sequence.
 	 * @param   RunStore $run_store       Active-run store.
 	 *
+	 * @throws  \LogicException When a claimed run does not retain its canonical identity.
+	 *
 	 * @return  ClaimedDelivery|null
 	 */
 	public function claim_delivery_ownership( array $handlers, string $identity, string $run_id, ?int $action_sequence, RunStore $run_store ): ?ClaimedDelivery {
@@ -79,9 +87,9 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Background-work run state could not be read; repair WordPress option reads and retry the delivery.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
-					'error'  => $inspection->error->message,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'error'    => $inspection->error->message,
 				)
 			);
 
@@ -93,8 +101,8 @@ final readonly class RunTransitions {
 			$this->logger->debug(
 				'Stale delivery for a finished or cancelled run was dropped.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
 				)
 			);
 
@@ -106,8 +114,21 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Background-work run state is corrupt; repair or remove the row so the reconciliation sweep can release any remaining lock.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+				)
+			);
+
+			return null;
+		}
+
+		if ( RunStatus::Running !== $state->status ) {
+			$this->logger->warning(
+				$state->kind . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
+				array(
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'status'   => $state->status->value,
 				)
 			);
 
@@ -120,9 +141,9 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Persisted run kind has no registered handler; the delivery was dropped without changing the run.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
-					'kind'   => $kind,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'kind'     => $kind,
 				)
 			);
 
@@ -132,23 +153,21 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Persisted lifecycle stage is not owned by the resolved kind handler; the delivery was dropped without changing the run.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
-					'kind'   => $kind,
-					'stage'  => $state->pending?->stage,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+					'kind'     => $kind,
+					'stage'    => $state->pending?->stage,
 				)
 			);
 
 			return null;
 		}
 
-		$context_name = $kind . '_name';
-
 		if ( $action_sequence !== $state->action_sequence ) {
 			$this->logger->info(
 				'Stale lifecycle action delivery dropped.',
 				array(
-					'name'     => $identity,
+					'identity' => $identity,
 					'expected' => $state->action_sequence,
 					'received' => $action_sequence,
 					'run_id'   => $run_id,
@@ -158,28 +177,16 @@ final readonly class RunTransitions {
 			return null;
 		}
 
-		if ( RunStatus::Running !== $state->status ) {
-			$this->logger->warning(
-				$kind . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
-				array(
-					$context_name => $identity,
-					'run_id'      => $run_id,
-					'status'      => $state->status->value,
-				)
-			);
-
-			return null;
-		}
-
 		if (
 			$state->executing
-			&& ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $this->lock_windows->lock_staleness( $identity, $run_id ) )
+			&& ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $this->lock_windows->raw_lock_staleness( $identity, $run_id ) )
 		) {
 			$this->logger->debug(
 				'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
 				array(
-					$context_name     => $identity,
+					'identity'        => $identity,
 					'run_id'          => $run_id,
+					'kind'            => $kind,
 					'action_sequence' => $state->action_sequence,
 				)
 			);
@@ -190,7 +197,7 @@ final readonly class RunTransitions {
 		$at = $handler->delivery_liveness_at( $identity, $run_id, $state ) ?? $this->clock->now()->getTimestamp();
 
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
-		if ( $this->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
+		if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
@@ -199,21 +206,22 @@ final readonly class RunTransitions {
 			return null;
 		}
 
-		$latest_pointer = $this->stores->latest_run_pointer( $identity );
-		$latest_run_id  = $latest_pointer->get_latest_for_hash( $state->args_hash );
+		$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed delivery requires a canonical background-work identity.' );
+		$latest_pointer     = $this->stores->latest_run_pointer( $canonical_identity );
+		$latest_run_id      = $latest_pointer->get_latest_for_hash( $state->args_hash );
 
 		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
 		if ( $run_id !== $latest_run_id && ! $latest_pointer->repair_for_hash( $run_id, $state->args_hash ) ) {
 			$this->logger->warning(
 				'Latest-run pointer repair failed; discovery metadata may remain stale.',
 				array(
-					'name'   => $identity,
-					'run_id' => $run_id,
+					'identity' => (string) $canonical_identity,
+					'run_id'   => $run_id,
 				)
 			);
 		}
 
-		return new ClaimedDelivery( $handler, $state );
+		return new ClaimedDelivery( $canonical_identity, $handler, $state );
 	}
 
 	/**
@@ -225,18 +233,18 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler   Handler selected by the persisted kind.
-	 * @param   string               $identity  Complete owner-qualified work identity.
+	 * @param   Identity             $identity  Complete owner-qualified work identity.
 	 * @param   string               $run_id    Run identifier.
 	 * @param   RunState             $state     Running state.
 	 * @param   RunStore             $run_store Active-run store.
 	 *
 	 * @return  void
 	 */
-	public function complete_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store ): void {
+	public function complete_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
 		$previous_completed_run_id = $this->last_completed_run_id( $identity );
 		$terminal_state            = $handler->completion_state( $state )->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_previous_completed_run_id( $previous_completed_run_id );
 
-		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler );
+		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, null );
 	}
 
 	/**
@@ -252,20 +260,20 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param \Closure(): mixed $clear_pending_actions
 	 *
-	 * @param   KindHandlerInterface $handler              Handler selected by the persisted kind.
-	 * @param   string               $identity             Complete owner-qualified work identity.
-	 * @param   string               $run_id               Run identifier.
-	 * @param   RunState             $state                Running state from the exact inspected snapshot.
-	 * @param   RunStore             $run_store            Active-run store.
-	 * @param   string               $expected_raw         Exact pre-cancel snapshot.
+	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
+	 * @param   Identity             $identity              Complete owner-qualified work identity.
+	 * @param   string               $run_id                Run identifier.
+	 * @param   RunState             $state                 Running state from the exact inspected snapshot.
+	 * @param   RunStore             $run_store             Active-run store.
+	 * @param   string               $expected_raw          Exact pre-cancel snapshot.
 	 * @param   \Closure             $clear_pending_actions Winner-only scheduler-group clear.
 	 *
 	 * @return  bool Whether the cancellation transition was claimed.
 	 */
-	public function cancel_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
+	public function cancel_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
 		$terminal_state = $state->with_status( RunStatus::Cancelled )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw, );
-		if ( null === $terminal_raw ) {
+		if ( ! \is_string( $terminal_raw ) ) {
 			return false;
 		}
 
@@ -273,13 +281,13 @@ final readonly class RunTransitions {
 			$clear_pending_actions();
 		} finally {
 			try {
-				$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $handler );
+				$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, null );
 			} catch ( \Throwable $throwable ) {
 				// The committed Cancelled state retains every unmarked effect for maintenance replay.
 				$this->logger->error(
 					'Cancelled-run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
 					array(
-						'name'      => $identity,
+						'identity'  => (string) $identity,
 						'run_id'    => $run_id,
 						'exception' => $throwable,
 					)
@@ -299,7 +307,7 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler   Handler selected by the persisted kind.
-	 * @param   string               $identity  Complete owner-qualified work identity.
+	 * @param   Identity             $identity  Complete owner-qualified work identity.
 	 * @param   string               $run_id    Run identifier.
 	 * @param   RunState             $state     Running state.
 	 * @param   RunStore             $run_store Active-run store.
@@ -307,11 +315,12 @@ final readonly class RunTransitions {
 	 *
 	 * @return  void
 	 */
-	public function fail_unregistered_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
+	public function fail_unregistered_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error ): void {
 		$attempts       = RunState::increment_attempts_safely( $state->failed_attempts );
-		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, RunFailureStage::execution(), ErrorCode::UnknownWork, $handler->failure_details( $state ) ) );
+		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_error( self::error_detail( $error, RunFailureStage::execution(), ErrorCode::UnknownJob, $handler->failure_details( $state ) ) );
+		$failure_detail = $this->terminal_effects->resolve_failure_detail( $identity, $run_id, $terminal_state, null );
 
-		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler );
+		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $failure_detail );
 	}
 
 	/**
@@ -325,7 +334,7 @@ final readonly class RunTransitions {
 	 * @phpstan-param array<array-key, mixed>|null $details
 	 *
 	 * @param   KindHandlerInterface $handler      Handler selected by the persisted kind.
-	 * @param   string               $identity     Complete owner-qualified work identity.
+	 * @param   Identity             $identity     Complete owner-qualified work identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state.
 	 * @param   RunStore             $run_store    Active-run store.
@@ -336,12 +345,13 @@ final readonly class RunTransitions {
 	 * @param   array|null           $details      Generic diagnostic payload, or null when no details are available.
 	 * @param   string|null          $expected_raw Exact maintenance snapshot, or null for a live transition.
 	 *
-	 * @return  void
+	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	public function fail_run( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): void {
-		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error( self::error_detail( $error, $stage, $code, $details ) );
+	public function fail_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): bool {
+		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_error( self::error_detail( $error, $stage, $code, $details ) );
+		$failure_detail = $this->terminal_effects->resolve_failure_detail( $identity, $run_id, $terminal_state, null );
 
-		$this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $handler, $expected_raw );
+		return $this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $failure_detail, $expected_raw );
 	}
 
 	/**
@@ -358,7 +368,7 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
-	 * @param   string               $identity              Complete owner-qualified work identity.
+	 * @param   Identity             $identity              Complete owner-qualified work identity.
 	 * @param   string               $run_id                Run identifier.
 	 * @param   RunState             $state                 Running state observed before the fence.
 	 * @param   RunStore             $run_store             Active-run store.
@@ -367,7 +377,7 @@ final readonly class RunTransitions {
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	public function enforce_delivery_fence( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
+	public function enforce_delivery_fence( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
 		$outcome = $this->overlap_guard->heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
@@ -377,13 +387,12 @@ final readonly class RunTransitions {
 		}
 
 		if ( HeartbeatOutcome::Indeterminate === $outcome ) {
-			$kind         = $handler->key();
-			$context_name = $kind . '_name';
+			$kind = $handler->key();
 			$this->logger->debug(
 				$kind . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
 				array(
-					$context_name => $identity,
-					'run_id'      => $run_id,
+					'identity' => (string) $identity,
+					'run_id'   => $run_id,
 				)
 			);
 
@@ -391,45 +400,72 @@ final readonly class RunTransitions {
 		}
 
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
-		$this->supersede_run( $identity, $run_id, $latest_run_id, $state, $run_store, $handler );
+		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store );
+		if ( \is_array( $claimed ) ) {
+			$this->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
+		}
 
 		return true;
 	}
 
 	/**
-	 * Fences a run that no longer owns its overlap lock before hooks and active-state release.
+	 * Claims a Superseded state without releasing its lock or executing terminal effects.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity      Complete owner-qualified work identity.
-	 * @param   string               $run_id        Run identifier.
-	 * @param   string|null          $latest_run_id Latest discoverable pointer value for the single-flight identity.
-	 * @param   RunState             $state         Running state.
-	 * @param   RunStore             $run_store     Active-run store.
-	 * @param   KindHandlerInterface $handler       Handler selected by the persisted kind.
-	 * @param   string|null          $expected_raw  Exact maintenance snapshot, or null for a live transition.
+	 * @param   string      $run_id       Run identifier.
+	 * @param   RunState    $state        Running state.
+	 * @param   RunStore    $run_store    Active-run store.
+	 * @param   string|null $expected_raw Exact selected snapshot, or null to derive it from the typed state.
+	 *
+	 * @return  array{raw: string, state: RunState}|Failure<EngineError>|null Exact claimed terminal snapshot, storage or payload failure, or null after a lost fence.
+	 */
+	public function claim_superseded_run( string $run_id, RunState $state, RunStore $run_store, ?string $expected_raw = null ): array|Failure|null {
+		if ( RunStatus::Running !== $state->status ) {
+			return null;
+		}
+
+		$terminal_state = $state->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw );
+		if ( $terminal_raw instanceof Failure ) {
+			return $terminal_raw;
+		}
+		if ( null === $terminal_raw ) {
+			return null;
+		}
+
+		return array(
+			'raw'   => $terminal_raw,
+			'state' => $terminal_state,
+		);
+	}
+
+	/**
+	 * Executes the replayable effects for one claimed Superseded transition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity                            $identity      Complete owner-qualified work identity.
+	 * @param   string                              $run_id        Run identifier.
+	 * @param   string|null                         $latest_run_id Latest discoverable pointer value for the single-flight identity.
+	 * @param   array{raw: string, state: RunState} $claimed       Exact claimed terminal snapshot.
+	 * @param   RunStore                            $run_store     Active-run store.
 	 *
 	 * @return  void
 	 */
-	public function supersede_run( string $identity, string $run_id, ?string $latest_run_id, RunState $state, RunStore $run_store, KindHandlerInterface $handler, ?string $expected_raw = null ): void {
-		$terminal_state = $state->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
-		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw );
-		if ( null === $terminal_raw ) {
-			return;
-		}
-		$kind         = $handler->key();
-		$context_name = $kind . '_name';
+	public function execute_claimed_supersession( Identity $identity, string $run_id, ?string $latest_run_id, array $claimed, RunStore $run_store ): void {
 		$this->logger->info(
-			'Superseded ' . $kind . ' run after its ownership fence failed.',
+			'Superseded ' . $claimed['state']->kind . ' run after its ownership fence failed.',
 			array(
-				$context_name   => $identity,
+				'identity'      => (string) $identity,
 				'run_id'        => $run_id,
 				'latest_run_id' => $latest_run_id,
 			)
 		);
 
-		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, $handler );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $claimed['state'], $claimed['raw'], $run_store );
 	}
 
 	// endregion
@@ -437,31 +473,83 @@ final readonly class RunTransitions {
 	// region HELPERS
 
 	/**
+	 * Aborts an untrusted scheduler-wire delivery when its ownership fence is not confirmed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
+	 * @param   string               $identity              Raw scheduler-wire identity bytes.
+	 * @param   string               $run_id                Run identifier.
+	 * @param   RunState             $state                 Running state observed before the fence.
+	 * @param   RunStore             $run_store             Active-run store.
+	 * @param   int|null             $at                    Liveness timestamp, or null to use the current clock time.
+	 * @param   int|null             $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
+	 *
+	 * @throws  \LogicException When a claimed superseded run does not retain its canonical identity.
+	 *
+	 * @return  bool Whether the caller must abort this delivery.
+	 */
+	private function enforce_raw_delivery_fence( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at, ?int $expected_heartbeat_at ): bool {
+		$outcome = $this->overlap_guard->raw_heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
+		if ( HeartbeatOutcome::Owned === $outcome ) {
+			return false;
+		}
+		if ( HeartbeatOutcome::GenerationMismatch === $outcome ) {
+			return true;
+		}
+
+		if ( HeartbeatOutcome::Indeterminate === $outcome ) {
+			$kind = $handler->key();
+			$this->logger->debug(
+				$kind . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
+				array(
+					'identity' => $identity,
+					'run_id'   => $run_id,
+				)
+			);
+
+			return true;
+		}
+
+		$latest_run_id = $this->stores->raw_latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
+		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store );
+		if ( \is_array( $claimed ) ) {
+			$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed supersession requires a canonical background-work identity.' );
+			$this->execute_claimed_supersession( $canonical_identity, $run_id, $latest_run_id, $claimed, $run_store );
+		}
+
+		return true;
+	}
+
+	/**
 	 * Claims a terminal state and executes only the winning transition's effects.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $identity     Complete owner-qualified work identity.
-	 * @param   string               $run_id       Run identifier.
-	 * @param   RunState             $expected     Complete running state observed by the terminalizing path.
-	 * @param   RunState             $replacement  Terminal replacement state.
-	 * @param   RunStore             $run_store    Active-run store.
-	 * @param   KindHandlerInterface $handler      Handler selected by the persisted kind.
-	 * @param   string|null          $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 * @phpstan-param array{error: EngineError, failure: \A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure}|null $failure_detail
+	 *
+	 * @param   Identity    $identity       Complete owner-qualified work identity.
+	 * @param   string      $run_id         Run identifier.
+	 * @param   RunState    $expected       Complete running state observed by the terminalizing path.
+	 * @param   RunState    $replacement    Terminal replacement state.
+	 * @param   RunStore    $run_store      Active-run store.
+	 * @param   array|null  $failure_detail Reconstructed internal and client failure detail.
+	 * @param   string|null $expected_raw   Exact maintenance snapshot, or null for a live transition.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
-	private function claim_and_execute_terminal_transition( string $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, KindHandlerInterface $handler, ?string $expected_raw = null ): bool {
+	private function claim_and_execute_terminal_transition( Identity $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?array $failure_detail, ?string $expected_raw = null ): bool {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
-		if ( null === $terminal_raw ) {
+		if ( ! \is_string( $terminal_raw ) ) {
 			return false;
 		}
 		if ( RunStatus::Failed === $replacement->status ) {
 			$this->logger->error(
 				'Run failed permanently; correct the cause, then use failed-runs retry to start a fresh run.',
 				array(
-					'name'        => $identity,
+					'identity'    => (string) $identity,
 					'run_id'      => $run_id,
 					'attempts'    => $replacement->failed_attempts,
 					'stage'       => $replacement->error['stage'] ?? null,
@@ -470,7 +558,7 @@ final readonly class RunTransitions {
 			);
 		}
 
-		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $handler );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $failure_detail );
 
 		return true;
 	}
@@ -487,14 +575,27 @@ final readonly class RunTransitions {
 	 * @param   RunStore    $run_store    Active-run store.
 	 * @param   string|null $expected_raw Exact pre-gate snapshot supplied by maintenance, or null.
 	 *
-	 * @return  string|null Exact terminal snapshot bytes for cleanup, or null after a lost fence.
+	 * @return  string|Failure<EngineError>|null Exact terminal snapshot bytes for cleanup, storage or payload failure, or null after a lost fence.
 	 */
-	private function claim_terminal_transition( string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?string $expected_raw = null ): ?string {
-		$claimed = null === $expected_raw
-			? $run_store->replace_if_state_matches( $run_id, $expected, $replacement )
-			: $run_store->replace_if_raw_matches( $run_id, $expected_raw, $replacement );
+	private function claim_terminal_transition( string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?string $expected_raw = null ): string|Failure|null {
+		$write = null === $expected_raw
+			? $run_store->replace_if_state_matches_classified( $run_id, $expected, $replacement )
+			: $run_store->replace_if_raw_matches_classified( $run_id, $expected_raw, $replacement );
+		if ( $write instanceof Failure ) {
+			return $write;
+		}
 
-		return $claimed instanceof Failure ? null : $claimed;
+		return match ( $write['outcome'] ) {
+			RowWriteOutcome::Won         => $write['raw'],
+			RowWriteOutcome::Lost        => null,
+			RowWriteOutcome::WriteFailed => new Failure(
+				new EngineError(
+					'Run terminal transition could not write authoritative active-run storage.',
+					reason: EngineErrorReason::StorageFailure,
+					context: array( 'run_id' => $run_id ),
+				)
+			),
+		};
 	}
 
 	/**
@@ -503,17 +604,14 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
 	 *
 	 * @return  string|null
 	 */
-	private function last_completed_run_id( string $identity ): ?string {
+	private function last_completed_run_id( Identity $identity ): ?string {
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
-			$this->logger->warning(
-				'Previous completed run could not be read while freezing completion hook state.',
-				array( 'name' => $identity )
-			);
+			$this->logger->warning( 'Previous completed run could not be read while freezing completion hook state.', array( 'identity' => (string) $identity ) );
 
 			return null;
 		}

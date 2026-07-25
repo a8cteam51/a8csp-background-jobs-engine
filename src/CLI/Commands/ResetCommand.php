@@ -5,10 +5,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
@@ -83,8 +83,8 @@ final readonly class ResetCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     $ wp background-jobs reset
-	 *     $ wp background-jobs reset --yes
+	 *     $ wp a8csp-bgje reset
+	 *     $ wp a8csp-bgje reset --yes
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -162,25 +162,11 @@ final readonly class ResetCommand {
 		) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Reset accepts only --yes; use wp background-jobs reset [--yes].',
+				'message' => 'Reset accepts only --yes; use wp a8csp-bgje reset [--yes].',
 			);
 		}
 
 		return array( 'action' => 'reset' );
-	}
-
-	/**
-	 * Returns the canonical persisted-state prefixes in deletion order.
-	 *
-	 * @internal Command coverage seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  list<string>
-	 */
-	public static function option_prefixes(): array {
-		return self::OPTION_PREFIXES;
 	}
 
 	// endregion

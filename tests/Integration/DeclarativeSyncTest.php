@@ -2,15 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Occurrences\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 
 /**
  * Verifies declarative sync mutates only one owner's engine registration identities.
@@ -18,11 +18,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class DeclarativeSyncTest extends IntegrationTestCase {
+final class DeclarativeSyncTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Internal occurrence hook owned by the engine. */
-	private const string SCHEDULE_HOOK = 'a8csp_jobs_engine/schedule_due';
+	private const string SCHEDULE_HOOK = 'a8csp_bgje/internal/schedule_due';
 
 	/** Foreign WP-Cron hook outside the engine namespace. */
 	private const string FOREIGN_CRON_HOOK = 'third_party/integration/declarative_sync/foreign_cron';
@@ -37,7 +37,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	private const array FOREIGN_ACTION_ARGS = array( 'declarative-sync-foreign-action' );
 
 	/** Foreign Action Scheduler group outside every engine registration identity. */
-	private const string FOREIGN_ACTION_GROUP = 'a8csp-jobs-engine-integration-declarative-sync-foreign';
+	private const string FOREIGN_ACTION_GROUP = 'a8csp-bgje-integration-declarative-sync-foreign';
 
 	/** Owner isolated to orphan pruning. */
 	private const string ORPHAN_OWNER = 'integration-declarative-orphan';
@@ -252,7 +252,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 
 		$gap_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY, true, 37 );
 		self::assertGreaterThan( 0, $gap_action_id );
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		$gap_callback_calls  = 0;
 		$gap_status          = null;
 		$gap_visible         = null;
@@ -267,7 +267,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 			$gap_status  = $this->action_scheduler_store()->get_status( (string) $action_id );
 			$gap_visible = \as_has_scheduled_action( self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY );
 			$gap_entries = $this->schedule_entries( self::DUPLICATE_OWNER );
-			$gap_sync    = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::DUPLICATE_OWNER )->schedules()->sync( array( $schedule ) );
+			$gap_sync    = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::DUPLICATE_OWNER )->sync( array( $schedule ) );
 		};
 		\add_action( 'action_scheduler_completed_action', $completion_listener );
 		try {
@@ -302,7 +302,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 		self::assertIsArray( $registry_snapshot );
 		$logical_snapshot = $this->schedule_entries( self::DUPLICATE_OWNER );
 		self::assertCount( 1, $logical_snapshot );
-		self::assertSame( self::DUPLICATE_IDENTITY, $logical_snapshot[0]['name'] ?? null );
+		self::assertSame( self::DUPLICATE_IDENTITY, $logical_snapshot[0]['identity'] ?? null );
 
 		$this->assert_sync_succeeds( self::DUPLICATE_OWNER, array( $schedule ) );
 
@@ -368,7 +368,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @phpstan-param list<Schedule> $schedules
 	 */
 	private function assert_sync_succeeds( string $owner, array $schedules ): void {
-		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( $owner )->schedules()->sync( $schedules );
+		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( $owner )->sync( $schedules );
 		self::assertInstanceOf( Success::class, $result );
 		self::assertTrue( $result->value );
 	}
@@ -402,7 +402,7 @@ final class DeclarativeSyncTest extends IntegrationTestCase {
 	 * @return  array<string, mixed>|null
 	 */
 	private function schedule_entry( array $entries, string $identity ): ?array {
-		return \array_find( $entries, static fn ( array $entry ): bool => ( $entry['name'] ?? null ) === $identity );
+		return \array_find( $entries, static fn ( array $entry ): bool => ( $entry['identity'] ?? null ) === $identity );
 	}
 
 	/**

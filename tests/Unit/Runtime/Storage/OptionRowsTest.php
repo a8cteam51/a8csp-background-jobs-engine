@@ -7,9 +7,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -20,13 +19,18 @@ use PHPUnit\Framework\TestCase;
  *
  * @load-bearing concurrency
  * @pin-rationale Exact-raw won, lost, and write-failed outcomes plus absent-row atomic acquisition are storage-bound concurrency contracts not observable through higher-level result objects.
- * @fixture StoreFixtureBuilder
  */
 #[CoversClass( OptionRows::class )]
 #[UsesClass( RowDeleteOutcome::class )]
 #[UsesClass( RowWriteOutcome::class )]
 final class OptionRowsTest extends TestCase {
-	private const string KEY = 'a8csp_bgje_run_email-digest_run-123';
+	// region FIELDS AND CONSTANTS.
+
+	private const string KEY = 'a8csp_bgje_active_run_email-digest_run-123';
+
+	// endregion.
+
+	// region LIFECYCLE.
 
 	/** Loads the guarded WordPress cache and site functions. */
 	#[\Override]
@@ -47,6 +51,10 @@ final class OptionRowsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_cache']       = array();
 		$GLOBALS['a8csp_bgje_test_cache_calls'] = array();
 	}
+
+	// endregion.
+
+	// region TESTS.
 
 	/** An UPDATE-only replacement cannot recreate a row deleted before the CAS. */
 	public function test_compare_and_swap_is_insertless_when_the_expected_row_is_absent(): void {
@@ -149,7 +157,7 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_excludes_the_cursor_and_orders_by_binary_name(): void {
-		$prefix = 'a8csp_bgje_run_';
+		$prefix = 'a8csp_bgje_active_run_';
 		$wpdb   = new WpdbLockSpy();
 		$wpdb->put( $prefix . 'B', 'second' );
 		$wpdb->put( $prefix . 'a', 'third' );
@@ -177,7 +185,7 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_applies_the_limit_and_returns_a_short_final_page(): void {
-		$prefix = 'a8csp_bgje_run_';
+		$prefix = 'a8csp_bgje_active_run_';
 		$wpdb   = new WpdbLockSpy();
 		$wpdb->put( $prefix . '1', 'first' );
 		$wpdb->put( $prefix . '2', 'second' );
@@ -219,8 +227,8 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_pages_by_raw_case_colliding_candidates(): void {
-		$prefix    = 'a8csp_bgje_run_';
-		$collision = 'A8CSP_BGJE_RUN_collision';
+		$prefix    = 'a8csp_bgje_active_run_';
+		$collision = 'A8CSP_BGJE_ACTIVE_RUN_collision';
 		$wpdb      = new WpdbLockSpy();
 		$wpdb->put( $collision, 'foreign' );
 		$wpdb->put( $prefix . '1', 'first' );
@@ -259,11 +267,11 @@ final class OptionRowsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_option_names_after_rejects_a_non_advancing_raw_cursor(): void {
-		$cursor                    = 'a8csp_bgje_run_cursor';
+		$cursor                    = 'a8csp_bgje_active_run_cursor';
 		$wpdb                      = new WpdbLockSpy();
 		$wpdb->option_name_results = array( $cursor );
 
-		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgje_run_', $cursor, 1 );
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgje_active_run_', $cursor, 1 );
 
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
@@ -311,7 +319,7 @@ final class OptionRowsTest extends TestCase {
 
 	/** A bounded page keysets past rejected candidates and counts only accepted names. */
 	public function test_option_names_page_applies_the_limit_after_validation(): void {
-		$prefix       = 'a8csp_bgje_run_owner:email-digest_';
+		$prefix       = 'a8csp_bgje_active_run_owner:email-digest_';
 		$first_valid  = $prefix . \sprintf( '%020d-%019d', 1, 1 );
 		$second_valid = $prefix . \sprintf( '%020d-%019d', 2, 2 );
 		$wpdb         = new WpdbLockSpy();
@@ -652,6 +660,10 @@ final class OptionRowsTest extends TestCase {
 		self::fail( 'Every single-row option operation must reject use after switch_to_blog().' );
 	}
 
+	// endregion.
+
+	// region DATA PROVIDERS.
+
 	/**
 	 * Returns one call for each public single-row option operation.
 	 *
@@ -667,8 +679,12 @@ final class OptionRowsTest extends TestCase {
 		yield 'delete_if_value_matches' => array( static fn ( OptionRows $rows ): RowDeleteOutcome => $rows->delete_if_value_matches( self::KEY, $expected_raw ) );
 	}
 
+	// endregion.
+
+	// region HELPERS.
+
 	/**
-	 * Returns one exact production-authored overlap-lock row.
+	 * Returns one deterministic opaque row value.
 	 *
 	 * @param   string $run_id       Run identifier.
 	 * @param   int    $claimed_at   Claim timestamp.
@@ -677,9 +693,7 @@ final class OptionRowsTest extends TestCase {
 	 * @return  string
 	 */
 	private static function lock_raw( string $run_id, int $claimed_at, int $heartbeat_at ): string {
-		[ , $raw ] = StoreFixtureBuilder::for_identity( 'owner-a:email-digest' )->lock( \str_repeat( 'a', 64 ), $run_id, $claimed_at, $heartbeat_at );
-
-		return $raw;
+		return \sprintf( 'opaque-lock:%s:%d:%d', $run_id, $claimed_at, $heartbeat_at );
 	}
 
 	/** Primes both stale option-cache representations and clears their call ledger. */
@@ -703,4 +717,6 @@ final class OptionRowsTest extends TestCase {
 		self::assertArrayNotHasKey( self::KEY, $cache['options'] );
 		self::assertSame( array( 'other' => true ), $cache['options']['notoptions'] );
 	}
+
+	// endregion.
 }

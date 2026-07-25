@@ -2,14 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Internal\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\IntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 
 /**
@@ -18,7 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class SupersededRunTest extends IntegrationTestCase {
+final class SupersededRunTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
 	/** Client owner isolated to supersession coverage. */
@@ -56,11 +57,11 @@ final class SupersededRunTest extends IntegrationTestCase {
 			array( 'chunk' => 'two' ),
 		);
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::client( self::OWNER );
-		$client->jobs()->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
-		\add_filter( 'a8csp_jobs_engine/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
+		\add_filter( 'a8csp_bgje/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );
 
 		/** @var list<array{string, array<array-key, mixed>}> $named_superseded */
 		$named_superseded = array();
@@ -74,9 +75,9 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$failed = array();
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_jobs_engine/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
 		\add_action(
-			'a8csp_jobs_engine/superseded/' . self::IDENTITY,
+			'a8csp_bgje/superseded/' . self::IDENTITY,
 			static function ( RunId $run_id, array $args ) use ( &$named_superseded ): void {
 				$named_superseded[] = array( (string) $run_id, $args );
 			},
@@ -84,7 +85,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			2
 		);
 		\add_action(
-			'a8csp_jobs_engine/superseded',
+			'a8csp_bgje/superseded',
 			static function ( string $name, RunId $run_id, array $args ) use ( &$generic_superseded ): void {
 				$generic_superseded[] = array( $name, (string) $run_id, $args );
 			},
@@ -92,7 +93,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed/' . self::IDENTITY,
+			'a8csp_bgje/completed/' . self::IDENTITY,
 			static function ( RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$named_completed ): void {
 				$named_completed[] = array( (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -100,7 +101,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 		\add_action(
-			'a8csp_jobs_engine/completed',
+			'a8csp_bgje/completed',
 			static function ( string $name, RunId $run_id, array $args, ?RunId $previous_completed_run_id ) use ( &$generic_completed ): void {
 				$generic_completed[] = array( $name, (string) $run_id, $args, null === $previous_completed_run_id ? null : (string) $previous_completed_run_id );
 			},
@@ -108,7 +109,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			4
 		);
 		\add_action(
-			'a8csp_jobs_engine/failed',
+			'a8csp_bgje/failed',
 			static function ( RunFailure $failure ) use ( &$failed ): void {
 				if ( self::IDENTITY === $failure->identity ) {
 					$failed[] = $failure;
@@ -118,7 +119,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 			1
 		);
 		\add_action(
-			'a8csp_jobs_engine/log',
+			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
 				$log_records[] = array( $level, $message, $context );
 			},
@@ -126,10 +127,10 @@ final class SupersededRunTest extends IntegrationTestCase {
 			3
 		);
 
-		$run_a_result = $client->chunked_jobs()->start( self::NAME, $start_args );
+		$run_a_result = $client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_a_result, 'The incumbent chunked job must start through the public API' );
-		self::assertIsString( $run_a_result->value );
-		$run_a      = $run_a_result->value;
+		self::assertInstanceOf( Run::class, $run_a_result->value );
+		$run_a      = (string) $run_a_result->value->id;
 		$group_a    = self::IDENTITY . '|' . $run_a;
 		$start_a_id = $this->assert_pending_start_action( $run_a, $group_a );
 
@@ -140,10 +141,10 @@ final class SupersededRunTest extends IntegrationTestCase {
 
 		$run_a_action_id = $this->assert_pending_chunk_continuation( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
-		$run_b_result = $client->chunked_jobs()->start( self::NAME, $start_args );
+		$run_b_result = $client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
-		self::assertIsString( $run_b_result->value );
-		$run_b      = $run_b_result->value;
+		self::assertInstanceOf( Run::class, $run_b_result->value );
+		$run_b      = (string) $run_b_result->value->id;
 		$group_b    = self::IDENTITY . '|' . $run_b;
 		$start_b_id = $this->assert_pending_start_action( $run_b, $group_b );
 		self::assertNotSame( $run_a, $run_b, 'Replacement must allocate a fresh run identifier' );
@@ -160,28 +161,40 @@ final class SupersededRunTest extends IntegrationTestCase {
 			\get_option( 'a8csp_bgje_latest_run_' . self::IDENTITY, null ),
 			'The replacement chunked job must become latest for the shared argument identity'
 		);
-		self::assertIsArray( \get_option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_a, null ) );
-		self::assertIsArray( \get_option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_b, null ) );
-		self::assertSame( array(), $named_superseded, 'Starting the replacement must defer incumbent cleanup to its stale delivery' );
-
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the incumbent chunk after replacement' );
-
-		self::assertSame( array(), $chunked_job->process_calls, 'The superseded incumbent delivery must not execute chunk work' );
-		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The identity-specific superseded hook must receive the incumbent run ID and start arguments once' );
-		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The generic superseded hook must prepend the chunked job name to the same incumbent payload once' );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_a, false ), 'Replacement admission must finish the incumbent supersession' );
+		self::assertIsArray( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_b, null ) );
+		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'Replacement admission must publish the identity-specific superseded hook' );
+		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'Replacement admission must publish the generic superseded hook' );
 		self::assertCount( 1, $log_records );
 		self::assertSame( 'info', $log_records[0][0] ?? null );
 		self::assertSame(
 			array(
-				'chunked_job_name' => self::IDENTITY,
-				'run_id'           => $run_a,
-				'latest_run_id'    => $run_b,
+				'identity'      => self::IDENTITY,
+				'run_id'        => $run_a,
+				'latest_run_id' => $run_b,
 			),
 			$log_records[0][2],
-			'Supersession must expose stale and current ownership as structured context'
+			'Admission-time supersession must expose incumbent and replacement ownership as structured context'
 		);
-		$supersession_log_records = $log_records;
-		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_a, false ), 'The stale incumbent delivery must delete its run option' );
+
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must deliver the incumbent chunk after replacement' );
+
+		self::assertSame( array(), $chunked_job->process_calls, 'The superseded incumbent delivery must not execute chunk work' );
+		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The stale incumbent delivery must not repeat the identity-specific superseded hook' );
+		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The stale incumbent delivery must not repeat the generic superseded hook' );
+		self::assertCount( 2, $log_records );
+		self::assertSame( array( 'info', 'debug' ), \array_column( $log_records, 0 ) );
+		self::assertSame( 'Stale delivery for a finished or cancelled run was dropped.', $log_records[1][1] ?? null );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => $run_a,
+			),
+			$log_records[1][2],
+			'The stale delivery must identify the already-finished incumbent'
+		);
+		$stale_delivery_log_records = $log_records;
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_a, false ), 'The stale incumbent delivery must leave its admission-time cleanup intact' );
 		$lock = \get_option( 'a8csp_bgje_overlap_lock_' . self::IDENTITY . '_' . $args_hash, null );
 		self::assertIsArray( $lock );
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'Incumbent cleanup must preserve the replacement lock owner' );
@@ -197,24 +210,24 @@ final class SupersededRunTest extends IntegrationTestCase {
 		);
 		$run_b_action_ids = array();
 		foreach ( $expected_chunks as $expected_chunk ) {
-			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContext}> $process_calls */
+			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls */
 			$process_calls      = $chunked_job->process_calls;
 			$process_call_count = \count( $process_calls );
 			$run_b_action_ids[] = $this->assert_pending_chunk_continuation( self::IDENTITY, $run_b, $group_b, $expected_chunk );
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one replacement continuation' );
-			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContext}> $process_calls */
+			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls */
 			$process_calls = $chunked_job->process_calls;
 			self::assertCount( $process_call_count + 1, $process_calls, 'A replacement continue action must process one chunk' );
 			self::assertSame( $expected_chunk, $process_calls[ $process_call_count ]['chunk_args'] ?? null, 'The replacement continue action must process the authoritative queue head' );
 		}
 
-		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContext}> $process_calls_before */
+		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls_before */
 		$process_calls_before = $chunked_job->process_calls;
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained replacement queue' );
 		self::assertSame( $process_calls_before, $chunked_job->process_calls, 'The drained-queue continue action must not execute chunk work' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute replacement terminal cleanup' );
 
-		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContext}> $process_calls */
+		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls */
 		$process_calls = $chunked_job->process_calls;
 		self::assertSame( $expected_chunks, \array_column( $process_calls, 'chunk_args' ) );
 		foreach ( $process_calls as $process_call ) {
@@ -229,10 +242,10 @@ final class SupersededRunTest extends IntegrationTestCase {
 		self::assertSame( array(), $failed, 'Supersession and replacement completion must not publish a failed hook' );
 		self::assertSame( array( array( $run_a, $start_args ) ), $named_superseded, 'The replacement lifecycle must not repeat the identity-specific superseded hook' );
 		self::assertSame( array( array( self::IDENTITY, $run_a, $start_args ) ), $generic_superseded, 'The replacement lifecycle must not repeat the generic superseded hook' );
-		self::assertSame( $supersession_log_records, $log_records, 'Superseded stale deliveries must not emit additional logs' );
+		self::assertSame( $stale_delivery_log_records, $log_records, 'Replacement completion must not add logs after the stale-delivery diagnostic' );
 
-		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_a, false ) );
-		self::assertFalse( \get_option( 'a8csp_bgje_run_' . self::IDENTITY . '_' . $run_b, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_a, false ) );
+		self::assertFalse( \get_option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . $run_b, false ) );
 		self::assertFalse( \get_option( 'a8csp_bgje_overlap_lock_' . self::IDENTITY . '_' . $args_hash, false ), 'Terminal replacement success must release the overlap lock' );
 		self::assertFalse( \get_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY, false ), 'Supersession and replacement success must not retain failed-run state' );
 		self::assertSame(
@@ -272,13 +285,13 @@ final class SupersededRunTest extends IntegrationTestCase {
 					),
 				),
 			),
-			\get_option( 'a8csp_bgje_history_' . self::IDENTITY, null ),
+			\get_option( 'a8csp_bgje_run_history_' . self::IDENTITY, null ),
 			'History must retain the superseded incumbent and completed replacement in lifecycle order'
 		);
 		self::assertSame(
 			array(
-				'a8csp_bgje_history_' . self::IDENTITY,
 				'a8csp_bgje_latest_run_' . self::IDENTITY,
+				'a8csp_bgje_run_history_' . self::IDENTITY,
 			),
 			\array_column( $this->engine_option_rows(), 'option_name' ),
 			'Replacement completion must retain only history and latest pointer state'
@@ -304,7 +317,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
-				'hook'     => 'a8csp_jobs_engine/deliver',
+				'hook'     => 'a8csp_bgje/internal/deliver',
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -319,7 +332,7 @@ final class SupersededRunTest extends IntegrationTestCase {
 		$action    = $store->fetch_action( $action_id );
 
 		self::assertInstanceOf( \ActionScheduler_Action::class, $action );
-		self::assertSame( 'a8csp_jobs_engine/deliver', $action->get_hook() );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $action->get_hook() );
 		self::assertSame( array( self::IDENTITY, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
