@@ -30,7 +30,7 @@ final class Identity implements \Stringable {
 	/**
 	 * Local-name ceiling paired with `OWNER_MAX_BYTES` under the same WordPress `option_name` limit.
 	 *
-	 * `Schedule\Schedule::MAX_NAME_BYTES` mirrors this boundary-owned limit because the frozen
+	 * `Schedule::MAX_NAME_BYTES` mirrors this boundary-owned limit because the frozen
 	 * public model keeps its constant private.
 	 *
 	 * @since   1.0.0

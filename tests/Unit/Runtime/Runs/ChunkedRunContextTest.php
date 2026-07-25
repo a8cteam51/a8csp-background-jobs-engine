@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkedRunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -19,9 +19,9 @@ use PHPUnit\Framework\TestCase;
  * Pins attempt-local chunked job queue mutations and run metadata through real chunked job delivery.
  *
  */
-#[CoversClass( ChunkContext::class )]
+#[CoversClass( ChunkedRunContext::class )]
 #[UsesClass( PortableArguments::class )]
-final class ChunkContextTest extends TestCase {
+final class ChunkedRunContextTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const int NOW      = 1_700_000_000;
@@ -86,7 +86,7 @@ final class ChunkContextTest extends TestCase {
 		$chunked_job = new RecordingChunkedJob( 'metadata' );
 
 		$chunked_job->queue      = array( array( 'chunk' => 'only' ) );
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ) use ( &$observed ): void {
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ) use ( &$observed ): void {
 			$observed = array(
 				'run_id'     => $context->get_run_id(),
 				'start_args' => $context->get_start_args(),
@@ -115,8 +115,8 @@ final class ChunkContextTest extends TestCase {
 			array( 'chunk' => 'existing-1' ),
 			array( 'chunk' => 'existing-2' ),
 		);
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ) use ( &$observed ): void {
-			self::assertInstanceOf( ChunkContext::class, $context );
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ) use ( &$observed ): void {
+			self::assertInstanceOf( ChunkedRunContext::class, $context );
 			$context->append_chunk( array( 'chunk' => 'appended-1' ) );
 			$context->prepend_chunk( array( 'chunk' => 'prepended-1' ) );
 			$context->prepend_chunk( array( 'chunk' => 'prepended-2' ) );
@@ -151,7 +151,7 @@ final class ChunkContextTest extends TestCase {
 		$chunked_job = new RecordingChunkedJob( 'referenced-mutations' );
 
 		$chunked_job->queue      = array( array( 'chunk' => 'trigger' ) );
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ): void {
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ): void {
 			if ( 'trigger' !== ( $chunk_args['chunk'] ?? null ) ) {
 				$chunk_args['value'] = 'copy-mutated';
 
@@ -203,7 +203,7 @@ final class ChunkContextTest extends TestCase {
 			'site_id' => &$site_id,
 			'mirror'  => &$site_id,
 		);
-		$context    = new ChunkContext( 'run-id', $start_args, array() );
+		$context    = new ChunkedRunContext( 'run-id', $start_args, array() );
 
 		$site_id             = 8;
 		$retained            = $context->get_start_args();
@@ -226,7 +226,7 @@ final class ChunkContextTest extends TestCase {
 	public function test_append_chunk_rejects_non_portable_arguments_without_mutating_the_queue(): void {
 		$this->assert_non_portable_mutation_is_atomic(
 			'append-chunk-rejection',
-			static fn ( ChunkContextInterface $context ) => $context->append_chunk( array( 'private-payload' => static fn (): null => null ) )
+			static fn ( ChunkedRunContextInterface $context ) => $context->append_chunk( array( 'private-payload' => static fn (): null => null ) )
 		);
 	}
 
@@ -238,7 +238,7 @@ final class ChunkContextTest extends TestCase {
 	public function test_prepend_chunk_rejects_non_portable_arguments_without_mutating_the_queue(): void {
 		$this->assert_non_portable_mutation_is_atomic(
 			'prepend-chunk-rejection',
-			static fn ( ChunkContextInterface $context ) => $context->prepend_chunk( array( 'private-payload' => new \stdClass() ) )
+			static fn ( ChunkedRunContextInterface $context ) => $context->prepend_chunk( array( 'private-payload' => new \stdClass() ) )
 		);
 	}
 
@@ -257,7 +257,7 @@ final class ChunkContextTest extends TestCase {
 		try {
 			$this->assert_non_portable_mutation_is_atomic(
 				'append-chunk-resource-rejection',
-				static fn ( ChunkContextInterface $context ) => $context->append_chunk( array( 'private-payload' => $stream ) )
+				static fn ( ChunkedRunContextInterface $context ) => $context->append_chunk( array( 'private-payload' => $stream ) )
 			);
 		} finally {
 			\fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- The test-owned resource must be released.
@@ -279,7 +279,7 @@ final class ChunkContextTest extends TestCase {
 		try {
 			$this->assert_non_portable_mutation_is_atomic(
 				'prepend-chunk-resource-rejection',
-				static fn ( ChunkContextInterface $context ) => $context->prepend_chunk( array( 'private-payload' => $stream ) )
+				static fn ( ChunkedRunContextInterface $context ) => $context->prepend_chunk( array( 'private-payload' => $stream ) )
 			);
 		} finally {
 			\fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- The test-owned resource must be released.
@@ -315,7 +315,7 @@ final class ChunkContextTest extends TestCase {
 	/**
 	 * Proves one rejected context mutation leaves the delivery-owned queue unchanged.
 	 *
-	 * @phpstan-param \Closure(ChunkContextInterface): void $mutate
+	 * @phpstan-param \Closure(ChunkedRunContextInterface): void $mutate
 	 *
 	 * @param   string   $name   Chunked Job name.
 	 * @param   \Closure $mutate Invalid context mutation.
@@ -328,7 +328,7 @@ final class ChunkContextTest extends TestCase {
 		$chunked_job = new RecordingChunkedJob( $name );
 
 		$chunked_job->queue      = array( array( 'chunk' => 'trigger' ), ...$initial );
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $mutate, &$caught ): void {
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ) use ( $mutate, &$caught ): void {
 			if ( 'trigger' !== ( $chunk_args['chunk'] ?? null ) ) {
 				return;
 			}

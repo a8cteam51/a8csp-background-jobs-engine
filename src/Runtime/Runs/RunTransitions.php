@@ -3,9 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
@@ -528,7 +528,7 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{error: EngineError, failure: \A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure}|null $failure_detail
+	 * @phpstan-param array{error: EngineError, failure: \A8C\SpecialProjects\BackgroundJobsEngine\RunFailure}|null $failure_detail
 	 *
 	 * @param   Identity    $identity       Complete owner-qualified work identity.
 	 * @param   string      $run_id         Run identifier.

@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 
 \defined( 'ABSPATH' ) || exit;
 

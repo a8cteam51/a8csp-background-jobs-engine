@@ -1,8 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
-
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Job;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobKind;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobKind;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;

@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Job;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\ClosureJobExecution;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobKind;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobKind;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\KindExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
@@ -21,7 +21,6 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( JobDefinition::class )]
-#[UsesClass( ClosureJobExecution::class )]
 #[UsesClass( JobKind::class )]
 #[UsesClass( JobOptions::class )]
 final class JobDefinitionTest extends TestCase {
@@ -69,7 +68,7 @@ final class JobDefinitionTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void {}
 		};
 		$options           = new JobOptions( max_runtime: 42 );
 		$job               = JobDefinition::job( 'refresh-index', $job_execution, $options );
@@ -86,7 +85,7 @@ final class JobDefinitionTest extends TestCase {
 	}
 
 	/**
-	 * Generic composition accepts a grammar-valid kind without inspecting its execution object.
+	 * Generic composition accepts a grammar-valid kind without inspecting its execution role.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -95,7 +94,7 @@ final class JobDefinitionTest extends TestCase {
 	 */
 	public function test_for_kind_defers_execution_compatibility_to_registration(): void {
 		$kind       = JobKind::from( 'vendor.future' );
-		$execution  = new \stdClass();
+		$execution  = new class() implements KindExecutionInterface {};
 		$definition = JobDefinition::for_kind( 'future-work', $kind, $execution );
 
 		self::assertSame( 'future-work', $definition->name );

@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use PHPUnit\Framework\TestCase;
 
@@ -118,7 +118,7 @@ abstract class AbstractCapabilityManagerTestCase extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void {}
 		};
 
 		return JobDefinition::chunked_job( $name, $execution );

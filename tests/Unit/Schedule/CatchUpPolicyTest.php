@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Schedule;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

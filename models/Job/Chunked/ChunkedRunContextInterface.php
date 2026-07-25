@@ -1,8 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked;
-
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -21,7 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-interface ChunkContextInterface extends RunContextInterface {
+interface ChunkedRunContextInterface extends RunContextInterface {
 	// region METHODS
 
 	/**

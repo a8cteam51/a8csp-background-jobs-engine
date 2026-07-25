@@ -2,10 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedules;
 use PHPUnit\Framework\Attributes\CoversClass;
 

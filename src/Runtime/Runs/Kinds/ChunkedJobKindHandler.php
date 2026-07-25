@@ -3,20 +3,20 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkedRunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
@@ -605,7 +605,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		}
 		$chunk_args = PortableArguments::without_references( $chunk_args );
 
-		$context = new ChunkContext( $run_id, $state->start_args, \array_slice( $queue, 1 ) );
+		$context = new ChunkedRunContext( $run_id, $state->start_args, \array_slice( $queue, 1 ) );
 		try {
 			$execution->process_chunk( $chunk_args, $context );
 		} catch ( \Throwable $throwable ) {
@@ -875,8 +875,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			}
 
 			$chunk_bytes = \strlen( $encoded_chunk );
-			if ( ChunkContext::MAX_CHUNK_BYTES < $chunk_bytes ) {
-				return new EngineError( \sprintf( 'chunked_job queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, ChunkContext::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
+			if ( ChunkedRunContext::MAX_CHUNK_BYTES < $chunk_bytes ) {
+				return new EngineError( \sprintf( 'chunked_job queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, ChunkedRunContext::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
 			}
 
 			$queue[]          = $chunk_args;

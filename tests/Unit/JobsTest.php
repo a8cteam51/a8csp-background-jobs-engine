@@ -4,17 +4,18 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobKind;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobKind;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Jobs;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\KindExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -233,9 +234,10 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 	 * @return  void
 	 */
 	public function test_register_rejects_an_uninstalled_kind_and_names_it(): void {
-		$kind   = JobKind::from( 'future_kind' );
-		$result = \a8csp_bgje( self::OWNER )->jobs()->register( JobDefinition::for_kind( 'future-work', $kind, new \stdClass() ) );
-		$error  = self::assert_wp_error( $result, ErrorCode::InvalidArgument->value );
+		$kind      = JobKind::from( 'future_kind' );
+		$execution = new class() implements KindExecutionInterface {};
+		$result    = \a8csp_bgje( self::OWNER )->jobs()->register( JobDefinition::for_kind( 'future-work', $kind, $execution ) );
+		$error     = self::assert_wp_error( $result, ErrorCode::InvalidArgument->value );
 
 		self::assertStringContainsString( 'future_kind', $error->get_error_message() );
 	}
@@ -249,8 +251,9 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 	 * @return  void
 	 */
 	public function test_register_rejects_an_incompatible_execution_and_names_the_contract(): void {
-		$result = \a8csp_bgje( self::OWNER )->jobs()->register( JobDefinition::for_kind( 'wrong-execution', JobKind::job(), new \stdClass() ) );
-		$error  = self::assert_wp_error( $result, ErrorCode::InvalidArgument->value );
+		$execution = new class() implements KindExecutionInterface {};
+		$result    = \a8csp_bgje( self::OWNER )->jobs()->register( JobDefinition::for_kind( 'wrong-execution', JobKind::job(), $execution ) );
+		$error     = self::assert_wp_error( $result, ErrorCode::InvalidArgument->value );
 
 		self::assertStringContainsString( 'job', $error->get_error_message() );
 		self::assertStringContainsString( JobExecutionInterface::class, $error->get_error_message() );

@@ -34,14 +34,15 @@ every surviving component is initialized before any hook can fire.
   edit when wiring a top-level component into `COMPONENTS`. The main bootstrap registers the
   request-local `Plugin` instance's `boot()` method; components boot in registration order behind a
   non-retryable latch.
-- `models/` holds the representation layer under `Error\`, `Job\`, `Run\`, and `Schedule\`.
-  `Job\JobDefinition` composes a name, `Job\JobKind`, execution object, and `Job\JobOptions`;
-  standard and chunked behavior implement `Job\JobExecutionInterface` and the standalone
-  `Job\Chunked\ChunkedJobExecutionInterface`. Execution callbacks depend on
-  `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`; `Job\RunContext` is the final
-  standard implementation. `Schedule\Schedule`, `Schedule\Recurrence`, and
-  `Schedule\CatchUpPolicy` form the typed schedule declaration consumed by the public `Schedules`
-  service.
+- `models/` holds the representation layer in the editorial `Error/`, `Job/`, `Run/`, and
+  `Schedule/` subdirectories; every model type declares the
+  `A8C\SpecialProjects\BackgroundJobsEngine` root namespace. `JobDefinition` composes a name,
+  `JobKind`, a `KindExecutionInterface` execution object, and `JobOptions`; standard and chunked
+  behavior implement `JobExecutionInterface` and `ChunkedJobExecutionInterface`, which share that
+  marker but no member. Execution callbacks depend on `RunContextInterface` or
+  `ChunkedRunContextInterface`; `RunContext` is the final standard implementation. `Schedule`,
+  `Recurrence`, and `CatchUpPolicy` form the typed schedule declaration consumed by the public
+  `Schedules` service.
 - The root services, the README's public type index, `a8csp_bgje()`, and the verb-noun procedural
   aliases form the SemVer-bound consumer surface: the owner-scoped `Engine` handle and capability
   managers plus job definitions, execution roles, policy, contexts, and input and returned value

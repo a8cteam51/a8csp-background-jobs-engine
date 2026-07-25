@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 
 /**
  * Records chunked job executions with optional observation and failure behavior.
@@ -38,7 +38,7 @@ final class RecordingChunkedJob implements ChunkedJobExecutionInterface {
 	/**
 	 * Chunk-processing arguments and contexts in call order.
 	 *
-	 * @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}>
+	 * @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}>
 	 */
 	public array $process_calls = array();
 
@@ -61,7 +61,7 @@ final class RecordingChunkedJob implements ChunkedJobExecutionInterface {
 	/**
 	 * Observation run after recording chunk processing and before an optional failure.
 	 *
-	 * @var (\Closure(array<array-key, mixed>, ChunkContextInterface): void)|null
+	 * @var (\Closure(array<array-key, mixed>, ChunkedRunContextInterface): void)|null
 	 */
 	public ?\Closure $on_process = null;
 
@@ -124,13 +124,13 @@ final class RecordingChunkedJob implements ChunkedJobExecutionInterface {
 	/**
 	 * Records one chunk invocation before applying scripted behavior.
 	 *
-	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+	 * @param   array<array-key, mixed>    $chunk_args Arguments for this chunk.
+	 * @param   ChunkedRunContextInterface $context    Controlled access to this chunk's run.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {
+	public function process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void {
 		$this->process_calls[] = array(
 			'chunk_args' => $chunk_args,
 			'context'    => $context,

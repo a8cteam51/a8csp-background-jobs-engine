@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 
 \defined( 'ABSPATH' ) || exit;
@@ -17,7 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class ChunkContext implements ChunkContextInterface {
+final class ChunkedRunContext implements ChunkedRunContextInterface {
 	// region FIELDS AND CONSTANTS
 
 	/**

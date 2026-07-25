@@ -1,9 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked;
-
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -15,7 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
  * @since   1.0.0
  * @version 1.0.0
  */
-interface ChunkedJobExecutionInterface {
+interface ChunkedJobExecutionInterface extends KindExecutionInterface {
 	// region METHODS
 
 	/**
@@ -42,15 +39,15 @@ interface ChunkedJobExecutionInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+	 * @param   array<array-key, mixed>    $chunk_args Arguments for this chunk.
+	 * @param   ChunkedRunContextInterface $context    Controlled access to this chunk's run.
 	 *
 	 * @throws  \Throwable When chunk processing fails. {@see NonRetryableException} bypasses any
 	 *                     remaining automatic attempts.
 	 *
 	 * @return  void
 	 */
-	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void;
+	public function process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void;
 
 	// endregion
 }

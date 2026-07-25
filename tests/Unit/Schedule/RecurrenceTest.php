@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Schedule;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

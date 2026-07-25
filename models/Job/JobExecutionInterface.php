@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -12,7 +12,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
  * @since   1.0.0
  * @version 1.0.0
  */
-interface JobExecutionInterface {
+interface JobExecutionInterface extends KindExecutionInterface {
 	// region METHODS
 
 	/**

@@ -2,11 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 
 \defined( 'ABSPATH' ) || exit;
 

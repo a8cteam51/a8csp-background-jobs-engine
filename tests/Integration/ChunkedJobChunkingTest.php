@@ -4,10 +4,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
@@ -72,7 +72,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 			array( 'chunk' => 'two' ),
 			array( 'chunk' => 'three' ),
 		);
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ): void {
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ): void {
 			if ( 'one' !== ( $chunk_args['chunk'] ?? null ) ) {
 				return;
 			}

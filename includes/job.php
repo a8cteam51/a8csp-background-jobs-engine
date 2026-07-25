@@ -1,7 +1,7 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 
 \defined( 'ABSPATH' ) || exit;
 

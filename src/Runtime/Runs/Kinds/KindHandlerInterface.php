@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -26,7 +26,7 @@ interface KindHandlerInterface {
 	/**
 	 * Lexical grammar for persisted kind and lifecycle stage keys.
 	 *
-	 * `Job\JobKind` and `Run\RunFailureStage` carry frozen public copies of this grammar; a change
+	 * `JobKind` and `RunFailureStage` carry frozen public copies of this grammar; a change
 	 * here must be mirrored in both.
 	 *
 	 * @since   1.0.0

@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;

@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 
 /**
  * Demonstrates a chunked job that recounts comments one post per independently retried chunk.
@@ -111,8 +111,8 @@ final class CommentCountRecountChunkedJob implements ChunkedJobExecutionInterfac
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-	 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+	 * @param   array<array-key, mixed>    $chunk_args Arguments for this chunk.
+	 * @param   ChunkedRunContextInterface $context    Controlled access to this chunk's run.
 	 *
 	 * @throws  NonRetryableException     When the queued post identifier is invalid or its post is gone.
 	 * @throws  \RuntimeException         When the refreshed comment count is not persisted.
@@ -120,7 +120,7 @@ final class CommentCountRecountChunkedJob implements ChunkedJobExecutionInterfac
 	 * @return  void
 	 */
 	#[\Override]
-	public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {
+	public function process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void {
 		$post_id = $chunk_args['post_id'] ?? null;
 		if ( ! \is_int( $post_id ) || 1 > $post_id ) {
 			throw new NonRetryableException( 'Comment-count chunks require a positive integer post_id; generate each chunk from a persisted post ID.' );

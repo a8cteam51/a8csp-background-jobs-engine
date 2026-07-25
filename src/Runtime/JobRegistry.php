@@ -4,8 +4,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 
 \defined( 'ABSPATH' ) || exit;
 

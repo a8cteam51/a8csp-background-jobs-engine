@@ -2,10 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 
 \defined( 'ABSPATH' ) || exit;
 
