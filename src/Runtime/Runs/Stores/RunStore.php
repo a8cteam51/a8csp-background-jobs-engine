@@ -479,26 +479,6 @@ final readonly class RunStore {
 		return null !== $replacement_raw ? $replacement : null;
 	}
 
-	/**
-	 * Deletes a run's consolidated option.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $run_id Run identifier.
-	 *
-	 * @return  bool True when the run option is confirmed absent.
-	 */
-	public function delete( string $run_id ): bool {
-		\delete_option( RunIdentity::raw_option_name( $this->identity, $run_id ) );
-		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
-		if ( $selected->is_failure() ) {
-			return false;
-		}
-
-		return null === $selected->value;
-	}
-
 	// endregion
 
 	// region HELPERS

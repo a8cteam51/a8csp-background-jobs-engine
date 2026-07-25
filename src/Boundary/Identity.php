@@ -90,7 +90,7 @@ final class Identity implements \Stringable {
 
 	// endregion
 
-	// region FACTORIES
+	// region FACTORY METHODS
 
 	/**
 	 * Composes one canonical background-work identity.

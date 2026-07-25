@@ -35,7 +35,6 @@ final class BoundaryErrorMapper {
 		'current_timestamp'                => true,
 		'delay'                            => true,
 		'first_run_timestamp'              => true,
-		'group'                            => true,
 		'hook'                             => true,
 		'identity'                         => true,
 		'interval'                         => true,

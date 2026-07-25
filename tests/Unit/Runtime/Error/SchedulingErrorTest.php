@@ -204,7 +204,7 @@ final class SchedulingErrorTest extends TestCase {
 				'expected_code' => 'backend_rejected',
 			),
 			'storage failure'    => array(
-				'reason'        => 'storage_failure',
+				'reason'        => 'storage_failed',
 				'expected_code' => 'storage_failed',
 			),
 		);

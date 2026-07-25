@@ -464,7 +464,7 @@ final readonly class RunsCommand {
 			return;
 		}
 
-		RunOutput::render( $inspection->runs( $identity ), (string) $identity, $format );
+		RunOutput::render( $inspection->runs( $identity ), $identity, $format );
 	}
 
 	/**
@@ -502,7 +502,7 @@ final readonly class RunsCommand {
 		 */
 		$option_rows        = new OptionRows( $wpdb );
 		$logger             = new HookLogger();
-		$entries_by_name    = array();
+		$groups             = array();
 		$unreadable_entries = 0;
 		$unreadable_rows    = 0;
 		foreach ( $identities as $identity ) {
@@ -512,7 +512,10 @@ final readonly class RunsCommand {
 				return;
 			}
 
-			$entries_by_name[ (string) $identity ] = $inspection->value['entries'];
+			$groups[] = array(
+				'identity' => $identity,
+				'entries'  => $inspection->value['entries'],
+			);
 
 			$unreadable_entries += $inspection->value['unreadable'];
 			if ( $inspection->value['row_unreadable'] ) {
@@ -520,7 +523,7 @@ final readonly class RunsCommand {
 			}
 		}
 
-		FailedRunOutput::render( $entries_by_name, $owner, $format, $unreadable_entries, $unreadable_rows );
+		FailedRunOutput::render( $groups, $owner, $format, $unreadable_entries, $unreadable_rows );
 	}
 
 	/**

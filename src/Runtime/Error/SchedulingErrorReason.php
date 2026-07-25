@@ -40,7 +40,7 @@ enum SchedulingErrorReason: string {
 	case InvalidPayload = 'invalid_payload';
 
 	case ScheduleFailed = 'schedule_failed';
-	case StorageFailure = 'storage_failure';
+	case StorageFailure = 'storage_failed';
 
 	// endregion
 

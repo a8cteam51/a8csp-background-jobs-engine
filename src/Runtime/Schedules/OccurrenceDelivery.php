@@ -241,12 +241,12 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$failure = new Failure( SchedulingError::registry_persist_failure( $owner ) );
+		$error = SchedulingError::registry_persist_failure( $owner );
 		$this->logger->error(
 			'Schedule occurrence state could not be persisted: {error}',
 			array(
 				'owner' => $owner,
-				'error' => $failure->error->message,
+				'error' => $error->message,
 			)
 		);
 	}

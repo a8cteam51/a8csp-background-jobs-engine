@@ -134,7 +134,7 @@ final readonly class Schedule {
 
 	// endregion
 
-	// region GETTERS/SETTERS
+	// region GETTERS
 
 	/**
 	 * Returns the stable SHA-256 definition identity.

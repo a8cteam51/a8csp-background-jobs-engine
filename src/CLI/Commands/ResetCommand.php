@@ -169,20 +169,6 @@ final readonly class ResetCommand {
 		return array( 'action' => 'reset' );
 	}
 
-	/**
-	 * Returns the canonical persisted-state prefixes in deletion order.
-	 *
-	 * @internal Command coverage seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  list<string>
-	 */
-	public static function option_prefixes(): array {
-		return self::OPTION_PREFIXES;
-	}
-
 	// endregion
 
 	// region HELPERS

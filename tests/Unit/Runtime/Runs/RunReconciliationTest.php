@@ -1216,7 +1216,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
-		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
+		self::assertSame( 'storage_failed', $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**
@@ -1248,7 +1248,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
-		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
+		self::assertSame( 'storage_failed', $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**
@@ -1275,7 +1275,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
 		self::assertSame( 'run-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
 		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
-		self::assertSame( 'storage_failure', $this->logger->records[0]['context']['error_reason'] ?? null );
+		self::assertSame( 'storage_failed', $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**

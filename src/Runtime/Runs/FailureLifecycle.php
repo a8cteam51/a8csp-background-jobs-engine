@@ -302,7 +302,7 @@ final readonly class FailureLifecycle {
 					'state' => $state,
 					'error' => EngineError::scheduling( $kind, $identity, 'retry', $scheduled->error ),
 					'stage' => RunFailureStage::scheduling(),
-					'code'  => EngineError::api_code_for_scheduling( $scheduled->error ),
+					'code'  => $scheduled->error->reason->api_code(),
 				);
 			}
 

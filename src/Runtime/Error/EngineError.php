@@ -2,17 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\ErrorInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Internal failure detail retained while the engine terminalizes a run.
+ * Carries terminal failure detail or a classified admission failure.
  *
- * The message describes the failure, and the optional exception class preserves the throwable
- * category without retaining the throwable.
+ * Terminal detail is retained while the engine terminalizes a run. Classified admission failures
+ * cross the public boundary mapper. The message describes the failure, and the optional exception
+ * class preserves the throwable category without retaining the throwable.
  *
  * @internal
  *
@@ -75,20 +75,6 @@ final readonly class EngineError implements ErrorInterface {
 	 */
 	public static function scheduling( string $kind, Identity $identity, string $stage, SchedulingError $error ): self {
 		return new self( \sprintf( '%1$s "%2$s" could not schedule the %3$s action: %4$s', $kind, (string) $identity, $stage, $error->message ), SchedulingError::class );
-	}
-
-	/**
-	 * Maps a scheduling failure to its client-visible classification.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   SchedulingError $error Scheduling failure.
-	 *
-	 * @return  ErrorCode
-	 */
-	public static function api_code_for_scheduling( SchedulingError $error ): ErrorCode {
-		return $error->reason->api_code();
 	}
 
 	/**

@@ -7,12 +7,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,7 +20,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( EngineError::class )]
 #[CoversClass( RunFailure::class )]
-#[UsesClass( SchedulingError::class )]
 final class EngineErrorTest extends TestCase {
 	// region LIFECYCLE.
 
@@ -115,27 +111,6 @@ final class EngineErrorTest extends TestCase {
 		}
 	}
 
-	/**
-	 * Scheduling terminalization scenarios expose their consumer-visible classifications.
-	 *
-	 * @load-bearing security
-	 * @pin-rationale The terminalization boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $reason        Internal scheduling-reason backing value.
-	 * @param   string $expected_code Client-visible terminal classification.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'scheduling_code_mappings' )]
-	public function test_scheduling_failures_expose_public_codes( string $reason, string $expected_code ): void {
-		$error = new SchedulingError( SchedulingErrorReason::from( $reason ), 'Corrective engine prose.' );
-
-		self::assertSame( ErrorCode::from( $expected_code ), EngineError::api_code_for_scheduling( $error ) );
-	}
-
 	// endregion.
 
 	// region DATA PROVIDERS.
@@ -177,43 +152,6 @@ final class EngineErrorTest extends TestCase {
 				'secret'           => 'password=hunter2',
 				'expected_class'   => \UnexpectedValueException::class,
 				'corrective_prose' => 'Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.',
-			),
-		);
-	}
-
-	/**
-	 * Supplies every scheduling reason and its client-visible classification.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{reason: string, expected_code: string}>
-	 */
-	public static function scheduling_code_mappings(): array {
-		return array(
-			'backend not ready'  => array(
-				'reason'        => 'backend_not_ready',
-				'expected_code' => 'backend_unavailable',
-			),
-			'unsupported group'  => array(
-				'reason'        => 'unsupported_group',
-				'expected_code' => 'unsupported_operation',
-			),
-			'invalid time input' => array(
-				'reason'        => 'invalid_time_input',
-				'expected_code' => 'payload_rejected',
-			),
-			'invalid payload'    => array(
-				'reason'        => 'invalid_payload',
-				'expected_code' => 'payload_rejected',
-			),
-			'schedule failed'    => array(
-				'reason'        => 'schedule_failed',
-				'expected_code' => 'backend_rejected',
-			),
-			'storage failure'    => array(
-				'reason'        => 'storage_failure',
-				'expected_code' => 'storage_failed',
 			),
 		);
 	}

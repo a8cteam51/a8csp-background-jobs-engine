@@ -23,7 +23,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use Psr\Clock\ClockInterface;
@@ -653,7 +652,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 
 		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $replacement->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $replacement, $run_store, EngineError::scheduling( self::KIND, $identity, 'continue', $scheduled->error ), RunState::increment_attempts_safely( $replacement->failed_attempts ), RunFailureStage::scheduling(), EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $replacement, $run_store, EngineError::scheduling( self::KIND, $identity, 'continue', $scheduled->error ), RunState::increment_attempts_safely( $replacement->failed_attempts ), RunFailureStage::scheduling(), $scheduled->error->reason->api_code() );
 		}
 	}
 
@@ -695,7 +694,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		$pending   = $state->pending ?? throw new \LogicException( 'Persisted chunked-job successor requires a durable pending-action descriptor.' );
 		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, $stage, $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), EngineError::api_code_for_scheduling( $scheduled->error ) );
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, $stage, $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), $scheduled->error->reason->api_code() );
 		}
 	}
 
@@ -815,11 +814,10 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		// Hydration already guarantees a portable payload within the persistence ceilings, so the
 		// read path checks only the list-of-arrays shape this handler owns; full materialization
 		// (per-chunk encoding and byte ceilings) belongs to the write path.
-		if ( ! \array_is_list( $state->kind_state ) ) {
-			return new EngineError( 'chunked_job kind_state must be an oldest-first list of portable argument arrays.', \UnexpectedValueException::class, EngineErrorReason::PayloadRejected );
-		}
-
-		if ( \array_any( $state->kind_state, static fn ( mixed $chunk ): bool => ! \is_array( $chunk ) ) ) {
+		if (
+			! \array_is_list( $state->kind_state )
+			|| \array_any( $state->kind_state, static fn ( mixed $chunk ): bool => ! \is_array( $chunk ) )
+		) {
 			return new EngineError( 'chunked_job kind_state must be an oldest-first list of portable argument arrays.', \UnexpectedValueException::class, EngineErrorReason::PayloadRejected );
 		}
 

@@ -41,6 +41,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
  *     error_message: string,
  *     failed_chunk: array<array-key, mixed>|null
  * }
+ * @phpstan-type FailedRunGroup array{
+ *     identity: Identity,
+ *     entries: list<FailedRunEntry>
+ * }
  */
 final readonly class FailedRunOutput {
 	// region FIELDS AND CONSTANTS
@@ -98,25 +102,29 @@ final readonly class FailedRunOutput {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, list<FailedRunEntry>> $entries_by_name
+	 * @phpstan-param list<FailedRunGroup> $groups
 	 *
-	 * @param   array       $entries_by_name Failed runs keyed by composed job or chunked job identity.
-	 * @param   string|null $owner           Exact owner filter, or null for every owner.
+	 * @param   array       $groups Failed runs grouped by composed job or chunked job identity.
+	 * @param   string|null $owner  Exact owner filter, or null for every owner.
 	 *
 	 * @phpstan-return list<FailedRunRow>
 	 *
 	 * @return  array
 	 */
-	public static function rows_from_entries( array $entries_by_name, ?string $owner = null ): array {
-		\ksort( $entries_by_name, \SORT_STRING );
+	public static function rows_from_entries( array $groups, ?string $owner = null ): array {
+		\usort(
+			$groups,
+			static fn ( array $left, array $right ): int => (string) $left['identity'] <=> (string) $right['identity']
+		);
 
 		$rows = array();
-		foreach ( $entries_by_name as $name => $entries ) {
-			$identity = Identity::tryFrom( $name );
-			if ( null === $identity || ( null !== $owner && $owner !== $identity->owner() ) ) {
+		foreach ( $groups as $group ) {
+			$identity = $group['identity'];
+			if ( null !== $owner && $owner !== $identity->owner() ) {
 				continue;
 			}
 
+			$entries = $group['entries'];
 			\usort(
 				$entries,
 				static function ( array $left, array $right ): int {
@@ -133,7 +141,7 @@ final readonly class FailedRunOutput {
 
 				$rows[] = array(
 					'owner'         => $identity->owner(),
-					'identity'      => $name,
+					'identity'      => (string) $identity,
 					'run_id'        => $entry['run_id'],
 					'failed_at'     => \gmdate( \DATE_ATOM, $entry['failed_at'] ),
 					'attempts'      => $entry['attempts'],
@@ -182,9 +190,9 @@ final readonly class FailedRunOutput {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array<string, list<FailedRunEntry>> $entries_by_name
+	 * @phpstan-param list<FailedRunGroup> $groups
 	 *
-	 * @param   array       $entries_by_name    Failed runs keyed by composed identity.
+	 * @param   array       $groups             Failed runs grouped by composed identity.
 	 * @param   string|null $owner              Exact owner filter, or null for every owner.
 	 * @param   string      $format             WP-CLI output format.
 	 * @param   int         $unreadable_entries Rejected child-entry count.
@@ -192,8 +200,8 @@ final readonly class FailedRunOutput {
 	 *
 	 * @return  void
 	 */
-	public static function render( array $entries_by_name, ?string $owner, string $format, int $unreadable_entries = 0, int $unreadable_rows = 0 ): void {
-		$rows    = self::rows_from_entries( $entries_by_name, $owner );
+	public static function render( array $groups, ?string $owner, string $format, int $unreadable_entries = 0, int $unreadable_rows = 0 ): void {
+		$rows    = self::rows_from_entries( $groups, $owner );
 		$warning = self::unreadable_message( $unreadable_entries, $unreadable_rows );
 		if ( array() === $rows && 'table' === $format && null === $warning ) {
 			\WP_CLI::line( 'No failed runs are retained.' );

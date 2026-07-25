@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 
 \defined( 'ABSPATH' ) || exit;
@@ -228,13 +229,13 @@ final readonly class RunOutput {
 	 *     history: list<HistoryEntry>|null
 	 * } $snapshot
 	 *
-	 * @param   array  $snapshot Run inspection snapshot.
-	 * @param   string $name     Composed job or chunked job identity.
-	 * @param   string $format   WP-CLI output format.
+	 * @param   array    $snapshot Run inspection snapshot.
+	 * @param   Identity $identity Composed job or chunked job identity.
+	 * @param   string   $format   WP-CLI output format.
 	 *
 	 * @return  void
 	 */
-	public static function render( array $snapshot, string $name, string $format ): void {
+	public static function render( array $snapshot, Identity $identity, string $format ): void {
 		$error_message = self::error_message( $snapshot['live_error'] );
 		if ( null !== $error_message ) {
 			\WP_CLI::error( $error_message );
@@ -254,7 +255,7 @@ final readonly class RunOutput {
 			&& null === $truncation
 			&& null === $unreadable
 		) {
-			\WP_CLI::line( \sprintf( 'No live runs or history are retained for "%s".', $name ) );
+			\WP_CLI::line( \sprintf( 'No live runs or history are retained for "%s".', (string) $identity ) );
 			return;
 		}
 

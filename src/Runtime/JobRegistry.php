@@ -26,7 +26,7 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<string, array{kind: string, name: string, execution: object, options: JobOptions}>
+	 * @var     array<string, array{kind: string, execution: object, options: JobOptions}>
 	 */
 	private array $registrations = array();
 
@@ -63,7 +63,6 @@ final class JobRegistry {
 		if ( null === $existing ) {
 			$this->registrations[ $key ] = array(
 				'kind'      => $kind,
-				'name'      => $definition->name,
 				'execution' => $definition->execution,
 				'options'   => $definition->options,
 			);
