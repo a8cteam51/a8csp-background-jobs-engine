@@ -11,6 +11,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 /**
  * Synchronizes an owner's complete declared schedule set.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
@@ -86,11 +88,15 @@ function a8csp_bgje_sync_schedules( string $owner, array $schedules ): true|\WP_
 /**
  * Immediately dispatches one declared schedule target.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @param   string $owner Client plugin owner.
  * @param   string $name  Owner-local schedule name.
+ *
+ * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *
  * @return  Run|\WP_Error
  */

@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Immutable snapshot returned by every engine command verb.
+ * Immutable snapshot returned by run-producing engine commands.
  *
  * The projection captures the run at response time; it is not a live handle.
  *

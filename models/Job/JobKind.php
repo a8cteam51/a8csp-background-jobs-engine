@@ -97,7 +97,7 @@ final readonly class JobKind {
 		return $kind;
 	}
 
-	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Mirrors the backed-enum API.
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Mirrors the backed-enum parser name; each successful call returns a fresh instance.
 	/**
 	 * Wraps one grammar-valid engine kind key, or returns null for another shape.
 	 *

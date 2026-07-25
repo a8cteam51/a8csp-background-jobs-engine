@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInte
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Composes a stable job identity, execution role, kind, and policy declaration.
+ * Composes a stable owner-local job name, execution role, kind, and policy declaration.
  *
  * @api
  *

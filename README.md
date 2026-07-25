@@ -479,6 +479,8 @@ The backed enums are:
 | `Schedule\CatchUpPolicy` | `RunOnce = 'run_once'`, `Skip = 'skip'` |
 | `Error\ErrorCode` | `InvalidArgument = 'invalid_argument'`, `AlreadyRegistered = 'already_registered'`, `EngineUnavailable = 'engine_unavailable'`, `UnknownJob = 'unknown_job'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailed = 'storage_failed'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
 
+Minor releases may add cases; consumers treat unknown backing values as generic failures for `Error\ErrorCode` and as generic non-terminal or terminal states, as appropriate, for `Run\RunStatus`.
+
 `Run\RunFailureStage` is a final, interned, open string-backed value. `from( string )` wraps a lowercase snake key with at most one dot qualifier and throws `\ValueError` for malformed input; `tryFrom( string )` returns null instead. Engine stages are available through `execution()`, `queue_generation()`, `crash_reclamation()`, and `scheduling()`. Grammar-valid third-party stages such as `acme.export_sync` remain intact.
 
 `Job\JobKind::from()`, `Run\RunId::from()`, and `Run\RunFailureStage::from()` throw `\ValueError` for malformed strings. `\ValueError` extends `\Error`, not `\Exception`; use the corresponding `tryFrom()` parser when malformed consumer input should return null.

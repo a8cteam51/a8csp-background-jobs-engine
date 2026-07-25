@@ -15,6 +15,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
  * is a client convention, while the `a8csp-bgje` prefix is enforced as the engine's reserved
  * namespace. Call the engine on the target blog so storage uses a client graph bound to that site.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *

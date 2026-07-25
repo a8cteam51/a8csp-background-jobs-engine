@@ -14,7 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
  * @since   1.0.0
  * @version 1.0.0
  */
-final class RunContext implements RunContextInterface {
+final readonly class RunContext implements RunContextInterface {
 	// region MAGIC METHODS
 
 	/**

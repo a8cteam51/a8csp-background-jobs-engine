@@ -8,6 +8,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 /**
  * Registers one job or chunked job for an owner.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
@@ -24,6 +26,8 @@ function a8csp_bgje_register_job( string $owner, JobDefinition $definition ): tr
 /**
  * Creates and schedules one run for registered background work.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
@@ -32,6 +36,8 @@ function a8csp_bgje_register_job( string $owner, JobDefinition $definition ): tr
  * @param   array<array-key, mixed> $start_args    Arguments supplied when the run starts.
  * @param   int                     $delay_seconds Scheduling delay in seconds.
  * @param   int|null                $priority      Advisory priority from 0 through 255, or null for the engine default.
+ *
+ * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *
  * @return  Run|\WP_Error
  */

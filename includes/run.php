@@ -9,12 +9,16 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 /**
  * Returns the retained status of one run.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @param   string $owner  Client plugin owner.
  * @param   string $name   Owner-local job or chunked job name.
  * @param   string $run_id Run identifier.
+ *
+ * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *
  * @return  Run|\WP_Error
  */
@@ -31,11 +35,15 @@ function a8csp_bgje_inspect_run( string $owner, string $name, string $run_id ): 
 /**
  * Returns the most recently retained completed run for one background-work name.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @param   string $owner Client plugin owner.
  * @param   string $name  Owner-local job or chunked job name.
+ *
+ * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *
  * @return  Run|null|\WP_Error
  */
@@ -47,12 +55,16 @@ function a8csp_bgje_last_completed_run( string $owner, string $name ): Run|null|
 /**
  * Starts a fresh run from one retained failed run's original arguments.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @param   string $owner  Client plugin owner.
  * @param   string $name   Owner-local job or chunked job name.
  * @param   string $run_id Retained failed-run identifier.
+ *
+ * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *
  * @return  Run|\WP_Error
  */
@@ -69,12 +81,16 @@ function a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_i
 /**
  * Cancels one retained run that has not passed its cancellation boundary.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
  * @param   string $owner  Client plugin owner.
  * @param   string $name   Owner-local job or chunked job name.
  * @param   string $run_id Retained run identifier.
+ *
+ * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *
  * @return  Run|\WP_Error
  */
