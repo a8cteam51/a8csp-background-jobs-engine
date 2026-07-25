@@ -13,7 +13,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -25,14 +24,13 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises internal facade behavior through owner-bound production flows.
+ * Exercises owner-bound operations through the production graph.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversClass( EngineFacade::class )]
 #[CoversClass( OwnerOperations::class )]
-final class EngineFacadeTest extends TestCase {
+final class OwnerOperationsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const string FAILED_RUN_ID = '00000000001699999999-0000000000000000041';
