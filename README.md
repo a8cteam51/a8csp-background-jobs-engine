@@ -19,10 +19,10 @@ Consumers use four connected surfaces:
 
 - **The Engine handle** — `a8csp_bgje( $owner )` returns an owner-bound `Engine` with `jobs()`, `schedules()`, and `runs()` portals to capability managers.
 - **The public models and execution roles** — compose work with `Job\JobDefinition`, `Job\JobKind`, and `Job\JobOptions`; implement `Job\JobExecutionInterface` or `Job\Chunked\ChunkedJobExecutionInterface`; declare schedules with `Schedule\Schedule`, `Schedule\Recurrence`, and `Schedule\CatchUpPolicy`; callbacks depend on `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`; run-producing commands return `Run\Run` snapshots, terminal failures use `Run\RunFailure`, and verb failures return `WP_Error`.
-- **The procedural aliases** — nine verb-noun `a8csp_bgje_*()` functions take `$owner` first, accept the same `Job\JobDefinition` registration value as the Jobs manager, preserve an import-free array dialect for schedule specifications, and invoke the capability-manager verbs.
+- **The procedural aliases** — nine verb-noun `a8csp_bgje_*()` functions take `$owner` first, accept the same `Job\JobDefinition` registration value as the Jobs manager and the same variadic `Schedule\Schedule` values as the Schedules manager, and invoke the capability-manager verbs.
 - **The lifecycle hooks** — observe runs through the `a8csp_bgje/*` actions.
 
-The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run\Run`, `Job\RunContext`, and `Run\RunFailure`; execution callbacks depend on `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`. The procedural schedule alias preserves arrays and scalars as an import-free schedule dialect.
+The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run\Run`, `Job\RunContext`, and `Run\RunFailure`; execution callbacks depend on `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`. The procedural aliases accept the same typed definition and schedule values as their capability-manager counterparts.
 
 Delivery uses Action Scheduler when it is ready and falls back to WP-Cron otherwise. At-least-once delivery is guaranteed **only under Action Scheduler**; WP-Cron is best-effort. An occurrence on a temporarily unavailable backend is dormant, not lost.
 
@@ -145,14 +145,14 @@ add_action( 'init', static function (): void {
 }, 2 );
 
 register_deactivation_hook( __FILE__, static function (): void {
-	$removed = a8csp_bgje_sync_schedules( 'my-plugin', array() );
+	$removed = a8csp_bgje_sync_schedules( 'my-plugin' );
 	if ( is_wp_error( $removed ) ) {
 		error_log( $removed->get_error_message() );
 	}
 } );
 ```
 
-An unanchored schedule first runs one interval after synchronization. An anchored schedule uses the first strictly future point on its UTC phase grid. There is no first-run timestamp field. Omitting a schedule from the next complete declaration removes it; synchronizing an empty array removes all schedules for the owner without cancelling admitted runs. If the plugin is inactive, `wp a8csp-bgje schedules remove my-plugin --yes` performs the same schedule convergence.
+An unanchored schedule first runs one interval after synchronization. An anchored schedule uses the first strictly future point on its UTC phase grid. There is no first-run timestamp field. Omitting a schedule from the next complete declaration removes it; synchronizing with no schedules removes all schedules for the owner without cancelling admitted runs. If the plugin is inactive, `wp a8csp-bgje schedules remove my-plugin --yes` performs the same schedule convergence.
 
 ### 2. A one-shot callable, dispatched asynchronously
 
@@ -405,7 +405,7 @@ The engine retains up to 20 failed runs per owner-qualified identity for manual 
 
 ## The procedural functions
 
-`a8csp_bgje( string $owner ): Engine` returns the lazy owner-bound handle. Each alias below takes `$owner` first, converts schedule specifications to the corresponding public values where needed, invokes the matching capability-manager verb, and returns the same shape.
+`a8csp_bgje( string $owner ): Engine` returns the lazy owner-bound handle. Each alias below takes `$owner` first, converts wire run identifiers to their public values where needed, invokes the matching capability-manager verb, and returns the same shape.
 
 The procedural facade is grouped by concept: `includes/job.php` provides background-work registration plus kind-agnostic immediate and absolute-time dispatch, `includes/schedule.php` provides schedule synchronization and dispatch, and `includes/run.php` provides run inspection, retry, and cancellation.
 
@@ -414,7 +414,7 @@ The procedural facade is grouped by concept: `includes/job.php` provides backgro
 | `jobs()->register( Job\JobDefinition $definition )` | `a8csp_bgje_register_job( string $owner, Job\JobDefinition $definition )` | `true \| WP_Error` |
 | `jobs()->dispatch( string $name, array $start_args = array(), ?int $priority = null )` | `a8csp_bgje_dispatch_job( string $owner, string $name, array $start_args = array(), ?int $priority = null )` | `Run\Run \| WP_Error` |
 | `jobs()->dispatch_at( string $name, int $run_at, array $start_args = array(), ?int $priority = null )` | `a8csp_bgje_dispatch_job_at( string $owner, string $name, int $run_at, array $start_args = array(), ?int $priority = null )` | `Run\Run \| WP_Error` |
-| `schedules()->sync( Schedule\Schedule ...$schedules )` | `a8csp_bgje_sync_schedules( string $owner, array $schedules )` | `true \| WP_Error` |
+| `schedules()->sync( Schedule\Schedule ...$schedules )` | `a8csp_bgje_sync_schedules( string $owner, Schedule\Schedule ...$schedules )` | `true \| WP_Error` |
 | `schedules()->dispatch( string $name )` | `a8csp_bgje_dispatch_schedule( string $owner, string $name )` | `Run\Run \| WP_Error` |
 | `runs()->inspect( string $name, Run\RunId $run_id )` | `a8csp_bgje_inspect_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
 | `runs()->last_completed( string $name )` | `a8csp_bgje_last_completed_run( string $owner, string $name )` | `Run\Run \| null \| WP_Error` |
@@ -424,8 +424,6 @@ The procedural facade is grouped by concept: `includes/job.php` provides backgro
 Registration is typed on both surfaces. Compose a `Job\JobDefinition` through `job()`, `chunked_job()`, `closure()`, or the engine-kind primitive `for_kind()`, then pass that value unchanged to the manager or procedural function.
 
 Dispatch resolves the registered kind before admission. Priority resolution and schedule-fingerprint behavior are documented under [Priority is advisory](#priority-is-advisory).
-
-A procedural schedule entry accepts exactly the keys `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; any other key returns `WP_Error` with the `invalid_argument` code. The `name`, `every`, and `job` fields are required. Optional fields default to `'args' => []`, `'anchor' => null`, `'catch_up' => 'run_once'`, and `'priority' => null`; catch-up also accepts `'skip'`. `every` is a positive integer number of seconds. `anchor` is a non-negative UTC phase offset reduced modulo `every`; it is not site-local or calendar time.
 
 ## Public models, roles, and contexts
 
@@ -450,7 +448,7 @@ This table is the canonical public PHP type index. Every listed type is marked `
 | `Job\JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?Job\RetryPolicy $retry`, `?Job\OverlapPolicy $overlap`, and `?\Closure $overlap_key`; each null selects the engine default. `max_runtime` accepts positive seconds, and declarations above 21,600 seconds (6 hours) remain valid while effective execution credit is clamped to that ceiling. |
 | `Job\JobExecutionInterface` | Standard execution role requiring only `handle( array $start_args, Job\RunContextInterface $context ): void`. |
 | `Job\Chunked\ChunkedJobExecutionInterface` | Standalone chunked execution role requiring only `generate_queue( array $start_args, Job\RunContextInterface $context ): iterable` and `process_chunk( array $chunk_args, Job\Chunked\ChunkContextInterface $context ): void`; it does not extend `Job\JobExecutionInterface`. |
-| `Schedule\Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`. |
+| `Schedule\Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`; only `name`, `recurrence`, and `job` are required, and the rest default to an empty array, `Schedule\CatchUpPolicy::RunOnce`, and null. |
 | `Schedule\Recurrence` | Readonly fixed-interval recurrence created with `every( int $seconds )` or `every_anchored( int $seconds, int $anchor )`; an anchor is reduced modulo the interval. |
 | `Run\Run` | Readonly snapshot with `string $identity`, `Run\RunId $id`, and `Run\RunStatus $status`. |
 | `Run\RunId` | Final readonly stringable wrapper for a canonical run identifier; `from( string )` requires canonical input, `tryFrom( string )` returns null for another shape, and string casting returns the wire value. |
@@ -518,13 +516,9 @@ Queue mutations commit only after a normal `process_chunk()` return and are disc
 
 `schedules()->sync( Schedule\Schedule ...$schedules )` receives the owner's complete declaration. Each `Schedule\Schedule` combines a target job with a `Schedule\Recurrence`, arguments, a `Schedule\CatchUpPolicy`, and an advisory priority. Calling `sync()` without arguments removes every schedule declared by that owner.
 
-`Schedule\Recurrence::every()` creates an unanchored fixed interval. `Schedule\Recurrence::every_anchored()` creates an interval aligned to a non-negative UTC Unix-epoch phase. An unanchored schedule first runs one interval after synchronization. An anchored schedule first runs at the strictly future Unix timestamp whose phase matches `anchor mod interval`, then stays on that grid. The target work supplies overlap behavior for imperative and scheduled runs.
+`Schedule\Recurrence::every()` creates an unanchored fixed interval. `Schedule\Recurrence::every_anchored()` creates an interval aligned to a non-negative UTC Unix-epoch phase. Both recurrence constructors require a positive interval in seconds. An unanchored schedule first runs one interval after synchronization. An anchored schedule first runs at the strictly future Unix timestamp whose phase matches `anchor mod interval`, then stays on that grid. The target work supplies overlap behavior for imperative and scheduled runs.
 
-The procedural `a8csp_bgje_sync_schedules()` facade accepts a complete array declaration. Each entry has this configuration shape:
-
-`[ 'name' => string, 'every' => int, 'job' => string, 'args' => array, 'anchor' => ?int, 'catch_up' => 'run_once'|'skip', 'priority' => ?int ]`
-
-The accepted keys are exactly `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; an unknown key returns `WP_Error` with the `invalid_argument` code. Only `name`, `every`, and `job` are required. The facade converts each entry to the corresponding public schedule values before synchronization.
+The procedural `a8csp_bgje_sync_schedules()` alias accepts the same `Schedule\Schedule` values variadically.
 
 ## Migrating from Action Scheduler
 
@@ -534,10 +528,10 @@ Register work for each former action hook, then use an owner-bound handle or its
 | --- | --- |
 | `as_enqueue_async_action( $hook, $args, $group )` | `a8csp_bgje_dispatch_job( 'my-plugin', 'name', $args )` |
 | `as_schedule_single_action( $ts, $hook, $args, $group )` | `a8csp_bgje_dispatch_job_at( 'my-plugin', 'name', $ts, $args )` — `$ts` remains an absolute Unix timestamp. |
-| `as_schedule_recurring_action( $ts, $interval, $hook, $args, $group )` | Include `[ 'name' => 'name', 'every' => $interval, 'anchor' => $ts, 'job' => 'name', 'args' => $args ]` in the complete array passed to `a8csp_bgje_sync_schedules( 'my-plugin', [...] )`. The anchor preserves the fixed UTC phase modulo the interval, not the exact first timestamp or site-local time. |
-| `as_unschedule_action( $hook, $args, $group )` | Omit that schedule from the next complete array passed to `a8csp_bgje_sync_schedules()`. |
-| `as_unschedule_all_actions( … )` | `a8csp_bgje_sync_schedules( 'my-plugin', [] )` removes every schedule this owner declares. |
-| `as_next_scheduled_action( … )` | No public next-due query. Treat the array passed to a successful `a8csp_bgje_sync_schedules()` call as the source of truth. |
+| `as_schedule_recurring_action( $ts, $interval, $hook, $args, $group )` | Include `new Schedule\Schedule( 'name', Schedule\Recurrence::every_anchored( $interval, $ts ), 'name', $args )` in the complete declaration passed variadically to `a8csp_bgje_sync_schedules( 'my-plugin', ... )`. The anchor preserves the fixed UTC phase modulo the interval, not the exact first timestamp or site-local time. |
+| `as_unschedule_action( $hook, $args, $group )` | Omit that schedule from the next complete declaration passed to `a8csp_bgje_sync_schedules()`. |
+| `as_unschedule_all_actions( … )` | `a8csp_bgje_sync_schedules( 'my-plugin' )` removes every schedule this owner declares. |
+| `as_next_scheduled_action( … )` | No public next-due query. Treat the declaration passed to a successful `a8csp_bgje_sync_schedules()` call as the source of truth. |
 | `as_has_scheduled_action( … )` | No public pending/running boolean query. |
 
 The key difference is ownership: Action Scheduler's `$group` defaults to `''`, leaving work ownerless and easy to clear by accident. The engine requires the owner up front and composes it into every identity. Repeated `jobs()->dispatch()` calls reject matching live work under the default overlap policy.

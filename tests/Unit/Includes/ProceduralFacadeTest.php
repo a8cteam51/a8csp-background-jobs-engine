@@ -8,11 +8,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\CoversFunction;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -241,18 +243,9 @@ final class ProceduralFacadeTest extends TestCase {
 	 */
 	public function test_schedule_aliases_delegate_to_the_bound_engine(): void {
 		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'scheduled-job' ) ) );
-		$schedules = array(
-			array(
-				'name'     => 'nightly',
-				'every'    => 300,
-				'job'      => 'scheduled-job',
-				'args'     => array( 'scope' => 'all' ),
-				'catch_up' => 'skip',
-				'priority' => 41,
-			),
-		);
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job', array( 'scope' => 'all' ), CatchUpPolicy::Skip, 41 );
 
-		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, $schedules ) );
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, $schedule ) );
 		$run = self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
 
 		self::assertNotSame( '', (string) $run->id );
@@ -264,42 +257,26 @@ final class ProceduralFacadeTest extends TestCase {
 	/**
 	 * An omitted procedural priority remains unspecified while both backend boundaries use today's default.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_omitted_schedule_priority_defers_to_the_engine_default(): void {
 		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'scheduled-job' ) ) );
-		$schedule = array(
-			'name'  => 'nightly',
-			'every' => 300,
-			'job'   => 'scheduled-job',
-		);
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job' );
 
-		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, array( $schedule ) ) );
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, $schedule ) );
 		self::assertSame( 10, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
 		self::assert_run( \a8csp_bgje_dispatch_schedule( self::OWNER, 'nightly' ), self::OWNER . ':scheduled-job', RunStatus::Running );
 		self::assertSame( 10, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
 
 		$this->rig->backend()->calls = array();
-		$schedule['priority']        = 10;
-		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, array( $schedule ) ) );
+		$schedule                    = new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job', priority: 10 );
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::OWNER, $schedule ) );
 		$writes = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'unschedule', 'schedule_recurring' ), true ) ) );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $writes, 'verb' ) );
 		self::assertSame( 10, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
-	}
-
-	/**
-	 * Malformed schedule declarations remain inside the invalid-argument boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $schedules Invalid schedule specifications.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'invalid_schedules' )]
-	public function test_sync_rejects_malformed_entries( array $schedules ): void {
-		self::assert_wp_error( \a8csp_bgje_sync_schedules( self::OWNER, $schedules ), 'invalid_argument' );
 	}
 
 	/**
@@ -362,52 +339,6 @@ final class ProceduralFacadeTest extends TestCase {
 		$pending   = self::assert_run( \a8csp_bgje_dispatch_job_at( self::OWNER, 'cancel', self::NOW + 61 ), self::OWNER . ':cancel', RunStatus::Running );
 		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', (string) $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
 		self::assertSame( (string) $pending->id, (string) $cancelled->id );
-	}
-
-	// endregion.
-
-	// region DATA PROVIDERS.
-
-	/**
-	 * Supplies representative malformed schedule shapes and fields.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{schedules: array<array-key, mixed>}>
-	 */
-	public static function invalid_schedules(): array {
-		return array(
-			'non-array entry'  => array( 'schedules' => array( 'nightly' ) ),
-			'unknown key'      => array(
-				'schedules' => array(
-					array(
-						'name'      => 'nightly',
-						'every'     => 300,
-						'job'       => 'job',
-						'prioritry' => 5,
-					),
-				),
-			),
-			'missing name'     => array(
-				'schedules' => array(
-					array(
-						'every' => 300,
-						'job'   => 'job',
-					),
-				),
-			),
-			'invalid catch up' => array(
-				'schedules' => array(
-					array(
-						'name'     => 'nightly',
-						'every'    => 300,
-						'job'      => 'job',
-						'catch_up' => 'replay_all',
-					),
-				),
-			),
-		);
 	}
 
 	// endregion.
