@@ -8,6 +8,29 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
 // region META
 
 /**
+ * Returns the plugin's composition root.
+ *
+ * Construction only — never boots: a peer calling this at include time would otherwise run the
+ * component gates before every plugin has loaded. Booting stays tied to the `plugins_loaded`
+ * attachment in the main plugin file.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @return  Plugin
+ */
+function a8csp_bgje_plugin(): Plugin {
+	/**
+	 * Retains the request-local composition root.
+	 *
+	 * @var Plugin|null $plugin
+	 */
+	static $plugin = null;
+
+	return $plugin ??= new Plugin();
+}
+
+/**
  * Returns the owner-bound background-work engine handle.
  *
  * Construction is lazy and infallible. Owner validation and engine readiness surface as `WP_Error`
@@ -26,28 +49,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
  */
 function a8csp_bgje( string $owner ): Engine {
 	return new Engine( $owner );
-}
-
-/**
- * Returns the plugin's composition root.
- *
- * Construction only — never boots: a peer calling this at include time would otherwise run the
- * component gates before every plugin has loaded. Booting stays tied to the `plugins_loaded`
- * attachment in the main plugin file.
- *
- * @since   1.0.0
- * @version 1.0.0
- *
- * @return  Plugin
- */
-function a8csp_bgje_plugin(): Plugin {
-	/**
-	 * Retains the request-local composition root.
-	 *
-	 * @var Plugin|null $plugin
-	 */
-	static $plugin   = null;
-	return $plugin ??= new Plugin();
 }
 
 // endregion

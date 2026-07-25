@@ -41,7 +41,7 @@
 // requirements gate below can reference them.
 require_once A8CSP_BGJE_DIR_PATH . 'functions-bootstrap.php';
 
-// The self-updater registers before the requirements gates below: an incompatible install is
+// The self-updater registers before the requirements gates below: an incompatible installation is
 // the one that most needs to be offered the corrective update.
 add_filter( 'update_plugins_github.com', 'a8csp_bgje_check_github_release_update', 10, 3 );
 
