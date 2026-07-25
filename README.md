@@ -19,7 +19,7 @@ Consumers use four connected surfaces:
 
 - **The Engine handle** — `a8csp_bgje( $owner )` returns an owner-bound `Engine` with `jobs()`, `schedules()`, and `runs()` portals to capability managers.
 - **The public models and execution roles** — compose work with `Job\JobDefinition`, `Job\JobKind`, and `Job\JobOptions`; implement `Job\JobExecutionInterface` or `Job\Chunked\ChunkedJobExecutionInterface`; declare schedules with `Schedule\Schedule`, `Schedule\Recurrence`, and `Schedule\CatchUpPolicy`; callbacks depend on `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`; run-producing commands return `Run\Run` snapshots, terminal failures use `Run\RunFailure`, and verb failures return `WP_Error`.
-- **The procedural aliases** — eight verb-noun `a8csp_bgje_*()` functions take `$owner` first, accept the same `Job\JobDefinition` registration value as the Jobs manager, preserve an import-free array dialect for schedule specifications, and invoke the capability-manager verbs.
+- **The procedural aliases** — nine verb-noun `a8csp_bgje_*()` functions take `$owner` first, accept the same `Job\JobDefinition` registration value as the Jobs manager, preserve an import-free array dialect for schedule specifications, and invoke the capability-manager verbs.
 - **The lifecycle hooks** — observe runs through the `a8csp_bgje/*` actions.
 
 The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run\Run`, `Job\RunContext`, and `Run\RunFailure`; execution callbacks depend on `Job\RunContextInterface` or `Job\Chunked\ChunkContextInterface`. The procedural schedule alias preserves arrays and scalars as an import-free schedule dialect.
@@ -185,8 +185,7 @@ function my_plugin_queue_digest( int $user_id ): void {
 	$run = a8csp_bgje_dispatch_job(
 		'my-plugin',
 		'email-digest',
-		array( 'user_id' => $user_id ),
-		delay_seconds: 0
+		array( 'user_id' => $user_id )
 	);
 	if ( is_wp_error( $run ) ) {
 		if ( ErrorCode::OverlapHeld->value === $run->get_error_code() ) {
@@ -201,7 +200,7 @@ function my_plugin_queue_digest( int $user_id ): void {
 }
 ```
 
-`JobDefinition::closure()` deliberately accepts no options and uses every engine default. Use a `JobExecutionInterface` object with `JobDefinition::job()` when the work needs explicit `JobOptions`. `delay_seconds` is a relative delay, not an absolute timestamp. A successful return proves admission, not completion. Keep arguments small and portable: pass identifying keys rather than bulk data.
+`JobDefinition::closure()` deliberately accepts no options and uses every engine default. Use a `JobExecutionInterface` object with `JobDefinition::job()` when the work needs explicit `JobOptions`. `a8csp_bgje_dispatch_job()` dispatches immediately; `a8csp_bgje_dispatch_job_at()` accepts an absolute Unix timestamp. A successful return proves admission, not completion. Keep arguments small and portable: pass identifying keys rather than bulk data.
 
 ### 3. A chunked job over a chunk queue
 
@@ -408,12 +407,13 @@ The engine retains up to 20 failed runs per owner-qualified identity for manual 
 
 `a8csp_bgje( string $owner ): Engine` returns the lazy owner-bound handle. Each alias below takes `$owner` first, converts schedule specifications to the corresponding public values where needed, invokes the matching capability-manager verb, and returns the same shape.
 
-The procedural facade is grouped by concept: `includes/job.php` provides background-work registration and kind-agnostic dispatch, `includes/schedule.php` provides schedule synchronization and dispatch, and `includes/run.php` provides run inspection, retry, and cancellation.
+The procedural facade is grouped by concept: `includes/job.php` provides background-work registration plus kind-agnostic immediate and absolute-time dispatch, `includes/schedule.php` provides schedule synchronization and dispatch, and `includes/run.php` provides run inspection, retry, and cancellation.
 
 | Capability-manager verb | Procedural alias | Returns |
 | --- | --- | --- |
 | `jobs()->register( Job\JobDefinition $definition )` | `a8csp_bgje_register_job( string $owner, Job\JobDefinition $definition )` | `true \| WP_Error` |
-| `jobs()->dispatch( string $name, array $start_args = array(), int $delay_seconds = 0, ?int $priority = null )` | `a8csp_bgje_dispatch_job( string $owner, string $name, array $start_args = array(), int $delay_seconds = 0, ?int $priority = null )` | `Run\Run \| WP_Error` |
+| `jobs()->dispatch( string $name, array $start_args = array(), ?int $priority = null )` | `a8csp_bgje_dispatch_job( string $owner, string $name, array $start_args = array(), ?int $priority = null )` | `Run\Run \| WP_Error` |
+| `jobs()->dispatch_at( string $name, int $run_at, array $start_args = array(), ?int $priority = null )` | `a8csp_bgje_dispatch_job_at( string $owner, string $name, int $run_at, array $start_args = array(), ?int $priority = null )` | `Run\Run \| WP_Error` |
 | `schedules()->sync( Schedule\Schedule ...$schedules )` | `a8csp_bgje_sync_schedules( string $owner, array $schedules )` | `true \| WP_Error` |
 | `schedules()->dispatch( string $name )` | `a8csp_bgje_dispatch_schedule( string $owner, string $name )` | `Run\Run \| WP_Error` |
 | `runs()->inspect( string $name, Run\RunId $run_id )` | `a8csp_bgje_inspect_run( string $owner, string $name, string $run_id )` | `Run\Run \| WP_Error` |
@@ -423,9 +423,9 @@ The procedural facade is grouped by concept: `includes/job.php` provides backgro
 
 Registration is typed on both surfaces. Compose a `Job\JobDefinition` through `job()`, `chunked_job()`, `closure()`, or the engine-kind primitive `for_kind()`, then pass that value unchanged to the manager or procedural function.
 
-Dispatch resolves the registered kind before admission. A null priority selects the engine default of 10; an explicit integer is preserved as the caller's choice.
+Dispatch resolves the registered kind before admission. Priority resolution and schedule-fingerprint behavior are documented under [Priority is advisory](#priority-is-advisory).
 
-A procedural schedule entry accepts exactly the keys `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; any other key returns `WP_Error` with the `invalid_argument` code. The `name`, `every`, and `job` fields are required. Optional fields default to `'args' => []`, `'anchor' => null`, and `'catch_up' => 'run_once'`; omitting `priority` defers to the engine default (10), and catch-up also accepts `'skip'`. `every` is a positive integer number of seconds. `anchor` is a non-negative UTC phase offset reduced modulo `every`; it is not site-local or calendar time.
+A procedural schedule entry accepts exactly the keys `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; any other key returns `WP_Error` with the `invalid_argument` code. The `name`, `every`, and `job` fields are required. Optional fields default to `'args' => []`, `'anchor' => null`, `'catch_up' => 'run_once'`, and `'priority' => null`; catch-up also accepts `'skip'`. `every` is a positive integer number of seconds. `anchor` is a non-negative UTC phase offset reduced modulo `every`; it is not site-local or calendar time.
 
 ## Public models, roles, and contexts
 
@@ -442,7 +442,7 @@ This table is the canonical public PHP type index. Every listed type is marked `
 | Type | Public shape |
 | --- | --- |
 | `Engine` | Owner-bound readonly handle returned by `a8csp_bgje()` with `jobs()`, `schedules()`, and `runs()` portals. |
-| `Jobs` | Owner-bound readonly manager for registration and job dispatch. |
+| `Jobs` | Owner-bound readonly manager for registration, immediate dispatch, and absolute-time dispatch. |
 | `Schedules` | Owner-bound readonly manager for schedule synchronization and immediate dispatch. |
 | `Runs` | Owner-bound readonly manager for run inspection, retry, and cancellation. |
 | `Job\JobDefinition` | Final readonly registration declaration with public `string $name`, `Job\JobKind $kind`, `object $execution`, and `Job\JobOptions $options`. Its non-public constructor is exposed through `job()`, `chunked_job()`, `closure()`, and `for_kind()`. The closure constructor always applies engine-default policy. |
@@ -522,7 +522,7 @@ Queue mutations commit only after a normal `process_chunk()` return and are disc
 
 The procedural `a8csp_bgje_sync_schedules()` facade accepts a complete array declaration. Each entry has this configuration shape:
 
-`[ 'name' => string, 'every' => int, 'job' => string, 'args' => array, 'anchor' => ?int, 'catch_up' => 'run_once'|'skip', 'priority' => int ]`
+`[ 'name' => string, 'every' => int, 'job' => string, 'args' => array, 'anchor' => ?int, 'catch_up' => 'run_once'|'skip', 'priority' => ?int ]`
 
 The accepted keys are exactly `name`, `every`, `job`, `args`, `anchor`, `catch_up`, and `priority`; an unknown key returns `WP_Error` with the `invalid_argument` code. Only `name`, `every`, and `job` are required. The facade converts each entry to the corresponding public schedule values before synchronization.
 
@@ -533,7 +533,7 @@ Register work for each former action hook, then use an owner-bound handle or its
 | Action Scheduler | Engine |
 | --- | --- |
 | `as_enqueue_async_action( $hook, $args, $group )` | `a8csp_bgje_dispatch_job( 'my-plugin', 'name', $args )` |
-| `as_schedule_single_action( $ts, $hook, $args, $group )` | `a8csp_bgje_dispatch_job( 'my-plugin', 'name', $args, delay_seconds: max( 0, $ts - time() ) )` — a **relative** delay, not a timestamp. |
+| `as_schedule_single_action( $ts, $hook, $args, $group )` | `a8csp_bgje_dispatch_job_at( 'my-plugin', 'name', $ts, $args )` — `$ts` remains an absolute Unix timestamp. |
 | `as_schedule_recurring_action( $ts, $interval, $hook, $args, $group )` | Include `[ 'name' => 'name', 'every' => $interval, 'anchor' => $ts, 'job' => 'name', 'args' => $args ]` in the complete array passed to `a8csp_bgje_sync_schedules( 'my-plugin', [...] )`. The anchor preserves the fixed UTC phase modulo the interval, not the exact first timestamp or site-local time. |
 | `as_unschedule_action( $hook, $args, $group )` | Omit that schedule from the next complete array passed to `a8csp_bgje_sync_schedules()`. |
 | `as_unschedule_all_actions( … )` | `a8csp_bgje_sync_schedules( 'my-plugin', [] )` removes every schedule this owner declares. |
@@ -611,7 +611,15 @@ Raw throwable values held directly in context arrays never reach listeners at an
 
 ## Priority is advisory
 
-Priority is an integer from 0 through 255, default 10. Action Scheduler honors it; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
+**current beta behavior**
+
+Priority is an integer from 0 through 255. The implemented precedence is: explicit dispatch argument > schedule value > engine default 10. Action Scheduler honors the resolved value; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
+
+An omitted schedule priority is stored as `null`. It currently resolves to the same backend value as an explicit `10`, but the declarations have different fingerprints. Changing an existing declaration from omitted priority to explicit `10` therefore unschedules and recreates its backend occurrence.
+
+**reserved precedence contract**
+
+A reserved precedence contract is not implemented on this beta tree: specific priority filter > generic priority filter > explicit dispatch argument > schedule value > kind default > engine default 10. The two filter rungs and the kind-default rung do not exist yet.
 
 ## Scale ceilings
 

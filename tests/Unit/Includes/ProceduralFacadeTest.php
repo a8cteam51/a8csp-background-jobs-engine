@@ -23,6 +23,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversFunction( 'a8csp_bgje_register_job' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_job' )]
+#[CoversFunction( 'a8csp_bgje_dispatch_job_at' )]
 #[CoversFunction( 'a8csp_bgje_sync_schedules' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_schedule' )]
 #[CoversFunction( 'a8csp_bgje_inspect_run' )]
@@ -122,7 +123,7 @@ final class ProceduralFacadeTest extends TestCase {
 		$job_args   = array( 'site_id' => 7 );
 		$start_args = array( 'scope' => 'all' );
 
-		$job_run     = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'job', $job_args, 15, 23 ), self::OWNER . ':job', RunStatus::Running );
+		$job_run     = self::assert_run( \a8csp_bgje_dispatch_job_at( self::OWNER, 'job', self::NOW + 15, $job_args, 23 ), self::OWNER . ':job', RunStatus::Running );
 		$chunked_run = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'chunked-job', $start_args, priority: 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
 
 		self::assertNotSame( '', (string) $job_run->id );
@@ -134,6 +135,71 @@ final class ProceduralFacadeTest extends TestCase {
 
 		$this->rig->run_due();
 		self::assertEquals( array( array( $chunked_run->id, $start_args ) ), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::OWNER . ':chunked-job' ) );
+	}
+
+	/**
+	 * Past absolute dispatch aliases use the asynchronous admission lane for both installed work kinds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_job_at_routes_past_job_and_chunked_job_admissions_to_the_async_lane(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'job' ) ) );
+		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::chunked_job( 'chunked-job' ) ) );
+		$this->rig->backend()->calls = array();
+
+		$job_run     = self::assert_run( \a8csp_bgje_dispatch_job_at( self::OWNER, 'job', self::NOW - 1, array( 'site_id' => 7 ), 23 ), self::OWNER . ':job', RunStatus::Running );
+		$chunked_run = self::assert_run( \a8csp_bgje_dispatch_job_at( self::OWNER, 'chunked-job', self::NOW - 1, array( 'scope' => 'all' ), 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
+		$job_state   = \get_option( 'a8csp_bgje_active_run_' . self::OWNER . ':job_' . $job_run->id );
+		$chunk_state = \get_option( 'a8csp_bgje_active_run_' . self::OWNER . ':chunked-job_' . $chunked_run->id );
+
+		self::assertIsArray( $job_state );
+		self::assertIsArray( $chunk_state );
+		self::assertSame(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 23,
+			),
+			$job_state['pending'] ?? null
+		);
+		self::assertSame(
+			array(
+				'stage'    => 'start',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 31,
+			),
+			$chunk_state['pending'] ?? null
+		);
+
+		$delivery_calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'enqueue_async', 'schedule_single' ), true ) ) );
+		self::assertSame(
+			array(
+				array(
+					'verb'     => 'enqueue_async',
+					'identity' => self::OWNER . ':job',
+				),
+				array(
+					'verb'     => 'enqueue_async',
+					'identity' => self::OWNER . ':chunked-job',
+				),
+			),
+			\array_map(
+				static function ( array $call ): array {
+					$call_args = $call['args']['args'] ?? null;
+
+					return array(
+						'verb'     => $call['verb'],
+						'identity' => \is_array( $call_args ) ? ( $call_args[0] ?? null ) : null,
+					);
+				},
+				$delivery_calls
+			)
+		);
 	}
 
 	/**
@@ -293,7 +359,7 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertNotSame( (string) $failed->id, (string) $retry->id );
 
 		self::assertTrue( \a8csp_bgje_register_job( self::OWNER, self::job( 'cancel' ) ) );
-		$pending   = self::assert_run( \a8csp_bgje_dispatch_job( self::OWNER, 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
+		$pending   = self::assert_run( \a8csp_bgje_dispatch_job_at( self::OWNER, 'cancel', self::NOW + 61 ), self::OWNER . ':cancel', RunStatus::Running );
 		$cancelled = self::assert_run( \a8csp_bgje_cancel_run( self::OWNER, 'cancel', (string) $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
 		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 	}

@@ -143,17 +143,17 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A delayed chunked job retains a timed start action at the requested fire time.
+	 * A chunked job with a future fire time retains a timed start action at the requested timestamp.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_chunked_job_with_delay_persists_a_timed_start_action(): void {
+	public function test_dispatch_chunked_job_with_future_fire_time_persists_a_timed_start_action(): void {
 		$this->register_chunked_job();
 
-		$result = $this->client->dispatch( self::NAME, self::ARGS, delay: 120, priority: 23 );
+		$result = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'schedule_single' === $call['verb'] ) );
@@ -185,7 +185,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_chunked_job_without_delay_persists_an_async_start_action(): void {
+	public function test_immediate_dispatch_of_a_chunked_job_persists_an_async_start_action(): void {
 		$this->register_chunked_job();
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS, priority: 23 );

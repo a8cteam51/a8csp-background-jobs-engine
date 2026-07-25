@@ -652,10 +652,13 @@ final class RunReconciliationTest extends TestCase {
 	/**
 	 * A newer same-owner lock credit defers redelivery until it can be restored to the retained generation.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_sweep_repairs_a_stale_same_owner_heartbeat_mismatch_before_redelivery(): void {
-		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS, delay: 1_200 );
+		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS, fire_at: self::NOW + 1_200 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->set_run_fields( self::IDENTITY, array( 'heartbeat_at' => self::NOW ) );
 		$this->backend->calls   = array();

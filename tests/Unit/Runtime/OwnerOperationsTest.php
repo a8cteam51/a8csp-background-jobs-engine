@@ -104,7 +104,7 @@ final class OwnerOperationsTest extends TestCase {
 		$job    = new RecordingJob( 'email-digest' );
 		$client->register( $job->definition() );
 
-		$result = $client->dispatch( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
+		$result = $client->dispatch( 'email-digest', array( 'site_id' => 7 ), fire_at: self::NOW + 300, priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertInstanceOf( Run::class, $result->value );

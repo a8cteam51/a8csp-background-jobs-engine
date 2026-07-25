@@ -50,24 +50,53 @@ final readonly class Jobs extends AbstractPortal {
 	}
 
 	/**
-	 * Creates and schedules one run for registered background work.
+	 * Creates and asynchronously schedules one run for registered background work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name          Owner-local background-work name.
-	 * @param   array<array-key, mixed> $start_args    Arguments supplied when the run starts.
-	 * @param   int                     $delay_seconds Scheduling delay in seconds.
-	 * @param   int|null                $priority      Advisory priority from 0 through 255, or null for the engine default.
+	 * @param   string                  $name       Owner-local background-work name.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
-	public function dispatch( string $name, array $start_args = array(), int $delay_seconds = 0, ?int $priority = null ): Run|\WP_Error {
+	public function dispatch( string $name, array $start_args = array(), ?int $priority = null ): Run|\WP_Error {
 		try {
-			$result = $this->operations()->dispatch( $name, $start_args, $delay_seconds, $priority );
+			$result = $this->operations()->dispatch( $name, $start_args, priority: $priority );
+
+			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
+		} catch ( \InvalidArgumentException $exception ) {
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
+		} catch ( EngineUnavailableException $exception ) {
+			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
+		}
+	}
+
+	/**
+	 * Creates and schedules one run for registered background work at an absolute Unix timestamp.
+	 *
+	 * A timestamp at or before admission time uses the asynchronous scheduling lane.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $name       Owner-local background-work name.
+	 * @param   int                     $run_at     Absolute Unix timestamp for the first delivery.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
+	 *
+	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
+	 *
+	 * @return  Run|\WP_Error
+	 */
+	#[\NoDiscard( 'a timed job-dispatch failure must be handled, not dropped' )]
+	public function dispatch_at( string $name, int $run_at, array $start_args = array(), ?int $priority = null ): Run|\WP_Error {
+		try {
+			$result = $this->operations()->dispatch( $name, $start_args, $run_at, $priority );
 
 			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
 		} catch ( \InvalidArgumentException $exception ) {

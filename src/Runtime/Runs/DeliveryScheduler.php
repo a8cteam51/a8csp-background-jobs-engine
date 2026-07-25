@@ -68,6 +68,7 @@ final readonly class DeliveryScheduler {
 			throw new \LogicException( 'Pending single-action delivery requires an integer fire time.' );
 		}
 
+		// Redelivery may replay a descriptor after its scheduled time has elapsed.
 		return $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, \max( $this->clock->now()->getTimestamp(), $fire_at ), $args, $group, $pending->priority );
 	}
 

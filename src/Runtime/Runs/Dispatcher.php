@@ -56,6 +56,16 @@ final readonly class Dispatcher {
 	 */
 	public const int MAX_PRIORITY = 255;
 
+	/**
+	 * Latest absolute timestamp accepted by run admission.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int MAX_RUN_AT = 253_402_300_799;
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -131,13 +141,13 @@ final readonly class Dispatcher {
 	 *
 	 * @param   Identity                $identity Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args     Start arguments.
-	 * @param   int                     $delay    Scheduling delay in seconds.
+	 * @param   int|null                $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
 	 * @param   int|null                $priority Scheduler priority from 0 through 255, or null for the engine default.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
-	public function dispatch( Identity $identity, array $args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
+	public function dispatch( Identity $identity, array $args = array(), ?int $fire_at = null, ?int $priority = null ): AbstractResult {
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
@@ -149,7 +159,7 @@ final readonly class Dispatcher {
 		}
 		$priority ??= 10;
 
-		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $args, $delay, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
+		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $args, $fire_at, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
 	}
 
 	/**
@@ -178,7 +188,7 @@ final readonly class Dispatcher {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 		}
 
-		return $this->dispatch_resolved( $handler, $options, $identity, $args, 0, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted, terminalize_overlap_key_failure: $terminalize_overlap_key_failure );
+		return $this->dispatch_resolved( $handler, $options, $identity, $args, null, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted, terminalize_overlap_key_failure: $terminalize_overlap_key_failure );
 	}
 
 	/**
@@ -250,7 +260,7 @@ final readonly class Dispatcher {
 			return $args_hash;
 		}
 		$retry_overlap = OverlapPolicy::Allow === ( $options->overlap ?? OverlapPolicy::Reject ) ? OverlapPolicy::Allow : OverlapPolicy::Reject;
-		$result        = $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $entry['start_args'], 0, $entry['priority'], $retry_overlap, resolved_args_hash: $args_hash ) );
+		$result        = $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $entry['start_args'], null, $entry['priority'], $retry_overlap, resolved_args_hash: $args_hash ) );
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
 				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
@@ -365,7 +375,7 @@ final readonly class Dispatcher {
 	 * @param   JobOptions              $options                         Registered policy declaration.
 	 * @param   Identity                $identity                        Complete owner-qualified work identity.
 	 * @param   array<array-key, mixed> $args                            Start arguments.
-	 * @param   int                     $delay                           Scheduling delay in seconds.
+	 * @param   int|null                $fire_at                         Absolute first-delivery timestamp, or null for asynchronous admission.
 	 * @param   int                     $priority                        Scheduler priority.
 	 * @param   OverlapPolicy           $overlap                         Effective overlap policy.
 	 * @param   \Closure|null           $on_accepted                     Callback after scheduler acceptance.
@@ -376,7 +386,7 @@ final readonly class Dispatcher {
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, Identity $identity, array $args, int $delay, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
+	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, Identity $identity, array $args, ?int $fire_at, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
 		$kind = $handler->key();
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
@@ -386,6 +396,18 @@ final readonly class Dispatcher {
 					context: array(
 						'identity' => (string) $identity,
 						'priority' => $priority,
+					),
+				)
+			);
+		}
+		if ( null !== $fire_at && self::MAX_RUN_AT < $fire_at ) {
+			return new Failure(
+				new EngineError(
+					\sprintf( '%1$s "%2$s" run_at %3$d is invalid; pass a value at or before %4$d.', $kind, (string) $identity, $fire_at, self::MAX_RUN_AT ),
+					reason: EngineErrorReason::PayloadRejected,
+					context: array(
+						'identity' => (string) $identity,
+						'run_at'   => $fire_at,
 					),
 				)
 			);
@@ -402,21 +424,8 @@ final readonly class Dispatcher {
 		if ( $args_hash instanceof Failure ) {
 			return $args_hash;
 		}
-		$now = $this->clock->now()->getTimestamp();
-		if ( 0 < $delay && $delay > \PHP_INT_MAX - $now ) {
-			return new Failure(
-				new EngineError(
-					\sprintf( '%1$s "%2$s" delay %3$d exceeds supported Unix seconds; pass a smaller delay.', $kind, (string) $identity, $delay ),
-					reason: EngineErrorReason::PayloadRejected,
-					context: array(
-						'delay'    => $delay,
-						'identity' => (string) $identity,
-					),
-				)
-			);
-		}
-		$scheduled_at = $now + $delay;
-		$run_id       = RunIdentity::generate( $now, $this->randomizer );
+		$created_at = $this->clock->now()->getTimestamp();
+		$run_id     = RunIdentity::generate( $created_at, $this->randomizer );
 		if ( OverlapPolicy::Allow === $overlap ) {
 			// Allow gets a per-run lock identity so a Contended selection can only represent a run-ID collision.
 			$args_hash = $this->salted_args_hash( $args_hash, $run_id );
@@ -455,19 +464,22 @@ final readonly class Dispatcher {
 			}
 		}
 
-		$run_store = $this->stores->run_store( $identity );
-		$admission = $this->create_run_state_and_take_over_if_contended( $handler, $identity, $run_id, $args, $args_hash, $claim, $run_store, $scheduled_at, $delay, $priority );
+		$run_store     = $this->stores->run_store( $identity );
+		$admission_now = $this->clock->now()->getTimestamp();
+		$admission     = $this->create_run_state_and_take_over_if_contended( $handler, $identity, $run_id, $args, $args_hash, $claim, $run_store, $fire_at, $admission_now, $priority );
 		if ( $admission instanceof Failure ) {
 			return $admission;
 		}
 		$state    = $admission['state'];
 		$takeover = $admission['takeover'];
 
-		if ( 0 < $delay ) {
-			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $identity, $args_hash, $run_id, $scheduled_at ) ) {
+		$pending = $state->pending;
+		if ( null !== $pending && 'single' === $pending->mode ) {
+			$fire_at         = $pending->fire_at ?? throw new \LogicException( 'Pending single-action delivery requires an integer fire time.' );
+			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $identity, $args_hash, $run_id, $fire_at ) ) {
 				HeartbeatOutcome::Owned => null,
-				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its delayed action; dispatch it again against the current lock state.', $kind, (string) $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => (string) $identity ), ),
-				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( '%1$s "%2$s" could not confirm lock ownership while preparing its delayed action; dispatch it again after authoritative storage access recovers.', $kind, (string) $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => (string) $identity ), ),
+				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its timed action; dispatch it again against the current lock state.', $kind, (string) $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => (string) $identity ), ),
+				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( '%1$s "%2$s" could not confirm lock ownership while preparing its timed action; dispatch it again after authoritative storage access recovers.', $kind, (string) $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => (string) $identity ), ),
 			};
 			if ( null !== $heartbeat_error ) {
 				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
@@ -476,7 +488,7 @@ final readonly class Dispatcher {
 				return new Failure( $heartbeat_error );
 			}
 
-			$replacement  = $state->with_heartbeat_at( $scheduled_at );
+			$replacement  = $state->with_heartbeat_at( $fire_at );
 			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
 			if ( $transitioned instanceof Failure ) {
 				$this->roll_back_admitted_run( $identity, $args_hash, $run_id, $state, $run_store );
@@ -490,7 +502,7 @@ final readonly class Dispatcher {
 
 				return new Failure(
 					new EngineError(
-						\sprintf( '%1$s "%2$s" lost its live run state while preparing its delayed action; retry against the current run state.', $kind, (string) $identity ),
+						\sprintf( '%1$s "%2$s" lost its live run state while preparing its timed action; retry against the current run state.', $kind, (string) $identity ),
 						reason: EngineErrorReason::StorageFailure,
 						context: array(
 							'identity' => (string) $identity,
@@ -647,15 +659,15 @@ final readonly class Dispatcher {
 	 * @param   string                  $args_hash    Canonical overlap identity.
 	 * @param   LockClaimResult         $claim        Initial overlap-lock selection.
 	 * @param   RunStore                $run_store    Active-run store.
-	 * @param   int                     $scheduled_at Delivery timestamp.
-	 * @param   int                     $delay        Scheduling delay in seconds.
+	 * @param   int|null                $fire_at      Absolute first-delivery timestamp, or null for asynchronous admission.
+	 * @param   int                     $now          Admission timestamp.
 	 * @param   int                     $priority     Scheduler priority.
 	 *
 	 * @return  array{state: RunState, takeover: array{run_id: string, claimed: array{raw: string, state: RunState}}|null}|Failure<EngineError>
 	 */
-	private function create_run_state_and_take_over_if_contended( KindHandlerInterface $handler, Identity $identity, string $run_id, array $args, string $args_hash, LockClaimResult $claim, RunStore $run_store, int $scheduled_at, int $delay, int $priority ): array|Failure {
+	private function create_run_state_and_take_over_if_contended( KindHandlerInterface $handler, Identity $identity, string $run_id, array $args, string $args_hash, LockClaimResult $claim, RunStore $run_store, ?int $fire_at, int $now, int $priority ): array|Failure {
 		$kind  = $handler->key();
-		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $scheduled_at, $delay, $priority ), $priority );
+		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $fire_at, $now, $priority ), $priority );
 		if ( $state instanceof Failure ) {
 			if ( LockClaimOutcome::Claimed === $claim->outcome ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );

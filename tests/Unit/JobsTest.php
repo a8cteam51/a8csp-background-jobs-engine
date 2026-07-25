@@ -94,7 +94,7 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 		self::assertTrue( $jobs->register( $job ) );
 		self::assertTrue( $jobs->register( $chunked_job ) );
 
-		$job_run     = self::assert_run( $jobs->dispatch( 'job', array( 'site_id' => 7 ), 15, 23 ), self::OWNER . ':job', RunStatus::Running );
+		$job_run     = self::assert_run( $jobs->dispatch_at( 'job', self::NOW + 15, array( 'site_id' => 7 ), 23 ), self::OWNER . ':job', RunStatus::Running );
 		$chunked_run = self::assert_run( $jobs->dispatch( 'chunked-job', array( 'scope' => 'all' ), priority: 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
 
 		self::assertNotSame( '', (string) $job_run->id );
@@ -103,6 +103,95 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 		self::assertSame( 31, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
 		self::assert_wp_error( $jobs->register( $job ), 'already_registered' );
 		self::assert_wp_error( $jobs->register( $chunked_job ), 'already_registered' );
+	}
+
+	/**
+	 * Absolute dispatch rejects timestamps beyond the storage ceiling before admitting a run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_at_rejects_a_timestamp_beyond_the_storage_ceiling_without_admitting_a_run(): void {
+		$jobs = \a8csp_bgje( self::OWNER )->jobs();
+		self::assertTrue( $jobs->register( self::job( 'job' ) ) );
+		$before                      = $this->rig->wpdb()->rows;
+		$this->rig->backend()->calls = array();
+
+		$error = self::assert_wp_error( $jobs->dispatch_at( 'job', 253_402_300_800 ), ErrorCode::PayloadRejected->value );
+
+		self::assertStringContainsString( '253402300800', $error->get_error_message() );
+		self::assertSame( array( 'identity' => self::OWNER . ':job' ), $error->get_error_data() );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::OWNER . ':job' ) );
+	}
+
+	/**
+	 * Past absolute dispatches use the asynchronous admission lane for both installed work kinds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_at_routes_past_job_and_chunked_job_admissions_to_the_async_lane(): void {
+		$jobs = \a8csp_bgje( self::OWNER )->jobs();
+		self::assertTrue( $jobs->register( self::job( 'job' ) ) );
+		self::assertTrue( $jobs->register( self::chunked_job( 'chunked-job' ) ) );
+		$this->rig->backend()->calls = array();
+
+		$job_run     = self::assert_run( $jobs->dispatch_at( 'job', self::NOW - 1, array( 'site_id' => 7 ), 23 ), self::OWNER . ':job', RunStatus::Running );
+		$chunked_run = self::assert_run( $jobs->dispatch_at( 'chunked-job', self::NOW - 1, array( 'scope' => 'all' ), 31 ), self::OWNER . ':chunked-job', RunStatus::Running );
+		$job_state   = \get_option( 'a8csp_bgje_active_run_' . self::OWNER . ':job_' . $job_run->id );
+		$chunk_state = \get_option( 'a8csp_bgje_active_run_' . self::OWNER . ':chunked-job_' . $chunked_run->id );
+
+		self::assertIsArray( $job_state );
+		self::assertIsArray( $chunk_state );
+		self::assertSame(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 23,
+			),
+			$job_state['pending'] ?? null
+		);
+		self::assertSame(
+			array(
+				'stage'    => 'start',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 31,
+			),
+			$chunk_state['pending'] ?? null
+		);
+
+		$delivery_calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'enqueue_async', 'schedule_single' ), true ) ) );
+		self::assertSame(
+			array(
+				array(
+					'verb'     => 'enqueue_async',
+					'identity' => self::OWNER . ':job',
+				),
+				array(
+					'verb'     => 'enqueue_async',
+					'identity' => self::OWNER . ':chunked-job',
+				),
+			),
+			\array_map(
+				static function ( array $call ): array {
+					$call_args = $call['args']['args'] ?? null;
+
+					return array(
+						'verb'     => $call['verb'],
+						'identity' => \is_array( $call_args ) ? ( $call_args[0] ?? null ) : null,
+					);
+				},
+				$delivery_calls
+			)
+		);
 	}
 
 	/**

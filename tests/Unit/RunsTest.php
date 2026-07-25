@@ -70,7 +70,7 @@ final class RunsTest extends AbstractCapabilityManagerTestCase {
 		self::assert_wp_error( $engine->runs()->retry_failed( 'failed', RunId::from( self::MISSING_RUN_ID ) ), ErrorCode::RunNotRetained->value );
 
 		self::assertTrue( $engine->jobs()->register( self::job( 'cancel' ) ) );
-		$pending   = self::assert_run( $engine->jobs()->dispatch( 'cancel', delay_seconds: 60 ), self::OWNER . ':cancel', RunStatus::Running );
+		$pending   = self::assert_run( $engine->jobs()->dispatch_at( 'cancel', self::NOW + 61 ), self::OWNER . ':cancel', RunStatus::Running );
 		$cancelled = self::assert_run( $engine->runs()->cancel( 'cancel', $pending->id ), self::OWNER . ':cancel', RunStatus::Cancelled, $pending->id );
 		self::assertSame( (string) $pending->id, (string) $cancelled->id );
 		self::assert_wp_error( $engine->runs()->cancel( 'cancel', $pending->id ), ErrorCode::RunNotRetained->value );

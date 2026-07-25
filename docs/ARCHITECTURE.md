@@ -24,8 +24,9 @@ every surviving component is initialized before any hook can fire.
   procedural facade files; handle and manager construction is lazy, while capability readiness
   starts at `init`.
 - `includes/` groups the procedural facade by concept: `job.php` provides background-work
-  registration and kind-agnostic dispatch, `schedule.php` provides schedule synchronization and
-  dispatch, and `run.php` provides run inspection, retry, and cancellation.
+  registration plus kind-agnostic immediate and absolute-time dispatch, `schedule.php` provides
+  schedule synchronization and dispatch, and `run.php` provides run inspection, retry, and
+  cancellation.
 - `portals/` holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services; `src/` root holds
   the bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
   `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the
@@ -90,8 +91,9 @@ exceptions and public error-code models.
 
 ## Naming conventions
 
-Carry a unit suffix only where a value could plausibly be mistaken for a timestamp:
-`$delay_seconds` keeps its suffix, while `Recurrence::every()`, `max_runtime`, `base_delay`, and
+The dispatch timing axis uses `_at` names for absolute Unix timestamps, including `$run_at` and
+`$fire_at`; the backend boundary mirrors Action Scheduler's `timestamp` and `first_run_timestamp`
+vocabulary. Duration names including `Recurrence::every()`, `max_runtime`, `base_delay`, and
 `max_delay` remain unsuffixed.
 
 Every interface ends in `Interface`; every abstract class begins with `Abstract`.

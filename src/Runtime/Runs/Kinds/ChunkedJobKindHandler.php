@@ -200,17 +200,17 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $scheduled_at Delivery timestamp.
-	 * @param   int $delay        Requested delay in seconds.
-	 * @param   int $priority     Scheduler priority.
+	 * @param   int|null $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
+	 * @param   int      $now      Admission timestamp.
+	 * @param   int      $priority Scheduler priority.
 	 *
 	 * @return  PendingAction
 	 */
 	#[\Override]
-	public function initial_pending( int $scheduled_at, int $delay, int $priority ): PendingAction {
-		return 0 === $delay
+	public function initial_pending( ?int $fire_at, int $now, int $priority ): PendingAction {
+		return null === $fire_at || $fire_at <= $now
 			? PendingAction::async( 'start', $priority )
-			: PendingAction::single( 'start', $scheduled_at, $priority );
+			: PendingAction::single( 'start', $fire_at, $priority );
 	}
 
 	/**

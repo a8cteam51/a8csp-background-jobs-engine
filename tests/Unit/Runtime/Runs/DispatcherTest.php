@@ -981,15 +981,15 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Positive delay selects single scheduling at the clock-relative timestamp.
+	 * A future absolute fire time selects single scheduling at the requested timestamp.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_with_delay_routes_to_single_scheduling(): void {
-		$result = $this->client->dispatch( self::NAME, self::ARGS, delay: 120, priority: 31 );
+	public function test_dispatch_with_future_fire_time_routes_to_single_scheduling(): void {
+		$result = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$calls = $this->backend_calls( 'schedule_single' );
@@ -1003,27 +1003,43 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Negative delay is rejected before job admission reaches a boundary.
+	 * A requested fire time that becomes due during overlap-lock admission selects asynchronous delivery.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The clock reaches the requested instant immediately before lock persistence, proving lane selection uses post-claim admission time and treats equality as due.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_rejects_a_negative_delay_for_a_job_before_every_boundary(): void {
-		$before = $this->security_boundary_snapshot();
+	public function test_dispatch_routes_a_fire_time_that_becomes_due_during_lock_admission_to_async(): void {
+		$this->rig->wpdb()->before_next(
+			'insert',
+			function (): void {
+				$this->rig->clock()->timestamp = self::NOW + 1;
+			}
+		);
 
-		try {
-			(void) $this->client->dispatch( self::NAME, self::ARGS, delay: -1 );
-			self::fail( 'Negative delay must throw before job admission.' );
-		} catch ( \InvalidArgumentException $exception ) {
-			self::assertSame( 'Background-work "email-digest" delay -1 is invalid; pass a non-negative number of seconds.', $exception->getMessage() );
-			self::assertSame( $before, $this->security_boundary_snapshot() );
-		}
+		$result = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 1, priority: 31 );
+
+		self::assertInstanceOf( Success::class, $result );
+		$run = \get_option( $this->run_option_name() );
+		self::assertIsArray( $run );
+		self::assertSame(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 31,
+			),
+			$run['pending'] ?? null
+		);
+		self::assertSame( array( 'enqueue_async' ), \array_column( $this->run_delivery_calls(), 'verb' ) );
 	}
 
 	/**
-	 * A failed delayed-heartbeat write releases the provisional lock and run.
+	 * A failed future-action heartbeat write releases the provisional lock and run.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A storage write error occurs after provisional state exists; a second public dispatch proves compensation released both fences.
@@ -1033,10 +1049,10 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_with_delay_releases_its_lock_when_heartbeat_write_fails(): void {
+	public function test_dispatch_with_future_fire_time_releases_its_lock_when_heartbeat_write_fails(): void {
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
@@ -1045,7 +1061,7 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * An indeterminate delayed heartbeat aborts scheduling and removes provisional state.
+	 * An indeterminate future-action heartbeat aborts scheduling and removes provisional state.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale An authoritative read fails after lock claim and run creation; successful re-admission proves the fail-closed cleanup left no fence.
@@ -1055,7 +1071,7 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_with_delay_aborts_when_heartbeat_read_is_indeterminate(): void {
+	public function test_dispatch_with_future_fire_time_aborts_when_heartbeat_read_is_indeterminate(): void {
 		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -1063,7 +1079,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
@@ -1072,7 +1088,7 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * A failed delayed-state transition releases the resolved overlap key for immediate reuse.
+	 * A failed future-action state transition releases the resolved overlap key for immediate reuse.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The second run-state write fails after the lock heartbeat; reusing the opaque key proves both provisional generations were compensated.
@@ -1082,17 +1098,17 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_with_delay_releases_overlap_key_when_state_transition_fails(): void {
-		$this->overlap_key_resolver = static fn ( array $args ): string => 'delayed-site-digest';
+	public function test_dispatch_with_future_fire_time_releases_overlap_key_when_state_transition_fails(): void {
+		$this->overlap_key_resolver = static fn ( array $args ): string => 'timed-site-digest';
 		$this->rig->wpdb()->before_next( 'update', static function (): void {} );
 		$this->rig->wpdb()->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->script_result( 'update', false ) );
 
-		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$reused                        = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
+		$reused                        = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 121 );
 		self::assertInstanceOf( Success::class, $reused );
 	}
 
@@ -1264,23 +1280,6 @@ final class DispatcherTest extends TestCase {
 		} catch ( \InvalidArgumentException ) {
 			self::assertSame( $before, $this->security_boundary_snapshot() );
 		}
-	}
-
-	/**
-	 * Delay overflow returns a typed public payload rejection without scheduling.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_dispatch_rejects_a_delay_that_overflows_unix_seconds(): void {
-		$this->rig->clock()->timestamp = \PHP_INT_MAX - 5;
-
-		$result = $this->client->dispatch( self::NAME, self::ARGS, delay: 10 );
-
-		$this->assert_failure_code( $result, ErrorCode::PayloadRejected );
-		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
 	/**

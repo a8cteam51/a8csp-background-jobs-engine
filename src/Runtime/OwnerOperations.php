@@ -97,21 +97,17 @@ final readonly class OwnerOperations {
 	 *
 	 * @param   string                  $name       Owner-local background-work name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   int                     $delay      Scheduling delay in seconds.
+	 * @param   int|null                $fire_at    Absolute first-delivery timestamp, or null for asynchronous admission.
 	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity, delay, or priority is invalid, or arguments are not portable.
+	 * @throws  \InvalidArgumentException When the owner/name identity or priority is invalid, or arguments are not portable.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
-	public function dispatch( string $name, array $start_args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
+	public function dispatch( string $name, array $start_args = array(), ?int $fire_at = null, ?int $priority = null ): AbstractResult {
 		$identity = Identity::compose( $this->owner, $name );
-		if ( 0 > $delay ) {
-			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( 'Background-work "%1$s" delay %2$d is invalid; pass a non-negative number of seconds.', $name, $delay ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
 		if ( null !== $priority ) {
 			self::assert_priority( $priority, \sprintf( 'Background-work "%s"', $name ) );
 		}
@@ -121,7 +117,7 @@ final readonly class OwnerOperations {
 			return new Failure( $payload_error );
 		}
 
-		$result = BoundaryErrorMapper::map( $this->dispatcher->dispatch( $identity, $start_args, $delay, $priority ) );
+		$result = BoundaryErrorMapper::map( $this->dispatcher->dispatch( $identity, $start_args, $fire_at, $priority ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
 	}
