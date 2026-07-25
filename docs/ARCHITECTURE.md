@@ -74,6 +74,16 @@ every surviving component is initialized before any hook can fire.
   release automation; the release pipeline builds, smoke-tests the artifact through the shared
   reusable workflow, and publishes prereleases off the stable update channel.
 
+## Runtime directory admission
+
+The map's one-sub-capability ownership is the admission criterion for the directories directly
+beneath `src/Runtime/`. Each names the capability it owns; generic catch-alls — support, utilities,
+helpers, registries, and contracts — are not admitted, because they carry no admission test and
+accumulate whatever has no other home. A seam or adapter that is not itself a sub-capability sits at
+the root of `src/Runtime/` rather than in a bucket of its own, as the clock and randomization
+adapters do. `Error/` holds internal failure values, reason vocabularies, and the mapper; excludes
+exceptions and public error-code models.
+
 ## Naming conventions
 
 Carry a unit suffix only where a value could plausibly be mistaken for a timestamp:
