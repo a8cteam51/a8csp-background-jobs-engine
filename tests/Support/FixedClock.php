@@ -24,10 +24,10 @@ final class FixedClock implements ClockInterface {
 	/**
 	 * Constructor.
 	 *
-	 * @param   int|DateTimeImmutable $instant Current Unix timestamp or instant.
+	 * @param   int $timestamp Current Unix timestamp.
 	 */
-	public function __construct( int|DateTimeImmutable $instant ) {
-		$this->timestamp = \is_int( $instant ) ? $instant : $instant->getTimestamp();
+	public function __construct( int $timestamp ) {
+		$this->timestamp = $timestamp;
 	}
 
 	// endregion.

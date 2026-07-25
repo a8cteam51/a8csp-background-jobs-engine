@@ -5,7 +5,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
-use Psr\Clock\ClockInterface;
 
 /**
  * Exercises the production clock against the current system instant.
@@ -47,29 +46,11 @@ final class SystemClockTest extends TestCase {
 	public function test_now_returns_the_current_system_instant(): void {
 		$clock  = new SystemClock();
 		$before = \time();
-		$now    = self::read_clock( $clock );
+		$now    = $clock->now();
 		$after  = \time();
 
 		self::assertGreaterThanOrEqual( $before, $now->getTimestamp() );
 		self::assertLessThanOrEqual( $after, $now->getTimestamp() );
-	}
-
-	// endregion.
-
-	// region HELPERS.
-
-	/**
-	 * Reads an instant through the stable clock contract.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   ClockInterface $clock Clock implementation under test.
-	 *
-	 * @return  \DateTimeImmutable
-	 */
-	private static function read_clock( ClockInterface $clock ): \DateTimeImmutable {
-		return $clock->now();
 	}
 
 	// endregion.

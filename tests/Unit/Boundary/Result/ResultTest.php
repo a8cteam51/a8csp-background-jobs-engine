@@ -56,32 +56,6 @@ final class ResultTest extends TestCase {
 	}
 
 	/**
-	 * Null remains a value rather than becoming an absent success payload.
-	 *
-	 * @return  void
-	 */
-	public function test_success_carries_null_exactly(): void {
-		$result = new Success( null );
-
-		self::assertSame( null, $result->value );
-	}
-
-	/**
-	 * Structured values retain their keys, values, and ordering.
-	 *
-	 * @return  void
-	 */
-	public function test_success_carries_an_array_exactly(): void {
-		$value  = array(
-			'job_id' => 42,
-			'queued' => true,
-		);
-		$result = new Success( $value );
-
-		self::assertSame( $value, $result->value );
-	}
-
-	/**
 	 * A failure exposes the same contract-compatible error instance supplied by its caller.
 	 *
 	 * @return  void

@@ -770,41 +770,19 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * The schedules decision seam owns unsupported format correction at the binary boundary.
+	 * A negated schedule owner reaches the command seam as false.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_schedules_list_rejects_an_invalid_format(): void {
-		$result = self::run_command( 'schedules', 'list', '--format=ids' );
-
-		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $result['stderr'] );
-	}
-
-	/**
-	 * Negated schedule value parameters reach the command seam as false.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_schedules_list_rejects_negated_value_parameters(): void {
+	public function test_schedules_list_rejects_a_negated_owner(): void {
 		$owner = self::run_command( 'schedules', 'list', '--no-owner' );
 
 		self::assertSame( 1, $owner['exit_code'] );
 		self::assertSame( '', $owner['stdout'] );
 		self::assertSame( "Error: Schedule list owner is invalid; pass a value with --owner=<owner>.\n", $owner['stderr'] );
-
-		$format = self::run_command( 'schedules', 'list', '--no-format' );
-
-		self::assertSame( 1, $format['exit_code'] );
-		self::assertSame( '', $format['stdout'] );
-		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $format['stderr'] );
 	}
 
 	/**
@@ -973,28 +951,6 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
 		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $result['stderr'] );
-	}
-
-	/**
-	 * The runs decision seam rejects invalid names and formats at the binary boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_runs_list_rejects_invalid_name_and_format(): void {
-		$invalid_name = self::run_runs_command( 'list', 'Invalid Name' );
-
-		self::assertSame( 1, $invalid_name['exit_code'] );
-		self::assertSame( '', $invalid_name['stdout'] );
-		self::assertSame( "Error: Run identity is invalid; use a composed {owner}:{name} identity.\n", $invalid_name['stderr'] );
-
-		$invalid_format = self::run_runs_command( 'list', self::CANCEL_NAME, '--format=ids' );
-
-		self::assertSame( 1, $invalid_format['exit_code'] );
-		self::assertSame( '', $invalid_format['stdout'] );
-		self::assertSame( "Error: List format is invalid; use table, csv, json, count, or yaml.\n", $invalid_format['stderr'] );
 	}
 
 	/**

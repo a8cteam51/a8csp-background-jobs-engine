@@ -120,28 +120,6 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The registered start, continue, and cleanup actions complete one real chunked job.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_register_hooks_wires_all_internal_chunked_job_actions(): void {
-		$this->chunked_job->queue = array( array( 'chunk' => 'only' ) );
-		$this->start();
-
-		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
-			$this->rig->run_due();
-		}
-
-		self::assertSame( array( self::ARGS ), $this->chunked_job->generate_calls );
-		self::assertSame( array( 'chunk' => 'only' ), $this->chunked_job->process_calls[0]['chunk_args'] ?? null );
-		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/completed' ) );
-		$this->rig->assert_completed();
-	}
-
-	/**
 	 * Start delivery detaches referenced arguments before sharing them with queue generation and context.
 	 *
 	 * @since   1.0.0

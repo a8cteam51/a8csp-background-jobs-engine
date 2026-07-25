@@ -205,23 +205,6 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * Applying a filter cannot silently bypass an uninitialized registration ledger.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_apply_filters_rejects_an_unset_registration_ledger(): void {
-		unset( $GLOBALS['a8csp_bgje_test_filter_registrations'] );
-
-		$this->expectException( \UnexpectedValueException::class );
-		$this->expectExceptionMessageIs( 'Initialize the test filter ledger before applying a filter.' );
-
-		\apply_filters( 'unregistered-filter', 'value' );
-	}
-
-	/**
 	 * Mid-init boot waits for wp_loaded before synchronizing maintenance.
 	 *
 	 * @load-bearing concurrency

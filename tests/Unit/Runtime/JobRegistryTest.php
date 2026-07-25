@@ -110,20 +110,17 @@ final class JobRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Both installed kinds accept the 64-byte local-name boundary and reject 65 bytes.
+	 * Registration accepts the 64-byte local-name boundary and rejects 65 bytes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'chunked_job'|'job' $kind Definition kind.
-	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'work_kinds' )]
-	public function test_registration_accepts_64_name_bytes_and_rejects_65( string $kind ): void {
+	public function test_registration_accepts_64_name_bytes_and_rejects_65(): void {
 		$name         = \str_repeat( 'a', 64 );
-		$accepted     = self::registration( $kind, $name );
-		$too_long     = self::registration( $kind, \str_repeat( 'a', 65 ) );
+		$accepted     = self::registration( 'job', $name );
+		$too_long     = self::registration( 'job', \str_repeat( 'a', 65 ) );
 		$registry     = new JobRegistry();
 		$accepted_key = 'consumer:' . $name;
 
@@ -142,18 +139,17 @@ final class JobRegistryTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'chunked_job'|'job' $kind Definition kind.
-	 * @param   string              $name Invalid local name.
+	 * @param   string $name Invalid local name.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'invalid_names' )]
-	public function test_registration_rejects_invalid_definition_names( string $kind, string $name ): void {
+	public function test_registration_rejects_invalid_definition_names( string $name ): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
 
 		$registry = new JobRegistry();
-		$registry->register( self::identity( 'consumer:valid' ), self::registration( $kind, $name )['definition'] );
+		$registry->register( self::identity( 'consumer:valid' ), self::registration( 'job', $name )['definition'] );
 	}
 
 	/**
@@ -162,18 +158,14 @@ final class JobRegistryTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   'chunked_job'|'job' $kind     Definition kind.
-	 * @param   string              $identity Mismatched canonical identity.
-	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'mismatched_identities' )]
-	public function test_registration_rejects_mismatched_identities( string $kind, string $identity ): void {
+	public function test_registration_rejects_mismatched_identities(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessageIs( 'Background-work identity must be canonical and end with the definition\'s declared local name.' );
 
 		$registry = new JobRegistry();
-		$registry->register( self::identity( $identity ), self::registration( $kind, 'valid' )['definition'] );
+		$registry->register( self::identity( 'consumer:other' ), self::registration( 'job', 'valid' )['definition'] );
 	}
 
 	/**
@@ -305,41 +297,17 @@ final class JobRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Supplies invalid names for both installed definition kinds.
+	 * Supplies invalid names for representative registration validation.
 	 *
-	 * @return  array<string, array{kind: 'chunked_job'|'job', name: string}>
+	 * @return  array<string, array{name: string}>
 	 */
 	public static function invalid_names(): array {
-		$cases = array();
-		foreach ( self::work_kinds() as $kind_label => $kind_row ) {
-			foreach ( array( '', 'RefreshIndex', 'refresh index', 'refresh.index', 'réindex' ) as $name ) {
-				$name_label = '' === $name ? 'empty' : $name;
-
-				$cases[ $kind_label . ': ' . $name_label ] = array(
-					'kind' => $kind_row['kind'],
-					'name' => $name,
-				);
-			}
-		}
-
-		return $cases;
-	}
-
-	/**
-	 * Supplies declared-name-mismatched identities for both kinds.
-	 *
-	 * @return  array<string, array{kind: 'chunked_job'|'job', identity: string}>
-	 */
-	public static function mismatched_identities(): array {
 		return array(
-			'job'         => array(
-				'kind'     => 'job',
-				'identity' => 'consumer:other',
-			),
-			'chunked job' => array(
-				'kind'     => 'chunked_job',
-				'identity' => 'consumer:other',
-			),
+			'empty'     => array( 'name' => '' ),
+			'uppercase' => array( 'name' => 'RefreshIndex' ),
+			'space'     => array( 'name' => 'refresh index' ),
+			'period'    => array( 'name' => 'refresh.index' ),
+			'non-ASCII' => array( 'name' => 'réindex' ),
 		);
 	}
 

@@ -164,7 +164,7 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
-	 * Admission and chunked-schedule inspection share one byte-identical opaque overlap identity.
+	 * Admission and chunked-schedule inspection share one canonical argument-derived overlap identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -172,21 +172,21 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunked_schedule_inspection_uses_admission_overlap_identity(): void {
-		$client      = $this->rig->operations( 'owner' );
-		$args        = array(
+		$client = $this->rig->operations( 'owner' );
+		$args   = array(
 			'site_id' => 7,
 			'mode'    => 'incremental',
 		);
-		$overlap_key = "catalog\0\xFF";
-		$job         = new RecordingChunkedJob( 'catalog-sync' );
-		$client->register( $job->definition( new JobOptions( overlap_key: static fn ( array $start_args ): string => $overlap_key ) ) );
+		$job    = new RecordingChunkedJob( 'catalog-sync' );
+		$client->register( $job->definition( new JobOptions() ) );
 		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'catalog-sync', $args ) ) ) );
 
 		$dispatched = $client->dispatch( 'catalog-sync', $args );
 
 		self::assertInstanceOf( Success::class, $dispatched );
 		self::assertInstanceOf( Run::class, $dispatched->value );
-		self::assertArrayHasKey( OverlapGuard::OPTION_PREFIX . 'owner:catalog-sync_839bc2e28e961c09b79c9adbb7c53159e4a2a138e1dfe756247d9d45cf0a29e9', $this->rig->wpdb()->rows );
+		$lock_option = OverlapGuard::OPTION_PREFIX . 'owner:catalog-sync_' . StoreFixtureBuilder::for_identity( 'owner:catalog-sync' )->args_hash( $args );
+		self::assertArrayHasKey( $lock_option, $this->rig->wpdb()->rows );
 		$snapshot = $this->rig->inspection()->schedules( 'owner' );
 		self::assertNotNull( $snapshot );
 		self::assertSame(

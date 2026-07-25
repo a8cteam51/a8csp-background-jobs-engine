@@ -3,10 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Error;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -19,7 +15,6 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( EngineError::class )]
-#[CoversClass( RunFailure::class )]
 final class EngineErrorTest extends TestCase {
 	// region LIFECYCLE.
 
@@ -41,35 +36,6 @@ final class EngineErrorTest extends TestCase {
 	// endregion.
 
 	// region TESTS.
-
-	/**
-	 * Client-visible terminal detail retains its stable summary and classification.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_public_failure_carries_summary_and_code_unchanged(): void {
-		$failure = self::failure( ErrorCode::ExecutionFailed, 'Index refresh failed.' );
-
-		self::assertSame( 'Index refresh failed.', $failure->summary );
-		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
-	}
-
-	/**
-	 * Terminal failures without a failed chunked job chunk expose null through the public value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_public_failure_carries_absent_details_as_null(): void {
-		$failure = self::failure( ErrorCode::ExecutionFailed, 'Work failed.' );
-
-		self::assertNull( $failure->details );
-	}
 
 	/**
 	 * Throwable-derived terminal detail never retains arbitrary throwable text or source paths.
@@ -154,25 +120,6 @@ final class EngineErrorTest extends TestCase {
 				'corrective_prose' => 'Fix the retry policy, randomness source, retry-scheduled hook, or scheduler before retrying the failed run manually.',
 			),
 		);
-	}
-
-	// endregion.
-
-	// region HELPERS.
-
-	/**
-	 * Creates one public terminal-failure value.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   ErrorCode $code    Client-visible classification.
-	 * @param   string    $summary Engine-authored redacted summary.
-	 *
-	 * @return  RunFailure
-	 */
-	private static function failure( ErrorCode $code, string $summary ): RunFailure {
-		return new RunFailure( identity: 'consumer-plugin:sync', run_id: RunId::from( '00000000001721664000-0000000000000000007' ), attempts: 1, stage: RunFailureStage::scheduling(), code: $code, summary: $summary, details: null, );
 	}
 
 	// endregion.

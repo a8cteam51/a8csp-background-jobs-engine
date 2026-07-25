@@ -27,7 +27,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -363,12 +362,10 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $recorded_delay Deterministic randomizer result.
-	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'recorded_jitter_delay' )]
-	public function test_retry_call_site_requests_full_jitter_bounds_and_passes_recorded_delay_to_retry_hook_and_schedule( int $recorded_delay ): void {
+	public function test_retry_call_site_requests_full_jitter_bounds_and_passes_recorded_delay_to_retry_hook_and_schedule(): void {
+		$recorded_delay                 = 19;
 		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
 		$this->rig->randomizer()->value = $recorded_delay;
 		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
@@ -386,22 +383,6 @@ final class FailureLifecycleTest extends TestCase {
 		);
 		self::assertSame( $recorded_delay, $this->latest_retry()[4] ?? null );
 		self::assertSame( self::NOW + $recorded_delay, $this->single_retry_call()['args']['timestamp'] ?? null );
-	}
-
-	/**
-	 * Supplies one deterministic delay for the retry-hook and scheduling pass-through assertions.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return array<string, array{recorded_delay: int}>
-	 */
-	public static function recorded_jitter_delay(): array {
-		return array(
-			'recorded delay passes through' => array(
-				'recorded_delay' => 19,
-			),
-		);
 	}
 
 	/**

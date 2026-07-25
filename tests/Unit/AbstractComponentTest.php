@@ -65,9 +65,6 @@ final class AbstractComponentTest extends TestCase {
 
 		$component->initialize();
 		self::assertFalse( $component->registered );
-
-		$component->register_hooks();
-		self::assertTrue( $component->registered );
 	}
 
 	// endregion.

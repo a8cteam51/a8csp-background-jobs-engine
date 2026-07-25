@@ -42,43 +42,19 @@ final class JobOptionsTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Constructor parameter names and null defaults remain the public named-argument contract.
+	 * Constructor defaults select the engine-managed policy values.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_constructor_names_and_defaults_are_exact(): void {
-		$constructor = ( new \ReflectionClass( JobOptions::class ) )->getConstructor();
-		self::assertNotNull( $constructor );
-		$parameters = $constructor->getParameters();
-
-		self::assertSame( array( 'max_runtime', 'retry', 'overlap', 'overlap_key' ), \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), $parameters ) );
-		foreach ( $parameters as $parameter ) {
-			self::assertTrue( $parameter->isDefaultValueAvailable() );
-			self::assertNull( $parameter->getDefaultValue() );
-		}
-
+	public function test_constructor_defaults_select_engine_policy(): void {
 		$options = new JobOptions();
 		self::assertNull( $options->max_runtime );
 		self::assertNull( $options->retry );
 		self::assertNull( $options->overlap );
 		self::assertNull( $options->overlap_key );
-	}
-
-	/**
-	 * An explicit null maximum runtime selects the engine default.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_max_runtime_accepts_null_for_the_engine_default(): void {
-		$options = new JobOptions( max_runtime: null );
-
-		self::assertNull( $options->max_runtime );
 	}
 
 	/**

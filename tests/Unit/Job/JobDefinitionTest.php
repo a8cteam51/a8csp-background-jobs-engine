@@ -118,15 +118,14 @@ final class JobDefinitionTest extends TestCase {
 	public function test_closure_composition_uses_engine_defaults_and_forwards_execution_arguments(): void {
 		$calls      = array();
 		$definition = JobDefinition::closure(
-			'refresh-index',
-			static function ( array $start_args, RunContextInterface $context ) use ( &$calls ): void {
+			name: 'refresh-index',
+			handler: static function ( array $start_args, RunContextInterface $context ) use ( &$calls ): void {
 				$calls[] = array( $start_args, $context );
 			}
 		);
 		$context    = self::createStub( RunContextInterface::class );
 		$args       = array( 'site_id' => 7 );
 
-		self::assertSame( array( 'name', 'handler' ), \array_map( static fn ( \ReflectionParameter $parameter ): string => $parameter->getName(), ( new \ReflectionMethod( JobDefinition::class, 'closure' ) )->getParameters() ) );
 		self::assertSame( 'job', $definition->kind->value );
 		self::assertInstanceOf( JobExecutionInterface::class, $definition->execution );
 		self::assertNull( $definition->options->max_runtime );

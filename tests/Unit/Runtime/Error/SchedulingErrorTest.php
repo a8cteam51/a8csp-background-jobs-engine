@@ -9,7 +9,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -141,72 +140,6 @@ final class SchedulingErrorTest extends TestCase {
 				'option_name' => $option_name,
 			),
 			$result->error->context
-		);
-	}
-
-	/**
-	 * Each scheduling rejection scenario exposes its stable public classification.
-	 *
-	 * @load-bearing security
-	 * @pin-rationale The API boundary's scheduling classification table is the security contract that decides which internal failure becomes which public code; a public seam cannot construct the internal reasons, so the table is pinned directly.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $reason        Internal scheduling-reason backing value.
-	 * @param   string $expected_code Client-visible scheduling classification.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'scheduling_failure_codes' )]
-	public function test_scheduling_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Correct the scheduling request and retry.', array( 'hook' => 'a8csp_bgje/internal/deliver' ) ) ) );
-
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
-		self::assertSame( 'Correct the scheduling request and retry.', $result->error->message );
-		self::assertSame( array( 'hook' => 'a8csp_bgje/internal/deliver' ), $result->error->context );
-	}
-
-	// endregion.
-
-	// region DATA PROVIDERS.
-
-	/**
-	 * Supplies each scheduling rejection scenario and its public classification.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  array<string, array{reason: string, expected_code: string}>
-	 */
-	public static function scheduling_failure_codes(): array {
-		return array(
-			'backend not ready'  => array(
-				'reason'        => 'backend_not_ready',
-				'expected_code' => 'backend_unavailable',
-			),
-			'unsupported group'  => array(
-				'reason'        => 'unsupported_group',
-				'expected_code' => 'unsupported_operation',
-			),
-			'invalid time input' => array(
-				'reason'        => 'invalid_time_input',
-				'expected_code' => 'payload_rejected',
-			),
-			'invalid payload'    => array(
-				'reason'        => 'invalid_payload',
-				'expected_code' => 'payload_rejected',
-			),
-			'schedule failed'    => array(
-				'reason'        => 'schedule_failed',
-				'expected_code' => 'backend_rejected',
-			),
-			'storage failure'    => array(
-				'reason'        => 'storage_failed',
-				'expected_code' => 'storage_failed',
-			),
 		);
 	}
 

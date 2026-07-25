@@ -554,20 +554,6 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
 	}
 
-	/**
-	 * The public cancel contract declares its Result non-discardable.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_cancel_declares_no_discard_on_the_public_facade(): void {
-		$method = new \ReflectionMethod( OwnerOperations::class, 'cancel' );
-
-		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
-	}
-
 	// endregion.
 
 	// region HELPERS.

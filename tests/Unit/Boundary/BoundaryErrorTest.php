@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Boundary;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\ErrorInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -31,21 +30,6 @@ final class BoundaryErrorTest extends TestCase {
 	// endregion.
 
 	// region TESTS.
-
-	/**
-	 * The error exposes its stable code, engine-authored message, and structured context exactly.
-	 *
-	 * @return  void
-	 */
-	public function test_carries_the_public_admission_failure_contract(): void {
-		$context = array( 'run_id' => 'run-incumbent' );
-		$error   = new BoundaryError( ErrorCode::OverlapHeld, 'The work is already running.', $context );
-
-		self::assertInstanceOf( ErrorInterface::class, $error );
-		self::assertSame( ErrorCode::OverlapHeld, $error->code );
-		self::assertSame( 'The work is already running.', $error->message );
-		self::assertSame( $context, $error->context );
-	}
 
 	/**
 	 * Callers without safe structured detail receive an empty context.

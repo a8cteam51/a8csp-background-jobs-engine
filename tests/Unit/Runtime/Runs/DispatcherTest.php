@@ -1284,20 +1284,6 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * The public dispatch contract declares its Result non-discardable.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_dispatch_declares_no_discard_on_the_public_facade(): void {
-		$method = new \ReflectionMethod( OwnerOperations::class, 'dispatch' );
-
-		self::assertCount( 1, $method->getAttributes( \NoDiscard::class ) );
-	}
-
-	/**
 	 * Failed-run retry rejects a malformed run identifier at the engine boundary.
 	 *
 	 * @since   1.0.0

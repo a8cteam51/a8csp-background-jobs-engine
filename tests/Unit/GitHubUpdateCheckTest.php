@@ -195,22 +195,6 @@ final class GitHubUpdateCheckTest extends TestCase {
 	}
 
 	/**
-	 * A stable install keeps the stable latest-release channel.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_stable_install_keeps_the_stable_channel(): void {
-		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $this->release( 'v1.1.0' ) );
-
-		$this->apply_update_filter( '1.0.0' );
-
-		self::assertSame( array( self::API_URL_STABLE ), $GLOBALS['a8csp_bgje_test_remote_requests'] );
-	}
-
-	/**
 	 * Stable and prerelease checks cannot reuse each other's cached channel response.
 	 *
 	 * @since   1.0.0

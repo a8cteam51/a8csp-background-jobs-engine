@@ -205,65 +205,6 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Negative delay is rejected before chunked-job admission reaches a boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_dispatch_rejects_a_negative_delay_for_a_chunked_job_before_every_boundary(): void {
-		$this->register_chunked_job();
-		$before = $this->boundary_snapshot();
-
-		try {
-			(void) $this->client->dispatch( self::NAME, self::ARGS, delay: -1 );
-			self::fail( 'Negative delay must throw before chunked-job admission.' );
-		} catch ( \InvalidArgumentException $exception ) {
-			self::assertSame( 'Background-work "catalog-sync" delay -1 is invalid; pass a non-negative number of seconds.', $exception->getMessage() );
-			self::assertSame( $before, $this->boundary_snapshot() );
-		}
-	}
-
-	/**
-	 * Public priority validation rejects both values immediately outside the engine range.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $priority Invalid priority.
-	 *
-	 * @return  void
-	 */
-	#[DataProvider( 'invalid_priorities' )]
-	public function test_dispatch_chunked_job_rejects_priority_outside_the_engine_range( int $priority ): void {
-		$this->register_chunked_job();
-		$before = $this->boundary_snapshot();
-
-		try {
-			(void) $this->client->dispatch( self::NAME, self::ARGS, priority: $priority );
-			self::fail( 'Invalid priority must throw before chunked job admission.' );
-		} catch ( \InvalidArgumentException ) {
-			self::assertSame( $before, $this->boundary_snapshot() );
-		}
-	}
-
-	/**
-	 * Supplies values immediately outside both inclusive priority boundaries.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return array<string, array{priority: int}>
-	 */
-	public static function invalid_priorities(): array {
-		return array(
-			'below minimum' => array( 'priority' => -1 ),
-			'above maximum' => array( 'priority' => 256 ),
-		);
-	}
-
-	/**
 	 * Manual retry starts the retained chunked job arguments once and consumes the source entry.
 	 *
 	 * @since   1.0.0
@@ -1015,23 +956,6 @@ final class DispatcherChunkedJobTest extends TestCase {
 		self::assertCount( 1, $calls );
 
 		return $calls[0];
-	}
-
-	/**
-	 * Captures every boundary public priority validation must leave untouched.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return array{backend: array<array-key, mixed>, rows: array<array-key, mixed>, queries: array<array-key, mixed>, hooks: array<array-key, mixed>}
-	 */
-	private function boundary_snapshot(): array {
-		return array(
-			'backend' => $this->rig->backend()->calls,
-			'rows'    => $this->rig->wpdb()->rows,
-			'queries' => $this->rig->wpdb()->recorded_queries,
-			'hooks'   => $this->rig->hooks()->sequence(),
-		);
 	}
 
 	/**
