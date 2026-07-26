@@ -109,7 +109,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedules_join_live_declarations_with_persisted_orphans_and_locks(): void {
-		$client = $this->rig->operations( 'owner-a' );
+		$client = $this->rig->operations( 'scope-a' );
 		$job    = new RecordingJob( 'refresh-index' );
 
 		$options = new JobOptions( overlap_key: static fn ( array $args ): ?string => 'all' === ( $args['scope'] ?? null ) ? 'scope:all' : null );
@@ -117,27 +117,27 @@ final class InspectionTest extends TestCase {
 
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
 		self::assertInstanceOf( Success::class, $client->sync( array( $schedule ) ) );
-		$fixture = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
+		$fixture = StoreFixtureBuilder::for_identity( 'scope-a:refresh-index' );
 		$this->put(
 			$fixture->schedule_registration(
 				array(
-					'owner'         => 'owner-a',
+					'scope'         => 'scope-a',
 					'declarations'  => array(
-						'owner-a:nightly' => array(
+						'scope-a:nightly' => array(
 							'schedule' => $schedule,
-							'job'      => 'owner-a:refresh-index',
+							'job'      => 'scope-a:refresh-index',
 						),
 					),
-					'registrations' => array( 'owner-a:nightly' => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, self::NOW - 60, 1, 2 ) ),
+					'registrations' => array( 'scope-a:nightly' => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, self::NOW - 60, 1, 2 ) ),
 				)
 			)
 		);
 		$this->put(
 			$fixture->schedule_registration(
 				array(
-					'owner'         => 'owner-b',
+					'scope'         => 'scope-b',
 					'declarations'  => array(),
-					'registrations' => array( 'owner-b:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 600, misfire_skips: 4, overlap_skips: 5 ) ),
+					'registrations' => array( 'scope-b:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 600, misfire_skips: 4, overlap_skips: 5 ) ),
 				)
 			)
 		);
@@ -148,7 +148,7 @@ final class InspectionTest extends TestCase {
 		$snapshot = $this->rig->inspection()->schedules();
 
 		self::assertNotNull( $snapshot );
-		self::assertSame( array( 'owner-a:nightly', 'owner-b:orphaned' ), \array_column( $snapshot['entries'], 'identity' ) );
+		self::assertSame( array( 'scope-a:nightly', 'scope-b:orphaned' ), \array_column( $snapshot['entries'], 'identity' ) );
 		self::assertSame( 300, $snapshot['entries'][0]['recurrence'] );
 		self::assertSame(
 			array(
@@ -160,7 +160,7 @@ final class InspectionTest extends TestCase {
 		);
 		self::assertSame( array( 'state' => 'not_declared' ), $snapshot['entries'][1]['lock'] );
 		self::assertTrue( $snapshot['entries'][0]['occurrence_visible'] );
-		self::assertSame( array( 'owner-b' ), \array_column( $this->rig->inspection()->schedules( 'owner-b' )['entries'] ?? array(), 'owner' ) );
+		self::assertSame( array( 'scope-b' ), \array_column( $this->rig->inspection()->schedules( 'scope-b' )['entries'] ?? array(), 'scope' ) );
 	}
 
 	/**
@@ -172,7 +172,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunked_schedule_inspection_uses_admission_overlap_identity(): void {
-		$client = $this->rig->operations( 'owner' );
+		$client = $this->rig->operations( 'scope' );
 		$args   = array(
 			'site_id' => 7,
 			'mode'    => 'incremental',
@@ -185,9 +185,9 @@ final class InspectionTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $dispatched );
 		self::assertInstanceOf( Run::class, $dispatched->value );
-		$lock_option = OverlapGuard::OPTION_PREFIX . 'owner:catalog-sync_' . StoreFixtureBuilder::for_identity( 'owner:catalog-sync' )->args_hash( $args );
+		$lock_option = OverlapGuard::OPTION_PREFIX . 'scope:catalog-sync_' . StoreFixtureBuilder::for_identity( 'scope:catalog-sync' )->args_hash( $args );
 		self::assertArrayHasKey( $lock_option, $this->rig->wpdb()->rows );
-		$snapshot = $this->rig->inspection()->schedules( 'owner' );
+		$snapshot = $this->rig->inspection()->schedules( 'scope' );
 		self::assertNotNull( $snapshot );
 		self::assertSame(
 			array(
@@ -208,7 +208,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schedule_locks_preserve_every_discriminated_honesty_state(): void {
-		$client        = $this->rig->operations( 'owner' );
+		$client        = $this->rig->operations( 'scope' );
 		$schedules     = array(
 			'allow'   => new Schedule( 'allow', Recurrence::every( 300 ), 'allow-job', array( 'case' => 'allow' ) ),
 			'failed'  => new Schedule( 'failed', Recurrence::every( 300 ), 'failed-job', array( 'case' => 'failed' ) ),
@@ -216,30 +216,30 @@ final class InspectionTest extends TestCase {
 			'invalid' => new Schedule( 'invalid', Recurrence::every( 300 ), 'invalid-job', array( 'case' => 'invalid' ) ),
 		);
 		$declarations  = array();
-		$registrations = array( 'owner:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
+		$registrations = array( 'scope:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 300 ) );
 		foreach ( $schedules as $name => $schedule ) {
 			$job     = new RecordingJob( $schedule->job );
 			$options = 'allow' === $name ? new JobOptions( overlap: OverlapPolicy::Allow ) : null;
 			$client->register( $job->definition( $options ) );
-			$declarations[ 'owner:' . $name ]  = array(
+			$declarations[ 'scope:' . $name ]  = array(
 				'schedule' => $schedule,
-				'job'      => 'owner:' . $schedule->job,
+				'job'      => 'scope:' . $schedule->job,
 			);
-			$registrations[ 'owner:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
+			$registrations[ 'scope:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
 		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
-		$fixture = StoreFixtureBuilder::for_identity( 'owner:invalid-job' );
+		$fixture = StoreFixtureBuilder::for_identity( 'scope:invalid-job' );
 		$this->put(
 			$fixture->schedule_registration(
 				array(
-					'owner'         => 'owner',
+					'scope'         => 'scope',
 					'declarations'  => $declarations,
 					'registrations' => $registrations,
 				)
 			)
 		);
 		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgje' ) ] );
-		$this->rig->wpdb()->put( 'a8csp_bgje_overlap_lock_owner:invalid-job_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
+		$this->rig->wpdb()->put( 'a8csp_bgje_overlap_lock_scope:invalid-job_' . $fixture->args_hash( array( 'case' => 'invalid' ) ), 'not-a-lock-row' );
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
 			'select',
@@ -252,11 +252,11 @@ final class InspectionTest extends TestCase {
 		self::assertNotNull( $snapshot );
 		$locks = \array_column( $snapshot['entries'], 'lock', 'identity' );
 
-		self::assertSame( array( 'state' => 'overlap_allowed' ), $locks['owner:allow'] );
-		self::assertSame( array( 'state' => 'read_failed' ), $locks['owner:failed'] );
-		self::assertSame( array( 'state' => 'free' ), $locks['owner:free'] );
-		self::assertSame( array( 'state' => 'invalid' ), $locks['owner:invalid'] );
-		self::assertSame( array( 'state' => 'not_declared' ), $locks['owner:orphaned'] );
+		self::assertSame( array( 'state' => 'overlap_allowed' ), $locks['scope:allow'] );
+		self::assertSame( array( 'state' => 'read_failed' ), $locks['scope:failed'] );
+		self::assertSame( array( 'state' => 'free' ), $locks['scope:free'] );
+		self::assertSame( array( 'state' => 'invalid' ), $locks['scope:invalid'] );
+		self::assertSame( array( 'state' => 'not_declared' ), $locks['scope:orphaned'] );
 	}
 
 	/**
@@ -271,15 +271,15 @@ final class InspectionTest extends TestCase {
 	 */
 	#[DataProviderExternal( FaultingOverlapKeyResolverProvider::class, 'resolvers' )]
 	public function test_schedule_inspection_reports_overlap_key_resolver_failures( \Closure $resolver ): void {
-		$client = $this->rig->operations( 'owner' );
+		$client = $this->rig->operations( 'scope' );
 		$job    = new RecordingJob( 'faulting-overlap-key' );
 		$client->register( $job->definition( new JobOptions( overlap_key: $resolver ) ) );
 		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'faulting-overlap-key', array( 'site_id' => 7 ) ) ) ) );
 
-		$snapshot = $this->rig->inspection()->schedules( 'owner' );
+		$snapshot = $this->rig->inspection()->schedules( 'scope' );
 
 		self::assertNotNull( $snapshot );
-		self::assertSame( 'owner:nightly', $snapshot['entries'][0]['identity'] ?? null );
+		self::assertSame( 'scope:nightly', $snapshot['entries'][0]['identity'] ?? null );
 		self::assertSame( array( 'state' => 'resolver_failed' ), $snapshot['entries'][0]['lock'] ?? null );
 	}
 
@@ -315,9 +315,9 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_public_job_lifecycle_is_visible_with_strict_staleness(): void {
-		$identity       = 'owner:email-digest';
+		$identity       = 'scope:email-digest';
 		$work_identity  = self::identity( $identity );
-		$client         = $this->rig->operations( 'owner' );
+		$client         = $this->rig->operations( 'scope' );
 		$job            = new RecordingJob( 'email-digest' );
 		$during         = null;
 		$job->on_handle = function () use ( $work_identity, &$during ): void {
@@ -351,10 +351,10 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_runs_merge_valid_live_history_and_failed_store_rows(): void {
-		$identity     = 'owner:catalog-sync';
+		$identity     = 'scope:catalog-sync';
 		$completed_id = self::run_id( 2 );
 		$failed_id    = self::run_id( 3 );
-		$this->rig->operations( 'owner' )->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
+		$this->rig->operations( 'scope' )->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$live_id  = self::run_id( 1 );
 		$this->put( $fixtures->run( $live_id, self::state( 'hash-live', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'chunked_job' ) ) );
@@ -408,11 +408,11 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_persisted_work_kind_controls_live_run_inspection(): void {
-		$orphaned_identity    = 'owner:orphaned';
-		$job_identity         = 'owner-a:shared';
-		$chunked_job_identity = 'owner-b:shared';
-		$this->rig->operations( 'owner-a' )->register( ( new RecordingJob( 'shared' ) )->definition() );
-		$this->rig->operations( 'owner-b' )->register( ( new RecordingChunkedJob( 'shared' ) )->definition() );
+		$orphaned_identity    = 'scope:orphaned';
+		$job_identity         = 'scope-a:shared';
+		$chunked_job_identity = 'scope-b:shared';
+		$this->rig->operations( 'scope-a' )->register( ( new RecordingJob( 'shared' ) )->definition() );
+		$this->rig->operations( 'scope-b' )->register( ( new RecordingChunkedJob( 'shared' ) )->definition() );
 		$this->put( StoreFixtureBuilder::for_identity( $orphaned_identity )->run( self::run_id( 1 ), self::state( 'orphaned-hash', array( array( 'page' => 1 ), array( 'page' => 2 ) ), 'chunked_job' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $job_identity )->run( self::run_id( 2 ), self::state( 'job-hash', array( array( 'page' => 1 ) ), 'chunked_job' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $chunked_job_identity )->run( self::run_id( 3 ), self::state( 'chunked-job-hash', array( array( 'page' => 1 ) ) ) ) );
@@ -441,7 +441,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_last_completed_run_id_follows_terminal_recording_order(): void {
-		$identity = 'owner:recording-order';
+		$identity = 'scope:recording-order';
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$this->put(
 			$fixtures->history(
@@ -480,7 +480,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_status_reads_live_and_terminal_state_without_collapsing_absence(): void {
-		$identity        = 'owner:single-run';
+		$identity        = 'scope:single-run';
 		$fixtures        = StoreFixtureBuilder::for_identity( $identity );
 		$live_run_id     = self::run_id( 1 );
 		$terminal_run_id = self::run_id( 2 );
@@ -520,7 +520,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_status_preserves_authoritative_read_failures(): void {
-		$identity      = 'owner:read-failure';
+		$identity      = 'scope:read-failure';
 		$work_identity = self::identity( $identity );
 		$run_id        = self::run_id( 1 );
 		$this->rig->wpdb()->before_next(
@@ -566,8 +566,8 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_enumeration_validates_identity_before_applying_its_cap(): void {
-		$requested = 'owner:foo';
-		$foreign   = 'owner:foo_bar';
+		$requested = 'scope:foo';
+		$foreign   = 'scope:foo_bar';
 		$this->put( StoreFixtureBuilder::for_identity( $requested )->run( self::run_id( 1 ), self::state( 'requested' ) ) );
 		$this->put( StoreFixtureBuilder::for_identity( $foreign )->run( self::run_id( 2 ), self::state( 'foreign' ) ) );
 		for ( $sequence = 1; $sequence <= 20; ++$sequence ) {
@@ -595,7 +595,7 @@ final class InspectionTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_run_enumeration_is_bounded_with_an_exact_remainder(): void {
-		$identity = 'owner:many-runs';
+		$identity = 'scope:many-runs';
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		for ( $sequence = 1; $sequence <= 24; ++$sequence ) {
 			$this->put( $fixtures->run( self::run_id( $sequence ), self::state( 'hash-' . $sequence ) ) );
@@ -624,11 +624,11 @@ final class InspectionTest extends TestCase {
 				$wpdb->last_error = 'enumeration failed';
 			}
 		);
-		$enumeration = $this->rig->inspection()->runs( self::identity( 'owner:enumeration' ) );
+		$enumeration = $this->rig->inspection()->runs( self::identity( 'scope:enumeration' ) );
 		self::assertSame( 'enumeration_failed', $enumeration['live_error'] );
 		self::assertSame( array( 0, 0, 0 ), array( $enumeration['live_scanned'], $enumeration['live_uninspected'], $enumeration['live_unreadable'] ) );
 
-		$identity = 'owner:failed-row';
+		$identity = 'scope:failed-row';
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$this->put( $fixtures->unreadable_run( \sprintf( '!%039d', 1 ) ) );
 		$this->put( $fixtures->run( self::run_id( 1 ), self::state( 'hash' ) ) );
@@ -649,7 +649,7 @@ final class InspectionTest extends TestCase {
 				$wpdb->last_error = 'history read failed';
 			}
 		);
-		self::assertNull( $this->rig->inspection()->runs( self::identity( 'owner:history' ) )['history'] );
+		self::assertNull( $this->rig->inspection()->runs( self::identity( 'scope:history' ) )['history'] );
 	}
 
 	// endregion.
@@ -659,7 +659,7 @@ final class InspectionTest extends TestCase {
 	/**
 	 * Returns one canonical identity fixture.
 	 *
-	 * @param   string $identity Complete owner-qualified identity.
+	 * @param   string $identity Complete scope-qualified identity.
 	 *
 	 * @return  Identity
 	 */

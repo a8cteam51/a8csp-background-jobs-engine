@@ -92,23 +92,23 @@ final class IdentityTest extends TestCase {
 
 		self::assertInstanceOf( \Stringable::class, $identity );
 		self::assertSame( 'client-plugin:daily_sync', (string) $identity );
-		self::assertSame( 'client-plugin', $identity->owner() );
+		self::assertSame( 'client-plugin', $identity->scope() );
 		self::assertSame( 'daily_sync', $identity->name() );
 	}
 
 	/**
-	 * Owner validation keeps its existing byte ceiling and diagnostic.
+	 * Scope validation keeps its existing byte ceiling and diagnostic.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_compose_rejects_an_owner_over_the_byte_limit(): void {
+	public function test_compose_rejects_a_scope_over_the_byte_limit(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work owner is invalid; pass 1 to 32 bytes matching [a-z0-9][a-z0-9-]*.' );
+		$this->expectExceptionMessageIs( 'Background-work scope is invalid; pass 1 to 32 bytes matching [a-z0-9][a-z0-9-]*.' );
 
-		Identity::compose( \str_repeat( 'o', Identity::OWNER_MAX_BYTES + 1 ), 'job' );
+		Identity::compose( \str_repeat( 'o', Identity::SCOPE_MAX_BYTES + 1 ), 'job' );
 	}
 
 	/**
@@ -127,33 +127,33 @@ final class IdentityTest extends TestCase {
 	}
 
 	/**
-	 * Client composition cannot claim the engine-reserved owner prefix.
+	 * Client composition cannot claim the engine-reserved scope prefix.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_compose_rejects_the_engine_reserved_owner_prefix_by_default(): void {
+	public function test_compose_rejects_the_engine_reserved_scope_prefix_by_default(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work owner uses the engine-reserved "a8csp-bgje" prefix; use the client plugin slug.' );
+		$this->expectExceptionMessageIs( 'Background-work scope uses the engine-reserved "a8csp-bgje" prefix; use the client plugin slug.' );
 
-		Identity::compose( Identity::ENGINE_OWNER . '-client', 'job' );
+		Identity::compose( Identity::ENGINE_SCOPE . '-client', 'job' );
 	}
 
 	/**
-	 * Engine composition explicitly admits its reserved owner prefix.
+	 * Engine composition explicitly admits its reserved scope prefix.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_compose_accepts_the_engine_reserved_owner_prefix_when_allowed(): void {
-		$identity = Identity::compose( Identity::ENGINE_OWNER, 'maintenance', true );
+	public function test_compose_accepts_the_engine_reserved_scope_prefix_when_allowed(): void {
+		$identity = Identity::compose( Identity::ENGINE_SCOPE, 'maintenance', true );
 
-		self::assertSame( Identity::ENGINE_OWNER . ':maintenance', (string) $identity );
-		self::assertSame( Identity::ENGINE_OWNER, $identity->owner() );
+		self::assertSame( Identity::ENGINE_SCOPE . ':maintenance', (string) $identity );
+		self::assertSame( Identity::ENGINE_SCOPE, $identity->scope() );
 		self::assertSame( 'maintenance', $identity->name() );
 	}
 
@@ -166,7 +166,7 @@ final class IdentityTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_try_from_wraps_valid_client_and_engine_identities(): void {
-		foreach ( array( 'client-plugin:daily_sync', Identity::ENGINE_OWNER . ':maintenance' ) as $candidate ) {
+		foreach ( array( 'client-plugin:daily_sync', Identity::ENGINE_SCOPE . ':maintenance' ) as $candidate ) {
 			$identity = Identity::tryFrom( $candidate );
 
 			self::assertInstanceOf( Identity::class, $identity );
@@ -185,19 +185,19 @@ final class IdentityTest extends TestCase {
 	public function test_try_from_returns_null_for_malformed_identities(): void {
 		$malformed = array(
 			'',
-			'owner',
-			'owner:name:extra',
+			'scope',
+			'scope:name:extra',
 			':name',
-			'Owner:name',
-			'-owner:name',
-			'owner_plugin:name',
-			\str_repeat( 'o', Identity::OWNER_MAX_BYTES + 1 ) . ':name',
-			'owner:',
-			'owner:Name',
-			'owner:bad.name',
-			'owner:réindex',
-			'owner:' . \str_repeat( 'n', Identity::NAME_MAX_BYTES + 1 ),
-			\str_repeat( 'o', Identity::OWNER_MAX_BYTES ) . ':' . \str_repeat( 'n', Identity::NAME_MAX_BYTES + 1 ),
+			'Scope:name',
+			'-scope:name',
+			'scope_plugin:name',
+			\str_repeat( 'o', Identity::SCOPE_MAX_BYTES + 1 ) . ':name',
+			'scope:',
+			'scope:Name',
+			'scope:bad.name',
+			'scope:réindex',
+			'scope:' . \str_repeat( 'n', Identity::NAME_MAX_BYTES + 1 ),
+			\str_repeat( 'o', Identity::SCOPE_MAX_BYTES ) . ':' . \str_repeat( 'n', Identity::NAME_MAX_BYTES + 1 ),
 		);
 
 		foreach ( $malformed as $candidate ) {
@@ -214,10 +214,10 @@ final class IdentityTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_maximum_identity_stays_within_the_option_name_boundary_end_to_end(): void {
-		$owner         = \str_repeat( 'o', 32 );
+		$scope         = \str_repeat( 'o', 32 );
 		$job_name      = \str_repeat( 't', 64 );
 		$schedule_name = \str_repeat( 's', 64 );
-		$client        = $this->rig->operations( $owner );
+		$client        = $this->rig->operations( $scope );
 		$client->register( ( new RecordingJob( $job_name ) )->definition() );
 
 		$enqueued = $client->dispatch( $job_name, array( 'site_id' => 7 ) );
@@ -225,8 +225,8 @@ final class IdentityTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertInstanceOf( Success::class, $synced );
-		self::assertSame( 97, \strlen( $owner . ':' . $job_name ) );
-		self::assertSame( 97, \strlen( $owner . ':' . $schedule_name ) );
+		self::assertSame( 97, \strlen( $scope . ':' . $job_name ) );
+		self::assertSame( 97, \strlen( $scope . ':' . $schedule_name ) );
 		self::assertNotEmpty( $this->rig->wpdb()->rows );
 		$longest = '';
 		foreach ( \array_keys( $this->rig->wpdb()->rows ) as $option_name ) {

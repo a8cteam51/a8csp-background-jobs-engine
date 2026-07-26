@@ -100,7 +100,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity   Complete owner-qualified job identity.
+	 * @param   Identity      $identity   Complete scope-qualified job identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
 	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecutionInterface.
@@ -122,7 +122,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job identity.
+	 * @param   Identity $identity Complete scope-qualified job identity.
 	 *
 	 * @return  JobExecutionInterface|null
 	 */
@@ -139,7 +139,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job identity.
+	 * @param   Identity $identity Complete scope-qualified job identity.
 	 *
 	 * @return  JobOptions|null
 	 */
@@ -203,7 +203,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified job identity.
+	 * @param   Identity $identity  Complete scope-qualified job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Persisted running state.
 	 * @param   RunStore $run_store Active-run store.
@@ -292,7 +292,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified job identity.
+	 * @param   Identity $identity  Complete scope-qualified job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.

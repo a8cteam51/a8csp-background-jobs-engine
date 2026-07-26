@@ -35,7 +35,7 @@ final readonly class ScheduleOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ScheduleRegistry   $registry            Owner-scoped schedule registry.
+	 * @param   ScheduleRegistry   $registry            Per-scope schedule registry.
 	 * @param   BackendInterface   $scheduler           Scheduling backend facade.
 	 * @param   ClockInterface     $clock               Current-time source.
 	 * @param   OccurrenceDelivery $occurrence_delivery Schedule occurrence delivery service.
@@ -52,7 +52,7 @@ final readonly class ScheduleOperations {
 	// region METHODS
 
 	/**
-	 * Synchronizes one owner's complete declared schedule set.
+	 * Synchronizes one scope's complete declared schedule set.
 	 *
 	 * Synchronization runs on every initialization and converges every observable disagreement among
 	 * declared schedules, persisted registrations, and pending backend occurrences, including surplus
@@ -66,22 +66,22 @@ final readonly class ScheduleOperations {
 	 * @phpstan-param  array<string, array{schedule: Schedule, job: Identity}> $declarations
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
-	 * @param   string $owner        Stable client identifier captured by the owner-bound facade.
-	 * @param   array  $declarations Complete schedule declaration keyed by owner-qualified identity.
+	 * @param   string $scope        Stable client identifier captured by the scope-bound facade.
+	 * @param   array  $declarations Complete schedule declaration keyed by scope-qualified identity.
 	 *
-	 * @throws  \InvalidArgumentException When the owner, declaration, schedule identity, or target identity is invalid.
+	 * @throws  \InvalidArgumentException When the scope, declaration, schedule identity, or target identity is invalid.
 	 *
 	 * @return  AbstractResult
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
-	public function sync( string $owner, array $declarations ): AbstractResult {
-		Identity::validate_owner( $owner );
+	public function sync( string $scope, array $declarations ): AbstractResult {
+		Identity::validate_scope( $scope );
 
-		return $this->sync_owner( $owner, $declarations );
+		return $this->sync_scope( $scope, $declarations );
 	}
 
 	/**
-	 * Synchronizes one validated owner, including the engine-reserved maintenance owner.
+	 * Synchronizes one validated scope, including the engine-reserved maintenance scope.
 	 *
 	 * @internal Engine maintenance only.
 	 *
@@ -91,25 +91,25 @@ final readonly class ScheduleOperations {
 	 * @phpstan-param  array<string, array{schedule: Schedule, job: Identity}> $declarations
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
-	 * @param   string $owner        Stable client or engine identifier.
-	 * @param   array  $declarations Complete schedule declaration keyed by owner-qualified identity.
+	 * @param   string $scope        Stable client or engine identifier.
+	 * @param   array  $declarations Complete schedule declaration keyed by scope-qualified identity.
 	 *
-	 * @throws  \InvalidArgumentException When the owner, declaration, schedule identity, or target identity is invalid.
+	 * @throws  \InvalidArgumentException When the scope, declaration, schedule identity, or target identity is invalid.
 	 *
 	 * @return  AbstractResult
 	 */
-	public function sync_owner( string $owner, array $declarations ): AbstractResult {
-		Identity::validate_owner( $owner, true );
+	public function sync_scope( string $scope, array $declarations ): AbstractResult {
+		Identity::validate_scope( $scope, true );
 
 		$declared = array();
 		foreach ( $declarations as $schedule_identity => $declaration ) {
 			if ( ! \is_string( $schedule_identity ) ) {
-				throw new \InvalidArgumentException( 'Schedule sync declaration keys must be canonical owner-qualified schedule identities.' );
+				throw new \InvalidArgumentException( 'Schedule sync declaration keys must be canonical scope-qualified schedule identities.' );
 			}
 
 			$identity = Identity::tryFrom( $schedule_identity );
-			if ( null === $identity || $owner !== $identity->owner() ) {
-				throw new \InvalidArgumentException( 'Schedule sync declaration identities must be canonical and belong to the bound owner.' );
+			if ( null === $identity || $scope !== $identity->scope() ) {
+				throw new \InvalidArgumentException( 'Schedule sync declaration identities must be canonical and belong to the bound scope.' );
 			}
 
 			$schedule = \is_array( $declaration ) ? ( $declaration['schedule'] ?? null ) : null;
@@ -123,11 +123,11 @@ final readonly class ScheduleOperations {
 
 			$job = $declaration['job'] ?? null;
 			if ( ! $job instanceof Identity ) {
-				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical owner-qualified job identities.' );
+				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical scope-qualified job identities.' );
 			}
 
-			if ( $owner !== $job->owner() || $schedule->job !== $job->name() ) {
-				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical, belong to the bound owner, and match their Schedule value-object job names.' );
+			if ( $scope !== $job->scope() || $schedule->job !== $job->name() ) {
+				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical, belong to the bound scope, and match their Schedule value-object job names.' );
 			}
 
 			$declared[ $schedule_identity ] = array(
@@ -136,13 +136,13 @@ final readonly class ScheduleOperations {
 			);
 		}
 
-		$registrations = $this->registry->registrations_for( $owner );
+		$registrations = $this->registry->registrations_for( $scope );
 		if ( $registrations->is_failure() ) {
 			if ( $registrations->error instanceof SchedulingError ) {
 				return new Failure( $registrations->error );
 			}
 
-			return $this->registry_read_failure( $owner );
+			return $this->registry_read_failure( $scope );
 		}
 
 		$existing             = $registrations->value;
@@ -220,9 +220,9 @@ final readonly class ScheduleOperations {
 				'undeclared_occurrences' => 0,
 				'undeclared_escalated'   => false,
 			);
-			$replacement                = $this->registry->replace_owner( $owner, $declared, $next );
-			if ( OwnerReplacementOutcome::Persisted !== $replacement ) {
-				return $this->registry_replacement_failure( $owner, $replacement );
+			$replacement                = $this->registry->replace_scope( $scope, $declared, $next );
+			if ( ScopeReplacementOutcome::Persisted !== $replacement ) {
+				return $this->registry_replacement_failure( $scope, $replacement );
 			}
 
 			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: $schedule->priority ?? 10 );
@@ -241,16 +241,16 @@ final readonly class ScheduleOperations {
 			}
 
 			unset( $next[ $schedule_identity ] );
-			$replacement = $this->registry->replace_owner( $owner, $declared, $next );
-			if ( OwnerReplacementOutcome::Persisted !== $replacement ) {
-				return $this->registry_replacement_failure( $owner, $replacement );
+			$replacement = $this->registry->replace_scope( $scope, $declared, $next );
+			if ( ScopeReplacementOutcome::Persisted !== $replacement ) {
+				return $this->registry_replacement_failure( $scope, $replacement );
 			}
 		}
 
 		// Backend convergence precedes marker reset so only a successful declaration refresh ends the zombie episode.
-		$replacement = $this->registry->replace_owner( $owner, $declared, $next, reset_undeclared_episodes: true );
-		if ( OwnerReplacementOutcome::Persisted !== $replacement ) {
-			return $this->registry_replacement_failure( $owner, $replacement );
+		$replacement = $this->registry->replace_scope( $scope, $declared, $next, reset_undeclared_episodes: true );
+		if ( ScopeReplacementOutcome::Persisted !== $replacement ) {
+			return $this->registry_replacement_failure( $scope, $replacement );
 		}
 
 		return new Success( true );
@@ -265,7 +265,7 @@ final readonly class ScheduleOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified schedule identity.
+	 * @param   Identity $identity Complete scope-qualified schedule identity.
 	 *
 	 * @return  AbstractResult<array{identity: Identity, run_id: string}, EngineError|SchedulingError>
 	 */
@@ -322,36 +322,36 @@ final readonly class ScheduleOperations {
 	}
 
 	/**
-	 * Returns a failed registry-read result for one owner.
+	 * Returns a failed registry-read result for one scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable client identifier.
+	 * @param   string $scope Stable client identifier.
 	 *
 	 * @return  Failure<SchedulingError>
 	 */
-	private function registry_read_failure( string $owner ): Failure {
-		return new Failure( SchedulingError::registry_read_failure( $owner ) );
+	private function registry_read_failure( string $scope ): Failure {
+		return new Failure( SchedulingError::registry_read_failure( $scope ) );
 	}
 
 	/**
-	 * Returns the public failure for one classified owner-row replacement.
+	 * Returns the public failure for one classified scope-row replacement.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $owner   Stable client identifier.
-	 * @param   OwnerReplacementOutcome $outcome Classified failed replacement.
+	 * @param   string                  $scope   Stable client identifier.
+	 * @param   ScopeReplacementOutcome $outcome Classified failed replacement.
 	 *
 	 * @return  Failure<SchedulingError>
 	 */
-	private function registry_replacement_failure( string $owner, OwnerReplacementOutcome $outcome ): Failure {
-		if ( OwnerReplacementOutcome::Corrupt === $outcome ) {
-			return new Failure( SchedulingError::registry_corrupt( $owner, ScheduleRegistry::option_name( $owner ) ) );
+	private function registry_replacement_failure( string $scope, ScopeReplacementOutcome $outcome ): Failure {
+		if ( ScopeReplacementOutcome::Corrupt === $outcome ) {
+			return new Failure( SchedulingError::registry_corrupt( $scope, ScheduleRegistry::option_name( $scope ) ) );
 		}
 
-		return new Failure( SchedulingError::registry_persist_failure( $owner ) );
+		return new Failure( SchedulingError::registry_persist_failure( $scope ) );
 	}
 
 	// endregion

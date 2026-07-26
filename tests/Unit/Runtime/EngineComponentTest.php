@@ -7,8 +7,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -286,7 +286,7 @@ final class EngineComponentTest extends TestCase {
 		$component->initialize();
 		$component->register_hooks();
 		$client = Component::operations( 'consumer-plugin' );
-		self::assertInstanceOf( OwnerOperations::class, $client );
+		self::assertInstanceOf( ScopeOperations::class, $client );
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		$client->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
 

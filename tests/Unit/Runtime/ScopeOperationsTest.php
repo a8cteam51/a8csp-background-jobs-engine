@@ -13,8 +13,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -24,13 +24,13 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises owner-bound operations through the production graph.
+ * Exercises scope-bound operations through the production graph.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversClass( OwnerOperations::class )]
-final class OwnerOperationsTest extends TestCase {
+#[CoversClass( ScopeOperations::class )]
+final class ScopeOperationsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const string FAILED_RUN_ID = '00000000001699999999-0000000000000000041';
@@ -201,7 +201,7 @@ final class OwnerOperationsTest extends TestCase {
 	}
 
 	/**
-	 * Cancellation through the owner-bound facade terminalizes retained waiting work.
+	 * Cancellation through the scope-bound facade terminalizes retained waiting work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -226,14 +226,14 @@ final class OwnerOperationsTest extends TestCase {
 	}
 
 	/**
-	 * Owner-bound inspection projects retained statuses and retention absence as public runs.
+	 * Scope-bound inspection projects retained statuses and retention absence as public runs.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_owner_run_inspection_projects_public_status_and_retention_absence(): void {
+	public function test_scope_run_inspection_projects_public_status_and_retention_absence(): void {
 		$client = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 
@@ -272,7 +272,7 @@ final class OwnerOperationsTest extends TestCase {
 	}
 
 	/**
-	 * A completed run outside the retained history window is absent at the owner boundary.
+	 * A completed run outside the retained history window is absent at the scope boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

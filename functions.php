@@ -31,10 +31,10 @@ function a8csp_bgje_plugin(): Plugin {
 }
 
 /**
- * Returns the owner-bound background-work engine handle.
+ * Returns the scope-bound background-work engine handle.
  *
- * Construction is lazy and infallible. Owner validation and engine readiness surface as `WP_Error`
- * from the first verb call. Use the calling plugin's lowercase slug as the owner; owner exclusivity
+ * Construction is lazy and infallible. Scope validation and engine readiness surface as `WP_Error`
+ * from the first verb call. Use the calling plugin's lowercase slug as the scope; scope exclusivity
  * is a client convention, while the `a8csp-bgje` prefix is enforced as the engine's reserved
  * namespace. Call the engine on the target blog so storage uses a client graph bound to that site.
  *
@@ -43,12 +43,12 @@ function a8csp_bgje_plugin(): Plugin {
  * @since   1.0.0
  * @version 1.0.0
  *
- * @param   string $owner Stable client-plugin owner.
+ * @param   string $scope Stable client-plugin scope.
  *
  * @return  Engine
  */
-function a8csp_bgje( string $owner ): Engine {
-	return new Engine( $owner );
+function a8csp_bgje( string $scope ): Engine {
+	return new Engine( $scope );
 }
 
 // endregion

@@ -53,7 +53,7 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced running state.
 	 * @param   RunStore $run_store Active-run store.

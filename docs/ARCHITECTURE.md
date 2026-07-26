@@ -19,7 +19,7 @@ every surviving component is initialized before any hook can fire.
   version compatibility checks, the requirements gate, and its admin-notice reporter; both root
   bootstrap files stay parsable below the plugin's PHP floor, and CI lints them against the older
   PHP versions.
-- `functions.php` provides the owner-bound front door `a8csp_bgje( string $owner ): Engine`, the
+- `functions.php` provides the scope-bound front door `a8csp_bgje( string $scope ): Engine`, the
   composition-root accessor `a8csp_bgje_plugin(): Plugin`, and a deterministic loader for the
   procedural facade files; handle and manager construction is lazy, while capability readiness
   starts at `init`.
@@ -44,13 +44,13 @@ every surviving component is initialized before any hook can fire.
   `Recurrence`, and `CatchUpPolicy` form the typed schedule declaration consumed by the public
   `Schedules` service.
 - The root services, the README's public type index, `a8csp_bgje()`, and the verb-noun procedural
-  aliases form the SemVer-bound consumer surface: the owner-scoped `Engine` handle and capability
+  aliases form the SemVer-bound consumer surface: the per-scope `Engine` handle and capability
   managers plus job definitions, execution roles, policy, contexts, and input and returned value
   types.
   `src/Boundary/` contains engine-owned values that cross layer boundaries; the rest of the engine
   graph is likewise `@internal`.
 - `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the
-  request-local object graph, while `OwnerOperations.php` exposes its owner-bound verb surface to
+  request-local object graph, while `ScopeOperations.php` exposes its scope-bound verb surface to
   the public portals; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the root
   collaborators. `JobRegistry.php` retains each definition's kind key, name, execution object, and
   options. The single kind-handler registry resolves a definition's kind; the resolved

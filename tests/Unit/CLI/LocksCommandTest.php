@@ -514,7 +514,7 @@ final class LocksCommandTest extends TestCase {
 			'repair invalid identity' => array(
 				'args'       => array( 'repair', 'reports' ),
 				'assoc_args' => array(),
-				'message'    => 'Lock repair identity is invalid; use a composed {owner}:{name} identity.',
+				'message'    => 'Lock repair identity is invalid; use a composed {scope}:{name} identity.',
 			),
 			'repair short hash'       => array(
 				'args'       => array( 'repair', self::IDENTITY ),

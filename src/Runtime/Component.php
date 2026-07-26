@@ -222,7 +222,7 @@ final class Component extends AbstractComponent {
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 			$dispatcher->register(
-				Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
+				Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ),
 				JobDefinition::job( MaintenanceJob::NAME, new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) )
 			);
 			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery );
@@ -278,20 +278,20 @@ final class Component extends AbstractComponent {
 	// region METHODS
 
 	/**
-	 * Returns supported operations bound to one validated client owner.
+	 * Returns supported operations bound to one validated client scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Validated client owner.
+	 * @param   string $scope Validated client scope.
 	 *
-	 * @throws  \InvalidArgumentException  When the owner violates the client-owner contract.
+	 * @throws  \InvalidArgumentException  When the scope violates the client-scope contract.
 	 * @throws  EngineUnavailableException When the internal graph is unavailable.
 	 *
-	 * @return  OwnerOperations
+	 * @return  ScopeOperations
 	 */
-	public static function operations( string $owner ): OwnerOperations {
-		Identity::validate_owner( $owner );
+	public static function operations( string $scope ): ScopeOperations {
+		Identity::validate_scope( $scope );
 		$registry   = self::$registry;
 		$schedules  = self::$schedules;
 		$dispatcher = self::$dispatcher;
@@ -300,7 +300,7 @@ final class Component extends AbstractComponent {
 			throw new EngineUnavailableException( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully or after teardown; invoke engine operations from init or a later hook.' );
 		}
 
-		return new OwnerOperations( $owner, $schedules, $dispatcher, $inspection );
+		return new ScopeOperations( $scope, $schedules, $dispatcher, $inspection );
 	}
 
 	// endregion

@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Composes a stable owner-local job name, execution role, kind, and policy declaration.
+ * Composes a stable scope-local job name, execution role, kind, and policy declaration.
  *
  * @api
  *
@@ -21,7 +21,7 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                 $name      Stable owner-local job name.
+	 * @param   string                 $name      Stable scope-local job name.
 	 * @param   JobKind                $kind      Engine-owned job kind.
 	 * @param   KindExecutionInterface $execution Kind-specific execution object.
 	 * @param   JobOptions             $options   Execution, retry, and overlap policy.
@@ -43,7 +43,7 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                $name      Stable owner-local job name.
+	 * @param   string                $name      Stable scope-local job name.
 	 * @param   JobExecutionInterface $execution Job execution.
 	 * @param   JobOptions|null       $options   Optional policy declaration.
 	 *
@@ -59,7 +59,7 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                       $name      Stable owner-local job name.
+	 * @param   string                       $name      Stable scope-local job name.
 	 * @param   ChunkedJobExecutionInterface $execution Chunked job execution.
 	 * @param   JobOptions|null              $options   Optional policy declaration.
 	 *
@@ -77,7 +77,7 @@ final readonly class JobDefinition {
 	 *
 	 * @phpstan-param \Closure(array<array-key, mixed>, RunContextInterface): mixed $handler
 	 *
-	 * @param   string   $name    Stable owner-local job name.
+	 * @param   string   $name    Stable scope-local job name.
 	 * @param   \Closure $handler Job handler.
 	 *
 	 * @return  self
@@ -115,7 +115,7 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                 $name      Stable owner-local job name.
+	 * @param   string                 $name      Stable scope-local job name.
 	 * @param   JobKind                $kind      Engine-owned job kind.
 	 * @param   KindExecutionInterface $execution Kind-specific execution object.
 	 * @param   JobOptions|null        $options   Optional policy declaration.

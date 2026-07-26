@@ -80,7 +80,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string         $identity Complete scope-qualified job or chunked job identity.
 	 * @param   ClockInterface $clock    Timestamp source.
 	 * @param   OptionRows     $rows     Authoritative raw option-row I/O.
 	 */

@@ -210,27 +210,27 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( '', $result->stderr );
 		self::assertNotSame( '', $result->stdout );
 		if ( 'csv' === $format ) {
-			self::assertSame( 'owner,identity,recurrence,next_due,last_fired,misfire_skips,overlap_skips,occurrence_visible,lock', \strtok( $result->stdout, "\n" ) );
+			self::assertSame( 'scope,identity,recurrence,next_due,last_fired,misfire_skips,overlap_skips,occurrence_visible,lock', \strtok( $result->stdout, "\n" ) );
 		}
 		if ( 'count' === $format ) {
-			self::assertSame( isset( $assoc_args['owner'] ) ? '1' : '3', \trim( $result->stdout ) );
+			self::assertSame( isset( $assoc_args['scope'] ) ? '1' : '3', \trim( $result->stdout ) );
 		}
-		if ( isset( $assoc_args['owner'] ) ) {
+		if ( isset( $assoc_args['scope'] ) ) {
 			self::assertStringNotContainsString( 'other-plugin:nightly', $result->stdout );
 		}
 	}
 
 	/**
-	 * Acknowledged owner removal converges only that owner's registrations and is not silently idempotent.
+	 * Acknowledged scope removal converges only that scope's registrations and is not silently idempotent.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registered_schedule_remove_clears_only_the_named_owner_and_then_reports_not_found(): void {
-		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-			$client = $this->rig->operations( $owner );
+	public function test_registered_schedule_remove_clears_only_the_named_scope_and_then_reports_not_found(): void {
+		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $scope ) {
+			$client = $this->rig->operations( $scope );
 			$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
@@ -238,7 +238,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
 
 		self::assertSame( 0, $result->exit_code );
-		self::assertSame( 'Success: Removed every persisted schedule registration for owner "consumer-plugin".' . "\n", $result->stdout );
+		self::assertSame( 'Success: Removed every persisted schedule registration for scope "consumer-plugin".' . "\n", $result->stdout );
 		self::assertSame( '', $result->stderr );
 		$removed = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		$sibling = $this->rig->inspection()->schedules( 'other-plugin' );
@@ -253,11 +253,11 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $repeat->exit_code );
 		self::assertSame( '', $repeat->stdout );
-		self::assertSame( 'Error: No schedule registrations are persisted for owner "consumer-plugin".' . "\n", $repeat->stderr );
+		self::assertSame( 'Error: No schedule registrations are persisted for scope "consumer-plugin".' . "\n", $repeat->stderr );
 	}
 
 	/**
-	 * A present owner row with an incomplete registration reports corruption instead of not found.
+	 * A present scope row with an incomplete registration reports corruption instead of not found.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -268,7 +268,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$schedule   = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' );
 		$complete   = StoreFixtureBuilder::for_identity( 'consumer-plugin:refresh' )->schedule_registration(
 			array(
-				'owner'         => 'consumer-plugin',
+				'scope'         => 'consumer-plugin',
 				'declarations'  => array(
 					'consumer-plugin:nightly' => array(
 						'schedule' => $schedule,
@@ -285,12 +285,12 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertSame( '', $result->stdout );
-		self::assertSame( 'Error: Schedule registry option row "a8csp_bgje_schedule_registrations_consumer-plugin" is unreadable; maintenance reclaims it, then re-declare schedules on the next init. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
+		self::assertSame( 'Error: Schedule registry option row "a8csp_bgje_schedule_registrations_consumer-plugin" is unreadable; maintenance reclaims it, then re-declare schedules on the next init. Scope removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
 		self::assertSame( $incomplete[1], $this->rig->wpdb()->rows[ $incomplete[0] ] ?? null );
 	}
 
 	/**
-	 * Declining the owner-removal confirmation preserves registry and backend state.
+	 * Declining the scope-removal confirmation preserves registry and backend state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -302,14 +302,14 @@ final class CommandsAndOutputTest extends TestCase {
 		$probe  = \json_decode( $result->probe, true, 512, \JSON_THROW_ON_ERROR );
 
 		self::assertSame( 0, $result->exit_code );
-		self::assertSame( 'This permanently removes every schedule registration for owner "consumer-plugin" and converges its recurring occurrences on ready backends. Dormant occurrences on unavailable backends converge later. Existing runs are not cancelled. Continue? [y/n] ', $result->stdout );
+		self::assertSame( 'This permanently removes every schedule registration for scope "consumer-plugin" and converges its recurring occurrences on ready backends. Dormant occurrences on unavailable backends converge later. Existing runs are not cancelled. Continue? [y/n] ', $result->stdout );
 		self::assertSame( '', $result->stderr );
 		self::assertIsArray( $probe );
 		self::assertSame( $probe['before'] ?? null, $probe['after'] ?? null );
 	}
 
 	/**
-	 * A first backend refusal leaves the owner registry intact and returns an incremental retry path.
+	 * A first backend refusal leaves the scope registry intact and returns an incremental retry path.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -326,7 +326,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertSame( '', $result->stdout );
-		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
+		self::assertSame( 'Error: Backend clearance failed. Scope removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $result->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
 		self::assertSame( array( 'consumer-plugin:nightly' ), \array_column( $snapshot['entries'], 'identity' ) );
@@ -334,7 +334,7 @@ final class CommandsAndOutputTest extends TestCase {
 	}
 
 	/**
-	 * Owner removal reports successful ready-backend convergence when a dormant chain may remain.
+	 * Scope removal reports successful ready-backend convergence when a dormant chain may remain.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -353,8 +353,8 @@ final class CommandsAndOutputTest extends TestCase {
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
 
 		self::assertSame( 0, $result->exit_code );
-		self::assertSame( 'Success: Removed every persisted schedule registration for owner "consumer-plugin".' . "\n", $result->stdout );
-		self::assertSame( 'Warning: a scheduling backend is not ready; dormant recurring occurrences for this owner may remain until that backend delivers them or subsequent maintenance clears the recurring chain.' . "\n", $result->stderr );
+		self::assertSame( 'Success: Removed every persisted schedule registration for scope "consumer-plugin".' . "\n", $result->stdout );
+		self::assertSame( 'Warning: a scheduling backend is not ready; dormant recurring occurrences for this scope may remain until that backend delivers them or subsequent maintenance clears the recurring chain.' . "\n", $result->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
 		self::assertSame( array(), $snapshot['entries'] );
@@ -398,7 +398,7 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 1, $failed->exit_code );
 		self::assertSame( '', $failed->stdout );
-		self::assertSame( 'Error: Backend clearance failed. Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $failed->stderr );
+		self::assertSame( 'Error: Backend clearance failed. Scope removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove consumer-plugin" to clear any remaining registrations.' . "\n", $failed->stderr );
 		$snapshot = $this->rig->inspection()->schedules( 'consumer-plugin' );
 		self::assertNotNull( $snapshot );
 		self::assertSame( array( 'consumer-plugin:beta' ), \array_column( $snapshot['entries'], 'identity' ) );
@@ -409,7 +409,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$retried = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
 
 		self::assertSame( 0, $retried->exit_code );
-		self::assertSame( 'Success: Removed every persisted schedule registration for owner "consumer-plugin".' . "\n", $retried->stdout );
+		self::assertSame( 'Success: Removed every persisted schedule registration for scope "consumer-plugin".' . "\n", $retried->stdout );
 		self::assertSame( '', $retried->stderr );
 		$this->rig->assert_no_delivery( 'consumer-plugin:beta' );
 	}
@@ -450,10 +450,10 @@ final class CommandsAndOutputTest extends TestCase {
 	public function test_registered_schedule_command_warns_about_dormant_backends_for_an_empty_table(): void {
 		$this->rig->backend()->ready = false;
 
-		$result = CliHarness::run( 'schedules', array( 'list' ), array( 'owner' => 'missing-owner' ) );
+		$result = CliHarness::run( 'schedules', array( 'list' ), array( 'scope' => 'missing-scope' ) );
 
 		self::assertSame( 0, $result->exit_code );
-		self::assertSame( "No schedule registrations are persisted for owner \"missing-owner\".\n", $result->stdout );
+		self::assertSame( "No schedule registrations are persisted for scope \"missing-scope\".\n", $result->stdout );
 		self::assertSame( 'Warning: a scheduling backend is not ready; dormant occurrences are not visible.' . "\n", $result->stderr );
 	}
 
@@ -566,7 +566,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$this->put(
 			$fixture->schedule_registration(
 				array(
-					'owner'         => 'lock-tests',
+					'scope'         => 'lock-tests',
 					'declarations'  => $declarations,
 					'registrations' => $registrations,
 				)
@@ -695,7 +695,7 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertNotSame( '', $result->stdout );
 		$format = $assoc_args['format'] ?? 'table';
 		if ( 'csv' === $format ) {
-			self::assertSame( 'owner,identity,run_id,failed_at,attempts,stage,code,error_class,error_message', \strtok( $result->stdout, "\n" ) );
+			self::assertSame( 'scope,identity,run_id,failed_at,attempts,stage,code,error_class,error_message', \strtok( $result->stdout, "\n" ) );
 		} elseif ( 'list' === $action && 'table' === $format ) {
 			self::assertStringContainsString( 'stage', $result->stdout );
 			self::assertStringContainsString( 'code', $result->stdout );
@@ -705,7 +705,7 @@ final class CommandsAndOutputTest extends TestCase {
 			self::assertIsArray( $rows );
 			$row = $rows[0] ?? null;
 			self::assertIsArray( $row );
-			self::assertSame( array( 'owner', 'identity', 'run_id', 'failed_at', 'attempts', 'stage', 'code', 'error_class', 'error_message', 'failed_chunk' ), \array_keys( $row ) );
+			self::assertSame( array( 'scope', 'identity', 'run_id', 'failed_at', 'attempts', 'stage', 'code', 'error_class', 'error_message', 'failed_chunk' ), \array_keys( $row ) );
 			self::assertSame( 'execution', $row['stage'] );
 			self::assertSame( 'execution_failed', $row['code'] );
 			self::assertNull( $row['failed_chunk'] );
@@ -872,7 +872,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$this->put(
 			StoreFixtureBuilder::for_identity( 'due-tests:refresh' )->schedule_registration(
 				array(
-					'owner'         => 'due-tests',
+					'scope'         => 'due-tests',
 					'declarations'  => $declarations,
 					'registrations' => array(
 						'due-tests:future'  => StoreFixtureBuilder::schedule_registration_state( $schedules['future']->fingerprint(), 86_460 ),
@@ -961,7 +961,7 @@ final class CommandsAndOutputTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Registers two owner-distinct schedules through public facades.
+	 * Registers two scope-distinct schedules through public facades.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -969,8 +969,8 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  void
 	 */
 	private function register_schedules(): void {
-		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-			$client = $this->rig->operations( $owner );
+		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $scope ) {
+			$client = $this->rig->operations( $scope );
 			$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
@@ -1057,8 +1057,8 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array(),
 				'format'     => 'table',
 			),
-			'owner'   => array(
-				'assoc_args' => array( 'owner' => 'consumer-plugin' ),
+			'scope'   => array(
+				'assoc_args' => array( 'scope' => 'consumer-plugin' ),
 				'format'     => 'table',
 			),
 			'csv'     => array(
@@ -1107,13 +1107,13 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_schedule_requests(): array {
-		$usage        = 'Schedule list accepts only --owner and --format; use wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>].';
-		$remove_usage = 'Schedule removal requires exactly one owner and accepts only --yes; use wp a8csp-bgje schedules remove <owner> [--yes].';
+		$usage        = 'Schedule list accepts only --scope and --format; use wp a8csp-bgje schedules list [--scope=<scope>] [--format=<format>].';
+		$remove_usage = 'Schedule removal requires exactly one scope and accepts only --yes; use wp a8csp-bgje schedules remove <scope> [--yes].';
 		return array(
 			'missing action'         => array(
 				'args'       => array(),
 				'assoc_args' => array(),
-				'message'    => 'A schedule action is required; use list or remove <owner>.',
+				'message'    => 'A schedule action is required; use list or remove <scope>.',
 			),
 			'unknown action'         => array(
 				'args'       => array( 'show' ),
@@ -1130,15 +1130,15 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array( 'all' => true ),
 				'message'    => $usage,
 			),
-			'negated owner'          => array(
+			'negated scope'          => array(
 				'args'       => array( 'list' ),
-				'assoc_args' => array( 'owner' => false ),
-				'message'    => 'Schedule list owner is invalid; pass a value with --owner=<owner>.',
+				'assoc_args' => array( 'scope' => false ),
+				'message'    => 'Schedule list scope is invalid; pass a value with --scope=<scope>.',
 			),
-			'invalid owner'          => array(
+			'invalid scope'          => array(
 				'args'       => array( 'list' ),
-				'assoc_args' => array( 'owner' => 'Consumer-Plugin' ),
-				'message'    => 'Schedule list owner is invalid; pass a canonical owner with --owner=<owner>.',
+				'assoc_args' => array( 'scope' => 'Consumer-Plugin' ),
+				'message'    => 'Schedule list scope is invalid; pass a canonical scope with --scope=<scope>.',
 			),
 			'invalid format'         => array(
 				'args'       => array( 'list' ),
@@ -1150,12 +1150,12 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array( 'format' => false ),
 				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
-			'remove missing owner'   => array(
+			'remove missing scope'   => array(
 				'args'       => array( 'remove' ),
 				'assoc_args' => array( 'yes' => true ),
 				'message'    => $remove_usage,
 			),
-			'remove extra owner'     => array(
+			'remove extra scope'     => array(
 				'args'       => array( 'remove', 'consumer-plugin', 'other-plugin' ),
 				'assoc_args' => array( 'yes' => true ),
 				'message'    => $remove_usage,
@@ -1170,15 +1170,15 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array( 'yes' => 'yes' ),
 				'message'    => $remove_usage,
 			),
-			'remove invalid owner'   => array(
+			'remove invalid scope'   => array(
 				'args'       => array( 'remove', 'Consumer-Plugin' ),
 				'assoc_args' => array( 'yes' => true ),
-				'message'    => 'Schedule removal owner is invalid; pass a canonical client owner.',
+				'message'    => 'Schedule removal scope is invalid; pass a canonical client scope.',
 			),
-			'remove reserved owner'  => array(
+			'remove reserved scope'  => array(
 				'args'       => array( 'remove', 'a8csp-bgje' ),
 				'assoc_args' => array( 'yes' => true ),
-				'message'    => 'Schedule removal owner is invalid; pass a canonical client owner.',
+				'message'    => 'Schedule removal scope is invalid; pass a canonical client scope.',
 			),
 		);
 	}
@@ -1255,7 +1255,7 @@ final class CommandsAndOutputTest extends TestCase {
 			'invalid name'   => array(
 				'args'       => array( 'list', 'email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'Run identity is invalid; use a composed {owner}:{name} identity.',
+				'message'    => 'Run identity is invalid; use a composed {scope}:{name} identity.',
 			),
 			'malformed run'  => array(
 				'args'       => array( 'cancel', 'consumer-plugin:email-digest', 'malformed_run_id' ),
@@ -1364,9 +1364,9 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array(),
 				'action'     => 'list',
 			),
-			'list owner'   => array(
+			'list scope'   => array(
 				'args'       => array( 'list' ),
-				'assoc_args' => array( 'owner' => 'consumer-plugin' ),
+				'assoc_args' => array( 'scope' => 'consumer-plugin' ),
 				'action'     => 'list',
 			),
 			'list csv'     => array(
@@ -1416,7 +1416,7 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_failed_run_requests(): array {
-		$list_usage  = 'List accepts only --owner and --format; use wp a8csp-bgje failed-runs list [--owner=<owner>] [--format=<format>].';
+		$list_usage  = 'List accepts only --scope and --format; use wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>].';
 		$retry_usage = 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.';
 		$purge_usage = 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.';
 		return array(
@@ -1440,15 +1440,15 @@ final class CommandsAndOutputTest extends TestCase {
 				'assoc_args' => array( 'all' => true ),
 				'message'    => $list_usage,
 			),
-			'list owner type'        => array(
+			'list scope type'        => array(
 				'args'       => array( 'list' ),
-				'assoc_args' => array( 'owner' => false ),
-				'message'    => 'List owner is invalid; pass a value with --owner=<owner>.',
+				'assoc_args' => array( 'scope' => false ),
+				'message'    => 'List scope is invalid; pass a value with --scope=<scope>.',
 			),
-			'list invalid owner'     => array(
+			'list invalid scope'     => array(
 				'args'       => array( 'list' ),
-				'assoc_args' => array( 'owner' => 'Consumer-Plugin' ),
-				'message'    => 'List owner is invalid; pass a canonical owner with --owner=<owner>.',
+				'assoc_args' => array( 'scope' => 'Consumer-Plugin' ),
+				'message'    => 'List scope is invalid; pass a canonical scope with --scope=<scope>.',
 			),
 			'list format'            => array(
 				'args'       => array( 'list' ),
@@ -1473,7 +1473,7 @@ final class CommandsAndOutputTest extends TestCase {
 			'retry invalid identity' => array(
 				'args'       => array( 'retry', 'email-digest', self::RUN_ID ),
 				'assoc_args' => array(),
-				'message'    => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
+				'message'    => 'Retry identity is invalid; use a composed {scope}:{name} identity.',
 			),
 			'retry malformed run_id' => array(
 				'args'       => array( 'retry', 'consumer-plugin:email-digest', 'malformed_run_id' ),
@@ -1513,7 +1513,7 @@ final class CommandsAndOutputTest extends TestCase {
 			'purge invalid identity' => array(
 				'args'       => array( 'purge', 'email-digest' ),
 				'assoc_args' => array(),
-				'message'    => 'Purge identity is invalid; use a composed {owner}:{name} identity.',
+				'message'    => 'Purge identity is invalid; use a composed {scope}:{name} identity.',
 			),
 			'purge flag'             => array(
 				'args'       => array( 'purge' ),

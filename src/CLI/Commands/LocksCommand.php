@@ -28,7 +28,7 @@ final readonly class LocksCommand {
 	 * : Operation to perform: list or repair.
 	 *
 	 * [<identity>]
-	 * : Owner-qualified job identity required by repair.
+	 * : Scope-qualified job identity required by repair.
 	 *
 	 * [--args-hash=<hash>]
 	 * : Select one malformed lane when the identity has more than one.
@@ -171,7 +171,7 @@ final readonly class LocksCommand {
 		if ( null === $identity ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Lock repair identity is invalid; use a composed {owner}:{name} identity.',
+				'message' => 'Lock repair identity is invalid; use a composed {scope}:{name} identity.',
 			);
 		}
 

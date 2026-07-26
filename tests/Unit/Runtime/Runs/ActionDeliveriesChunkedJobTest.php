@@ -17,12 +17,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
@@ -46,14 +46,14 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 	private const string NAME     = 'catalog-sync';
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
+	private const string SCOPE    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
 	private RecordingChunkedJob $chunked_job;
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private JobOptions $options;
 	private bool $registered;
@@ -89,7 +89,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->operations( self::OWNER );
+		$this->client      = $this->rig->operations( self::SCOPE );
 		$this->chunked_job = new RecordingChunkedJob( self::NAME );
 		$this->fixtures    = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->options     = new JobOptions();
@@ -284,7 +284,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertIsString( $raw );
 		$this->rig->wpdb()->put( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID, $raw );
 
-		$inspection = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
+		$inspection = $this->rig->inspection()->runs( Identity::compose( self::SCOPE, self::NAME ) );
 		self::assertSame( 0, $inspection['live_unreadable'] );
 		self::assertNull( $inspection['live'][0]['queue_depth'] ?? null );
 
@@ -875,7 +875,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$queue   = array( $current, array( 'chunk' => 'remaining' ) );
 		$this->rig->tear_down();
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client   = $this->rig->operations( self::OWNER );
+		$this->client   = $this->rig->operations( self::SCOPE );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$state          = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: $queue, failed_attempts: 0, action_sequence: 2, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'continue', 10 ) );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
@@ -2020,7 +2020,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Starts the deterministic chunked job through its owner-bound facade.
+	 * Starts the deterministic chunked job through its scope-bound facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -86,10 +86,10 @@ final class RunTransitionsTest extends TestCase {
 	);
 
 	private const string ARGS_HASH = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const string IDENTITY  = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY  = self::SCOPE . ':' . self::NAME;
 	private const string NAME      = 'email-digest';
 	private const int NOW          = 1_700_000_000;
-	private const string OWNER     = 'runs-tests';
+	private const string SCOPE     = 'runs-tests';
 	private const string RUN_ID    = '00000000001700000000-0000000000000000042';
 
 	private FixedClock $clock;
@@ -158,7 +158,7 @@ final class RunTransitionsTest extends TestCase {
 
 		$this->clock                = new FixedClock( self::NOW );
 		$this->backend              = new RecordingBackend();
-		$this->identity             = Identity::compose( self::OWNER, self::NAME );
+		$this->identity             = Identity::compose( self::SCOPE, self::NAME );
 		$this->logger               = new RecordingLogger();
 		$this->randomizer           = new RecordingRandomizer( 42 );
 		$this->job                  = new RecordingJob( self::NAME );
@@ -761,7 +761,7 @@ final class RunTransitionsTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertSame( $run_ids[20], ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->get_latest(), 'Repairing the evicted owner identity must preserve the globally newest run' );
+		self::assertSame( $run_ids[20], ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->get_latest(), 'Repairing the evicted scope identity must preserve the globally newest run' );
 	}
 
 	/**

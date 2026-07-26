@@ -18,7 +18,7 @@ use PHPUnit\Framework\TestCase;
 final class LockWindowsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string IDENTITY = 'owner-a:catalog-sync';
+	private const string IDENTITY = 'scope-a:catalog-sync';
 	private const int NOW         = 1_700_000_000;
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
@@ -57,7 +57,7 @@ final class LockWindowsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_filter_values']        = array();
 		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
 
-		$this->identity     = Identity::compose( 'owner-a', 'catalog-sync' );
+		$this->identity     = Identity::compose( 'scope-a', 'catalog-sync' );
 		$this->logger       = new RecordingLogger();
 		$this->lock_windows = new LockWindows( new FixedClock( self::NOW ), $this->logger );
 	}

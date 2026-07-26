@@ -63,8 +63,8 @@ final class CleanupIntentsTest extends TestCase {
 	private const int INTERVAL            = 300;
 	private const string NAME             = 'nightly';
 	private const int NOW                 = 1_700_000_000;
-	private const string OWNER            = 'owner-a';
-	private const string REGISTRATION_KEY = 'owner-a:nightly';
+	private const string SCOPE            = 'scope-a';
+	private const string REGISTRATION_KEY = 'scope-a:nightly';
 	private const string JOB              = 'refresh-index';
 
 	private ScheduleOperations $api;
@@ -226,7 +226,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_corrupt_registration_row_is_not_delivered_as_an_unknown_schedule(): void {
-		$option_name = ScheduleRegistry::option_name( self::OWNER );
+		$option_name = ScheduleRegistry::option_name( self::SCOPE );
 		$this->wpdb->put( $option_name, 'poison-registry-row' );
 
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
@@ -240,7 +240,7 @@ final class CleanupIntentsTest extends TestCase {
 		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[1]['context']['schedule_identity'] ?? null );
 		$propagated_error = $this->logger->records[1]['context']['error'] ?? null;
 		self::assertIsString( $propagated_error );
-		self::assertStringContainsString( 'a8csp_bgje_schedule_registrations_owner-a', $propagated_error, 'The propagated corrupt-registry error must name the exact option row so an operator can act on it.' );
+		self::assertStringContainsString( 'a8csp_bgje_schedule_registrations_scope-a', $propagated_error, 'The propagated corrupt-registry error must name the exact option row so an operator can act on it.' );
 	}
 
 	/**
@@ -332,7 +332,7 @@ final class CleanupIntentsTest extends TestCase {
 	public function test_pending_intent_sweep_resumes_after_its_durable_cursor(): void {
 		$intents = array();
 		for ( $index = 0; $index < 501; ++$index ) {
-			$registration_key = 'owner-a:pending-' . \sprintf( '%03d', $index );
+			$registration_key = 'scope-a:pending-' . \sprintf( '%03d', $index );
 			$option_name      = CleanupIntents::OPTION_PREFIX . \hash( 'sha256', $registration_key );
 			$raw              = \maybe_serialize(
 				array(
@@ -618,19 +618,19 @@ final class CleanupIntentsTest extends TestCase {
 	/**
 	 * Returns request-local declarations keyed by complete schedule identity.
 	 *
-	 * @param   string   $owner        Owner identifier.
+	 * @param   string   $scope        Scope identifier.
 	 * @param   Schedule ...$schedules Schedule value objects.
 	 *
 	 * @return  array<string, array{schedule: Schedule, job: Identity}>
 	 */
-	private static function declarations( string $owner, Schedule ...$schedules ): array {
+	private static function declarations( string $scope, Schedule ...$schedules ): array {
 		$declarations = array();
 		foreach ( $schedules as $schedule ) {
-			$schedule_identity = Identity::compose( $owner, $schedule->name );
+			$schedule_identity = Identity::compose( $scope, $schedule->name );
 
 			$declarations[ (string) $schedule_identity ] = array(
 				'schedule' => $schedule,
-				'job'      => Identity::compose( $owner, $schedule->job ),
+				'job'      => Identity::compose( $scope, $schedule->job ),
 			);
 		}
 
@@ -645,7 +645,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	private function sync_schedule( Schedule $schedule ): void {
-		$result = $this->api->sync( self::OWNER, self::declarations( self::OWNER, $schedule ) );
+		$result = $this->api->sync( self::SCOPE, self::declarations( self::SCOPE, $schedule ) );
 		self::assertInstanceOf( Success::class, $result );
 
 		$this->backend->calls                     = array();
@@ -664,7 +664,7 @@ final class CleanupIntentsTest extends TestCase {
 	 */
 	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
 		$job_registry = new JobRegistry();
-		$job_registry->register( Identity::compose( self::OWNER, self::JOB ), ( new RecordingJob( self::JOB ) )->definition() );
+		$job_registry->register( Identity::compose( self::SCOPE, self::JOB ), ( new RecordingJob( self::JOB ) )->definition() );
 		$guard                 = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
 		$overlap_identity      = new OverlapIdentity();
 		$stores                = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );

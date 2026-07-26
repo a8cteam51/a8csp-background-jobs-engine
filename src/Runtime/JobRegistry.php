@@ -35,7 +35,7 @@ final class JobRegistry {
 	// region METHODS
 
 	/**
-	 * Registers one definition without replacing an existing identity owner.
+	 * Registers one definition without replacing an existing identity scope.
 	 *
 	 * Execution compatibility is established by the resolved kind handler before this data-only
 	 * registry is called.
@@ -43,7 +43,7 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity   Complete owner-qualified identity.
+	 * @param   Identity      $identity   Complete scope-qualified identity.
 	 * @param   JobDefinition $definition Definition to register.
 	 *
 	 * @throws  \InvalidArgumentException      When the identity and definition name disagree, or another kind owns the identity.
@@ -88,7 +88,7 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 *
 	 * @return  object|null
 	 */
@@ -102,7 +102,7 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 *
 	 * @return  JobOptions|null
 	 */
@@ -133,7 +133,7 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified identity.
+	 * @param   Identity $identity Complete scope-qualified identity.
 	 *
 	 * @return  string|null
 	 */

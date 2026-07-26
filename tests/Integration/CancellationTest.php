@@ -25,38 +25,38 @@ use Psr\Log\LogLevel;
 final class CancellationTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Client owner isolated to cancellation coverage. */
-	private const string OWNER = 'integration-cancellation';
+	/** Client scope isolated to cancellation coverage. */
+	private const string SCOPE = 'integration-cancellation';
 
 	/** Job identity isolated to the executing-refusal race. */
 	private const string EXECUTING_NAME = 'integration-cancel-executing-refusal';
 
-	/** Owner-qualified job identity isolated to the executing-refusal race. */
-	private const string EXECUTING_IDENTITY = self::OWNER . ':' . self::EXECUTING_NAME;
+	/** Scope-qualified job identity isolated to the executing-refusal race. */
+	private const string EXECUTING_IDENTITY = self::SCOPE . ':' . self::EXECUTING_NAME;
 
 	/** Job identity isolated to retry-backoff cancellation. */
 	private const string BACKOFF_NAME = 'integration-cancel-backoff';
 
-	/** Owner-qualified job identity isolated to retry-backoff cancellation. */
-	private const string BACKOFF_IDENTITY = self::OWNER . ':' . self::BACKOFF_NAME;
+	/** Scope-qualified job identity isolated to retry-backoff cancellation. */
+	private const string BACKOFF_IDENTITY = self::SCOPE . ':' . self::BACKOFF_NAME;
 
 	/** Chunked Job identity isolated to between-chunks cancellation. */
 	private const string CHUNKED_JOB_NAME = 'integration-cancel-between-chunks';
 
-	/** Owner-qualified chunked job identity isolated to between-chunks cancellation. */
-	private const string CHUNKED_JOB_IDENTITY = self::OWNER . ':' . self::CHUNKED_JOB_NAME;
+	/** Scope-qualified chunked job identity isolated to between-chunks cancellation. */
+	private const string CHUNKED_JOB_IDENTITY = self::SCOPE . ':' . self::CHUNKED_JOB_NAME;
 
 	/** Job identity isolated to sibling-group cancellation. */
 	private const string SIBLING_NAME = 'integration-cancel-sibling-isolation';
 
-	/** Owner-qualified job identity isolated to sibling-group cancellation. */
-	private const string SIBLING_IDENTITY = self::OWNER . ':' . self::SIBLING_NAME;
+	/** Scope-qualified job identity isolated to sibling-group cancellation. */
+	private const string SIBLING_IDENTITY = self::SCOPE . ':' . self::SIBLING_NAME;
 
 	/** Job identity isolated to the degraded WP-Cron survivor. */
 	private const string DEGRADED_NAME = 'integration-cancel-wp-cron-survivor';
 
-	/** Owner-qualified job identity isolated to the degraded WP-Cron survivor. */
-	private const string DEGRADED_IDENTITY = self::OWNER . ':' . self::DEGRADED_NAME;
+	/** Scope-qualified job identity isolated to the degraded WP-Cron survivor. */
+	private const string DEGRADED_IDENTITY = self::SCOPE . ':' . self::DEGRADED_NAME;
 
 	// endregion.
 
@@ -77,7 +77,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$args = array( 'account_id' => 41 );
 		$job  = new RecordingJob( self::EXECUTING_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::EXECUTING_IDENTITY );
 
@@ -148,7 +148,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$job->throwable = new \RuntimeException( 'Retry after the upstream recovers.' );
 		$options        = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 ) );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition( $options ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::BACKOFF_IDENTITY );
 
@@ -219,7 +219,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$chunked_job        = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
 		$chunked_job->queue = array( $first_chunk, $next_chunk );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CHUNKED_JOB_IDENTITY );
 
@@ -340,7 +340,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$args_b = array( 'account_id' => 45 );
 		$job    = new RecordingJob( self::SIBLING_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SIBLING_IDENTITY );
 
@@ -434,7 +434,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$args = array( 'account_id' => 46 );
 		$job  = new RecordingJob( self::DEGRADED_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::DEGRADED_IDENTITY );
 

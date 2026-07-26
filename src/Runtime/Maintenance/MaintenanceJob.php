@@ -308,8 +308,8 @@ final class MaintenanceJob implements JobExecutionInterface {
 
 			$registration_count += $registration_page->value['scanned'];
 			foreach ( $registration_page->value['names'] as $option_name ) {
-				$owner = ScheduleRegistry::owner_from_option_name( $option_name );
-				if ( null === $owner ) {
+				$scope = ScheduleRegistry::scope_from_option_name( $option_name );
+				if ( null === $scope ) {
 					continue;
 				}
 
@@ -326,7 +326,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 					null === $raw
 					|| (
 						\is_array( $decoded )
-						&& ! ScheduleRegistry::has_registration_without_undeclared_markers( $owner, $decoded )
+						&& ! ScheduleRegistry::has_registration_without_undeclared_markers( $scope, $decoded )
 					)
 				) {
 					continue;

@@ -36,10 +36,10 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	private const string HOOK = 'a8csp_bgje/internal/schedule_due';
 
 	/** Unknown registration identity isolated to this integration test. */
-	private const string KEY = 'integration-owner:unknown-cleanup';
+	private const string KEY = 'integration-scope:unknown-cleanup';
 
-	/** Owner component of the unknown registration identity. */
-	private const string OWNER = 'integration-owner';
+	/** Scope component of the unknown registration identity. */
+	private const string SCOPE = 'integration-scope';
 
 	/** Schedule component of the unknown registration identity. */
 	private const string SCHEDULE = 'unknown-cleanup';
@@ -47,23 +47,23 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	/** Job invoked by the legitimately re-declared schedule. */
 	private const string REDECLARED_JOB = 'integration-unknown-cleanup-redeclared-job';
 
-	/** Owner-qualified job identity invoked by the legitimately re-declared schedule. */
-	private const string REDECLARED_IDENTITY = self::OWNER . ':' . self::REDECLARED_JOB;
+	/** Scope-qualified job identity invoked by the legitimately re-declared schedule. */
+	private const string REDECLARED_IDENTITY = self::SCOPE . ':' . self::REDECLARED_JOB;
 
 	/** Unknown registration identity isolated to the degraded WP-Cron probe. */
-	private const string WP_CRON_KEY = 'integration-owner:unknown-wp-cron-cleanup';
+	private const string WP_CRON_KEY = 'integration-scope:unknown-wp-cron-cleanup';
 
 	/** Engine-reserved maintenance registration identity. */
 	private const string MAINTENANCE_KEY = 'a8csp-bgje:maintenance';
 
-	/** Owner isolated to undeclared-registration aging. */
-	private const string ZOMBIE_OWNER = 'integration-zombie-owner';
+	/** Scope isolated to undeclared-registration aging. */
+	private const string ZOMBIE_SCOPE = 'integration-zombie-scope';
 
 	/** Schedule isolated to undeclared-registration aging. */
 	private const string ZOMBIE_SCHEDULE = 'zombie-schedule';
 
 	/** Registration identity isolated to undeclared-registration aging. */
-	private const string ZOMBIE_KEY = self::ZOMBIE_OWNER . ':' . self::ZOMBIE_SCHEDULE;
+	private const string ZOMBIE_KEY = self::ZOMBIE_SCOPE . ':' . self::ZOMBIE_SCHEDULE;
 
 	/** Target job persisted only in the isolated declaration fixture. */
 	private const string ZOMBIE_JOB = 'zombie-job';
@@ -85,15 +85,15 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_persisted_undeclared_schedule_escalates_once_across_recurring_deliveries(): void {
-		$this->expect_option( ScheduleRegistry::option_name( self::ZOMBIE_OWNER ) );
+		$this->expect_option( ScheduleRegistry::option_name( self::ZOMBIE_SCOPE ) );
 		$schedule = new Schedule( self::ZOMBIE_SCHEDULE, Recurrence::every( 300 ), self::ZOMBIE_JOB );
 		$fixture  = StoreFixtureBuilder::for_identity( self::ZOMBIE_KEY )->schedule_registration(
 			array(
-				'owner'         => self::ZOMBIE_OWNER,
+				'scope'         => self::ZOMBIE_SCOPE,
 				'declarations'  => array(
 					self::ZOMBIE_KEY => array(
 						'schedule' => $schedule,
-						'job'      => self::ZOMBIE_OWNER . ':' . self::ZOMBIE_JOB,
+						'job'      => self::ZOMBIE_SCOPE . ':' . self::ZOMBIE_JOB,
 					),
 				),
 				'registrations' => array(
@@ -135,7 +135,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 			self::assertCount( 3 > $occurrence ? 0 : 1, $warnings );
 		}
 
-		self::assertStringContainsString( 'wp a8csp-bgje schedules remove ' . self::ZOMBIE_OWNER, $warnings[0][1] ?? '' );
+		self::assertStringContainsString( 'wp a8csp-bgje schedules remove ' . self::ZOMBIE_SCOPE, $warnings[0][1] ?? '' );
 		$debug_records = \array_values(
 			\array_filter(
 				$log_records,
@@ -196,19 +196,19 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 
 		$engine = Component::get_engine();
 		self::assertNotNull( $engine, 'The live plugin must publish its engine before maintenance convergence' );
-		$synced = $engine->schedules->sync_owner(
+		$synced = $engine->schedules->sync_scope(
 			'a8csp-bgje',
 			array(
 				self::MAINTENANCE_KEY => array(
 					'schedule' => new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), CatchUpPolicy::RunOnce ),
-					'job'      => Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
+					'job'      => Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ),
 				),
 			)
 		);
 		self::assertInstanceOf( Success::class, $synced, 'The reserved maintenance schedule must re-synchronize' );
 		self::assertTrue( $synced->value );
 
-		$maintenance = $engine->schedules->dispatch_now( Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ) );
+		$maintenance = $engine->schedules->dispatch_now( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ) );
 		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance job must be dispatchable through the schedule facade' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance job' );
 
@@ -228,7 +228,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	 */
 	public function test_sweep_convergence_preserves_a_redeclared_action_scheduler_chain(): void {
 		$intent_option = 'a8csp_bgje_cleanup_intent_' . \hash( 'sha256', self::KEY );
-		$this->expect_option( ScheduleRegistry::option_name( self::OWNER ) );
+		$this->expect_option( ScheduleRegistry::option_name( self::SCOPE ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::REDECLARED_IDENTITY );
 		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 
@@ -245,7 +245,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		self::assertCount( 1, $unknown_successor_ids, 'The unknown recurrence must birth one successor' );
 		$unknown_successor_id = $unknown_successor_ids[0];
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$job    = new RecordingJob( self::REDECLARED_JOB );
 		$client->register( $job->definition() );
 		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), CatchUpPolicy::RunOnce );
@@ -260,7 +260,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		self::assertNotSame( $unknown_successor_id, $live_action_id );
 		$live_scheduled_at = $store->get_date( $live_action_id );
 		self::assertInstanceOf( \DateTime::class, $live_scheduled_at );
-		$registry_next_due = $this->registration_next_due( self::OWNER, self::SCHEDULE );
+		$registry_next_due = $this->registration_next_due( self::SCOPE, self::SCHEDULE );
 		self::assertSame( $registry_next_due, $live_scheduled_at->getTimestamp(), 'The live Action Scheduler occurrence must use the redeclared registration next-due token' );
 
 		$this->cleanup_intents()->converge_pending_intents();
@@ -272,15 +272,15 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		$scheduled_at_after_sweep = $store->get_date( $live_action_id );
 		self::assertInstanceOf( \DateTime::class, $scheduled_at_after_sweep );
 		self::assertSame( $live_scheduled_at->getTimestamp(), $scheduled_at_after_sweep->getTimestamp() );
-		self::assertSame( $registry_next_due, $this->registration_next_due( self::OWNER, self::SCHEDULE ) );
+		self::assertSame( $registry_next_due, $this->registration_next_due( self::SCOPE, self::SCHEDULE ) );
 
 		$forced_due = $registry_next_due - 2 * 300;
-		$this->set_registration_next_due( self::OWNER, self::SCHEDULE, $forced_due );
+		$this->set_registration_next_due( self::SCOPE, self::SCHEDULE, $forced_due );
 		$runner = \ActionScheduler::runner();
 		self::assertInstanceOf( \ActionScheduler_QueueRunner::class, $runner );
 		$runner->process_action( (int) $live_action_id, 'Integration Test' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $live_action_id ) );
-		$advanced_due = $this->registration_next_due( self::OWNER, self::SCHEDULE );
+		$advanced_due = $this->registration_next_due( self::SCOPE, self::SCHEDULE );
 		self::assertGreaterThanOrEqual( $registry_next_due, $advanced_due, 'The retained occurrence must advance to the original live window or a later recurrence' );
 		self::assertSame( 0, ( $advanced_due - $forced_due ) % 300, 'The advanced due time must remain aligned to the persisted recurrence' );
 		self::assertCount( 1, $this->pending_schedule_action_ids( self::KEY ), 'The retained recurring action must create its live successor after delivery' );
@@ -473,7 +473,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key Complete `{owner}:{name}` identity.
+	 * @param   string $registration_key Complete `{scope}:{name}` identity.
 	 *
 	 * @return  list<string>
 	 */
@@ -505,15 +505,15 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Owner identity.
+	 * @param   string $scope Scope identity.
 	 * @param   string $name  Schedule identity.
 	 *
 	 * @return  int
 	 */
-	private function registration_next_due( string $owner, string $name ): int {
-		$owner_rows = \get_option( ScheduleRegistry::option_name( $owner ), null );
-		self::assertIsArray( $owner_rows );
-		$registration = $owner_rows[ (string) Identity::compose( $owner, $name, true ) ] ?? null;
+	private function registration_next_due( string $scope, string $name ): int {
+		$scope_rows = \get_option( ScheduleRegistry::option_name( $scope ), null );
+		self::assertIsArray( $scope_rows );
+		$registration = $scope_rows[ (string) Identity::compose( $scope, $name, true ) ] ?? null;
 		self::assertIsArray( $registration );
 		$next_due = $registration['next_due'] ?? null;
 		self::assertIsInt( $next_due );
@@ -527,22 +527,22 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner    Owner identity.
+	 * @param   string $scope    Scope identity.
 	 * @param   string $name     Schedule identity.
 	 * @param   int    $next_due Replacement next-due token.
 	 *
 	 * @return  void
 	 */
-	private function set_registration_next_due( string $owner, string $name, int $next_due ): void {
-		$option_name = ScheduleRegistry::option_name( $owner );
-		$owner_rows  = \get_option( $option_name, null );
-		self::assertIsArray( $owner_rows );
-		$identity     = (string) Identity::compose( $owner, $name, true );
-		$registration = $owner_rows[ $identity ] ?? null;
+	private function set_registration_next_due( string $scope, string $name, int $next_due ): void {
+		$option_name = ScheduleRegistry::option_name( $scope );
+		$scope_rows  = \get_option( $option_name, null );
+		self::assertIsArray( $scope_rows );
+		$identity     = (string) Identity::compose( $scope, $name, true );
+		$registration = $scope_rows[ $identity ] ?? null;
 		self::assertIsArray( $registration );
 		$registration['next_due'] = $next_due;
-		$owner_rows[ $identity ]  = $registration;
-		self::assertTrue( \update_option( $option_name, $owner_rows, false ), 'The live redeclaration must be due before its retained occurrence fires' );
+		$scope_rows[ $identity ]  = $registration;
+		self::assertTrue( \update_option( $option_name, $scope_rows, false ), 'The live redeclaration must be due before its retained occurrence fires' );
 	}
 
 	// endregion.

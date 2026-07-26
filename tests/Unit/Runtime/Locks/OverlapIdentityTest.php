@@ -54,7 +54,7 @@ final class OverlapIdentityTest extends TestCase {
 			'ratio'   => 1.0,
 			'nested'  => array( 'mode' => 'incremental' ),
 		);
-		$identity = Identity::compose( 'owner', 'catalog-sync' );
+		$identity = Identity::compose( 'scope', 'catalog-sync' );
 
 		$canonical = $resolver->resolve( 'job', $identity, new JobOptions(), $args );
 		$opaque    = $resolver->resolve( 'job', $identity, new JobOptions( overlap_key: static fn ( array $start_args ): string => "catalog\0\xFF" ), $args );

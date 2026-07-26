@@ -113,7 +113,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                $identity   Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity   Complete scope-qualified job or chunked job identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 *
@@ -131,7 +131,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                $identity   Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity   Complete scope-qualified job or chunked job identity.
 	 * @param   string                  $run_id     Run identifier.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 	 * @param   int                     $attempt    One-indexed number of the failed attempt.
@@ -151,7 +151,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id       Run identifier.
 	 * @param   RunState $state        Terminalizing run state.
 	 * @param   string   $terminal_raw Exact terminal snapshot bytes.
@@ -202,7 +202,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete scope-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Terminal run state.
 	 * @param   string     $terminal_raw   Exact terminal snapshot bytes.
@@ -290,7 +290,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array<array-key, mixed>|null $fallback_details
 	 *
-	 * @param   Identity   $identity         Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity         Complete scope-qualified job or chunked job identity.
 	 * @param   string     $run_id           Run identifier.
 	 * @param   RunState   $state            Failed terminal state.
 	 * @param   array|null $fallback_details Kind-specific detail available when persisted detail is missing.
@@ -368,7 +368,7 @@ final readonly class LifecycleEffects {
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
 	 * @param   string     $effect         Terminal effect key.
-	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete scope-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Current terminal state.
 	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
@@ -395,7 +395,7 @@ final readonly class LifecycleEffects {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete scope-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Failed terminal state.
 	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
@@ -432,7 +432,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity        $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity        $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string          $run_id   Run identifier.
 	 * @param   RunState        $state    Terminal run state.
 	 * @param   RunFailure|null $failure  Reconstructed client failure value.
@@ -461,7 +461,7 @@ final readonly class LifecycleEffects {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Terminal run state.
 	 *
@@ -492,7 +492,7 @@ final readonly class LifecycleEffects {
 	 * @phpstan-param 'started'|'retry_scheduled'|'completed'|'failed'|'cancelled'|'superseded' $event
 	 *
 	 * @param   string                  $event                     Lifecycle event name.
-	 * @param   Identity                $identity                  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity                  Complete scope-qualified job or chunked job identity.
 	 * @param   string                  $run_id                    Run identifier.
 	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
 	 * @param   RunFailure|null         $failure                   Failure detail for a failed event.
@@ -519,7 +519,7 @@ final readonly class LifecycleEffects {
 				/**
 				 * Fires when a work run completes.
 				 *
-				 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+				 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
 				 *
 				 * @since   1.0.0
 				 * @version 1.0.0
@@ -536,7 +536,7 @@ final readonly class LifecycleEffects {
 				 * @since   1.0.0
 				 * @version 1.0.0
 				 *
-				 * @param   string                  $identity                  Complete owner-qualified job or chunked job identity.
+				 * @param   string                  $identity                  Complete scope-qualified job or chunked job identity.
 				 * @param   RunId                   $run_id                    Run identifier.
 				 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
 				 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
@@ -556,7 +556,7 @@ final readonly class LifecycleEffects {
 				/**
 				 * Fires after retry state is persisted for one failed work attempt.
 				 *
-				 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+				 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
 				 *
 				 * @since   1.0.0
 				 * @version 1.0.0
@@ -574,7 +574,7 @@ final readonly class LifecycleEffects {
 				 * @since   1.0.0
 				 * @version 1.0.0
 				 *
-				 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
+				 * @param   string                  $identity   Complete scope-qualified job or chunked job identity.
 				 * @param   RunId                   $run_id     Run identifier.
 				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 				 * @param   int                     $attempt    One-indexed number of the failed attempt.
@@ -593,7 +593,7 @@ final readonly class LifecycleEffects {
 				 *
 				 * The dynamic portion of the hook name, `$hook`, refers to the `started`, `cancelled`, or
 				 * `superseded` lifecycle event.
-				 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+				 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
 				 *
 				 * @since   1.0.0
 				 * @version 1.0.0
@@ -612,7 +612,7 @@ final readonly class LifecycleEffects {
 				 * @since   1.0.0
 				 * @version 1.0.0
 				 *
-				 * @param   string                  $identity   Complete owner-qualified job or chunked job identity.
+				 * @param   string                  $identity   Complete scope-qualified job or chunked job identity.
 				 * @param   RunId                   $run_id     Run identifier.
 				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
 				 */
@@ -626,7 +626,7 @@ final readonly class LifecycleEffects {
 			/**
 			 * Fires when one work identity's run fails.
 			 *
-			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+			 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
 			 *
 			 * @since   1.0.0
 			 * @version 1.0.0

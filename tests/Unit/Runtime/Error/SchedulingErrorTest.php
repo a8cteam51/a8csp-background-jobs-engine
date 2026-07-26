@@ -86,7 +86,7 @@ final class SchedulingErrorTest extends TestCase {
 	}
 
 	/**
-	 * Registry read failures surface as storage failures with safe owner context.
+	 * Registry read failures surface as storage failures with safe scope context.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -94,17 +94,17 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_read_failure_surfaces_as_storage_failure(): void {
-		$result = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_read_failure( 'owner-a' ) ) );
+		$result = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_read_failure( 'scope-a' ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry state for owner "owner-a" could not be read; repair WordPress option reads and retry.', $result->error->message );
-		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be read; repair WordPress option reads and retry.', $result->error->message );
+		self::assertSame( array( 'scope' => 'scope-a' ), $result->error->context );
 	}
 
 	/**
-	 * Registry persist failures surface as storage failures with safe owner context.
+	 * Registry persist failures surface as storage failures with safe scope context.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -112,13 +112,13 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_persist_failure_surfaces_as_storage_failure(): void {
-		$result = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_persist_failure( 'owner-a' ) ) );
+		$result = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_persist_failure( 'scope-a' ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
-		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
+		self::assertSame( array( 'scope' => 'scope-a' ), $result->error->context );
 	}
 
 	/**
@@ -127,16 +127,16 @@ final class SchedulingErrorTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_corruption_surfaces_as_storage_failure(): void {
-		$option_name = 'a8csp_bgje_schedule_registrations_owner-a';
-		$result      = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_corrupt( 'owner-a', $option_name ) ) );
+		$option_name = 'a8csp_bgje_schedule_registrations_scope-a';
+		$result      = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_corrupt( 'scope-a', $option_name ) ) );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
+		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_scope-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
 		self::assertSame(
 			array(
-				'owner'       => 'owner-a',
+				'scope'       => 'scope-a',
 				'option_name' => $option_name,
 			),
 			$result->error->context

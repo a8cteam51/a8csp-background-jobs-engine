@@ -8,9 +8,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Owner-bound public service for supported job operations.
+ * Scope-bound public service for supported job operations.
  *
- * Owner validation and engine resolution remain lazy until a verb is invoked. Every expected
+ * Scope validation and engine resolution remain lazy until a verb is invoked. Every expected
  * validation, registration, readiness, or engine failure crosses this boundary as a `WP_Error`.
  *
  * @api
@@ -22,7 +22,7 @@ final readonly class Jobs extends AbstractPortal {
 	// region METHODS
 
 	/**
-	 * Registers one job definition under the bound owner.
+	 * Registers one job definition under the bound scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -52,7 +52,7 @@ final readonly class Jobs extends AbstractPortal {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name       Owner-local background-work name.
+	 * @param   string                  $name       Scope-local background-work name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
 	 *
@@ -81,7 +81,7 @@ final readonly class Jobs extends AbstractPortal {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name       Owner-local background-work name.
+	 * @param   string                  $name       Scope-local background-work name.
 	 * @param   int                     $run_at     Absolute Unix timestamp for the first delivery.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.

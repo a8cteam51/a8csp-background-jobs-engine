@@ -10,12 +10,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -56,14 +56,14 @@ final class RunStoreTest extends TestCase {
 		'scope'   => 'all',
 		'site_id' => 7,
 	);
-	private const string IDENTITY        = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY        = self::SCOPE . ':' . self::NAME;
 	private const string NAME            = 'reports';
 	private const int NOW                = 1_700_000_000;
-	private const string OWNER           = 'runs-tests';
+	private const string SCOPE           = 'runs-tests';
 	private const string PREVIOUS_RUN_ID = '00000000001699999999-0000000000000000041';
 	private const string RUN_ID          = '00000000001700000000-0000000000000000042';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private Identity $identity;
 	private EngineRig $rig;
@@ -100,8 +100,8 @@ final class RunStoreTest extends TestCase {
 		parent::setUp();
 
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client   = $this->rig->operations( self::OWNER );
-		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->client   = $this->rig->operations( self::SCOPE );
+		$this->identity = Identity::compose( self::SCOPE, self::NAME );
 		$this->job      = new RecordingJob( self::NAME );
 		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 30 ) ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );

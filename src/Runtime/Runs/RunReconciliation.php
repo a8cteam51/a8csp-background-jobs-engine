@@ -75,7 +75,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   string   $args_hash Stable single-flight identity.
 	 * @param   string   $run_id    Lock owner run identifier.
 	 *
@@ -130,7 +130,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity       Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id         Run identifier.
 	 * @param   int      $terminal_grace Grace before belt-and-braces terminal cleanup.
 	 *
@@ -230,7 +230,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string                  $run_id       Run identifier.
 	 * @param   RunState                $state        Running state observed by maintenance.
 	 * @param   RunStore                $run_store    Name-bound run store.
@@ -266,7 +266,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity             $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state observed by maintenance.
 	 * @param   RunStore             $run_store    Name-bound run store.
@@ -355,7 +355,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete scope-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Terminal state observed by maintenance.
 	 * @param   RunStore   $run_store      Name-bound run store.
@@ -385,7 +385,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity             $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state observed by maintenance.
 	 * @param   RunStore             $run_store    Name-bound run store.
@@ -408,7 +408,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id       Run identifier.
 	 * @param   RunState $state        Running state observed by maintenance.
 	 * @param   RunStore $run_store    Name-bound run store.
@@ -434,7 +434,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Stale non-executing running state.
 	 *
@@ -457,7 +457,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id   Run identifier.
 	 *
 	 * @return  EngineError

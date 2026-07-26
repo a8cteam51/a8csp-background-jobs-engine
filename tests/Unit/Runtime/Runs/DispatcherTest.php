@@ -16,11 +16,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -32,7 +32,7 @@ use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises job admission and failed-run retry through owner-bound facades.
+ * Exercises job admission and failed-run retry through scope-bound facades.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -45,17 +45,17 @@ final class DispatcherTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY         = self::SCOPE . ':' . self::NAME;
 	private const string INCUMBENT_RUN_ID = '00000000001699999998-0000000000000000040';
 	private const string NAME             = 'email-digest';
 	private const int NOW                 = 1_700_000_000;
 	private const string OTHER_RUN_ID     = '00000000001700000001-0000000000000000043';
-	private const string OWNER            = 'runs-tests';
+	private const string SCOPE            = 'runs-tests';
 	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
 	private const string UNKNOWN_NAME     = 'unknown';
-	private const string UNKNOWN_IDENTITY = self::OWNER . ':' . self::UNKNOWN_NAME;
+	private const string UNKNOWN_IDENTITY = self::SCOPE . ':' . self::UNKNOWN_NAME;
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -390,7 +390,7 @@ final class DispatcherTest extends TestCase {
 		$this->assert_failure_code( $result, ErrorCode::ExecutionFailed );
 		self::assertSame( 'accepted', $value );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
-		$snapshot = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
+		$snapshot = $this->rig->inspection()->runs( Identity::compose( self::SCOPE, self::NAME ) );
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertSame( 'failed', $snapshot['history'][0]['outcome'] ?? null );
 		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
@@ -1692,7 +1692,7 @@ final class DispatcherTest extends TestCase {
 	private function boot( ?OverlapPolicy $overlap = null ): void {
 		$this->overlap_key_resolver = null;
 		$this->rig                  = EngineRig::set_up( self::NOW );
-		$this->client               = $this->rig->operations( self::OWNER );
+		$this->client               = $this->rig->operations( self::SCOPE );
 		$this->job                  = new RecordingJob( self::NAME );
 		$overlap_key                = function ( array $args ): ?string {
 			if ( null === $this->overlap_key_resolver ) {

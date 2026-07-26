@@ -21,26 +21,26 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 final class OverlapLockTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Client owner isolated to overlap integration coverage. */
-	private const string OWNER = 'integration-overlap-lock';
+	/** Client scope isolated to overlap integration coverage. */
+	private const string SCOPE = 'integration-overlap-lock';
 
 	/** Chunked Job identity isolated to the held-lock Reject case. */
 	private const string REJECT_NAME = 'integration-overlap-reject';
 
-	/** Owner-qualified identity isolated to the held-lock Reject case. */
-	private const string REJECT_IDENTITY = self::OWNER . ':' . self::REJECT_NAME;
+	/** Scope-qualified identity isolated to the held-lock Reject case. */
+	private const string REJECT_IDENTITY = self::SCOPE . ':' . self::REJECT_NAME;
 
 	/** Chunked Job identity isolated to the stale crash reclaim case. */
 	private const string RECLAIM_NAME = 'integration-overlap-reclaim';
 
-	/** Owner-qualified identity isolated to the stale crash reclaim case. */
-	private const string RECLAIM_IDENTITY = self::OWNER . ':' . self::RECLAIM_NAME;
+	/** Scope-qualified identity isolated to the stale crash reclaim case. */
+	private const string RECLAIM_IDENTITY = self::SCOPE . ':' . self::RECLAIM_NAME;
 
 	/** Chunked Job identity isolated to lock-staleness filter ordering. */
 	private const string FILTER_NAME = 'integration-overlap-filter-order';
 
-	/** Owner-qualified identity isolated to lock-staleness filter ordering. */
-	private const string FILTER_IDENTITY = self::OWNER . ':' . self::FILTER_NAME;
+	/** Scope-qualified identity isolated to lock-staleness filter ordering. */
+	private const string FILTER_IDENTITY = self::SCOPE . ':' . self::FILTER_NAME;
 
 	// endregion.
 
@@ -86,7 +86,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		\add_filter( 'a8csp_bgje/lock_staleness/' . self::FILTER_IDENTITY, $specific_filter, 10, 1 );
 
 		try {
-			$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->dispatch( self::FILTER_NAME, $start_args );
+			$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE )->dispatch( self::FILTER_NAME, $start_args );
 		} finally {
 			\remove_filter( 'a8csp_bgje/lock_staleness', $generic_filter, 10 );
 			\remove_filter( 'a8csp_bgje/lock_staleness/' . self::FILTER_IDENTITY, $specific_filter, 10 );
@@ -170,7 +170,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 
 		$store               = $this->action_scheduler_store();
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
-		$result              = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->dispatch( self::REJECT_NAME, $start_args );
+		$result              = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE )->dispatch( self::REJECT_NAME, $start_args );
 
 		self::assertInstanceOf( Failure::class, $result, 'Reject must refuse a second start under the fresh lock' );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
@@ -455,7 +455,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	private function register_chunked_job( RecordingChunkedJob $chunked_job ): void {
-		\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->register( $chunked_job->definition() );
+		\A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE )->register( $chunked_job->definition() );
 	}
 
 	/**
@@ -471,7 +471,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * Starts a chunked job through the owner-bound facade and returns its run identifier.
+	 * Starts a chunked job through the scope-bound facade and returns its run identifier.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -482,7 +482,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 	 * @return  string
 	 */
 	private function start( string $name, array $start_args ): string {
-		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER )->dispatch( $name, $start_args );
+		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE )->dispatch( $name, $start_args );
 		self::assertInstanceOf( Success::class, $result, 'The chunked job must start through the public API' );
 		self::assertInstanceOf( Run::class, $result->value );
 

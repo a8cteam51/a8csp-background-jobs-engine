@@ -112,7 +112,7 @@ final readonly class LockRepair {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity    $identity  Complete owner-qualified work identity.
+	 * @param   Identity    $identity  Complete scope-qualified work identity.
 	 * @param   string|null $args_hash Optional selected overlap-lock lane.
 	 *
 	 * @return  AbstractResult<LockRepairPlan|list<LockLane>|null, EngineError>
@@ -330,7 +330,7 @@ final readonly class LockRepair {
 	 * @version 1.0.0
 	 *
 	 * @param   string            $message         Corrective operator message.
-	 * @param   LockRepairPlan    $plan            Selected repair scope.
+	 * @param   LockRepairPlan    $plan            Selected repair plan.
 	 * @param   int               $runs_superseded Exact claims completed before failure.
 	 * @param   EngineErrorReason $reason          Machine-readable failure cause.
 	 * @param   string|null       $run_id          Contended run identifier, when applicable.

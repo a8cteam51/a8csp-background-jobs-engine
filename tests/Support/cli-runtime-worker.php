@@ -36,8 +36,8 @@ try {
 	switch ( $scenario ) {
 		case 'schedules':
 		case 'schedules-dormant':
-			foreach ( array( 'consumer-plugin', 'other-plugin' ) as $owner ) {
-				$operations = $rig->operations( $owner );
+			foreach ( array( 'consumer-plugin', 'other-plugin' ) as $scope ) {
+				$operations = $rig->operations( $scope );
 				$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
 				$result = $operations->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
 				if ( ! $result instanceof Success ) {

@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
  * Demonstrates a client plugin entry point built entirely on the public engine facade.
  *
  * A client plugin constructs this class from its main file. The registered `init` callback then
- * declares its job, chunked job, and complete owner-scoped schedule set on every request.
+ * declares its job, chunked job, and complete per-scope schedule set on every request.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -24,14 +24,14 @@ final readonly class DemoClient {
 	// region FIELDS AND CONSTANTS.
 
 	/**
-	 * Stable owner isolating this client's complete schedule declaration.
+	 * Stable scope isolating this client's complete schedule declaration.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string OWNER = 'a8csp-demo-consumer';
+	public const string SCOPE = 'a8csp-demo-consumer';
 
 	/**
 	 * Stable name of the recurring site-health schedule.
@@ -54,14 +54,14 @@ final readonly class DemoClient {
 	public const string LOG_HOOK = 'a8csp_bgje_demo/log';
 
 	/**
-	 * Owner-qualified identity that scopes lifecycle reactions to the recount execution.
+	 * Scope-qualified identity that scopes lifecycle reactions to the recount execution.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	private const string COMMENT_COUNT_RECOUNT_IDENTITY = self::OWNER . ':' . CommentCountRecountChunkedJob::NAME;
+	private const string COMMENT_COUNT_RECOUNT_IDENTITY = self::SCOPE . ':' . CommentCountRecountChunkedJob::NAME;
 
 	// endregion.
 
@@ -107,7 +107,7 @@ final readonly class DemoClient {
 	}
 
 	/**
-	 * Registers one job, one chunked job, and the owner's complete schedule set.
+	 * Registers one job, one chunked job, and the scope's complete schedule set.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -115,7 +115,7 @@ final readonly class DemoClient {
 	 * @return  void
 	 */
 	public function register_background_work(): void {
-		$engine   = \a8csp_bgje( self::OWNER );
+		$engine   = \a8csp_bgje( self::SCOPE );
 		$outcomes = array(
 			'register its site-health job'   => $engine->jobs()->register(
 				JobDefinition::job(

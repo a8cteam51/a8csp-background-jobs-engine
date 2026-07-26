@@ -19,9 +19,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -43,13 +43,13 @@ final class FailureLifecycleTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 	private const string NAME     = 'email-digest';
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
+	private const string SCOPE    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -84,7 +84,7 @@ final class FailureLifecycleTest extends TestCase {
 		parent::setUp();
 
 		$this->rig                      = EngineRig::set_up( self::NOW );
-		$this->client                   = $this->rig->operations( self::OWNER );
+		$this->client                   = $this->rig->operations( self::SCOPE );
 		$this->job                      = new RecordingJob( self::NAME );
 		$this->fixtures                 = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls    = array();
@@ -308,7 +308,7 @@ final class FailureLifecycleTest extends TestCase {
 	 */
 	public function test_retry_uses_the_registered_job_kind_for_a_dual_role_execution(): void {
 		$name     = 'dual-kind-job';
-		$identity = self::OWNER . ':' . $name;
+		$identity = self::SCOPE . ':' . $name;
 		$this->client->register( $this->dual_kind_job( $name ) );
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->dispatch( $name, self::ARGS );
@@ -692,7 +692,7 @@ final class FailureLifecycleTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Enqueues the deterministic job through its owner-bound facade.
+	 * Enqueues the deterministic job through its scope-bound facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -962,7 +962,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $identity Complete scope-qualified work identity.
 	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  array<array-key, mixed>|null

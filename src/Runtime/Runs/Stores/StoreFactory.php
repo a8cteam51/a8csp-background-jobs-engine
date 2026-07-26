@@ -49,7 +49,7 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @return  RunStore
 	 */
@@ -77,7 +77,7 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @return  LatestRunPointer
 	 */
@@ -105,7 +105,7 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @return  RunHistory
 	 */
@@ -119,7 +119,7 @@ final readonly class StoreFactory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @return  FailedRunStore
 	 */

@@ -10,11 +10,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -24,7 +24,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises cancellation fencing and outcomes through the owner-bound run facade.
+ * Exercises cancellation fencing and outcomes through the scope-bound run facade.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -37,16 +37,16 @@ final class DispatcherCancelTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string CHUNKED_JOB_IDENTITY = self::OWNER . ':' . self::CHUNKED_JOB_NAME;
+	private const string CHUNKED_JOB_IDENTITY = self::SCOPE . ':' . self::CHUNKED_JOB_NAME;
 	private const string CHUNKED_JOB_NAME     = 'catalog-sync';
 	private const int NOW                     = 1_700_000_000;
-	private const string OWNER                = 'runs-tests';
+	private const string SCOPE                = 'runs-tests';
 	private const string RUN_ID               = '00000000001700000000-0000000000000000042';
-	private const string JOB_IDENTITY         = self::OWNER . ':' . self::JOB_NAME;
+	private const string JOB_IDENTITY         = self::SCOPE . ':' . self::JOB_NAME;
 	private const string JOB_NAME             = 'email-digest';
 
 	private RecordingChunkedJob $chunked_job;
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private EngineRig $rig;
 	private RecordingJob $job;
 	private StoreFixtureBuilder $job_fixtures;
@@ -81,7 +81,7 @@ final class DispatcherCancelTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW, 2 );
-		$this->client      = $this->rig->operations( self::OWNER );
+		$this->client      = $this->rig->operations( self::SCOPE );
 		$this->job         = new RecordingJob( self::JOB_NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
 		$this->client->register( $this->job->definition() );
@@ -388,7 +388,7 @@ final class DispatcherCancelTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_cancel_rejects_a_retained_run_without_a_live_registration(): void {
-		$identity = self::OWNER . ':unknown';
+		$identity = self::SCOPE . ':unknown';
 		$fixtures = StoreFixtureBuilder::for_identity( $identity );
 		$state    = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $fixtures->args_hash( self::ARGS ), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
 		$fixture  = $fixtures->run( self::RUN_ID, $state );

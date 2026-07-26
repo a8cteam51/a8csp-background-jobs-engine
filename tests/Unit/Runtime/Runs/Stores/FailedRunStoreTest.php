@@ -15,9 +15,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -57,13 +57,13 @@ final class FailedRunStorePoison {
 final class FailedRunStoreTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 	private const string NAME     = 'reports';
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
+	private const string SCOPE    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private Identity $identity;
 	private EngineRig $rig;
@@ -100,8 +100,8 @@ final class FailedRunStoreTest extends TestCase {
 		parent::setUp();
 
 		$this->rig            = EngineRig::set_up( self::NOW );
-		$this->client         = $this->rig->operations( self::OWNER );
-		$this->identity       = Identity::compose( self::OWNER, self::NAME );
+		$this->client         = $this->rig->operations( self::SCOPE );
+		$this->identity       = Identity::compose( self::SCOPE, self::NAME );
 		$this->job            = new RecordingJob( self::NAME );
 		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );

@@ -65,7 +65,7 @@ final readonly class FailureLifecycle {
 	 *
 	 * @param   KindHandlerInterface         $handler        Handler selected by the persisted kind.
 	 * @param   JobOptions                   $options        Registered policy declaration.
-	 * @param   Identity                     $identity       Complete owner-qualified work identity.
+	 * @param   Identity                     $identity       Complete scope-qualified work identity.
 	 * @param   string                       $run_id         Run identifier.
 	 * @param   RunState                     $state          Fenced running state.
 	 * @param   RunStore                     $run_store      Active-run store.
@@ -134,7 +134,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface         $handler       Handler selected by the persisted kind.
-	 * @param   Identity                     $identity      Complete owner-qualified work identity.
+	 * @param   Identity                     $identity      Complete scope-qualified work identity.
 	 * @param   string                       $run_id        Run identifier.
 	 * @param   RunState                     $state         Fenced running state.
 	 * @param   RunStore                     $run_store     Active-run store.
@@ -156,7 +156,7 @@ final readonly class FailureLifecycle {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity    $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   Identity    $identity    Complete scope-qualified job or chunked job identity.
 	 * @param   RetryPolicy $base_policy Registered or engine-default policy.
 	 *
 	 * @return  RetryPolicy
@@ -169,14 +169,14 @@ final readonly class FailureLifecycle {
 		 * @version 1.0.0
 		 *
 		 * @param   RetryPolicy $base_policy Registered or engine-default retry policy.
-		 * @param   string      $identity    Complete owner-qualified work identity.
+		 * @param   string      $identity    Complete scope-qualified work identity.
 		 */
 		$filtered_policy = \apply_filters( 'a8csp_bgje/retry_policy', $base_policy, (string) $identity );
 
 		/**
 		 * Filters the retry policy for one work identity.
 		 *
-		 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+		 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
 		 *
 		 * @since   1.0.0
 		 * @version 1.0.0
@@ -206,7 +206,7 @@ final readonly class FailureLifecycle {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler     Handler selected by the persisted kind.
-	 * @param   Identity             $identity    Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity    Complete scope-qualified job or chunked job identity.
 	 * @param   string               $run_id      Run identifier.
 	 * @param   RunState             $state       Exact persisted state before the retry transition.
 	 * @param   RunStore             $run_store   Active-run store.

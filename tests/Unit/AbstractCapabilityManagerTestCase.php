@@ -23,7 +23,7 @@ abstract class AbstractCapabilityManagerTestCase extends TestCase {
 
 	protected const string MISSING_RUN_ID = '00000000001700000001-0000000000000000043';
 	protected const int NOW               = 1_700_000_000;
-	protected const string OWNER          = 'engine-test';
+	protected const string SCOPE          = 'engine-test';
 
 	protected EngineRig $rig;
 
@@ -89,7 +89,7 @@ abstract class AbstractCapabilityManagerTestCase extends TestCase {
 	 *
 	 * @phpstan-param (\Closure(array<array-key, mixed>, RunContextInterface): void)|null $handler
 	 *
-	 * @param   string        $name    Stable owner-local job name.
+	 * @param   string        $name    Stable scope-local job name.
 	 * @param   \Closure|null $handler Optional invocation behavior.
 	 *
 	 * @return  JobDefinition
@@ -104,7 +104,7 @@ abstract class AbstractCapabilityManagerTestCase extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Stable owner-local chunked job name.
+	 * @param   string $name Stable scope-local chunked job name.
 	 *
 	 * @return  JobDefinition
 	 */
@@ -131,7 +131,7 @@ abstract class AbstractCapabilityManagerTestCase extends TestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   mixed      $value    Expected run value.
-	 * @param   string     $identity Expected owner-qualified identity.
+	 * @param   string     $identity Expected scope-qualified identity.
 	 * @param   RunStatus  $status   Expected public lifecycle state.
 	 * @param   RunId|null $id       Expected run identifier, or null to accept the generated identifier.
 	 *

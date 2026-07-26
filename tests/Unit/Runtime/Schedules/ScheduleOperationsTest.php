@@ -10,11 +10,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\UndeclaredOccurrenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -26,7 +26,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises declarative schedule convergence through owner-bound public facades.
+ * Exercises declarative schedule convergence through scope-bound public facades.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -37,8 +37,8 @@ final class ScheduleOperationsTest extends TestCase {
 
 	private const int NOW = 1_700_000_000;
 
-	private OwnerOperations $client_a;
-	private OwnerOperations $client_b;
+	private ScopeOperations $client_a;
+	private ScopeOperations $client_b;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 
@@ -60,7 +60,7 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
-	 * Boots two owners against one deterministic production graph.
+	 * Boots two scopes against one deterministic production graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -72,11 +72,11 @@ final class ScheduleOperationsTest extends TestCase {
 		parent::setUp();
 
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client_a = $this->rig->operations( 'owner-a' );
-		$this->client_b = $this->rig->operations( 'owner-b' );
+		$this->client_a = $this->rig->operations( 'scope-a' );
+		$this->client_b = $this->rig->operations( 'scope-b' );
 		$this->client_a->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		$this->client_b->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
-		$this->fixtures = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
+		$this->fixtures = StoreFixtureBuilder::for_identity( 'scope-a:refresh-index' );
 		$this->reset_backend_observations();
 	}
 
@@ -102,38 +102,38 @@ final class ScheduleOperationsTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Add, no-op, replacement, and removal converge without crossing owner boundaries.
+	 * Add, no-op, replacement, and removal converge without crossing scope boundaries.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_sync_converges_the_complete_owner_set_and_preserves_siblings(): void {
-		$owner_a = self::schedule( 'nightly', 300 );
-		$owner_b = self::schedule( 'hourly', 3_600 );
+	public function test_sync_converges_the_complete_scope_set_and_preserves_siblings(): void {
+		$scope_a = self::schedule( 'nightly', 300 );
+		$scope_b = self::schedule( 'hourly', 3_600 );
 
-		self::assertInstanceOf( Success::class, $this->client_b->sync( array( $owner_b ) ) );
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $owner_a ) ) );
-		self::assertSame( array( 'owner-a:nightly' ), \array_column( $this->owner_entries( 'owner-a' ), 'identity' ) );
-		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'identity' ) );
+		self::assertInstanceOf( Success::class, $this->client_b->sync( array( $scope_b ) ) );
+		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $scope_a ) ) );
+		self::assertSame( array( 'scope-a:nightly' ), \array_column( $this->scope_entries( 'scope-a' ), 'identity' ) );
+		self::assertSame( array( 'scope-b:hourly' ), \array_column( $this->scope_entries( 'scope-b' ), 'identity' ) );
 
 		$this->rig->backend()->scheduled = true;
 		$this->reset_backend_observations();
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $owner_a ) ) );
+		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $scope_a ) ) );
 		self::assertSame( array(), $this->write_calls() );
 
 		$this->rig->backend()->scheduled = false;
 		$this->reset_backend_observations();
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( self::schedule( 'nightly', 600 ) ) ) );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
-		self::assertSame( 600, $this->owner_entries( 'owner-a' )[0]['recurrence'] ?? null );
+		self::assertSame( 600, $this->scope_entries( 'scope-a' )[0]['recurrence'] ?? null );
 
 		$this->reset_backend_observations();
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array() ) );
-		self::assertSame( array( 'owner-a:nightly' ), \array_map( static fn ( array $call ): mixed => $call['args']['group'] ?? null, $this->write_calls() ) );
-		self::assertSame( array(), $this->owner_entries( 'owner-a' ) );
-		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'identity' ) );
+		self::assertSame( array( 'scope-a:nightly' ), \array_map( static fn ( array $call ): mixed => $call['args']['group'] ?? null, $this->write_calls() ) );
+		self::assertSame( array(), $this->scope_entries( 'scope-a' ) );
+		self::assertSame( array( 'scope-b:hourly' ), \array_column( $this->scope_entries( 'scope-b' ), 'identity' ) );
 	}
 
 	/**
@@ -161,7 +161,7 @@ final class ScheduleOperationsTest extends TestCase {
 		$calls = $this->calls( 'scheduled_counts' );
 		self::assertCount( 1, $calls );
 		self::assertSame( OccurrenceDelivery::SCHEDULE_HOOK, $calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( 'owner-a:nightly', 'owner-a:hourly' ), $calls[0]['args']['identities'] ?? null );
+		self::assertSame( array( 'scope-a:nightly', 'scope-a:hourly' ), $calls[0]['args']['identities'] ?? null );
 		self::assertSame( array(), $this->calls( 'scheduled_count' ) );
 		self::assertSame( array(), $this->write_calls() );
 	}
@@ -176,7 +176,7 @@ final class ScheduleOperationsTest extends TestCase {
 	 */
 	public function test_sync_recreates_a_missing_chain_from_persisted_timing(): void {
 		$schedule = self::schedule( 'nightly', 300 );
-		$fixture  = $this->fixtures->schedule_registration( self::owner_fixture( $schedule, self::NOW - 60, self::NOW - 360 ) );
+		$fixture  = $this->fixtures->schedule_registration( self::scope_fixture( $schedule, self::NOW - 60, self::NOW - 360 ) );
 		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 
 		$result = $this->client_a->sync( array( $schedule ) );
@@ -185,8 +185,8 @@ final class ScheduleOperationsTest extends TestCase {
 		$calls = $this->calls( 'schedule_recurring' );
 		self::assertCount( 1, $calls );
 		self::assertSame( self::NOW - 60, $calls[0]['args']['first_run_timestamp'] ?? null );
-		self::assertSame( 'owner-a:nightly', $calls[0]['args']['group'] ?? null );
-		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'owner-a' ) ] ?? null );
+		self::assertSame( 'scope-a:nightly', $calls[0]['args']['group'] ?? null );
+		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'scope-a' ) ] ?? null );
 	}
 
 	/**
@@ -206,11 +206,11 @@ final class ScheduleOperationsTest extends TestCase {
 		$result = $this->client_a->sync( array( $phase, $boundary, $zero, $future ) );
 
 		self::assertInstanceOf( Success::class, $result );
-		$entries = \array_column( $this->owner_entries( 'owner-a' ), null, 'identity' );
-		self::assertSame( 1_700_000_150, $entries['owner-a:phase']['next_due'] ?? null );
-		self::assertSame( self::NOW + 300, $entries['owner-a:boundary']['next_due'] ?? null );
-		self::assertSame( 1_700_000_100, $entries['owner-a:zero']['next_due'] ?? null );
-		self::assertSame( self::NOW - ( self::NOW % 300 ) + 250, $entries['owner-a:future']['next_due'] ?? null );
+		$entries = \array_column( $this->scope_entries( 'scope-a' ), null, 'identity' );
+		self::assertSame( 1_700_000_150, $entries['scope-a:phase']['next_due'] ?? null );
+		self::assertSame( self::NOW + 300, $entries['scope-a:boundary']['next_due'] ?? null );
+		self::assertSame( 1_700_000_100, $entries['scope-a:zero']['next_due'] ?? null );
+		self::assertSame( self::NOW - ( self::NOW % 300 ) + 250, $entries['scope-a:future']['next_due'] ?? null );
 	}
 
 	/**
@@ -248,10 +248,10 @@ final class ScheduleOperationsTest extends TestCase {
 	public function test_sync_repairs_same_backend_surplus_then_leaves_one_chain_untouched(): void {
 		$schedule = self::schedule( 'nightly', 300 );
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
-		$registration = $this->owner_entries( 'owner-a' )[0];
+		$registration = $this->scope_entries( 'scope-a' )[0];
 		$next_due     = $registration['next_due'] ?? null;
 		self::assertIsInt( $next_due );
-		self::assertInstanceOf( Success::class, $this->rig->backend()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'owner-a:nightly' ), $next_due + 300, 'owner-a:nightly', priority: $schedule->priority ?? 10 ) );
+		self::assertInstanceOf( Success::class, $this->rig->backend()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'scope-a:nightly' ), $next_due + 300, 'scope-a:nightly', priority: $schedule->priority ?? 10 ) );
 		$this->reset_backend_observations();
 
 		$repaired = $this->client_a->sync( array( $schedule ) );
@@ -259,8 +259,8 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Success::class, $repaired );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $next_due, $this->calls( 'schedule_recurring' )[0]['args']['first_run_timestamp'] ?? null );
-		self::assertSame( 1, $this->rig->backend()->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( 'owner-a:nightly' ), 'owner-a:nightly' ) );
-		self::assertSame( $registration, $this->owner_entries( 'owner-a' )[0] );
+		self::assertSame( 1, $this->rig->backend()->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( 'scope-a:nightly' ), 'scope-a:nightly' ) );
+		self::assertSame( $registration, $this->scope_entries( 'scope-a' )[0] );
 
 		$this->reset_backend_observations();
 		$healthy = $this->client_a->sync( array( $schedule ) );
@@ -270,10 +270,10 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
-	 * A failed owner-registry write aborts before a recurring delivery can be accepted.
+	 * A failed scope-registry write aborts before a recurring delivery can be accepted.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Fail-closed owner replacement must precede schedule_recurring so a storage failure cannot manufacture a backend chain without its registry generation.
+	 * @pin-rationale Fail-closed scope replacement must precede schedule_recurring so a storage failure cannot manufacture a backend chain without its registry generation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -299,12 +299,12 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
 		self::assertSame( array(), $backend->calls );
-		$backend->assert_not_scheduled( 'owner-a:nightly' );
+		$backend->assert_not_scheduled( 'scope-a:nightly' );
 		self::assertSame( $before, $this->raw_registry() );
 	}
 
 	/**
-	 * A failed sync preserves an escalation that wins during its intermediate owner write.
+	 * A failed sync preserves an escalation that wins during its intermediate scope write.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale An undeclared-aging CAS can win while sync adds another schedule; the intermediate replacement must retain that fence when later backend convergence fails.
@@ -319,7 +319,7 @@ final class ScheduleOperationsTest extends TestCase {
 		$hourly  = self::schedule( 'hourly', 3_600 );
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $nightly ) ) );
 		$registry = new ScheduleRegistry( new OptionRows( $this->rig->wpdb() ), $this->rig->logger() );
-		$identity = Identity::compose( 'owner-a', 'nightly' );
+		$identity = Identity::compose( 'scope-a', 'nightly' );
 		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
 		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
 		$this->rig->wpdb()->before_next(
@@ -333,7 +333,7 @@ final class ScheduleOperationsTest extends TestCase {
 		$failed = $this->client_a->sync( array( $nightly, $hourly ) );
 
 		self::assertInstanceOf( Failure::class, $failed );
-		$escalated = $registry->registration( 'owner-a:nightly' );
+		$escalated = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $escalated );
 		self::assertIsArray( $escalated->value );
 		self::assertSame( 3, $escalated->value['undeclared_occurrences'] ?? null );
@@ -344,7 +344,7 @@ final class ScheduleOperationsTest extends TestCase {
 		$repaired = $this->client_a->sync( array( $nightly, $hourly ) );
 
 		self::assertInstanceOf( Success::class, $repaired );
-		$reset = $registry->registration( 'owner-a:nightly' );
+		$reset = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $reset );
 		self::assertIsArray( $reset->value );
 		self::assertSame( 0, $reset->value['undeclared_occurrences'] ?? null );
@@ -352,12 +352,12 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
-	 * An unreadable owner row reports its exact maintenance recovery path.
+	 * An unreadable scope row reports its exact maintenance recovery path.
 	 *
 	 * @return  void
 	 */
 	public function test_corrupt_registry_row_reports_reclaim_and_redeclaration_recovery(): void {
-		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+		$option_name = ScheduleRegistry::option_name( 'scope-a' );
 		$poison      = 'poison-registry-row';
 		$this->rig->wpdb()->put( $option_name, $poison );
 		$this->rig->backend()->scheduled = true;
@@ -368,10 +368,10 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_owner-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
+		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_scope-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
 		self::assertSame(
 			array(
-				'owner'       => 'owner-a',
+				'scope'       => 'scope-a',
 				'option_name' => $option_name,
 			),
 			$result->error->context
@@ -381,7 +381,7 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
-	 * A read failure during owner replacement keeps the persist-failure recovery contract.
+	 * A read failure during scope replacement keeps the persist-failure recovery contract.
 	 *
 	 * @return  void
 	 */
@@ -399,8 +399,8 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry state for owner "owner-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
-		self::assertSame( array( 'owner' => 'owner-a' ), $result->error->context );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
+		self::assertSame( array( 'scope' => 'scope-a' ), $result->error->context );
 		self::assertSame( array(), $this->write_calls() );
 	}
 
@@ -426,8 +426,8 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertSame( ErrorCode::BackendRejected, $result->error->code );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $before, $this->raw_registry() );
-		self::assertSame( 300, $this->owner_entries( 'owner-a' )[0]['recurrence'] ?? null );
-		$this->rig->backend()->assert_scheduled( 'owner-a:nightly' );
+		self::assertSame( 300, $this->scope_entries( 'scope-a' )[0]['recurrence'] ?? null );
+		$this->rig->backend()->assert_scheduled( 'scope-a:nightly' );
 	}
 
 	/**
@@ -446,7 +446,7 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $failed );
 		self::assertInstanceOf( BoundaryError::class, $failed->error );
 		self::assertSame( ErrorCode::BackendRejected, $failed->error->code );
-		self::assertSame( array( 'owner-a:nightly' ), \array_column( $this->owner_entries( 'owner-a' ), 'identity' ) );
+		self::assertSame( array( 'scope-a:nightly' ), \array_column( $this->scope_entries( 'scope-a' ), 'identity' ) );
 
 		unset( $this->rig->backend()->results['schedule_recurring'] );
 		$this->reset_backend_observations();
@@ -454,7 +454,7 @@ final class ScheduleOperationsTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $retried );
 		self::assertCount( 1, $this->calls( 'schedule_recurring' ) );
-		$this->rig->backend()->assert_scheduled( 'owner-a:nightly' );
+		$this->rig->backend()->assert_scheduled( 'scope-a:nightly' );
 	}
 
 	/**
@@ -479,7 +479,7 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( BoundaryError::class, $failed->error );
 		self::assertSame( ErrorCode::BackendRejected, $failed->error->code );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
-		$failed_entry = $this->owner_entries( 'owner-a' )[0];
+		$failed_entry = $this->scope_entries( 'scope-a' )[0];
 		self::assertSame( 600, $failed_entry['recurrence'] ?? null );
 		self::assertSame( self::NOW + 600, $failed_entry['next_due'] ?? null );
 		self::assertNotSame( $initial_raw, $this->raw_registry() );
@@ -490,10 +490,10 @@ final class ScheduleOperationsTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $repaired );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
-		$repaired_entry = $this->owner_entries( 'owner-a' )[0];
+		$repaired_entry = $this->scope_entries( 'scope-a' )[0];
 		self::assertSame( 300, $repaired_entry['recurrence'] ?? null );
 		self::assertSame( self::NOW + 300, $repaired_entry['next_due'] ?? null );
-		$this->rig->backend()->assert_scheduled( 'owner-a:nightly' );
+		$this->rig->backend()->assert_scheduled( 'scope-a:nightly' );
 	}
 
 	/**
@@ -507,7 +507,7 @@ final class ScheduleOperationsTest extends TestCase {
 	public function test_removal_storage_crash_window_converges_on_retry(): void {
 		$schedule = self::schedule( 'nightly', 300 );
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
-		$fixture = $this->fixtures->schedule_registration( self::owner_fixture( $schedule, self::NOW + 300 ) );
+		$fixture = $this->fixtures->schedule_registration( self::scope_fixture( $schedule, self::NOW + 300 ) );
 		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 		$this->rig->wpdb()->script_result( 'delete', false );
 		$this->reset_backend_observations();
@@ -519,21 +519,21 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertSame( ErrorCode::StorageFailed, $failed->error->code );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $fixture[1], $this->raw_registry() );
-		$this->rig->backend()->assert_not_scheduled( 'owner-a:nightly' );
+		$this->rig->backend()->assert_not_scheduled( 'scope-a:nightly' );
 
 		$this->reset_backend_observations();
 		$retried = $this->client_a->sync( array() );
 
 		self::assertInstanceOf( Success::class, $retried );
 		self::assertSame( array( 'unschedule' ), \array_column( $this->write_calls(), 'verb' ) );
-		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'owner-a' ), $this->rig->wpdb()->rows );
+		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
 	}
 
 	/**
 	 * Schedule synchronization compares the selected option generation as exact binary bytes.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Public owner replacement must retain the registry's binary option_value predicate so collation-equivalent generations cannot both win the whole-row CAS.
+	 * @pin-rationale Public scope replacement must retain the registry's binary option_value predicate so collation-equivalent generations cannot both win the whole-row CAS.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -572,7 +572,7 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
-	 * Returns one complete owner fixture request.
+	 * Returns one complete scope fixture request.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -581,17 +581,17 @@ final class ScheduleOperationsTest extends TestCase {
 	 * @param   int      $next_due   Next occurrence timestamp.
 	 * @param   int|null $last_fired Last dispatched timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
+	 * @return  array{scope: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
-	private static function owner_fixture( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
-		$identity = 'owner-a:' . $schedule->name;
+	private static function scope_fixture( Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
+		$identity = 'scope-a:' . $schedule->name;
 
 		return array(
-			'owner'         => 'owner-a',
+			'scope'         => 'scope-a',
 			'declarations'  => array(
 				$identity => array(
 					'schedule' => $schedule,
-					'job'      => 'owner-a:refresh-index',
+					'job'      => 'scope-a:refresh-index',
 				),
 			),
 			'registrations' => array( $identity => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due, $last_fired ) ),
@@ -599,17 +599,17 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
-	 * Returns inspected entries belonging to exactly one owner.
+	 * Returns inspected entries belonging to exactly one scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Owner filter.
+	 * @param   string $scope Scope filter.
 	 *
 	 * @return  list<array<string, mixed>>
 	 */
-	private function owner_entries( string $owner ): array {
-		$snapshot = $this->rig->inspection()->schedules( $owner );
+	private function scope_entries( string $scope ): array {
+		$snapshot = $this->rig->inspection()->schedules( $scope );
 		self::assertNotNull( $snapshot );
 
 		return $snapshot['entries'];
@@ -624,7 +624,7 @@ final class ScheduleOperationsTest extends TestCase {
 	 * @return  string
 	 */
 	private function raw_registry(): string {
-		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'owner-a' ) ] ?? null;
+		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'scope-a' ) ] ?? null;
 		self::assertIsString( $raw );
 
 		return $raw;

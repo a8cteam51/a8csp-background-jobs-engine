@@ -77,7 +77,7 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ScheduleRegistry $registry    Owner-scoped schedule registry.
+	 * @param   ScheduleRegistry $registry    Per-scope schedule registry.
 	 * @param   SchedulerFacade  $scheduler   Scheduling backend facade.
 	 * @param   OptionRows       $option_rows Authoritative cleanup-intent row I/O.
 	 * @param   ClockInterface   $clock       Current-time source.
@@ -101,7 +101,7 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the intent to a string.
 	 *
@@ -127,7 +127,7 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
 	 * @return  bool Whether the observed intent no longer needs convergence.
 	 */
@@ -217,7 +217,7 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
@@ -231,7 +231,7 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 * @param   string $expected_raw     Exact selected intent value.
 	 *
 	 * @return  bool Whether the selected intent no longer needs convergence.
@@ -247,7 +247,7 @@ final readonly class CleanupIntents {
 		}
 
 		// A concurrent sync can publish a registration after this read; its persisted fingerprint
-		// makes the next owner sync recreate any chain removed here.
+		// makes the next scope sync recreate any chain removed here.
 		$clearance = $this->scheduler->unschedule_for_convergence( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key );
 		$removed   = $clearance->result;
 		if ( $removed->is_failure() ) {
@@ -277,7 +277,7 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 * @param   string $expected_raw     Exact selected intent value.
 	 *
 	 * @return  bool
@@ -409,7 +409,7 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
 	 * @return  string
 	 */

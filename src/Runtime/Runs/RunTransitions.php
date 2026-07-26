@@ -72,7 +72,7 @@ final readonly class RunTransitions {
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
 	 * @param   array    $handlers        Kind handlers keyed by their persisted keys.
-	 * @param   string   $identity        Complete owner-qualified work identity.
+	 * @param   string   $identity        Complete scope-qualified work identity.
 	 * @param   string   $run_id          Run identifier.
 	 * @param   int|null $action_sequence Received lifecycle action sequence.
 	 * @param   RunStore $run_store       Active-run store.
@@ -233,7 +233,7 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler   Handler selected by the persisted kind.
-	 * @param   Identity             $identity  Complete owner-qualified work identity.
+	 * @param   Identity             $identity  Complete scope-qualified work identity.
 	 * @param   string               $run_id    Run identifier.
 	 * @param   RunState             $state     Running state.
 	 * @param   RunStore             $run_store Active-run store.
@@ -261,7 +261,7 @@ final readonly class RunTransitions {
 	 * @phpstan-param \Closure(): mixed $clear_pending_actions
 	 *
 	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
-	 * @param   Identity             $identity              Complete owner-qualified work identity.
+	 * @param   Identity             $identity              Complete scope-qualified work identity.
 	 * @param   string               $run_id                Run identifier.
 	 * @param   RunState             $state                 Running state from the exact inspected snapshot.
 	 * @param   RunStore             $run_store             Active-run store.
@@ -307,7 +307,7 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler   Handler selected by the persisted kind.
-	 * @param   Identity             $identity  Complete owner-qualified work identity.
+	 * @param   Identity             $identity  Complete scope-qualified work identity.
 	 * @param   string               $run_id    Run identifier.
 	 * @param   RunState             $state     Running state.
 	 * @param   RunStore             $run_store Active-run store.
@@ -334,7 +334,7 @@ final readonly class RunTransitions {
 	 * @phpstan-param array<array-key, mixed>|null $details
 	 *
 	 * @param   KindHandlerInterface $handler      Handler selected by the persisted kind.
-	 * @param   Identity             $identity     Complete owner-qualified work identity.
+	 * @param   Identity             $identity     Complete scope-qualified work identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state.
 	 * @param   RunStore             $run_store    Active-run store.
@@ -368,7 +368,7 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
-	 * @param   Identity             $identity              Complete owner-qualified work identity.
+	 * @param   Identity             $identity              Complete scope-qualified work identity.
 	 * @param   string               $run_id                Run identifier.
 	 * @param   RunState             $state                 Running state observed before the fence.
 	 * @param   RunStore             $run_store             Active-run store.
@@ -447,7 +447,7 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                            $identity      Complete owner-qualified work identity.
+	 * @param   Identity                            $identity      Complete scope-qualified work identity.
 	 * @param   string                              $run_id        Run identifier.
 	 * @param   string|null                         $latest_run_id Latest discoverable pointer value for the single-flight identity.
 	 * @param   array{raw: string, state: RunState} $claimed       Exact claimed terminal snapshot.
@@ -530,7 +530,7 @@ final readonly class RunTransitions {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: \A8C\SpecialProjects\BackgroundJobsEngine\RunFailure}|null $failure_detail
 	 *
-	 * @param   Identity    $identity       Complete owner-qualified work identity.
+	 * @param   Identity    $identity       Complete scope-qualified work identity.
 	 * @param   string      $run_id         Run identifier.
 	 * @param   RunState    $expected       Complete running state observed by the terminalizing path.
 	 * @param   RunState    $replacement    Terminal replacement state.
@@ -604,7 +604,7 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @return  string|null
 	 */

@@ -63,8 +63,8 @@ final class OverlapGuardTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const string ARGS_HASH = 'args-123';
-	private const string IDENTITY  = 'owner-a:email-digest';
-	private const string KEY       = 'a8csp_bgje_overlap_lock_owner-a:email-digest_args-123';
+	private const string IDENTITY  = 'scope-a:email-digest';
+	private const string KEY       = 'a8csp_bgje_overlap_lock_scope-a:email-digest_args-123';
 
 	private Identity $identity;
 	private WpdbLockSpy $wpdb;
@@ -93,7 +93,7 @@ final class OverlapGuardTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_blog_id']     = 1;
 		$GLOBALS['a8csp_bgje_test_cache']       = array();
 		$GLOBALS['a8csp_bgje_test_cache_calls'] = array();
-		$this->identity                         = Identity::compose( 'owner-a', 'email-digest' );
+		$this->identity                         = Identity::compose( 'scope-a', 'email-digest' );
 		$this->wpdb                             = new WpdbLockSpy();
 		$this->rows                             = new OptionRows( $this->wpdb );
 	}
@@ -107,15 +107,15 @@ final class OverlapGuardTest extends TestCase {
 		$hash = \str_repeat( 'a', 64 );
 
 		self::assertSame( 'a8csp_bgje_overlap_lock_', OverlapGuard::OPTION_PREFIX );
-		$parsed = OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_owner:under_score_' . $hash );
+		$parsed = OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_scope:under_score_' . $hash );
 		self::assertIsArray( $parsed );
 		self::assertInstanceOf( Identity::class, $parsed['identity'] );
-		self::assertSame( 'owner:under_score', (string) $parsed['identity'] );
+		self::assertSame( 'scope:under_score', (string) $parsed['identity'] );
 		self::assertSame( $hash, $parsed['args_hash'] );
 		self::assertNull( OverlapGuard::identity_from_option_name( 'other_lock_owner:under_score_' . $hash ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_invalid-owner_' . $hash ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_owner:sync_' . \str_repeat( 'A', 64 ) ) );
-		self::assertNull( OverlapGuard::identity_from_option_name( "a8csp_bgje_overlap_lock_owner:sync_{$hash}\n" ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_invalid-scope_' . $hash ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( 'a8csp_bgje_overlap_lock_scope:sync_' . \str_repeat( 'A', 64 ) ) );
+		self::assertNull( OverlapGuard::identity_from_option_name( "a8csp_bgje_overlap_lock_scope:sync_{$hash}\n" ) );
 	}
 
 	/** An absent lock is claimed with the exact schema and non-autoload policy. */

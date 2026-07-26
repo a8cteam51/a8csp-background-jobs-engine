@@ -5,9 +5,9 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Owner-bound public handle exposing the jobs, schedules, and runs capability managers.
+ * Scope-bound public handle exposing the jobs, schedules, and runs capability managers.
  *
- * Handle and portal construction is infallible; owner validation and engine resolution remain
+ * Handle and portal construction is infallible; scope validation and engine resolution remain
  * lazy until a manager verb is invoked, where every expected failure surfaces as a `WP_Error`.
  *
  * @api
@@ -24,10 +24,10 @@ final readonly class Engine {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Client plugin owner.
+	 * @param   string $scope Client plugin scope.
 	 */
 	public function __construct(
-		private string $owner,
+		private string $scope,
 	) {}
 
 	// endregion
@@ -35,7 +35,7 @@ final readonly class Engine {
 	// region METHODS
 
 	/**
-	 * Returns the bound owner's job capabilities.
+	 * Returns the bound scope's job capabilities.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -43,11 +43,11 @@ final readonly class Engine {
 	 * @return  Jobs
 	 */
 	public function jobs(): Jobs {
-		return new Jobs( $this->owner );
+		return new Jobs( $this->scope );
 	}
 
 	/**
-	 * Returns the bound owner's schedule capabilities.
+	 * Returns the bound scope's schedule capabilities.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -55,11 +55,11 @@ final readonly class Engine {
 	 * @return  Schedules
 	 */
 	public function schedules(): Schedules {
-		return new Schedules( $this->owner );
+		return new Schedules( $this->scope );
 	}
 
 	/**
-	 * Returns the bound owner's run capabilities.
+	 * Returns the bound scope's run capabilities.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -67,7 +67,7 @@ final readonly class Engine {
 	 * @return  Runs
 	 */
 	public function runs(): Runs {
-		return new Runs( $this->owner );
+		return new Runs( $this->scope );
 	}
 
 	// endregion

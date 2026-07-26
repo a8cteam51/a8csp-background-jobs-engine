@@ -45,7 +45,7 @@ final readonly class DeliveryScheduler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity        Complete owner-qualified work identity.
+	 * @param   Identity      $identity        Complete scope-qualified work identity.
 	 * @param   string        $run_id          Run identifier.
 	 * @param   int           $action_sequence Persisted delivery sequence.
 	 * @param   PendingAction $pending         Persisted delivery descriptor.

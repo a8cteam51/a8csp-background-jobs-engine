@@ -18,7 +18,7 @@ final readonly class Schedule {
 	/**
 	 * Maximum encoded JSON bytes accepted for persisted arguments.
 	 *
-	 * The public-model copy mirrors `Runtime\OwnerOperations::MAX_ARGUMENTS_BYTES` because models do
+	 * The public-model copy mirrors `Runtime\ScopeOperations::MAX_ARGUMENTS_BYTES` because models do
 	 * not import `src/` internals.
 	 *
 	 * @since   1.0.0
@@ -29,7 +29,7 @@ final readonly class Schedule {
 	private const int MAX_ARGUMENTS_BYTES = 8_192;
 
 	/**
-	 * Maximum bytes accepted for an owner-local name.
+	 * Maximum bytes accepted for a scope-local name.
 	 *
 	 * The public-model copy mirrors `Boundary\Identity::NAME_MAX_BYTES` because models do not
 	 * import `src/` internals.
@@ -153,12 +153,12 @@ final readonly class Schedule {
 	// region HELPERS
 
 	/**
-	 * Validates one owner-local job or schedule name.
+	 * Validates one scope-local job or schedule name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Owner-local name.
+	 * @param   string $name Scope-local name.
 	 *
 	 * @throws  \InvalidArgumentException When the name violates the stable grammar.
 	 *

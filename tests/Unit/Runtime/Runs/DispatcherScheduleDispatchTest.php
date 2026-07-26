@@ -16,12 +16,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus as PublicRunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -41,18 +41,18 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const array ARGS              = array( 'site_id' => 7 );
-	private const string CHUNKED_IDENTITY = self::OWNER . ':' . self::CHUNKED_NAME;
+	private const string CHUNKED_IDENTITY = self::SCOPE . ':' . self::CHUNKED_NAME;
 	private const string CHUNKED_NAME     = 'email-digest-chunked';
 	private const string CHUNKED_SCHEDULE = 'email-digest-chunked-schedule';
-	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY         = self::SCOPE . ':' . self::NAME;
 	private const string INCUMBENT_RUN_ID = '00000000001699999998-0000000000000000040';
 	private const string NAME             = 'email-digest';
 	private const int NOW                 = 1_700_000_000;
-	private const string OWNER            = 'runs-tests';
+	private const string SCOPE            = 'runs-tests';
 	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
 	private const string SCHEDULE         = 'email-digest-schedule';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private RecordingChunkedJob $chunked_job;
 	private EngineRig $rig;
 	private StoreFixtureBuilder $fixtures;
@@ -74,7 +74,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->operations( self::OWNER );
+		$this->client      = $this->rig->operations( self::SCOPE );
 		$this->job         = new RecordingJob( self::NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_NAME );
 		$this->fixtures    = StoreFixtureBuilder::for_identity( self::IDENTITY );
@@ -466,7 +466,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Synchronizes one declaration through the owner-bound schedule facade.
+	 * Synchronizes one declaration through the scope-bound schedule facade.
 	 *
 	 * @param   OverlapPolicy $policy   Job overlap policy.
 	 * @param   int           $priority Delivery priority.
@@ -478,7 +478,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Synchronizes one chunked-target declaration through the owner-bound schedule facade.
+	 * Synchronizes one chunked-target declaration through the scope-bound schedule facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

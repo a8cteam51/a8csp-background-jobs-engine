@@ -76,7 +76,7 @@ final readonly class OccurrenceLease {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
 	 * @return  OccurrenceLeaseClaim Classified claim with a handle only after confirmed ownership.
 	 */
@@ -147,7 +147,7 @@ final readonly class OccurrenceLease {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
 	 * @return  string
 	 */

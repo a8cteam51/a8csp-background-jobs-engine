@@ -28,7 +28,7 @@ final readonly class MaintenanceSchedule {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ScheduleOperations $schedules Client schedule API with the reserved-owner service entry.
+	 * @param   ScheduleOperations $schedules Client schedule API with the reserved-scope service entry.
 	 * @param   LoggerInterface    $logger    Log event sink.
 	 */
 	public function __construct(
@@ -86,11 +86,11 @@ final readonly class MaintenanceSchedule {
 		}
 
 		try {
-			$owner                = Identity::ENGINE_OWNER;
-			$schedule_identity    = Identity::compose( $owner, MaintenanceJob::NAME, true );
+			$scope                = Identity::ENGINE_SCOPE;
+			$schedule_identity    = Identity::compose( $scope, MaintenanceJob::NAME, true );
 			$maintenance_schedule = new Schedule( MaintenanceJob::NAME, Recurrence::every( \HOUR_IN_SECONDS ), MaintenanceJob::NAME, array(), CatchUpPolicy::RunOnce );
-			$result               = $this->schedules->sync_owner(
-				$owner,
+			$result               = $this->schedules->sync_scope(
+				$scope,
 				array(
 					(string) $schedule_identity => array(
 						'schedule' => $maintenance_schedule,

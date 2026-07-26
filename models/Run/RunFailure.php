@@ -25,7 +25,7 @@ final readonly class RunFailure {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                       $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string                       $identity Complete scope-qualified job or chunked job identity.
 	 * @param   RunId                        $run_id   Run identifier.
 	 * @param   int                          $attempts Attempts consumed before terminal failure.
 	 * @param   RunFailureStage              $stage    Terminalization stage.

@@ -16,8 +16,8 @@
 
 		$failed_option_names = array(
 			'a8csp_bgje_failed_runs_integration-cli-command:integration-cli-command-list-store',
-			'a8csp_bgje_failed_runs_integration-cli-inspection-owner:integration-cli-inspection-job',
-			'a8csp_bgje_schedule_registrations_integration-cli-inspection-owner',
+			'a8csp_bgje_failed_runs_integration-cli-inspection-scope:integration-cli-inspection-job',
+			'a8csp_bgje_schedule_registrations_integration-cli-inspection-scope',
 		);
 		$wpdb->suppress_errors();
 		\add_filter(

@@ -21,7 +21,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
@@ -37,6 +36,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDeliver
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use PHPUnit\Framework\Assert;
 
@@ -49,7 +49,7 @@ use PHPUnit\Framework\Assert;
 final class EngineRig {
 	// region FIELDS AND CONSTANTS.
 
-	/** @var array<string, OwnerOperations> */
+	/** @var array<string, ScopeOperations> */
 	private array $operations = array();
 
 	/** @var non-empty-list<RecordingBackend> */
@@ -174,18 +174,18 @@ final class EngineRig {
 	// region GETTERS.
 
 	/**
-	 * Returns owner-bound operations from the published component graph.
+	 * Returns scope-bound operations from the published component graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Owner identifier.
+	 * @param   string $scope Scope identifier.
 	 *
-	 * @return  OwnerOperations
+	 * @return  ScopeOperations
 	 */
-	public function operations( string $owner ): OwnerOperations {
-		$operations                 = Component::operations( $owner );
-		$this->operations[ $owner ] = $operations;
+	public function operations( string $scope ): ScopeOperations {
+		$operations                 = Component::operations( $scope );
+		$this->operations[ $scope ] = $operations;
 
 		return $operations;
 	}
@@ -304,8 +304,8 @@ final class EngineRig {
 
 		$work_identity = Identity::tryFrom( $identity );
 		Assert::assertNotNull( $work_identity );
-		$operations = $this->operations[ $work_identity->owner() ] ?? null;
-		Assert::assertInstanceOf( OwnerOperations::class, $operations );
+		$operations = $this->operations[ $work_identity->scope() ] ?? null;
+		Assert::assertInstanceOf( ScopeOperations::class, $operations );
 		$result = $operations->last_completed_run( $work_identity->name() );
 		Assert::assertInstanceOf( Success::class, $result );
 		Assert::assertInstanceOf( Run::class, $result->value );
@@ -432,7 +432,7 @@ final class EngineRig {
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
 
 		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$dispatcher->register( Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job ) );
+		$dispatcher->register( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job ) );
 		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $this->clock );

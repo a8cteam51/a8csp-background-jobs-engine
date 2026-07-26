@@ -82,10 +82,10 @@ final class RunReconciliationTest extends TestCase {
 
 	private const array ARGS             = array( 'site_id' => 7 );
 	private const string ARGS_HASH       = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
-	private const string IDENTITY        = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY        = self::SCOPE . ':' . self::NAME;
 	private const string NAME            = 'crashed-job';
 	private const int NOW                = 1_700_000_000;
-	private const string OWNER           = 'runs-tests';
+	private const string SCOPE           = 'runs-tests';
 	private const string PREVIOUS_RUN_ID = '00000000001699999999-0000000000000000041';
 	private const string RUN_ID          = '00000000001700000000-0000000000000000042';
 
@@ -158,7 +158,7 @@ final class RunReconciliationTest extends TestCase {
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
 		$this->clock    = new FixedClock( self::NOW );
-		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->identity = Identity::compose( self::SCOPE, self::NAME );
 		$this->registry = new JobRegistry();
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
@@ -193,11 +193,11 @@ final class RunReconciliationTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The maintenance execution co-locates its stable owner-local job name.
+	 * The maintenance execution co-locates its stable scope-local job name.
 	 *
 	 * @return  void
 	 */
-	public function test_job_name_is_owner_local(): void {
+	public function test_job_name_is_scope_local(): void {
 		self::assertSame( 'maintenance', MaintenanceJob::NAME );
 	}
 
@@ -207,7 +207,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_converges_pending_unknown_chain_intent(): void {
-		$registration_key = 'orphan-owner:orphan-schedule';
+		$registration_key = 'orphan-scope:orphan-schedule';
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( self::NOW );
 		$this->wpdb->put( $option_name, $raw );
@@ -2557,20 +2557,20 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Returns one owner-qualified test work identity.
+	 * Returns one scope-qualified test work identity.
 	 *
-	 * @param   string $name Owner-local work name.
+	 * @param   string $name Scope-local work name.
 	 *
 	 * @return  string
 	 */
 	private static function identity( string $name ): string {
-		return self::OWNER . ':' . $name;
+		return self::SCOPE . ':' . $name;
 	}
 
 	/**
 	 * Wraps one canonical test identity for direct internal calls.
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $identity Complete scope-qualified work identity.
 	 *
 	 * @return  Identity
 	 */

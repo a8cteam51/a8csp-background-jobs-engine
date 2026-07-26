@@ -56,7 +56,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity   Complete owner-qualified work identity.
+	 * @param   Identity      $identity   Complete scope-qualified work identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
 	 * @throws  \InvalidArgumentException When the execution object does not implement this kind's execution role.
@@ -71,7 +71,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 *
 	 * @return  object|null
 	 */
@@ -83,7 +83,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 *
 	 * @return  JobOptions|null
 	 */
@@ -136,7 +136,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Persisted running state.
 	 * @param   RunStore $run_store Active-run store.
@@ -190,7 +190,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.

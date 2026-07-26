@@ -14,8 +14,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
  * @since   1.0.0
  * @version 1.0.0
  *
- * @param   string $owner  Client plugin owner.
- * @param   string $name   Owner-local job or chunked job name.
+ * @param   string $scope  Client plugin scope.
+ * @param   string $name   Scope-local job or chunked job name.
  * @param   string $run_id Run identifier.
  *
  * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
@@ -23,13 +23,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
  * @return  Run|\WP_Error
  */
 #[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
-function a8csp_bgje_inspect_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
+function a8csp_bgje_inspect_run( string $scope, string $name, string $run_id ): Run|\WP_Error {
 	$id = RunId::tryFrom( $run_id );
 	if ( null === $id ) {
 		return new \WP_Error( ErrorCode::InvalidArgument->value, 'Run identifier is malformed; pass a run ID the engine returned.' );
 	}
 
-	return a8csp_bgje( $owner )->runs()->inspect( $name, $id );
+	return a8csp_bgje( $scope )->runs()->inspect( $name, $id );
 }
 
 /**
@@ -40,16 +40,16 @@ function a8csp_bgje_inspect_run( string $owner, string $name, string $run_id ): 
  * @since   1.0.0
  * @version 1.0.0
  *
- * @param   string $owner Client plugin owner.
- * @param   string $name  Owner-local job or chunked job name.
+ * @param   string $scope Client plugin scope.
+ * @param   string $name  Scope-local job or chunked job name.
  *
  * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *
  * @return  Run|null|\WP_Error
  */
 #[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
-function a8csp_bgje_last_completed_run( string $owner, string $name ): Run|null|\WP_Error {
-	return a8csp_bgje( $owner )->runs()->last_completed( $name );
+function a8csp_bgje_last_completed_run( string $scope, string $name ): Run|null|\WP_Error {
+	return a8csp_bgje( $scope )->runs()->last_completed( $name );
 }
 
 /**
@@ -60,8 +60,8 @@ function a8csp_bgje_last_completed_run( string $owner, string $name ): Run|null|
  * @since   1.0.0
  * @version 1.0.0
  *
- * @param   string $owner  Client plugin owner.
- * @param   string $name   Owner-local job or chunked job name.
+ * @param   string $scope  Client plugin scope.
+ * @param   string $name   Scope-local job or chunked job name.
  * @param   string $run_id Retained failed-run identifier.
  *
  * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
@@ -69,13 +69,13 @@ function a8csp_bgje_last_completed_run( string $owner, string $name ): Run|null|
  * @return  Run|\WP_Error
  */
 #[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-function a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
+function a8csp_bgje_retry_failed_run( string $scope, string $name, string $run_id ): Run|\WP_Error {
 	$id = RunId::tryFrom( $run_id );
 	if ( null === $id ) {
 		return new \WP_Error( ErrorCode::InvalidArgument->value, 'Run identifier is malformed; pass a run ID the engine returned.' );
 	}
 
-	return a8csp_bgje( $owner )->runs()->retry_failed( $name, $id );
+	return a8csp_bgje( $scope )->runs()->retry_failed( $name, $id );
 }
 
 /**
@@ -86,8 +86,8 @@ function a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_i
  * @since   1.0.0
  * @version 1.0.0
  *
- * @param   string $owner  Client plugin owner.
- * @param   string $name   Owner-local job or chunked job name.
+ * @param   string $scope  Client plugin scope.
+ * @param   string $name   Scope-local job or chunked job name.
  * @param   string $run_id Retained run identifier.
  *
  * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
@@ -95,11 +95,11 @@ function a8csp_bgje_retry_failed_run( string $owner, string $name, string $run_i
  * @return  Run|\WP_Error
  */
 #[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
-function a8csp_bgje_cancel_run( string $owner, string $name, string $run_id ): Run|\WP_Error {
+function a8csp_bgje_cancel_run( string $scope, string $name, string $run_id ): Run|\WP_Error {
 	$id = RunId::tryFrom( $run_id );
 	if ( null === $id ) {
 		return new \WP_Error( ErrorCode::InvalidArgument->value, 'Run identifier is malformed; pass a run ID the engine returned.' );
 	}
 
-	return a8csp_bgje( $owner )->runs()->cancel( $name, $id );
+	return a8csp_bgje( $scope )->runs()->cancel( $name, $id );
 }

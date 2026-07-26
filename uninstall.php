@@ -26,7 +26,7 @@ $a8csp_bgje_footprint = require __DIR__ . '/footprint.php';
  * Options within the a8csp_bgje_ ownership boundary use the sweep below.
  *
  * Schedule-registration, active-run, failed-run, latest-run, run-history, overlap-lock,
- * occurrence-lease, and cleanup-intent option names end in owner, job, chunked job, run,
+ * occurrence-lease, and cleanup-intent option names end in scope, job, chunked job, run,
  * registration-hash, or argument-hash identifiers that do not exist until runtime. The shared
  * prefix is the complete ownership boundary for standalone engine options. Escaping it before
  * appending the wildcard keeps each underscore literal instead of letting SQL LIKE broaden the

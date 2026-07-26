@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the owner-bound public front door and its stable error boundary.
+ * Exercises the scope-bound public front door and its stable error boundary.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -84,7 +84,7 @@ final class ApiTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Access before init returns a lazy owner-bound handle.
+	 * Access before init returns a lazy scope-bound handle.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -98,7 +98,7 @@ final class ApiTest extends TestCase {
 	}
 
 	/**
-	 * Access during and after init returns lazy owner-bound handles.
+	 * Access during and after init returns lazy scope-bound handles.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -115,45 +115,45 @@ final class ApiTest extends TestCase {
 	}
 
 	/**
-	 * Equal local names remain isolated by owner across admission, delivery, and completion.
+	 * Equal local names remain isolated by scope across admission, delivery, and completion.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_two_owners_run_the_same_local_job_name_independently(): void {
-		$left      = \a8csp_bgje( 'owner-left' );
-		$right     = \a8csp_bgje( 'owner-right' );
+	public function test_two_scopes_run_the_same_local_job_name_independently(): void {
+		$left      = \a8csp_bgje( 'scope-left' );
+		$right     = \a8csp_bgje( 'scope-right' );
 		$left_job  = new RecordingJob( 'sync' );
 		$right_job = new RecordingJob( 'sync' );
 		self::assertTrue( $left->jobs()->register( $left_job->definition() ) );
 		self::assertTrue( $right->jobs()->register( $right_job->definition() ) );
 
-		self::assertInstanceOf( Run::class, $left->jobs()->dispatch( 'sync', array( 'owner' => 'left' ) ) );
-		self::assertInstanceOf( Run::class, $right->jobs()->dispatch( 'sync', array( 'owner' => 'right' ) ) );
+		self::assertInstanceOf( Run::class, $left->jobs()->dispatch( 'sync', array( 'scope' => 'left' ) ) );
+		self::assertInstanceOf( Run::class, $right->jobs()->dispatch( 'sync', array( 'scope' => 'right' ) ) );
 		$this->rig->run_due();
 		$this->rig->run_due();
 
-		self::assertSame( array( array( 'owner' => 'left' ) ), $left_job->calls );
-		self::assertSame( array( array( 'owner' => 'right' ) ), $right_job->calls );
+		self::assertSame( array( array( 'scope' => 'left' ) ), $left_job->calls );
+		self::assertSame( array( array( 'scope' => 'right' ) ), $right_job->calls );
 		self::assertInstanceOf( Run::class, $left->runs()->last_completed( 'sync' ) );
 		self::assertInstanceOf( Run::class, $right->runs()->last_completed( 'sync' ) );
 	}
 
 	/**
-	 * Every invalid or reserved owner is rejected by the first handle operation.
+	 * Every invalid or reserved scope is rejected by the first handle operation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Invalid owner.
+	 * @param   string $scope Invalid scope.
 	 *
 	 * @return  void
 	 */
-	#[DataProvider( 'invalid_owners' )]
-	public function test_front_door_rejects_invalid_or_reserved_owners( string $owner ): void {
-		$result = \a8csp_bgje( $owner )->jobs()->dispatch( 'sync' );
+	#[DataProvider( 'invalid_scopes' )]
+	public function test_front_door_rejects_invalid_or_reserved_scopes( string $scope ): void {
+		$result = \a8csp_bgje( $scope )->jobs()->dispatch( 'sync' );
 
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( 'invalid_argument', $result->get_error_code() );
@@ -170,10 +170,10 @@ final class ApiTest extends TestCase {
 	public function test_schedule_portal_maps_internal_failure_to_public_error(): void {
 		$error = self::assert_wp_error( \a8csp_bgje( 'consumer-plugin' )->schedules()->dispatch( 'missing-schedule' ), ErrorCode::UnknownSchedule );
 
-		self::assertSame( 'Schedule "missing-schedule" for owner "consumer-plugin" is not synchronized; declare it with sync() before running it now.', $error->get_error_message() );
+		self::assertSame( 'Schedule "missing-schedule" for scope "consumer-plugin" is not synchronized; declare it with sync() before running it now.', $error->get_error_message() );
 		self::assertSame(
 			array(
-				'owner'    => 'consumer-plugin',
+				'scope'    => 'consumer-plugin',
 				'schedule' => 'missing-schedule',
 			),
 			$error->get_error_data()
@@ -426,7 +426,7 @@ final class ApiTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Engine               $client Owner-bound public handle.
+	 * @param   Engine               $client Scope-bound public handle.
 	 * @param   array<string, mixed> $args   Job arguments.
 	 *
 	 * @return  string
@@ -463,21 +463,21 @@ final class ApiTest extends TestCase {
 	// region DATA PROVIDERS.
 
 	/**
-	 * Supplies every invalid or reserved client owner.
+	 * Supplies every invalid or reserved client scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, array{owner: string}>
+	 * @return  array<string, array{scope: string}>
 	 */
-	public static function invalid_owners(): array {
+	public static function invalid_scopes(): array {
 		return array(
-			'empty'           => array( 'owner' => '' ),
-			'uppercase'       => array( 'owner' => 'Consumer' ),
-			'colon'           => array( 'owner' => 'consumer:plugin' ),
-			'33 bytes'        => array( 'owner' => \str_repeat( 'o', 33 ) ),
-			'reserved owner'  => array( 'owner' => 'a8csp-bgje' ),
-			'reserved prefix' => array( 'owner' => 'a8csp-bgje-addon' ),
+			'empty'           => array( 'scope' => '' ),
+			'uppercase'       => array( 'scope' => 'Consumer' ),
+			'colon'           => array( 'scope' => 'consumer:plugin' ),
+			'33 bytes'        => array( 'scope' => \str_repeat( 'o', 33 ) ),
+			'reserved scope'  => array( 'scope' => 'a8csp-bgje' ),
+			'reserved prefix' => array( 'scope' => 'a8csp-bgje-addon' ),
 		);
 	}
 

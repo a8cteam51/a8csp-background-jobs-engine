@@ -231,19 +231,19 @@ final class JobRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Equal local names under different owners remain independent registrations.
+	 * Equal local names under different scopes remain independent registrations.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_different_owners_can_register_the_same_local_name(): void {
+	public function test_different_scopes_can_register_the_same_local_name(): void {
 		$job              = self::registration( 'job', 'sync' );
 		$chunked_job      = self::registration( 'chunked_job', 'sync' );
 		$registry         = new JobRegistry();
-		$job_identity     = self::identity( 'owner-a:sync' );
-		$chunked_identity = self::identity( 'owner-b:sync' );
+		$job_identity     = self::identity( 'scope-a:sync' );
+		$chunked_identity = self::identity( 'scope-b:sync' );
 
 		$registry->register( $job_identity, $job['definition'] );
 		$registry->register( $chunked_identity, $chunked_job['definition'] );
@@ -337,7 +337,7 @@ final class JobRegistryTest extends TestCase {
 	/**
 	 * Returns one canonical identity fixture.
 	 *
-	 * @param   string $identity Complete owner-qualified identity.
+	 * @param   string $identity Complete scope-qualified identity.
 	 *
 	 * @return  Identity
 	 */

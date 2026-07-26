@@ -51,10 +51,10 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 	/** Advisory group isolated to the WP-Cron fallback occurrence. */
 	private const string WP_CRON_GROUP = 'a8csp-bgje-integration-backend-failover-cron';
 
-	/** Owner isolated to recurring-chain convergence. */
-	private const string CONVERGENCE_OWNER = 'integration-backend-convergence';
+	/** Scope isolated to recurring-chain convergence. */
+	private const string CONVERGENCE_SCOPE = 'integration-backend-convergence';
 
-	/** Owner-qualified schedule identity isolated to recurring-chain convergence. */
+	/** Scope-qualified schedule identity isolated to recurring-chain convergence. */
 	private const string CONVERGENCE_IDENTITY = 'integration-backend-convergence:recurring';
 
 	/** Target job isolated to recurring-chain convergence. */
@@ -129,7 +129,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_sync_converges_a_recovered_recurring_chain_with_its_fallback_duplicate(): void {
-		$registry_option = ScheduleRegistry::option_name( self::CONVERGENCE_OWNER );
+		$registry_option = ScheduleRegistry::option_name( self::CONVERGENCE_SCOPE );
 		$this->expect_option( $registry_option );
 		$action_scheduler       = new ReadinessControlledBackend();
 		$scheduler              = $this->scheduler_facade_with_controllable_action_scheduler( $action_scheduler );
@@ -138,13 +138,13 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$declarations           = array(
 			self::CONVERGENCE_IDENTITY => array(
 				'schedule' => $schedule,
-				'job'      => Identity::compose( self::CONVERGENCE_OWNER, self::CONVERGENCE_JOB ),
+				'job'      => Identity::compose( self::CONVERGENCE_SCOPE, self::CONVERGENCE_JOB ),
 			),
 		);
 		$action_scheduler_probe = new SchedulerFacade( array( new ActionSchedulerBackend() ) );
 		$wp_cron_probe          = new SchedulerFacade( array( new WPCronBackend() ) );
 
-		$preferred = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
+		$preferred = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $preferred );
 		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 		self::assertSame( 0, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
@@ -152,13 +152,13 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		self::assertIsArray( $registration_before );
 
 		$action_scheduler->ready = false;
-		$fallback                = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
+		$fallback                = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $fallback );
 		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 		self::assertSame( 1, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 
 		$action_scheduler->ready = true;
-		$converged               = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
+		$converged               = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 
 		self::assertInstanceOf( Success::class, $converged );
 		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );

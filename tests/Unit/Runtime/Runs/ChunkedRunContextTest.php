@@ -7,8 +7,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkedRunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -25,9 +25,9 @@ final class ChunkedRunContextTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const int NOW      = 1_700_000_000;
-	private const string OWNER = 'chunked-job-context-tests';
+	private const string SCOPE = 'chunked-job-context-tests';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private EngineRig $rig;
 
 	// endregion.
@@ -54,7 +54,7 @@ final class ChunkedRunContextTest extends TestCase {
 		parent::setUp();
 
 		$this->rig    = EngineRig::set_up( self::NOW );
-		$this->client = $this->rig->operations( self::OWNER );
+		$this->client = $this->rig->operations( self::SCOPE );
 	}
 
 	/**

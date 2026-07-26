@@ -116,7 +116,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity   Complete owner-qualified chunked-job identity.
+	 * @param   Identity      $identity   Complete scope-qualified chunked-job identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
 	 * @throws  \InvalidArgumentException When the execution object does not implement ChunkedJobExecutionInterface.
@@ -138,7 +138,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified chunked-job identity.
+	 * @param   Identity $identity Complete scope-qualified chunked-job identity.
 	 *
 	 * @return  ChunkedJobExecutionInterface|null
 	 */
@@ -155,7 +155,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified chunked-job identity.
+	 * @param   Identity $identity Complete scope-qualified chunked-job identity.
 	 *
 	 * @return  JobOptions|null
 	 */
@@ -219,7 +219,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Persisted running state.
 	 * @param   RunStore $run_store Active-run store.
@@ -302,7 +302,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
@@ -389,7 +389,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
@@ -435,7 +435,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			 * @version 1.0.0
 			 *
 			 * @param   list<array<array-key, mixed>> $queue      Complete list of chunk argument arrays.
-			 * @param   string                        $identity   Complete owner-qualified chunked-job identity.
+			 * @param   string                        $identity   Complete scope-qualified chunked-job identity.
 			 * @param   array<array-key, mixed>       $start_args Arguments supplied when the run started.
 			 * @param   string                        $run_id     Run identifier.
 			 */
@@ -444,7 +444,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			/**
 			 * Filters the generated chunk queue for a chunked job.
 			 *
-			 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+			 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
 			 *
 			 * @since   1.0.0
 			 * @version 1.0.0
@@ -503,7 +503,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
@@ -549,7 +549,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
@@ -586,7 +586,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @version 1.0.0
 	 *
 	 * @param   ChunkedJobExecutionInterface  $execution   Registered chunked-job execution.
-	 * @param   Identity                      $identity    Complete owner-qualified chunked-job identity.
+	 * @param   Identity                      $identity    Complete scope-qualified chunked-job identity.
 	 * @param   string                        $run_id      Run identifier.
 	 * @param   RunState                      $state       Fenced executing state.
 	 * @param   RunStore                      $run_store   Active-run store.
@@ -680,7 +680,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity             $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity             $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string               $run_id    Run identifier.
 	 * @param   RunState             $state     Persisted successor state.
 	 * @param   RunStore             $run_store Active-run store.
@@ -704,7 +704,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity    $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity    $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string      $run_id    Run identifier.
 	 * @param   RunState    $state     Fenced running state.
 	 * @param   RunStore    $run_store Active-run store.
@@ -732,7 +732,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity    $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity    $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string      $run_id    Run identifier.
 	 * @param   RunState    $state     Fenced running state.
 	 * @param   RunStore    $run_store Active-run store.
@@ -750,7 +750,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                      $identity  Complete owner-qualified chunked-job identity.
+	 * @param   Identity                      $identity  Complete scope-qualified chunked-job identity.
 	 * @param   string                        $run_id    Run identifier.
 	 * @param   RunState                      $state     Fenced running state.
 	 * @param   RunStore                      $run_store Active-run store.
@@ -778,7 +778,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified chunked-job identity.
+	 * @param   Identity $identity Complete scope-qualified chunked-job identity.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   string   $stage    Internal lifecycle stage.
 	 *

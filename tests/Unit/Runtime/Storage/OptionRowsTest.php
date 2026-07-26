@@ -319,7 +319,7 @@ final class OptionRowsTest extends TestCase {
 
 	/** A bounded page keysets past rejected candidates and counts only accepted names. */
 	public function test_option_names_page_applies_the_limit_after_validation(): void {
-		$prefix       = 'a8csp_bgje_active_run_owner:email-digest_';
+		$prefix       = 'a8csp_bgje_active_run_scope:email-digest_';
 		$first_valid  = $prefix . \sprintf( '%020d-%019d', 1, 1 );
 		$second_valid = $prefix . \sprintf( '%020d-%019d', 2, 2 );
 		$wpdb         = new WpdbLockSpy();

@@ -53,7 +53,7 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ScheduleRegistry $registry        Owner-scoped schedule registry.
+	 * @param   ScheduleRegistry $registry        Per-scope schedule registry.
 	 * @param   Dispatcher       $dispatcher      Policy-aware target-job dispatcher.
 	 * @param   OccurrenceLease  $lease           Per-registration occurrence decision lease.
 	 * @param   CleanupIntents   $cleanup_intents Durable unknown-chain cleanup boundary.
@@ -97,7 +97,7 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
 	 * @return  void
 	 */
@@ -149,23 +149,23 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified schedule identity.
+	 * @param   Identity $identity Complete scope-qualified schedule identity.
 	 *
 	 * @return  AbstractResult<array{identity: Identity, run_id: string}, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now_under_lease( Identity $identity ): AbstractResult {
-		$owner            = $identity->owner();
+		$scope            = $identity->scope();
 		$name             = $identity->name();
 		$registration_key = (string) $identity;
 		$lease_claim      = $this->lease->claim( $registration_key );
 		if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim->outcome ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Schedule "%1$s" for owner "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $owner ),
+					\sprintf( 'Schedule "%1$s" for scope "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $scope ),
 					reason: EngineErrorReason::OverlapHeld,
 					context: array(
-						'owner'    => $owner,
+						'scope'    => $scope,
 						'schedule' => $name,
 					),
 				)
@@ -174,10 +174,10 @@ final readonly class OccurrenceDelivery {
 		if ( OccurrenceLeaseOutcome::Indeterminate === $lease_claim->outcome ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Schedule "%1$s" for owner "%2$s" could not establish its occurrence lease because storage could not be read or written; repair WordPress option reads and writes, then retry.', $name, $owner ),
+					\sprintf( 'Schedule "%1$s" for scope "%2$s" could not establish its occurrence lease because storage could not be read or written; repair WordPress option reads and writes, then retry.', $name, $scope ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
-						'owner'             => $owner,
+						'scope'             => $scope,
 						'schedule'          => $name,
 						'storage_operation' => $lease_claim->storage_operation,
 					),
@@ -188,7 +188,7 @@ final readonly class OccurrenceDelivery {
 		$lease_handle = $lease_claim->claimed_lease();
 
 		try {
-			return $this->dispatch_now( $identity, $owner, $name, $lease_handle );
+			return $this->dispatch_now( $identity, $scope, $name, $lease_handle );
 		} finally {
 			$lease_handle->release();
 		}
@@ -206,13 +206,13 @@ final readonly class OccurrenceDelivery {
 	 *
 	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool} $registration
 	 *
-	 * @param   Identity $identity     Complete owner-qualified schedule identity.
-	 * @param   string   $owner        Stable client identifier.
+	 * @param   Identity $identity     Complete scope-qualified schedule identity.
+	 * @param   string   $scope        Stable client identifier.
 	 * @param   array    $registration Complete registration timing state.
 	 *
 	 * @return  void
 	 */
-	private function persist_delivery_state( Identity $identity, string $owner, array $registration ): void {
+	private function persist_delivery_state( Identity $identity, string $scope, array $registration ): void {
 		$registration_key = (string) $identity;
 		$outcome          = $this->registry->update_registration( $identity, $registration['fingerprint'], $registration );
 		if ( RegistrationUpdateOutcome::Updated === $outcome ) {
@@ -222,7 +222,7 @@ final readonly class OccurrenceDelivery {
 			$this->logger->debug(
 				'Schedule registration pruned concurrently; delivery state discarded.',
 				array(
-					'owner'             => $owner,
+					'scope'             => $scope,
 					'schedule_identity' => $registration_key,
 				)
 			);
@@ -233,7 +233,7 @@ final readonly class OccurrenceDelivery {
 			$this->logger->debug(
 				'Schedule registration superseded concurrently; delivery state discarded.',
 				array(
-					'owner'             => $owner,
+					'scope'             => $scope,
 					'schedule_identity' => $registration_key,
 				)
 			);
@@ -241,11 +241,11 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$error = SchedulingError::registry_persist_failure( $owner );
+		$error = SchedulingError::registry_persist_failure( $scope );
 		$this->logger->error(
 			'Schedule occurrence state could not be persisted: {error}',
 			array(
-				'owner' => $owner,
+				'scope' => $scope,
 				'error' => $error->message,
 			)
 		);
@@ -296,7 +296,7 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string                $registration_key `{scope}:{name}` schedule identity.
 	 * @param   OccurrenceLeaseHandle $lease_handle     Claimed occurrence-lease handle.
 	 *
 	 * @throws  \LogicException When a resolved registration does not retain its canonical identity.
@@ -340,9 +340,9 @@ final readonly class OccurrenceDelivery {
 			$aging = $this->registry->record_undeclared_occurrence( $identity, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
 			if ( UndeclaredOccurrenceOutcome::Escalated === $aging ) {
 				$this->logger->warning(
-					\sprintf( 'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp a8csp-bgje schedules remove %3$s".', $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD, $identity->owner() ),
+					\sprintf( 'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp a8csp-bgje schedules remove %3$s".', $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD, $identity->scope() ),
 					array(
-						'owner'                  => $identity->owner(),
+						'scope'                  => $identity->scope(),
 						'schedule_identity'      => $registration_key,
 						'undeclared_occurrences' => self::INACTIVE_WARNING_DELIVERY_THRESHOLD,
 					)
@@ -359,13 +359,13 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$owner = $identity->owner();
+		$scope = $identity->scope();
 		$now   = $this->clock->now()->getTimestamp();
 		if ( $now < $registration['next_due'] ) {
 			$this->logger->debug(
 				'Stale schedule occurrence redelivery dropped after its next-due token advanced.',
 				array(
-					'owner'             => $owner,
+					'scope'             => $scope,
 					'schedule_identity' => $registration_key,
 					'next_due'          => $registration['next_due'],
 					'fired_at'          => $now,
@@ -384,30 +384,30 @@ final readonly class OccurrenceDelivery {
 		 * @version 1.0.0
 		 *
 		 * @param   int    $interval Default grace window in seconds.
-		 * @param   string $owner    Stable client identifier.
-		 * @param   string $identity Complete owner-qualified schedule identity.
+		 * @param   string $scope    Stable client identifier.
+		 * @param   string $identity Complete scope-qualified schedule identity.
 		 */
-		$grace = \apply_filters( 'a8csp_bgje/misfire_grace', $interval, $owner, $registration_key );
+		$grace = \apply_filters( 'a8csp_bgje/misfire_grace', $interval, $scope, $registration_key );
 
 		/**
 		 * Filters the grace window for one schedule occurrence.
 		 *
-		 * The dynamic portion of the hook name, `$identity`, is the complete owner-qualified
+		 * The dynamic portion of the hook name, `$identity`, is the complete scope-qualified
 		 * schedule identity.
 		 *
 		 * @since   1.0.0
 		 * @version 1.0.0
 		 *
 		 * @param   int    $grace            Generic-filtered grace window in seconds.
-		 * @param   string $owner            Stable client identifier.
-		 * @param   string $identity         Complete owner-qualified schedule identity.
+		 * @param   string $scope            Stable client identifier.
+		 * @param   string $identity         Complete scope-qualified schedule identity.
 		 */
-		$grace = \apply_filters( 'a8csp_bgje/misfire_grace/' . $registration_key, $grace, $owner, $registration_key );
+		$grace = \apply_filters( 'a8csp_bgje/misfire_grace/' . $registration_key, $grace, $scope, $registration_key );
 		if ( ! \is_int( $grace ) || 0 > $grace ) {
 			$this->logger->warning(
 				'Misfire grace filter returned an invalid value; return a non-negative integer to override the recurrence interval.',
 				array(
-					'owner'             => $owner,
+					'scope'             => $scope,
 					'schedule_identity' => $registration_key,
 					'returned_type'     => \get_debug_type( $grace ),
 					'default_grace'     => $interval,
@@ -423,7 +423,7 @@ final readonly class OccurrenceDelivery {
 			$this->logger->error(
 				'Schedule recurrence cannot advance beyond the current timestamp; correct the system clock or synchronize a smaller interval.',
 				array(
-					'owner'             => $owner,
+					'scope'             => $scope,
 					'schedule_identity' => $registration_key,
 					'next_due'          => $registration['next_due'],
 					'fired_at'          => $now,
@@ -437,23 +437,23 @@ final readonly class OccurrenceDelivery {
 			$misfired_due                  = $registration['next_due'];
 			$registration['next_due']      = $next_due;
 			$registration['misfire_skips'] = self::increment_counter( $registration['misfire_skips'] );
-			$this->persist_delivery_state( $identity, $owner, $registration );
+			$this->persist_delivery_state( $identity, $scope, $registration );
 			try {
 				try {
 					/**
 					 * Fires when a Skip schedule drops one beyond-grace occurrence.
 					 *
 					 * The dynamic portion of the hook name, `$identity`, is the complete
-					 * owner-qualified schedule identity.
+					 * scope-qualified schedule identity.
 					 *
 					 * @since   1.0.0
 					 * @version 1.0.0
 					 *
-					 * @param   string $owner        Stable client identifier.
+					 * @param   string $scope        Stable client identifier.
 					 * @param   int    $misfired_due Dropped occurrence due timestamp.
 					 * @param   int    $now          Occurrence observation timestamp.
 					 */
-					\do_action( 'a8csp_bgje/misfire_skipped/' . $registration_key, $owner, $misfired_due, $now );
+					\do_action( 'a8csp_bgje/misfire_skipped/' . $registration_key, $scope, $misfired_due, $now );
 				} finally {
 					/**
 					 * Fires after the identity-specific misfire-skipped schedule hook.
@@ -461,18 +461,18 @@ final readonly class OccurrenceDelivery {
 					 * @since   1.0.0
 					 * @version 1.0.0
 					 *
-					 * @param   string $identity         Complete owner-qualified schedule identity.
-					 * @param   string $owner            Stable client identifier.
+					 * @param   string $identity         Complete scope-qualified schedule identity.
+					 * @param   string $scope            Stable client identifier.
 					 * @param   int    $misfired_due     Dropped occurrence due timestamp.
 					 * @param   int    $now              Occurrence observation timestamp.
 					 */
-					\do_action( 'a8csp_bgje/misfire_skipped', $registration_key, $owner, $misfired_due, $now );
+					\do_action( 'a8csp_bgje/misfire_skipped', $registration_key, $scope, $misfired_due, $now );
 				}
 			} catch ( \Throwable $throwable ) {
 				$this->logger->error(
 					'Misfire-skipped schedule listener failed after the occurrence state was persisted; fix the hook listener.',
 					array(
-						'owner'             => $owner,
+						'scope'             => $scope,
 						'schedule_identity' => $registration_key,
 						'exception'         => $throwable,
 					)
@@ -481,7 +481,7 @@ final readonly class OccurrenceDelivery {
 			$this->logger->info(
 				'Misfired schedule occurrence skipped and realigned to its recurrence.',
 				array(
-					'owner'             => $owner,
+					'scope'             => $scope,
 					'schedule_identity' => $registration_key,
 					'next_due'          => $next_due,
 					'fired_at'          => $now,
@@ -498,9 +498,9 @@ final readonly class OccurrenceDelivery {
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority ?? 10,
-			function () use ( $identity, $owner, $accepted_registration, $lease_handle ): void {
+			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
 				try {
-					$this->persist_delivery_state( $identity, $owner, $accepted_registration );
+					$this->persist_delivery_state( $identity, $scope, $accepted_registration );
 				} finally {
 					$lease_handle->release();
 				}
@@ -511,7 +511,7 @@ final readonly class OccurrenceDelivery {
 			$this->logger->error(
 				'Schedule occurrence could not enqueue its target job: {error}',
 				array(
-					'owner'             => $owner,
+					'scope'             => $scope,
 					'schedule_identity' => $registration_key,
 					'error'             => $dispatched->error->message,
 				)
@@ -524,11 +524,11 @@ final readonly class OccurrenceDelivery {
 		if ( $dispatched->value instanceof SkippedJobDispatch ) {
 			// RunOnce makes the occurrence up, so it is not recorded as a misfire; `misfire_skips` counts Skip-policy drops, `overlap_skips` counts overlap skips.
 			$registration['overlap_skips'] = self::increment_counter( $registration['overlap_skips'] );
-			$this->persist_delivery_state( $identity, $owner, $registration );
+			$this->persist_delivery_state( $identity, $scope, $registration );
 			$this->logger->info(
 				'Schedule occurrence skipped because the target job lock is held.',
 				array(
-					'owner'             => $owner,
+					'scope'             => $scope,
 					'schedule_identity' => $registration_key,
 					'running_run_id'    => $dispatched->value->running_run_id,
 				)
@@ -544,14 +544,14 @@ final readonly class OccurrenceDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity              $identity         Complete owner-qualified schedule identity.
-	 * @param   string                $owner            Stable client identifier.
+	 * @param   Identity              $identity         Complete scope-qualified schedule identity.
+	 * @param   string                $scope            Stable client identifier.
 	 * @param   string                $name             Stable schedule name.
 	 * @param   OccurrenceLeaseHandle $lease_handle     Claimed occurrence-lease handle.
 	 *
 	 * @return  AbstractResult<array{identity: Identity, run_id: string}, EngineError|SchedulingError>
 	 */
-	private function dispatch_now( Identity $identity, string $owner, string $name, OccurrenceLeaseHandle $lease_handle ): AbstractResult {
+	private function dispatch_now( Identity $identity, string $scope, string $name, OccurrenceLeaseHandle $lease_handle ): AbstractResult {
 		$registration_key  = (string) $identity;
 		$registration_read = $this->registry->registration( $registration_key );
 		if ( $registration_read->is_failure() ) {
@@ -562,10 +562,10 @@ final readonly class OccurrenceDelivery {
 		if ( null === $registration ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Schedule "%1$s" for owner "%2$s" is not synchronized; declare it with sync() before running it now.', $name, $owner ),
+					\sprintf( 'Schedule "%1$s" for scope "%2$s" is not synchronized; declare it with sync() before running it now.', $name, $scope ),
 					reason: EngineErrorReason::UnknownSchedule,
 					context: array(
-						'owner'    => $owner,
+						'scope'    => $scope,
 						'schedule' => $name,
 					),
 				)
@@ -576,10 +576,10 @@ final readonly class OccurrenceDelivery {
 		if ( null === $declaration ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Schedule "%1$s" for owner "%2$s" is inactive in this request; synchronize its declaration before running it now.', $name, $owner ),
+					\sprintf( 'Schedule "%1$s" for scope "%2$s" is inactive in this request; synchronize its declaration before running it now.', $name, $scope ),
 					reason: EngineErrorReason::UnknownSchedule,
 					context: array(
-						'owner'    => $owner,
+						'scope'    => $scope,
 						'schedule' => $name,
 					),
 				)
@@ -591,10 +591,10 @@ final readonly class OccurrenceDelivery {
 		if ( $registration['fingerprint'] !== $schedule->fingerprint() ) {
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Schedule "%1$s" for owner "%2$s" changed after this request synchronized; synchronize its current declaration before running it now.', $name, $owner ),
+					\sprintf( 'Schedule "%1$s" for scope "%2$s" changed after this request synchronized; synchronize its current declaration before running it now.', $name, $scope ),
 					reason: EngineErrorReason::UnknownSchedule,
 					context: array(
-						'owner'    => $owner,
+						'scope'    => $scope,
 						'schedule' => $name,
 					),
 				)
@@ -607,9 +607,9 @@ final readonly class OccurrenceDelivery {
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority ?? 10,
-			function () use ( $identity, $owner, $accepted_registration, $lease_handle ): void {
+			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
 				try {
-					$this->persist_delivery_state( $identity, $owner, $accepted_registration );
+					$this->persist_delivery_state( $identity, $scope, $accepted_registration );
 				} finally {
 					$lease_handle->release();
 				}

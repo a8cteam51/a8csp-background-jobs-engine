@@ -180,7 +180,7 @@ final class BoundaryErrorMapperTest extends TestCase {
 					SchedulingErrorReason::StorageFailure,
 					'The schedule registry could not be persisted.',
 					array(
-						'owner'         => 'consumer-plugin',
+						'scope'         => 'consumer-plugin',
 						'storage_error' => $secret,
 						'wp_error'      => $secret,
 					)
@@ -190,7 +190,7 @@ final class BoundaryErrorMapperTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( array( 'owner' => 'consumer-plugin' ), $result->error->context );
+		self::assertSame( array( 'scope' => 'consumer-plugin' ), $result->error->context );
 		self::assertArrayNotHasKey( 'storage_error', $result->error->context );
 		self::assertArrayNotHasKey( 'wp_error', $result->error->context );
 	}

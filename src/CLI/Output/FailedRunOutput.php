@@ -30,7 +30,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
  *     }
  * }
  * @phpstan-type FailedRunRow array{
- *     owner: string,
+ *     scope: string,
  *     identity: string,
  *     run_id: string,
  *     failed_at: string,
@@ -58,7 +58,7 @@ final readonly class FailedRunOutput {
 	 * @var     list<string>
 	 */
 	private const array FIELDS = array(
-		'owner',
+		'scope',
 		'identity',
 		'run_id',
 		'failed_at',
@@ -78,7 +78,7 @@ final readonly class FailedRunOutput {
 	 * @var     list<string>
 	 */
 	private const array STRUCTURED_FIELDS = array(
-		'owner',
+		'scope',
 		'identity',
 		'run_id',
 		'failed_at',
@@ -105,13 +105,13 @@ final readonly class FailedRunOutput {
 	 * @phpstan-param list<FailedRunGroup> $groups
 	 *
 	 * @param   array       $groups Failed runs grouped by composed job or chunked job identity.
-	 * @param   string|null $owner  Exact owner filter, or null for every owner.
+	 * @param   string|null $scope  Exact scope filter, or null for every scope.
 	 *
 	 * @phpstan-return list<FailedRunRow>
 	 *
 	 * @return  array
 	 */
-	public static function rows_from_entries( array $groups, ?string $owner = null ): array {
+	public static function rows_from_entries( array $groups, ?string $scope = null ): array {
 		\usort(
 			$groups,
 			static fn ( array $left, array $right ): int => (string) $left['identity'] <=> (string) $right['identity']
@@ -120,7 +120,7 @@ final readonly class FailedRunOutput {
 		$rows = array();
 		foreach ( $groups as $group ) {
 			$identity = $group['identity'];
-			if ( null !== $owner && $owner !== $identity->owner() ) {
+			if ( null !== $scope && $scope !== $identity->scope() ) {
 				continue;
 			}
 
@@ -140,7 +140,7 @@ final readonly class FailedRunOutput {
 					: null;
 
 				$rows[] = array(
-					'owner'         => $identity->owner(),
+					'scope'         => $identity->scope(),
 					'identity'      => (string) $identity,
 					'run_id'        => $entry['run_id'],
 					'failed_at'     => \gmdate( \DATE_ATOM, $entry['failed_at'] ),
@@ -193,15 +193,15 @@ final readonly class FailedRunOutput {
 	 * @phpstan-param list<FailedRunGroup> $groups
 	 *
 	 * @param   array       $groups             Failed runs grouped by composed identity.
-	 * @param   string|null $owner              Exact owner filter, or null for every owner.
+	 * @param   string|null $scope              Exact scope filter, or null for every scope.
 	 * @param   string      $format             WP-CLI output format.
 	 * @param   int         $unreadable_entries Rejected child-entry count.
 	 * @param   int         $unreadable_rows    Whole-row unreadable count.
 	 *
 	 * @return  void
 	 */
-	public static function render( array $groups, ?string $owner, string $format, int $unreadable_entries = 0, int $unreadable_rows = 0 ): void {
-		$rows    = self::rows_from_entries( $groups, $owner );
+	public static function render( array $groups, ?string $scope, string $format, int $unreadable_entries = 0, int $unreadable_rows = 0 ): void {
+		$rows    = self::rows_from_entries( $groups, $scope );
 		$warning = self::unreadable_message( $unreadable_entries, $unreadable_rows );
 		if ( array() === $rows && 'table' === $format && null === $warning ) {
 			\WP_CLI::line( 'No failed runs are retained.' );

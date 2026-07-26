@@ -21,14 +21,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 final class SupersededRunTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Client owner isolated to supersession coverage. */
-	private const string OWNER = 'integration-superseded';
+	/** Client scope isolated to supersession coverage. */
+	private const string SCOPE = 'integration-superseded';
 
 	/** Chunked Job identity unique within the request-persistent integration registry. */
 	private const string NAME = 'integration-superseded-run';
 
-	/** Owner-qualified chunked job identity persisted by the engine. */
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	/** Scope-qualified chunked job identity persisted by the engine. */
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 
 	// endregion.
 
@@ -56,7 +56,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 			array( 'chunk' => 'two' ),
 		);
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );

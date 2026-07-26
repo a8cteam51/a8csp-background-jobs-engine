@@ -7,9 +7,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Owner-bound public service for supported schedule operations.
+ * Scope-bound public service for supported schedule operations.
  *
- * Owner validation and engine resolution remain lazy until a verb is invoked. Every expected
+ * Scope validation and engine resolution remain lazy until a verb is invoked. Every expected
  * validation, readiness, or engine failure crosses this boundary as a `WP_Error`.
  *
  * @api
@@ -21,7 +21,7 @@ final readonly class Schedules extends AbstractPortal {
 	// region METHODS
 
 	/**
-	 * Synchronizes the bound owner's complete declared schedule set.
+	 * Synchronizes the bound scope's complete declared schedule set.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -52,7 +52,7 @@ final readonly class Schedules extends AbstractPortal {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Owner-local schedule name.
+	 * @param   string $name Scope-local schedule name.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *

@@ -18,7 +18,7 @@ use Psr\Log\LoggerInterface;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Retains declared schedules request-locally and persists their owner-scoped timing state.
+ * Retains declared schedules request-locally and persists their per-scope timing state.
  *
  * @internal
  *
@@ -39,7 +39,7 @@ final class ScheduleRegistry {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Prefix for per-owner schedule-registration rows.
+	 * Prefix for per-scope schedule-registration rows.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -59,7 +59,7 @@ final class ScheduleRegistry {
 	private const int UPDATE_ATTEMPTS = 5;
 
 	/**
-	 * Current-request declarations keyed by complete schedule identity inside each owner.
+	 * Current-request declarations keyed by complete schedule identity inside each scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -98,18 +98,18 @@ final class ScheduleRegistry {
 	// region METHODS
 
 	/**
-	 * Returns whether one owner has an authoritative registry option row.
+	 * Returns whether one scope has an authoritative registry option row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable client identifier.
+	 * @param   string $scope Stable client identifier.
 	 *
 	 * @return  AbstractResult<bool, EngineError>
 	 */
 	#[\NoDiscard( 'a schedule-registry presence outcome must be handled, not dropped' )]
-	public function owner_exists( string $owner ): AbstractResult {
-		$selected = $this->rows->read( self::option_name( $owner ) );
+	public function scope_exists( string $scope ): AbstractResult {
+		$selected = $this->rows->read( self::option_name( $scope ) );
 		if ( $selected->is_failure() ) {
 			return $selected;
 		}
@@ -118,18 +118,18 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Returns valid persisted registrations belonging to exactly one owner.
+	 * Returns valid persisted registrations belonging to exactly one scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable client identifier.
+	 * @param   string $scope Stable client identifier.
 	 *
 	 * @return  AbstractResult<array<string, Registration>, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule-registry read outcome must be handled, not dropped' )]
-	public function registrations_for( string $owner ): AbstractResult {
-		$option_name = self::option_name( $owner );
+	public function registrations_for( string $scope ): AbstractResult {
+		$option_name = self::option_name( $scope );
 		$selected    = $this->rows->read( $option_name );
 		if ( $selected->is_failure() ) {
 			return $selected;
@@ -141,13 +141,13 @@ final class ScheduleRegistry {
 		}
 
 		$stored = RawOptionDecoder::decode( $raw );
-		if ( ! \is_array( $stored ) || self::has_registration_without_undeclared_markers( $owner, $stored ) ) {
+		if ( ! \is_array( $stored ) || self::has_registration_without_undeclared_markers( $scope, $stored ) ) {
 			$this->warn_corrupt_row( $option_name );
 
-			return new Failure( SchedulingError::registry_corrupt( $owner, $option_name ) );
+			return new Failure( SchedulingError::registry_corrupt( $scope, $option_name ) );
 		}
 
-		return new Success( self::registrations_from_rows( $owner, $stored ) );
+		return new Success( self::registrations_from_rows( $scope, $stored ) );
 	}
 
 	/**
@@ -169,8 +169,8 @@ final class ScheduleRegistry {
 
 		$registrations = array();
 		foreach ( $names->value as $option_name ) {
-			$owner = self::owner_from_option_name( $option_name );
-			if ( null === $owner ) {
+			$scope = self::scope_from_option_name( $option_name );
+			if ( null === $scope ) {
 				continue;
 			}
 
@@ -185,12 +185,12 @@ final class ScheduleRegistry {
 			}
 
 			$stored = RawOptionDecoder::decode( $raw );
-			if ( ! \is_array( $stored ) || self::has_registration_without_undeclared_markers( $owner, $stored ) ) {
+			if ( ! \is_array( $stored ) || self::has_registration_without_undeclared_markers( $scope, $stored ) ) {
 				$this->warn_corrupt_row( $option_name );
 				continue;
 			}
 
-			foreach ( self::registrations_from_rows( $owner, $stored ) as $identity => $registration ) {
+			foreach ( self::registrations_from_rows( $scope, $stored ) as $identity => $registration ) {
 				$registrations[ $identity ] = $registration;
 			}
 		}
@@ -199,7 +199,7 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Replaces one owner's request declarations and persisted registration state.
+	 * Replaces one scope's request declarations and persisted registration state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -207,22 +207,22 @@ final class ScheduleRegistry {
 	 * @phpstan-param array<string, array{schedule: Schedule, job: Identity}> $schedules
 	 * @phpstan-param array<string, Registration>                            $registrations
 	 *
-	 * @param   string $owner                       Stable client identifier.
+	 * @param   string $scope                       Stable client identifier.
 	 * @param   array  $schedules                   Declared schedules keyed by complete identity.
-	 * @param   array  $registrations               Persisted owner state keyed by complete identity.
+	 * @param   array  $registrations               Persisted scope state keyed by complete identity.
 	 * @param   bool   $reset_undeclared_episodes   Whether successful request declarations end their inactive episodes.
 	 *
-	 * @throws  \InvalidArgumentException When a registration identity is invalid or belongs to another owner.
+	 * @throws  \InvalidArgumentException When a registration identity is invalid or belongs to another scope.
 	 *
-	 * @return  OwnerReplacementOutcome Classified persistence outcome.
+	 * @return  ScopeReplacementOutcome Classified persistence outcome.
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
-	public function replace_owner( string $owner, array $schedules, array $registrations, bool $reset_undeclared_episodes = false ): OwnerReplacementOutcome {
-		$owner_registrations = self::owner_registrations( $owner, $registrations );
-		if ( null === $owner_registrations ) {
-			throw new \InvalidArgumentException( 'Schedule registration identities must be canonical and belong to the bound owner.' );
+	public function replace_scope( string $scope, array $schedules, array $registrations, bool $reset_undeclared_episodes = false ): ScopeReplacementOutcome {
+		$scope_registrations = self::scope_registrations( $scope, $registrations );
+		if ( null === $scope_registrations ) {
+			throw new \InvalidArgumentException( 'Schedule registration identities must be canonical and belong to the bound scope.' );
 		}
-		$replacement_baseline = $owner_registrations;
+		$replacement_baseline = $scope_registrations;
 		if ( $reset_undeclared_episodes ) {
 			// Resetting the baseline keeps a lost-update retry from re-inserting stale inactive episode state.
 			foreach ( $replacement_baseline as $registration_key => $registration ) {
@@ -231,27 +231,27 @@ final class ScheduleRegistry {
 				$replacement_baseline[ $registration_key ] = $registration;
 			}
 		}
-		$option_name = self::option_name( $owner );
+		$option_name = self::option_name( $scope );
 
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( $option_name );
 			if ( $read->is_failure() ) {
-				return OwnerReplacementOutcome::ReadFailed;
+				return ScopeReplacementOutcome::ReadFailed;
 			}
 
 			$expected_raw = $read->value;
 			if ( null === $expected_raw ) {
-				if ( array() === $owner_registrations ) {
-					$this->retain_owner( $owner, $schedules );
+				if ( array() === $scope_registrations ) {
+					$this->retain_scope( $scope, $schedules );
 
-					return OwnerReplacementOutcome::Persisted;
+					return ScopeReplacementOutcome::Persisted;
 				}
 
 				$replacement_raw = self::serialize_registrations( $replacement_baseline );
 				if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
-					$this->retain_owner( $owner, $schedules );
+					$this->retain_scope( $scope, $schedules );
 
-					return OwnerReplacementOutcome::Persisted;
+					return ScopeReplacementOutcome::Persisted;
 				}
 
 				continue;
@@ -259,11 +259,11 @@ final class ScheduleRegistry {
 
 			$stored = RawOptionDecoder::decode( $expected_raw );
 			if ( ! \is_array( $stored ) ) {
-				return OwnerReplacementOutcome::Corrupt;
+				return ScopeReplacementOutcome::Corrupt;
 			}
 
 			$replacement_registrations = $replacement_baseline;
-			$stored_registrations      = self::registrations_from_rows( $owner, $stored );
+			$stored_registrations      = self::registrations_from_rows( $scope, $stored );
 			foreach ( $replacement_registrations as $registration_key => $registration ) {
 				$stored_registration = $stored_registrations[ $registration_key ] ?? null;
 				if ( null !== $stored_registration && $registration['fingerprint'] === $stored_registration['fingerprint'] ) {
@@ -277,32 +277,32 @@ final class ScheduleRegistry {
 			}
 
 			if ( $replacement_registrations === $stored ) {
-				$this->retain_owner( $owner, $schedules );
+				$this->retain_scope( $scope, $schedules );
 
-				return OwnerReplacementOutcome::Persisted;
+				return ScopeReplacementOutcome::Persisted;
 			}
 
-			if ( array() === $owner_registrations ) {
+			if ( array() === $scope_registrations ) {
 				if ( RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $option_name, $expected_raw ) ) {
-					$this->retain_owner( $owner, $schedules );
+					$this->retain_scope( $scope, $schedules );
 
-					return OwnerReplacementOutcome::Persisted;
+					return ScopeReplacementOutcome::Persisted;
 				}
 
 				$current = $this->rows->read( $option_name );
 				if ( $current->is_failure() ) {
-					return OwnerReplacementOutcome::ReadFailed;
+					return ScopeReplacementOutcome::ReadFailed;
 				}
 
 				// A lost delete whose row is already gone means another writer reached the goal state first.
 				$current_raw = $current->value;
 				if ( null === $current_raw ) {
-					$this->retain_owner( $owner, $schedules );
+					$this->retain_scope( $scope, $schedules );
 
-					return OwnerReplacementOutcome::Persisted;
+					return ScopeReplacementOutcome::Persisted;
 				}
 				if ( $current_raw === $expected_raw ) {
-					return OwnerReplacementOutcome::CasFailed;
+					return ScopeReplacementOutcome::CasFailed;
 				}
 
 				continue;
@@ -311,16 +311,16 @@ final class ScheduleRegistry {
 			$replacement_raw = self::serialize_registrations( $replacement_registrations );
 			$write           = $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw );
 			if ( RowWriteOutcome::Won === $write ) {
-				$this->retain_owner( $owner, $schedules );
+				$this->retain_scope( $scope, $schedules );
 
-				return OwnerReplacementOutcome::Persisted;
+				return ScopeReplacementOutcome::Persisted;
 			}
 			if ( RowWriteOutcome::WriteFailed === $write ) {
-				return OwnerReplacementOutcome::CasFailed;
+				return ScopeReplacementOutcome::CasFailed;
 			}
 		}
 
-		return OwnerReplacementOutcome::CasFailed;
+		return ScopeReplacementOutcome::CasFailed;
 	}
 
 	// endregion
@@ -333,12 +333,12 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified schedule identity.
+	 * @param   Identity $identity Complete scope-qualified schedule identity.
 	 *
 	 * @return  array{schedule: Schedule, job: Identity}|null
 	 */
 	public function declaration( Identity $identity ): ?array {
-		return $this->declarations[ $identity->owner() ][ (string) $identity ] ?? null;
+		return $this->declarations[ $identity->scope() ][ (string) $identity ] ?? null;
 	}
 
 	/**
@@ -347,7 +347,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{owner}:{name}` schedule identity.
+	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
 	 * @return  AbstractResult<Registration|null, EngineError|SchedulingError>
 	 */
@@ -358,7 +358,7 @@ final class ScheduleRegistry {
 			return new Success( null );
 		}
 
-		$registrations = $this->registrations_for( $identity->owner() );
+		$registrations = $this->registrations_for( $identity->scope() );
 		if ( $registrations->is_failure() ) {
 			return $registrations;
 		}
@@ -374,7 +374,7 @@ final class ScheduleRegistry {
 	 *
 	 * @phpstan-param Registration $registration
 	 *
-	 * @param   Identity $identity             Complete owner-qualified schedule identity.
+	 * @param   Identity $identity             Complete scope-qualified schedule identity.
 	 * @param   string   $observed_fingerprint Definition fingerprint observed before the update.
 	 * @param   array    $registration         Complete registration timing state.
 	 *
@@ -383,8 +383,8 @@ final class ScheduleRegistry {
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
 	public function update_registration( Identity $identity, string $observed_fingerprint, array $registration ): RegistrationUpdateOutcome {
 		$registration_key = (string) $identity;
-		$owner            = $identity->owner();
-		$option_name      = self::option_name( $owner );
+		$scope            = $identity->scope();
+		$option_name      = self::option_name( $scope );
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$expected = $this->rows->read( $option_name );
 			if ( $expected->is_failure() ) {
@@ -449,7 +449,7 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity          Complete owner-qualified schedule identity.
+	 * @param   Identity $identity          Complete scope-qualified schedule identity.
 	 * @param   int      $warning_threshold Consecutive undeclared occurrences required for escalation.
 	 *
 	 * @return  UndeclaredOccurrenceOutcome Fenced aging outcome.
@@ -461,8 +461,8 @@ final class ScheduleRegistry {
 		}
 
 		$registration_key = (string) $identity;
-		$owner            = $identity->owner();
-		$option_name      = self::option_name( $owner );
+		$scope            = $identity->scope();
+		$option_name      = self::option_name( $scope );
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$expected = $this->rows->read( $option_name );
 			if ( $expected->is_failure() ) {
@@ -482,7 +482,7 @@ final class ScheduleRegistry {
 				return UndeclaredOccurrenceOutcome::Pruned;
 			}
 
-			$current = self::registrations_from_rows( $owner, $stored )[ $registration_key ] ?? null;
+			$current = self::registrations_from_rows( $scope, $stored )[ $registration_key ] ?? null;
 			if ( null === $current ) {
 				return UndeclaredOccurrenceOutcome::Failed;
 			}
@@ -534,33 +534,33 @@ final class ScheduleRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $owner Validated persisted owner key.
-	 * @param   array<array-key, mixed> $rows  Persisted rows for one owner.
+	 * @param   string                  $scope Validated persisted scope key.
+	 * @param   array<array-key, mixed> $rows  Persisted rows for one scope.
 	 *
 	 * @return  bool
 	 */
-	public static function has_registration_without_undeclared_markers( string $owner, array $rows ): bool {
+	public static function has_registration_without_undeclared_markers( string $scope, array $rows ): bool {
 		return \array_any(
 			$rows,
 			static fn ( mixed $row, int|string $registration_key ): bool => \is_string( $registration_key )
 				&& \is_array( $row )
-				&& Identity::tryFrom( $registration_key )?->owner() === $owner
+				&& Identity::tryFrom( $registration_key )?->scope() === $scope
 				&& ( ! \array_key_exists( 'undeclared_occurrences', $row ) || ! \array_key_exists( 'undeclared_escalated', $row ) )
 		);
 	}
 
 	/**
-	 * Returns valid registration rows from one persisted owner slice.
+	 * Returns valid registration rows from one persisted scope slice.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $owner Validated persisted owner key.
-	 * @param   array<array-key, mixed> $rows  Persisted rows for one owner.
+	 * @param   string                  $scope Validated persisted scope key.
+	 * @param   array<array-key, mixed> $rows  Persisted rows for one scope.
 	 *
 	 * @return  array<string, Registration>
 	 */
-	private static function registrations_from_rows( string $owner, array $rows ): array {
+	private static function registrations_from_rows( string $scope, array $rows ): array {
 		$registrations = array();
 		foreach ( $rows as $registration_key => $row ) {
 			if ( ! \is_string( $registration_key ) ) {
@@ -568,7 +568,7 @@ final class ScheduleRegistry {
 			}
 
 			$identity = Identity::tryFrom( $registration_key );
-			if ( null === $identity || $owner !== $identity->owner() ) {
+			if ( null === $identity || $scope !== $identity->scope() ) {
 				continue;
 			}
 
@@ -611,19 +611,19 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Returns one owner's persisted row shape from complete registration identities.
+	 * Returns one scope's persisted row shape from complete registration identities.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param array<string, Registration> $registrations
 	 *
-	 * @param   string $owner         Stable client or engine identifier.
-	 * @param   array  $registrations Persisted owner state keyed by complete identity.
+	 * @param   string $scope         Stable client or engine identifier.
+	 * @param   array  $registrations Persisted scope state keyed by complete identity.
 	 *
 	 * @return  array<string, Registration>|null
 	 */
-	private static function owner_registrations( string $owner, array $registrations ): ?array {
+	private static function scope_registrations( string $scope, array $registrations ): ?array {
 		$rows = array();
 		foreach ( $registrations as $registration_key => $registration ) {
 			if ( ! \is_string( $registration_key ) ) {
@@ -631,7 +631,7 @@ final class ScheduleRegistry {
 			}
 
 			$identity = Identity::tryFrom( $registration_key );
-			if ( null === $identity || $owner !== $identity->owner() ) {
+			if ( null === $identity || $scope !== $identity->scope() ) {
 				return null;
 			}
 
@@ -642,30 +642,30 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Returns the option name for one owner's registration row.
+	 * Returns the option name for one scope's registration row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable client or engine identifier.
+	 * @param   string $scope Stable client or engine identifier.
 	 *
-	 * @throws  \InvalidArgumentException When the owner fails identity validation.
+	 * @throws  \InvalidArgumentException When the scope fails identity validation.
 	 *
 	 * @return  string
 	 */
-	public static function option_name( string $owner ): string {
-		Identity::validate_owner( $owner, true );
+	public static function option_name( string $scope ): string {
+		Identity::validate_scope( $scope, true );
 
-		return self::OPTION_PREFIX . $owner;
+		return self::OPTION_PREFIX . $scope;
 	}
 
 	/**
-	 * Returns one owner row's exact WordPress option representation.
+	 * Returns one scope row's exact WordPress option representation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $registrations Complete owner registration state.
+	 * @param   array<array-key, mixed> $registrations Complete scope registration state.
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the registrations to a string.
 	 *
@@ -695,7 +695,7 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Returns the canonical owner encoded by one registration option name.
+	 * Returns the canonical scope encoded by one registration option name.
 	 *
 	 * @internal Engine maintenance only.
 	 *
@@ -706,19 +706,19 @@ final class ScheduleRegistry {
 	 *
 	 * @return  string|null
 	 */
-	public static function owner_from_option_name( string $option_name ): ?string {
-		$owner = \substr( $option_name, \strlen( self::OPTION_PREFIX ) );
+	public static function scope_from_option_name( string $option_name ): ?string {
+		$scope = \substr( $option_name, \strlen( self::OPTION_PREFIX ) );
 		try {
-			Identity::validate_owner( $owner, true );
+			Identity::validate_scope( $scope, true );
 		} catch ( \InvalidArgumentException ) {
 			return null;
 		}
 
-		return self::OPTION_PREFIX . $owner === $option_name ? $owner : null;
+		return self::OPTION_PREFIX . $scope === $option_name ? $scope : null;
 	}
 
 	/**
-	 * Reports one undecodable owner row without treating child-registration validation as row corruption.
+	 * Reports one undecodable scope row without treating child-registration validation as row corruption.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -741,23 +741,23 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Replaces one owner's request-local schedule definitions.
+	 * Replaces one scope's request-local schedule definitions.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                                                  $owner     Stable client identifier.
+	 * @param   string                                                  $scope     Stable client identifier.
 	 * @param   array<string, array{schedule: Schedule, job: Identity}> $schedules Declared schedules keyed by complete identity.
 	 *
 	 * @return  void
 	 */
-	private function retain_owner( string $owner, array $schedules ): void {
+	private function retain_scope( string $scope, array $schedules ): void {
 		if ( array() === $schedules ) {
-			unset( $this->declarations[ $owner ] );
+			unset( $this->declarations[ $scope ] );
 			return;
 		}
 
-		$this->declarations[ $owner ] = $schedules;
+		$this->declarations[ $scope ] = $schedules;
 	}
 
 	// endregion

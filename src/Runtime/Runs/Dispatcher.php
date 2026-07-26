@@ -116,7 +116,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity   Complete owner-qualified work identity.
+	 * @param   Identity      $identity   Complete scope-qualified work identity.
 	 * @param   JobDefinition $definition Definition to register.
 	 *
 	 * @throws  \InvalidArgumentException When the kind is not installed or its execution role is incompatible.
@@ -139,7 +139,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                $identity Complete owner-qualified work identity.
+	 * @param   Identity                $identity Complete scope-qualified work identity.
 	 * @param   array<array-key, mixed> $args     Start arguments.
 	 * @param   int|null                $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
 	 * @param   int|null                $priority Scheduler priority from 0 through 255, or null for the engine default.
@@ -168,7 +168,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                $identity                        Complete owner-qualified work identity.
+	 * @param   Identity                $identity                        Complete scope-qualified work identity.
 	 * @param   array<array-key, mixed> $args                            Target arguments.
 	 * @param   int                     $priority                        Scheduler priority from 0 through 255.
 	 * @param   \Closure|null           $on_accepted                     Internal callback after backend acceptance and before history.
@@ -197,7 +197,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 * @param   string   $run_id   Retained failed-run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
@@ -280,7 +280,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 * @param   string   $run_id   Retained run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
@@ -373,7 +373,7 @@ final readonly class Dispatcher {
 	 *
 	 * @param   KindHandlerInterface    $handler                         Resolved kind handler.
 	 * @param   JobOptions              $options                         Registered policy declaration.
-	 * @param   Identity                $identity                        Complete owner-qualified work identity.
+	 * @param   Identity                $identity                        Complete scope-qualified work identity.
 	 * @param   array<array-key, mixed> $args                            Start arguments.
 	 * @param   int|null                $fire_at                         Absolute first-delivery timestamp, or null for asynchronous admission.
 	 * @param   int                     $priority                        Scheduler priority.
@@ -572,7 +572,7 @@ final readonly class Dispatcher {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface    $handler     Resolved kind handler.
-	 * @param   Identity                $identity    Complete owner-qualified work identity.
+	 * @param   Identity                $identity    Complete scope-qualified work identity.
 	 * @param   array<array-key, mixed> $args        Start arguments.
 	 * @param   int                     $priority    Admitted scheduler priority.
 	 * @param   EngineError             $error       Resolver rejection detail.
@@ -653,7 +653,7 @@ final readonly class Dispatcher {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface    $handler      Resolved kind handler.
-	 * @param   Identity                $identity     Complete owner-qualified work identity.
+	 * @param   Identity                $identity     Complete scope-qualified work identity.
 	 * @param   string                  $run_id       Run identifier.
 	 * @param   array<array-key, mixed> $args         Start arguments.
 	 * @param   string                  $args_hash    Canonical overlap identity.
@@ -841,7 +841,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                                                                 $identity       Complete owner-qualified work identity.
+	 * @param   Identity                                                                 $identity       Complete scope-qualified work identity.
 	 * @param   string                                                                   $replacement_id Replacement run identifier.
 	 * @param   array{run_id: string, claimed: array{raw: string, state: RunState}}|null $takeover       Claimed incumbent supersession, if any.
 	 * @param   RunStore                                                                 $run_store      Active-run store.
@@ -875,7 +875,7 @@ final readonly class Dispatcher {
 	 * @version 1.0.0
 	 *
 	 * @param   string   $kind     Persisted work-kind key.
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 * @param   string   $run_id   Generated run identifier.
 	 *
 	 * @return  Failure<EngineError>
@@ -921,7 +921,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $run_id    Retained run identifier.
 	 * @param   string   $kind      Persisted kind key.
 	 * @param   string   $operation Corrective operation phrase.
@@ -943,7 +943,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $run_id    Retained run identifier.
 	 * @param   string   $kind      Persisted kind key.
 	 * @param   string   $operation Corrective operation phrase.
@@ -993,7 +993,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 * @param   string   $run_id   Retained run identifier.
 	 *
 	 * @return  Failure<EngineError>
@@ -1031,7 +1031,7 @@ final readonly class Dispatcher {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $args_hash Canonical overlap identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $expected  Exact provisional state admitted by this dispatch.

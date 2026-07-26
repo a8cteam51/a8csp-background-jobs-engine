@@ -18,8 +18,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointe
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use Psr\Log\NullLogger;
@@ -39,7 +39,7 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 */
 	private function __construct(
 		private Identity $identity,
@@ -55,7 +55,7 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $identity Complete scope-qualified work identity.
 	 *
 	 * @return  self
 	 */
@@ -63,7 +63,7 @@ final readonly class StoreFixtureBuilder {
 		EngineRig::bootstrap();
 		$work_identity = Identity::tryFrom( $identity );
 		if ( null === $work_identity ) {
-			throw new \InvalidArgumentException( 'Store fixtures require one canonical owner-qualified work identity.' );
+			throw new \InvalidArgumentException( 'Store fixtures require one canonical scope-qualified work identity.' );
 		}
 
 		return new self( $work_identity );
@@ -133,7 +133,7 @@ final readonly class StoreFixtureBuilder {
 	public static function schedule_registration_without_undeclared_markers( array $fixture ): array {
 		$registrations = RawOptionDecoder::decode( $fixture[1] );
 		if ( ! \is_array( $registrations ) ) {
-			throw new \InvalidArgumentException( 'The schedule-registration fixture must decode to an owner row.' );
+			throw new \InvalidArgumentException( 'The schedule-registration fixture must decode to a scope row.' );
 		}
 
 		foreach ( $registrations as $registration_key => $registration ) {
@@ -312,26 +312,26 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
-	 * Returns one owner's schedule-registration option name and exact raw value.
+	 * Returns one scope's schedule-registration option name and exact raw value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param array{
-	 *     owner: string,
+	 *     scope: string,
 	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Schedule, job: string}>,
 	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>
-	 * } $owner
+	 * } $scope
 	 *
-	 * @param   array $owner Complete owner fixture request.
+	 * @param   array $scope Complete scope fixture request.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function schedule_registration( array $owner ): array {
+	public function schedule_registration( array $scope ): array {
 		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $owner ): array {
+			function ( \wpdb $wpdb ) use ( $scope ): array {
 				$declarations = array();
-				foreach ( $owner['declarations'] as $schedule_identity => $declaration ) {
+				foreach ( $scope['declarations'] as $schedule_identity => $declaration ) {
 					$job = Identity::tryFrom( $declaration['job'] );
 					if ( null === $job ) {
 						throw new \InvalidArgumentException( 'Schedule-registration fixtures require canonical target identities.' );
@@ -344,11 +344,11 @@ final readonly class StoreFixtureBuilder {
 				}
 
 				$registry = new ScheduleRegistry( new OptionRows( $wpdb ), new NullLogger() );
-				if ( OwnerReplacementOutcome::Persisted !== $registry->replace_owner( $owner['owner'], $declarations, $owner['registrations'] ) ) {
+				if ( ScopeReplacementOutcome::Persisted !== $registry->replace_scope( $scope['scope'], $declarations, $scope['registrations'] ) ) {
 					throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registration fixture.' );
 				}
 
-				return $this->row( $wpdb, ScheduleRegistry::option_name( $owner['owner'] ) );
+				return $this->row( $wpdb, ScheduleRegistry::option_name( $scope['scope'] ) );
 			}
 		);
 	}
