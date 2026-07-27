@@ -12,8 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -97,7 +95,7 @@ final readonly class FailureLifecycle {
 		}
 		$state = $marked;
 
-		$attempts_used = $state->failed_attempts + 1;
+		$attempts_used = RunState::increment_attempts_safely( $state->failed_attempts );
 		$error         = $handler->failure_error( $throwable );
 		if ( $throwable instanceof NonRetryableException || ! $handler->is_failure_retryable( $throwable ) ) {
 			$this->fail_terminally( $handler, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );

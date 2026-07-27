@@ -229,6 +229,30 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * A failed delivery-state write reports that the occurrence redelivers and can run twice.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_delivery_state_persistence_failure_reports_the_redelivery_consequences(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$this->rig->run_due();
+
+		$messages = \array_column( $this->rig->logger()->records, 'message' );
+		$reported = \array_filter( $messages, static fn ( string $message ): bool => \str_starts_with( $message, 'Schedule delivery state could not be persisted:' ) );
+		self::assertCount( 1, $reported );
+		$message = \reset( $reported );
+		self::assertIsString( $message );
+		self::assertStringContainsString( 'the occurrence stays due and redelivers', $message );
+		self::assertStringContainsString( 'runs twice for one occurrence whatever its overlap policy', $message );
+	}
+
+	/**
 	 * A Skip schedule delivered inside grace dispatches normally without a misfire-skipped hook.
 	 *
 	 * @since   1.0.0

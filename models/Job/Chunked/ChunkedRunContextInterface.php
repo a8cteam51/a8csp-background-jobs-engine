@@ -39,6 +39,9 @@ interface ChunkedRunContextInterface extends RunContextInterface {
 	/**
 	 * Adds a chunk at the front of the run's queue.
 	 *
+	 * Multiple calls during one chunk appear at the queue front in reverse call order: prepending A
+	 * and then B places B before A.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

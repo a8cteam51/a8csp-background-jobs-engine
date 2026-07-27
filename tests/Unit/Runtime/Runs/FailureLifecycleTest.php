@@ -411,6 +411,26 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * A failed-attempt count at the integer maximum saturates during terminalization.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_saturates_the_attempt_count_at_the_integer_maximum(): void {
+		$this->job->throwable = new NonRetryableException( 'The request is permanently invalid.' );
+		$this->enqueue_job();
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: \PHP_INT_MAX, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
+		self::assertSame( \PHP_INT_MAX, $failure->attempts );
+	}
+
+	/**
 	 * The identity-specific RetryPolicy replacement controls the terminal cap.
 	 *
 	 * @since   1.0.0

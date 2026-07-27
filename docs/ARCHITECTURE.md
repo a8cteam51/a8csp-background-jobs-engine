@@ -58,7 +58,7 @@ every surviving component is initialized before any hook can fire.
   accepted, and the handler SPI is internal. `Backends/` (Action Scheduler preferred, WP-Cron
   fallback), `Schedules/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
-  `Locks/` (CAS-fenced execution-overlap storage, the single overlap-identity authority admission,
+  `Locks/` (CAS-fenced execution-overlap storage, the single overlap-identity authority that admission,
   retry, and inspection all resolve through, persisted-lane inspection, and explicit malformed-lane
   repair), `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
   on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.

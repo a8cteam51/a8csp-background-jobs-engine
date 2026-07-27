@@ -869,9 +869,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @return  list<array<array-key, mixed>>|EngineError
 	 */
 	private function queue_for_state( RunState $state ): array|EngineError {
-		// Hydration already guarantees a portable payload within the persistence ceilings, so the
-		// read path checks only the list-of-arrays shape this handler owns; full materialization
-		// (per-chunk encoding and byte ceilings) belongs to the write path.
+		// Hydration guarantees a portable payload, so the read path checks only the list-of-arrays
+		// shape this handler owns; full materialization (per-chunk encoding and byte ceilings)
+		// belongs to the write path.
 		if (
 			! \array_is_list( $state->kind_state )
 			|| \array_any( $state->kind_state, static fn ( mixed $chunk ): bool => ! \is_array( $chunk ) )
