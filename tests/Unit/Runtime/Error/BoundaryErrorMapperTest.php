@@ -214,17 +214,17 @@ final class BoundaryErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * Database diagnostics never cross the API boundary into consumer error context.
+	 * Database and WP-Cron diagnostics never cross the API boundary into consumer error context.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale Database drivers expose arbitrary external text only inside the internal scheduling failure; public facades cannot inject that hostile context to prove the mapper strips it.
+	 * @pin-rationale Database drivers and WordPress cron each relay text the engine never authored, and both reach only internal failures; public facades cannot inject that hostile context to prove the mapper strips it.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_database_detail_does_not_reach_client_error_context(): void {
+	public function test_database_and_wp_cron_detail_do_not_reach_client_error_context(): void {
 		$secret = 'password=hunter2';
 		$result = BoundaryErrorMapper::map(
 			new Failure(

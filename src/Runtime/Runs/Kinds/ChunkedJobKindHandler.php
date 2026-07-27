@@ -337,6 +337,21 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
+	 * Excludes deterministic chunk-context validation failures from retry policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable $throwable Execution failure.
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
+	public function is_failure_retryable( \Throwable $throwable ): bool {
+		return ! ( $throwable instanceof InvalidChunkException );
+	}
+
+	/**
 	 * Returns diagnostic details for the authoritative queue head of a failed continuation.
 	 *
 	 * @since   1.0.0

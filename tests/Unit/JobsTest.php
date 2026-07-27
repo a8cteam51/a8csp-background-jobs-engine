@@ -123,7 +123,13 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 		$error = self::assert_wp_error( $jobs->dispatch_at( 'job', 253_402_300_800 ), ErrorCode::PayloadRejected->value );
 
 		self::assertStringContainsString( '253402300800', $error->get_error_message() );
-		self::assertSame( array( 'identity' => self::SCOPE . ':job' ), $error->get_error_data() );
+		self::assertSame(
+			array(
+				'identity' => self::SCOPE . ':job',
+				'run_at'   => 253_402_300_800,
+			),
+			$error->get_error_data()
+		);
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->rig->backend()->calls );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::SCOPE . ':job' ) );

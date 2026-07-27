@@ -349,6 +349,21 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
+	 * Permits retry policy for ordinary job execution failures.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable $throwable Execution failure.
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
+	public function is_failure_retryable( \Throwable $throwable ): bool {
+		return true;
+	}
+
+	/**
 	 * Returns no failure details because one-off jobs have no kind-specific diagnostics.
 	 *
 	 * @since   1.0.0

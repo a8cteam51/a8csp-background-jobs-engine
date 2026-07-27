@@ -99,7 +99,7 @@ final readonly class FailureLifecycle {
 
 		$attempts_used = $state->failed_attempts + 1;
 		$error         = $handler->failure_error( $throwable );
-		if ( $throwable instanceof NonRetryableException ) {
+		if ( $throwable instanceof NonRetryableException || ! $handler->is_failure_retryable( $throwable ) ) {
 			$this->fail_terminally( $handler, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
 
 			return;

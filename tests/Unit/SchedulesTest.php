@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -78,6 +79,32 @@ final class SchedulesTest extends AbstractCapabilityManagerTestCase {
 
 		self::assertTrue( $engine->schedules()->sync() );
 		self::assertInstanceOf( \WP_Error::class, $engine->schedules()->dispatch( 'hourly' ), 'A cleared schedule must no longer be dispatchable.' );
+	}
+
+	/**
+	 * Lease-claim storage failures identify the failed operation at the public boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_exposes_occurrence_lease_storage_operation_in_error_data(): void {
+		$engine = \a8csp_bgje( self::SCOPE );
+		self::assertTrue( $engine->jobs()->register( self::job( 'scheduled-job' ) ) );
+		self::assertTrue( $engine->schedules()->sync( new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job' ) ) );
+		$this->rig->wpdb()->script_result( 'insert', false );
+
+		$error = self::assert_wp_error( $engine->schedules()->dispatch( 'nightly' ), ErrorCode::StorageFailed->value );
+
+		self::assertSame(
+			array(
+				'scope'             => self::SCOPE,
+				'schedule'          => 'nightly',
+				'storage_operation' => 'write',
+			),
+			$error->get_error_data()
+		);
 	}
 
 	// endregion.

@@ -681,25 +681,30 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunked_job_validation_exception_is_not_reclassified_on_the_job_path(): void {
-		$this->assert_terminal_job_failure(
-			InvalidChunkException::non_portable(),
-			new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) )
-		);
+		// The retry budget stays above one attempt so the scheduled retry evidences the job kind's own
+		// classification rather than policy exhaustion terminalizing every failure alike.
+		$this->job->throwable           = InvalidChunkException::non_portable();
+		$this->rig->randomizer()->value = 17;
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
+
+		$this->rig->run_due();
+
+		$this->rig->assert_retry_scheduled();
 	}
 
 	/**
-	 * A chunked job validation failure retains its engine-authored byte-limit diagnostic.
+	 * A deterministic chunk validation failure terminalizes without consuming retry policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_chunked_job_validation_exception_retains_its_engine_authored_diagnostic(): void {
+	public function test_chunked_job_validation_exception_terminalizes_without_consuming_retry_policy(): void {
 		$chunked_job                    = new RecordingChunkedJob( 'bounded-chunked-job' );
 		$chunked_job->queue             = array( array( 'chunk' => 'current' ) );
 		$chunked_job->process_throwable = InvalidChunkException::chunk_too_large( 8_193, 8_192 );
-		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
+		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) ) );
 		$result = $this->client->dispatch( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
@@ -709,6 +714,9 @@ final class FailureLifecycleTest extends TestCase {
 
 		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 		self::assertSame( 'Chunked Job chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
+		self::assertSame( 1, $failure->attempts );
+		self::assertCount( 1, $chunked_job->process_calls );
+		$this->rig->assert_no_retry();
 	}
 
 	// endregion.
