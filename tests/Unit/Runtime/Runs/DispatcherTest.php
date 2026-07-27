@@ -132,7 +132,7 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$call = $this->single_run_delivery_call();
 		self::assertSame( 23, $call['args']['priority'] ?? null );
-		$run = \get_option( $this->run_option_name() );
+		$run = $this->option( $this->run_option_name() );
 		self::assertIsArray( $run );
 		self::assertSame( 'job', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
@@ -352,28 +352,6 @@ final class DispatcherTest extends TestCase {
 			'value'  => &$value,
 			'mirror' => &$value,
 		);
-		$run_option = $this->run_option_name();
-		$wpdb       = $this->rig->wpdb();
-		$GLOBALS['a8csp_bgje_test_before_add_option'] = static function ( string $option, mixed $option_value, string $deprecated, bool|string|null $autoload ) use ( $run_option, $wpdb ): void {
-			if ( $run_option !== $option ) {
-				return;
-			}
-
-			$raw = \maybe_serialize( $option_value );
-			self::assertIsString( $raw );
-			$wpdb->put( $option, $raw );
-			$wpdb->before_next(
-				'update',
-				static function () use ( $option ): void {
-					$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
-					self::assertIsArray( $options );
-
-					// The option stub mirrors add_option() outside the authoritative wpdb row, so its shadow must not survive the raw-row fixture.
-					unset( $options[ $option ] );
-					$GLOBALS['a8csp_bgje_test_options'] = $options;
-				}
-			);
-		};
 
 		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
@@ -730,11 +708,15 @@ final class DispatcherTest extends TestCase {
 		$this->rig->backend()->before_next(
 			'enqueue_async',
 			function () use ( $run_option, $lock_option, &$advanced_state, &$lock_raw ): void {
-				$advanced = \get_option( $run_option );
+				$advanced_raw = $this->rig->wpdb()->rows[ $run_option ] ?? null;
+				self::assertIsString( $advanced_raw );
+				$advanced = \maybe_unserialize( $advanced_raw );
 				self::assertIsArray( $advanced );
 				$advanced['action_sequence'] = 2;
 				$advanced_state              = $advanced;
-				self::assertTrue( \update_option( $run_option, $advanced, false ) );
+				$replacement_raw             = \maybe_serialize( $advanced );
+				self::assertIsString( $replacement_raw );
+				$this->rig->wpdb()->put( $run_option, $replacement_raw );
 				$lock_raw = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
 				self::assertIsString( $lock_raw );
 			}
@@ -744,7 +726,7 @@ final class DispatcherTest extends TestCase {
 
 		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
 		self::assertIsArray( $advanced_state );
-		self::assertSame( $advanced_state, \get_option( $run_option ) );
+		self::assertSame( $advanced_state, $this->option( $run_option ) );
 		self::assertIsString( $lock_raw );
 		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
 		self::assertFalse( \get_option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID ) );
@@ -1024,7 +1006,7 @@ final class DispatcherTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 1, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
-		$run = \get_option( $this->run_option_name() );
+		$run = $this->option( $this->run_option_name() );
 		self::assertIsArray( $run );
 		self::assertSame(
 			array(
@@ -1901,6 +1883,30 @@ final class DispatcherTest extends TestCase {
 	 */
 	private function run_option_name(): string {
 		return 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Returns one persisted option value from either modeled storage view.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Option name.
+	 *
+	 * @return  mixed
+	 */
+	private function option( string $name ): mixed {
+		$raw = $this->rig->wpdb()->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return \maybe_unserialize( $raw );
+		}
+
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
+		self::assertIsArray( $options );
+
+		return $options[ $name ] ?? null;
 	}
 
 	/**

@@ -37,6 +37,10 @@ final readonly class ScopeOperations {
 	 * `Schedule::MAX_ARGUMENTS_BYTES` mirrors this scope-boundary limit because the frozen
 	 * public model keeps its constant private.
 	 *
+	 * `Runs\Stores\RunStore::ROW_ENVELOPE_RESERVE_BYTES` budgets twice this limit for PHP-serialized
+	 * start arguments and fixed lifecycle metadata; its complete-row boundary remains authoritative
+	 * for higher-overhead shapes.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

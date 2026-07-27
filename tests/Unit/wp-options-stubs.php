@@ -71,8 +71,16 @@ if ( ! \function_exists( 'get_option' ) ) {
 
 		/** @var array<string, mixed> $options */
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
+		if ( \array_key_exists( $option, $options ) ) {
+			return $options[ $option ];
+		}
 
-		return \array_key_exists( $option, $options ) ? $options[ $option ] : $default_value;
+		$wpdb = $GLOBALS['wpdb'] ?? null;
+		$raw  = $wpdb instanceof \A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy
+			? ( $wpdb->rows[ $option ] ?? null )
+			: null;
+
+		return \is_string( $raw ) ? \maybe_unserialize( $raw ) : $default_value;
 	}
 }
 

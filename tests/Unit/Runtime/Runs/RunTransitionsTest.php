@@ -703,6 +703,8 @@ final class RunTransitionsTest extends TestCase {
 	/** A latest-pointer write failure is logged without rejecting an otherwise accepted run. */
 	public function test_enqueue_logs_a_latest_pointer_write_failure_and_continues(): void {
 		$this->register_job();
+		// The lock and active-run inserts succeed before the latest-pointer retry sequence is forced to fail.
+		$this->wpdb->before_next( 'insert', static function (): void {} );
 		$this->wpdb->before_next( 'insert', static function (): void {} );
 		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
 			$this->wpdb->before_next(

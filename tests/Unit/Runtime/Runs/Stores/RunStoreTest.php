@@ -344,7 +344,217 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Kind-owned state above the generic persistence ceiling is rejected before any row is written.
+	 * A complete persisted row immediately below the storage ceiling is accepted.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_full_row_below_persisted_byte_ceiling_is_accepted(): void {
+		// These literals derive from the row and kind-state ceilings to pin the below, exact, and over boundaries.
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_026 ) );
+		$kind_state = array( 'payload' => \str_repeat( 'x', 983_584 ) );
+		$store      = $this->store();
+
+		$result = $store->create( self::RUN_ID, 'acme.export', $start_args, $this->fixtures->args_hash( $start_args ), $kind_state );
+
+		self::assertInstanceOf( RunState::class, $result );
+		$inspected = $store->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		$raw = $inspected->value['raw'] ?? null;
+		self::assertIsString( $raw );
+		self::assertSame( 999_999, \strlen( $raw ) );
+	}
+
+	/**
+	 * A complete persisted row exactly at the storage ceiling is accepted.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_full_row_at_persisted_byte_ceiling_is_accepted(): void {
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_027 ) );
+		$kind_state = array( 'payload' => \str_repeat( 'x', 983_584 ) );
+		$store      = $this->store();
+
+		$result = $store->create( self::RUN_ID, 'acme.export', $start_args, $this->fixtures->args_hash( $start_args ), $kind_state );
+
+		self::assertInstanceOf( RunState::class, $result );
+		$inspected = $store->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		$raw = $inspected->value['raw'] ?? null;
+		self::assertIsString( $raw );
+		self::assertSame( 1_000_000, \strlen( $raw ) );
+	}
+
+	/**
+	 * A complete persisted row over the storage ceiling is rejected with both byte counts.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_full_row_over_persisted_byte_ceiling_is_rejected_before_create(): void {
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_028 ) );
+		$kind_state = array( 'payload' => \str_repeat( 'x', 983_584 ) );
+
+		$result = $this->store()->create( self::RUN_ID, 'acme.export', $start_args, $this->fixtures->args_hash( $start_args ), $kind_state );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::PayloadRejected, $result->error->reason );
+		self::assertSame( 'Run state contains 1000001 persisted serialization bytes; the limit is 1000000 bytes.', $result->error->message );
+		self::assertSame(
+			array(
+				'actual_bytes' => 1_000_001,
+				'limit_bytes'  => 1_000_000,
+			),
+			$result->error->context
+		);
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->rig->wpdb()->rows );
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
+		self::assertIsArray( $options );
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+	}
+
+	/**
+	 * An oversized replacement is rejected without changing the exact persisted generation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_full_row_over_persisted_byte_ceiling_is_rejected_before_replace(): void {
+		$expected = $this->state( 'acme.export' );
+		$fixture  = $this->fixtures->run( self::RUN_ID, $expected );
+		$this->put_fixture( $fixture );
+
+		$start_args  = array( 'payload' => \str_repeat( 'x', 16_028 ) );
+		$replacement = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: false, start_args: $start_args, args_hash: $this->fixtures->args_hash( $start_args ), kind_state: array( 'payload' => \str_repeat( 'x', 983_584 ) ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
+
+		$result = $this->store()->replace_if_state_matches( self::RUN_ID, $expected, $replacement );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::PayloadRejected, $result->error->reason );
+		self::assertSame(
+			array(
+				'actual_bytes' => 1_000_001,
+				'limit_bytes'  => 1_000_000,
+			),
+			$result->error->context
+		);
+		self::assertSame( $fixture[1], $this->raw_row() );
+	}
+
+	/**
+	 * A failed terminal replacement above both byte ceilings remains persistable for immediate effect settlement.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_replacement_above_persisted_byte_ceiling_is_accepted(): void {
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_026 ) );
+		$running    = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: false, start_args: $start_args, args_hash: $this->fixtures->args_hash( $start_args ), kind_state: array( 'payload' => \str_repeat( 'x', 990_000 ) ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
+		$terminal   = $running->with_status( RunStatus::Failed )->with_error(
+			array(
+				'class'   => \RuntimeException::class,
+				'message' => \str_repeat( 'x', 4_096 ),
+				'stage'   => 'execution',
+				'code'    => ErrorCode::ExecutionFailed->value,
+			)
+		);
+		$fixture    = $this->fixtures->run( self::RUN_ID, $running->with_kind_state( array() ) );
+		$stored     = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		$stored['kind_state'] = $running->kind_state;
+		$running_raw          = \maybe_serialize( $stored );
+		self::assertIsString( $running_raw );
+		$this->rig->wpdb()->put( $fixture[0], $running_raw );
+
+		$result = $this->store()->replace_if_state_matches( self::RUN_ID, $running, $terminal );
+
+		self::assertIsString( $result );
+		self::assertGreaterThan( 1_000_000, \strlen( $result ) );
+		self::assertSame( $result, $this->raw_row() );
+	}
+
+	/**
+	 * A completed terminal replacement above both byte ceilings shares the terminal exemption.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_completed_terminal_replacement_above_persisted_byte_ceiling_is_accepted(): void {
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_026 ) );
+		$running    = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: false, start_args: $start_args, args_hash: $this->fixtures->args_hash( $start_args ), kind_state: array( 'payload' => \str_repeat( 'x', 990_000 ) ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
+		$terminal   = $running->with_status( RunStatus::Completed );
+		$fixture    = $this->fixtures->run( self::RUN_ID, $running->with_kind_state( array() ) );
+		$stored     = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		$stored['kind_state'] = $running->kind_state;
+		$running_raw          = \maybe_serialize( $stored );
+		self::assertIsString( $running_raw );
+		$this->rig->wpdb()->put( $fixture[0], $running_raw );
+
+		$result = $this->store()->replace_if_state_matches( self::RUN_ID, $running, $terminal );
+
+		self::assertIsString( $result );
+		self::assertGreaterThan( 1_000_000, \strlen( $result ) );
+		self::assertSame( $result, $this->raw_row() );
+	}
+
+	/**
+	 * A terminal-effect append above both byte ceilings remains persistable before row deletion.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_effect_append_above_persisted_byte_ceiling_is_accepted(): void {
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_026 ) );
+		$running    = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: false, start_args: $start_args, args_hash: $this->fixtures->args_hash( $start_args ), kind_state: array( 'payload' => \str_repeat( 'x', 990_000 ) ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
+		$error      = array(
+			'class'   => \RuntimeException::class,
+			'message' => \str_repeat( 'x', 4_096 ),
+			'stage'   => 'execution',
+			'code'    => ErrorCode::ExecutionFailed->value,
+		);
+		$terminal   = $running->with_status( RunStatus::Failed )->with_error( $error );
+		$fixture    = $this->fixtures->run( self::RUN_ID, $running->with_kind_state( array() ) );
+		$stored     = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		$stored['status']     = RunStatus::Failed->value;
+		$stored['kind_state'] = $running->kind_state;
+		$stored['error']      = $error;
+		$terminal_raw         = \maybe_serialize( $stored );
+		self::assertIsString( $terminal_raw );
+		self::assertGreaterThan( 1_000_000, \strlen( $terminal_raw ) );
+		// Direct raw setup isolates the effect-append boundary from terminal claim persistence.
+		$this->rig->wpdb()->put( $fixture[0], $terminal_raw );
+
+		$result = $this->store()->append_terminal_effect( self::RUN_ID, $terminal, $terminal_raw, 'hooks' );
+
+		self::assertIsArray( $result );
+		self::assertSame( array( 'hooks' ), $result['state']->effects );
+		self::assertGreaterThan( \strlen( $terminal_raw ), \strlen( $result['raw'] ) );
+		self::assertSame( $result['raw'], $this->raw_row() );
+	}
+
+	/**
+	 * Kind-owned state above its producer budget is rejected before any row is written.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -352,17 +562,58 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_oversized_kind_state_is_rejected_before_persistence(): void {
-		self::assertSame( 1_048_576, RunStore::MAX_KIND_STATE_BYTES );
-		$kind_state = array( 'payload' => \str_repeat( 'x', RunStore::MAX_KIND_STATE_BYTES ) );
-		$serialized = \maybe_serialize( $kind_state );
-		self::assertIsString( $serialized );
-		self::assertGreaterThan( RunStore::MAX_KIND_STATE_BYTES, \strlen( $serialized ) );
+		$kind_state = array( 'payload' => \str_repeat( 'x', 990_000 ) );
 
 		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), $kind_state );
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame( EngineErrorReason::PayloadRejected, $result->error->reason );
+		self::assertSame( 'Run kind state contains 990032 persisted serialization bytes; the limit is 983616 bytes.', $result->error->message );
+		self::assertSame(
+			array(
+				'actual_bytes' => 990_032,
+				'limit_bytes'  => 983_616,
+			),
+			$result->error->context
+		);
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->rig->wpdb()->rows );
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
+		self::assertIsArray( $options );
+		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+	}
+
+	/**
+	 * An existing exact option row preserves create's null-on-conflict contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_create_returns_null_when_the_exact_option_row_exists(): void {
+		$this->rig->wpdb()->put( $this->run_option_name(), 'incumbent-row' );
+
+		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), array() );
+
+		self::assertNull( $result );
+		self::assertSame( 'incumbent-row', $this->raw_row() );
+	}
+
+	/**
+	 * An indeterminate exact-row insert preserves create's null failure contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_create_returns_null_when_the_exact_row_insert_fails(): void {
+		$this->rig->wpdb()->script_result( 'insert', false );
+
+		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), array() );
+
+		self::assertNull( $result );
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->rig->wpdb()->rows );
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );
@@ -387,6 +638,30 @@ final class RunStoreTest extends TestCase {
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
+	}
+
+	/**
+	 * Terminal writes retain the guarded-hydration shape invariant while bypassing byte budgets.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_replacement_rejects_nonportable_kind_state(): void {
+		$running = $this->state();
+		$fixture = $this->fixtures->run( self::RUN_ID, $running );
+		$this->put_fixture( $fixture );
+		$terminal = $running
+			->with_status( RunStatus::Failed )
+			->with_kind_state( array( 'payload' => new \stdClass() ) );
+
+		$result = $this->store()->replace_if_state_matches( self::RUN_ID, $running, $terminal );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::PayloadRejected, $result->error->reason );
+		self::assertSame( $fixture[1], $this->raw_row() );
 	}
 
 	// endregion.

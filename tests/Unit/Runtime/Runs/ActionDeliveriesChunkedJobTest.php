@@ -651,14 +651,14 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		if ( $accepted ) {
 			$serialized_queue = \maybe_serialize( $this->run_state()['kind_state'] ?? null );
 			self::assertIsString( $serialized_queue );
-			self::assertSame( 1_048_576, \strlen( $serialized_queue ) );
+			self::assertSame( $persisted_bytes, \strlen( $serialized_queue ) );
 			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
 
 			return;
 		}
 
 		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::queue_generation(), null );
-		self::assertSame( 'chunked_job queue contains 1048577 persisted serialization bytes; the limit is 1048576 bytes.', $failure->summary );
+		self::assertSame( 'chunked_job queue contains 983617 persisted serialization bytes; the limit is 983616 bytes.', $failure->summary );
 	}
 
 	/**
@@ -669,11 +669,11 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	public static function bounded_queue_bytes(): array {
 		return array(
 			'at limit'   => array(
-				'persisted_bytes' => 1_048_576,
+				'persisted_bytes' => 983_616,
 				'accepted'        => true,
 			),
 			'over limit' => array(
-				'persisted_bytes' => 1_048_577,
+				'persisted_bytes' => 983_617,
 				'accepted'        => false,
 			),
 		);
@@ -1198,7 +1198,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		if ( $accepted ) {
 			$serialized_queue = \maybe_serialize( $this->run_state()['kind_state'] ?? null );
 			self::assertIsString( $serialized_queue );
-			self::assertSame( 1_048_576, \strlen( $serialized_queue ) );
+			self::assertSame( $persisted_bytes, \strlen( $serialized_queue ) );
 			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
 
 			return;
@@ -1216,22 +1216,22 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		return array(
 			'append_chunk at limit'    => array(
 				'mutation'        => 'append_chunk',
-				'persisted_bytes' => 1_048_576,
+				'persisted_bytes' => 983_616,
 				'accepted'        => true,
 			),
 			'append_chunk over limit'  => array(
 				'mutation'        => 'append_chunk',
-				'persisted_bytes' => 1_048_577,
+				'persisted_bytes' => 983_617,
 				'accepted'        => false,
 			),
 			'prepend_chunk at limit'   => array(
 				'mutation'        => 'prepend_chunk',
-				'persisted_bytes' => 1_048_576,
+				'persisted_bytes' => 983_616,
 				'accepted'        => true,
 			),
 			'prepend_chunk over limit' => array(
 				'mutation'        => 'prepend_chunk',
-				'persisted_bytes' => 1_048_577,
+				'persisted_bytes' => 983_617,
 				'accepted'        => false,
 			),
 		);
@@ -2069,7 +2069,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Returns a portable 128-chunk queue with the requested PHP serialization length.
+	 * Returns a portable 120-chunk queue with the requested PHP serialization length.
 	 *
 	 * Each full chunk has an 8,178-byte payload and therefore an 8,192-byte JSON representation.
 	 * Measuring the complete serialized queue yields the overflow removed from the final payload;
@@ -2080,7 +2080,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @return  list<array{payload: string}>
 	 */
 	private static function queue_with_persisted_bytes( int $persisted_bytes ): array {
-		$payload_lengths = \array_fill( 0, 128, 8_178 );
+		$payload_lengths = \array_fill( 0, 120, 8_178 );
 		$overflow        = self::serialized_queue_bytes_for_payload_lengths( $payload_lengths ) - $persisted_bytes;
 		$tail_index      = \array_key_last( $payload_lengths );
 		$tail_bytes      = $payload_lengths[ $tail_index ] - $overflow;

@@ -53,12 +53,42 @@ final readonly class RunStore {
 	/**
 	 * Maximum persisted serialization bytes accepted for one kind-owned state payload.
 	 *
+	 * The producer budget subtracts the variable row envelope reserve from the authoritative
+	 * full-row ceiling so ordinary oversized payloads fail before complete-row serialization.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     int
 	 */
-	public const int MAX_KIND_STATE_BYTES = 1_048_576;
+	public const int MAX_KIND_STATE_BYTES = self::MAX_ROW_BYTES - self::ROW_ENVELOPE_RESERVE_BYTES;
+
+	/**
+	 * Maximum persisted serialization bytes accepted for one complete active-run row.
+	 *
+	 * A decimal megabyte stays below Memcached's default 1 MiB item ceiling, leaving 48,576 bytes
+	 * for the cache key, item metadata, and object-cache serialization wrappers.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int MAX_ROW_BYTES = 1_000_000;
+
+	/**
+	 * Bytes reserved for variable active-run fields outside the kind-owned state.
+	 *
+	 * Twice `Runtime\ScopeOperations::MAX_ARGUMENTS_BYTES` budgets the JSON-bounded start arguments,
+	 * PHP-serialization expansion, and fixed lifecycle metadata. The complete serialized row remains
+	 * authoritative for higher-overhead shapes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int ROW_ENVELOPE_RESERVE_BYTES = 16_384;
 
 	/**
 	 * Maximum exact-row attempts before a contended terminal effect append fails safely.
@@ -110,9 +140,10 @@ final readonly class RunStore {
 	 *                                               or engine default.
 	 *
 	 * @throws  \InvalidArgumentException When the kind key or priority is invalid.
-	 * @throws  \LogicException           When WordPress does not serialize the kind-owned state to a string.
+	 * @throws  \LogicException           When the current site differs from the bound site or WordPress does not serialize
+	 *                                    the kind-owned or complete run state to a string.
 	 *
-	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned state cannot cross the persistence boundary, or null when the run option cannot be added.
+	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, or null when the run option cannot be added.
 	 */
 	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null ): RunState|Failure|null {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
@@ -124,7 +155,13 @@ final readonly class RunStore {
 			return $rejected;
 		}
 
-		if ( ! \add_option( RunIdentity::raw_option_name( $this->identity, $run_id ), self::to_option( $state ), '', false ) ) {
+		$raw      = self::serialize_state( $state );
+		$rejected = self::serialized_row_failure( $raw );
+		if ( null !== $rejected ) {
+			return $rejected;
+		}
+
+		if ( RowWriteOutcome::Won !== $this->rows->insert_if_absent( RunIdentity::raw_option_name( $this->identity, $run_id ), $raw ) ) {
 			return null;
 		}
 
@@ -251,7 +288,7 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned state cannot cross the persistence boundary, otherwise null.
+	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, otherwise null.
 	 */
 	public function replace_if_raw_matches( string $run_id, string $expected_raw, RunState $replacement ): string|Failure|null {
 		$write = $this->replace_if_raw_matches_classified( $run_id, $expected_raw, $replacement );
@@ -277,7 +314,7 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned state cannot cross the persistence boundary.
+	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned or complete run state cannot cross the persistence boundary.
 	 */
 	public function replace_if_raw_matches_classified( string $run_id, string $expected_raw, RunState $replacement ): array|Failure {
 		return $this->replace_if_matches_classified( $run_id, $expected_raw, $replacement );
@@ -298,7 +335,7 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned state cannot cross the persistence boundary, otherwise null.
+	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, otherwise null.
 	 */
 	public function replace_if_state_matches( string $run_id, RunState $expected, RunState $replacement ): string|Failure|null {
 		$write = $this->replace_if_state_matches_classified( $run_id, $expected, $replacement );
@@ -324,7 +361,7 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned state cannot cross the persistence boundary.
+	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned or complete run state cannot cross the persistence boundary.
 	 */
 	public function replace_if_state_matches_classified( string $run_id, RunState $expected, RunState $replacement ): array|Failure {
 		return $this->replace_if_matches_classified( $run_id, $expected, $replacement );
@@ -449,7 +486,7 @@ final readonly class RunStore {
 	 * @param   RunState|null $expected Complete state already observed by the caller, or null to inspect it here.
 	 * @param   int|null      $at       Liveness timestamp, or null to use the current clock time.
 	 *
-	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned state cannot cross the persistence boundary, or null when the run is absent, invalid, or changed concurrently.
+	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, or null when the run is absent, invalid, or changed concurrently.
 	 */
 	public function mark_executing_with_heartbeat( string $run_id, ?RunState $expected = null, ?int $at = null ): RunState|Failure|null {
 		$raw = null;
@@ -496,16 +533,29 @@ final readonly class RunStore {
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
-	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned state cannot cross the persistence boundary.
+	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned or complete run state cannot cross the persistence boundary.
 	 */
 	private function replace_if_matches_classified( string $run_id, string|RunState $expected, RunState $replacement ): array|Failure {
-		$rejected = self::kind_state_failure( $replacement->kind_state );
+		$is_running = RunStatus::Running === $replacement->status;
+		$rejected   = self::kind_state_failure( $replacement->kind_state, $is_running );
 		if ( null !== $rejected ) {
 			return $rejected;
 		}
 
-		$expected_raw    = $expected instanceof RunState ? self::serialize_state( $expected ) : $expected;
 		$replacement_raw = self::serialize_state( $replacement );
+
+		// A terminal row is exempt from the byte ceilings, including one carrying a payload admitted under an
+		// earlier producer budget. It stays durable in the database, object-cache refusal only creates a
+		// persistent cache miss, and settled effects delete the row. Rejecting the write instead wedges the run
+		// and its overlap lock permanently.
+		if ( $is_running ) {
+			$rejected = self::serialized_row_failure( $replacement_raw );
+			if ( null !== $rejected ) {
+				return $rejected;
+			}
+		}
+
+		$expected_raw = $expected instanceof RunState ? self::serialize_state( $expected ) : $expected;
 
 		return array(
 			'outcome' => $this->rows->compare_and_swap( RunIdentity::raw_option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ),
@@ -715,15 +765,19 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $kind_state Opaque kind-owned state payload.
+	 * @param   array<array-key, mixed> $kind_state        Opaque kind-owned state payload.
+	 * @param   bool                    $enforce_byte_limit Whether the producer budget applies to this write.
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the kind-owned state to a string.
 	 *
 	 * @return  Failure<EngineError>|null
 	 */
-	private static function kind_state_failure( array $kind_state ): ?Failure {
+	private static function kind_state_failure( array $kind_state, bool $enforce_byte_limit = true ): ?Failure {
 		if ( ! PortableArguments::is_valid( $kind_state ) ) {
 			return new Failure( new EngineError( 'Run kind state must contain only null, scalar, or nested array values.', reason: EngineErrorReason::PayloadRejected, ) );
+		}
+		if ( ! $enforce_byte_limit ) {
+			return null;
 		}
 
 		$serialized = \maybe_serialize( $kind_state );
@@ -743,6 +797,34 @@ final readonly class RunStore {
 				context: array(
 					'actual_bytes' => $actual_bytes,
 					'limit_bytes'  => self::MAX_KIND_STATE_BYTES,
+				),
+			)
+		);
+	}
+
+	/**
+	 * Returns a payload rejection when a complete serialized row exceeds the storage budget.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $serialized_row Complete WordPress serialization for the pending write.
+	 *
+	 * @return  Failure<EngineError>|null
+	 */
+	private static function serialized_row_failure( string $serialized_row ): ?Failure {
+		$actual_bytes = \strlen( $serialized_row );
+		if ( self::MAX_ROW_BYTES >= $actual_bytes ) {
+			return null;
+		}
+
+		return new Failure(
+			new EngineError(
+				\sprintf( 'Run state contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $actual_bytes, self::MAX_ROW_BYTES ),
+				reason: EngineErrorReason::PayloadRejected,
+				context: array(
+					'actual_bytes' => $actual_bytes,
+					'limit_bytes'  => self::MAX_ROW_BYTES,
 				),
 			)
 		);

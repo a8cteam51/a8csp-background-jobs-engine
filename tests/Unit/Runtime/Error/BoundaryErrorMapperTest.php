@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Error;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\AbstractPortal;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -22,6 +23,7 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
+#[CoversClass( AbstractPortal::class )]
 #[CoversClass( BoundaryErrorMapper::class )]
 #[UsesClass( BoundaryError::class )]
 #[UsesClass( EngineError::class )]
@@ -159,6 +161,56 @@ final class BoundaryErrorMapperTest extends TestCase {
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( array( 'identity' => 'consumer-plugin:missing' ), $result->error->context );
 		self::assertArrayNotHasKey( 'name', $result->error->context );
+	}
+
+	/**
+	 * Persisted byte diagnostics cross the public boundary without arbitrary payload context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_persisted_byte_diagnostics_reach_the_public_boundary(): void {
+		$result = BoundaryErrorMapper::map(
+			new Failure(
+				new EngineError(
+					'Run kind state contains 990032 persisted serialization bytes; the limit is 983616 bytes.',
+					reason: EngineErrorReason::PayloadRejected,
+					context: array(
+						'actual_bytes'  => 990_032,
+						'limit_bytes'   => 983_616,
+						'private_value' => 'must not cross',
+					),
+				)
+			)
+		);
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
+		$portal         = new readonly class( 'boundary-error-mapper-test' ) extends AbstractPortal {
+			/**
+			 * Exposes the consumer error conversion seam.
+			 *
+			 * @param   BoundaryError $error Boundary failure.
+			 *
+			 * @return  \WP_Error
+			 */
+			public function expose( BoundaryError $error ): \WP_Error {
+				return self::wp_error( $error );
+			}
+		};
+		$consumer_error = $portal->expose( $result->error );
+
+		self::assertSame( ErrorCode::PayloadRejected->value, $consumer_error->get_error_code() );
+		self::assertSame( 'Run kind state contains 990032 persisted serialization bytes; the limit is 983616 bytes.', $consumer_error->get_error_message() );
+		self::assertSame(
+			array(
+				'actual_bytes' => 990_032,
+				'limit_bytes'  => 983_616,
+			),
+			$consumer_error->get_error_data()
+		);
 	}
 
 	/**

@@ -288,10 +288,9 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		$state   = $options[ $this->run_option_name() ] ?? null;
 		self::assertIsArray( $state );
-		$state['executing']                  = true;
-		$options[ $this->run_option_name() ] = $state;
-		$GLOBALS['a8csp_bgje_test_options']  = $options;
-		$this->clock->timestamp              = self::NOW + 901;
+		$state['executing'] = true;
+		$this->put_run_option( $this->run_option_name(), $state );
+		$this->clock->timestamp = self::NOW + 901;
 
 		$this->run_maintenance();
 
@@ -1446,9 +1445,8 @@ final class RunReconciliationTest extends TestCase {
 				$options = $this->options();
 				$state   = $options[ $this->run_option_name() ] ?? null;
 				self::assertIsArray( $state );
-				$state['heartbeat_at']               = $this->clock->timestamp;
-				$options[ $this->run_option_name() ] = $state;
-				$GLOBALS['a8csp_bgje_test_options']  = $options;
+				$state['heartbeat_at'] = $this->clock->timestamp;
+				$this->put_run_option( $this->run_option_name(), $state );
 			}
 		);
 
@@ -1519,10 +1517,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$decoded = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $decoded );
-		$options                 = $this->options();
-		$options[ $option_name ] = $decoded;
-
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$this->put_run_option( $option_name, $decoded );
 
 		$this->run_maintenance();
 
@@ -1654,13 +1649,11 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_reclaims_a_stale_lock_whose_run_row_is_corrupt(): void {
-		$name                               = self::identity( 'corrupt-job' );
-		$args_hash                          = \str_repeat( 'b', 64 );
-		$run_name                           = RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
-		$options                            = $this->options();
-		$options[ $run_name ]               = 'corrupt-run';
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
-		$lock_name                          = OverlapGuard::OPTION_PREFIX . $name . '_' . $args_hash;
+		$name      = self::identity( 'corrupt-job' );
+		$args_hash = \str_repeat( 'b', 64 );
+		$run_name  = RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
+		$this->put_run_option( $run_name, 'corrupt-run' );
+		$lock_name = OverlapGuard::OPTION_PREFIX . $name . '_' . $args_hash;
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
 		$this->run_maintenance();
@@ -1694,10 +1687,8 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_exact_deletes_an_unpaired_corrupt_run_row(): void {
-		$run_name                           = RunStore::OPTION_PREFIX . self::identity( 'corrupt-job' ) . '_' . self::RUN_ID;
-		$options                            = $this->options();
-		$options[ $run_name ]               = 'corrupt-run';
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$run_name = RunStore::OPTION_PREFIX . self::identity( 'corrupt-job' ) . '_' . self::RUN_ID;
+		$this->put_run_option( $run_name, 'corrupt-run' );
 
 		$this->run_maintenance();
 
@@ -2487,7 +2478,8 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_retries_a_failed_terminal_delete_without_repeating_effects(): void {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
-		$options = $this->options();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
+		self::assertIsArray( $options );
 		// A retained pre-bucket row exercises normalization; current history writes also populate by_hash.
 		$options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] = array(
 			'started'  => array( self::PREVIOUS_RUN_ID ),
@@ -2626,10 +2618,7 @@ final class RunReconciliationTest extends TestCase {
 		$decoded               = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $decoded );
 
-		$options                 = $this->options();
-		$options[ $option_name ] = $decoded;
-
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$this->put_run_option( $option_name, $decoded );
 	}
 
 	/**
@@ -2659,11 +2648,7 @@ final class RunReconciliationTest extends TestCase {
 		$decoded = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $decoded );
 
-		$options = $this->options();
-
-		$options[ $option_name ] = $decoded;
-
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$this->put_run_option( $option_name, $decoded );
 	}
 
 	/**
@@ -2756,9 +2741,8 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		$state   = $options[ $option_name ] ?? null;
 		self::assertIsArray( $state );
-		$state['failed_attempts']           = $failed_attempts;
-		$options[ $option_name ]            = $state;
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$state['failed_attempts'] = $failed_attempts;
+		$this->put_run_option( $option_name, $state );
 	}
 
 	/**
@@ -2782,9 +2766,21 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	private function replace_run_state( string $name, array $state ): void {
-		$options                                    = $this->options();
-		$options[ $this->run_option_name( $name ) ] = $state;
-		$GLOBALS['a8csp_bgje_test_options']         = $options;
+		$this->put_run_option( $this->run_option_name( $name ), $state );
+	}
+
+	/**
+	 * Stores one active-run fixture in the authoritative raw-row model.
+	 *
+	 * @param   string $option_name Option name.
+	 * @param   mixed  $value       Decoded option value.
+	 *
+	 * @return  void
+	 */
+	private function put_run_option( string $option_name, mixed $value ): void {
+		$raw = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+		$this->wpdb->put( $option_name, $raw );
 	}
 
 	/**
@@ -2899,7 +2895,8 @@ final class RunReconciliationTest extends TestCase {
 			self::assertIsString( $name );
 			self::assertIsString( $raw );
 			if (
-				\str_starts_with( $name, 'a8csp_bgje_failed_runs_' )
+				\str_starts_with( $name, RunStore::OPTION_PREFIX )
+				|| \str_starts_with( $name, 'a8csp_bgje_failed_runs_' )
 				|| \str_starts_with( $name, 'a8csp_bgje_run_history_' )
 			) {
 				$options[ $name ] = RawOptionDecoder::decode( $raw );
