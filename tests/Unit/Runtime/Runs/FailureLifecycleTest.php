@@ -21,6 +21,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -619,6 +622,27 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/retry_scheduled' ) );
 		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::scheduling() );
 		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
+	 * A retry-state construction error remains terminalizable after its ownership fence advances.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_retry_state_construction_failure_after_fencing(): void {
+		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 7;
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: 0, action_sequence: \PHP_INT_MAX, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+
+		\do_action( 'a8csp_bgje/internal/deliver', self::IDENTITY, self::RUN_ID, \PHP_INT_MAX );
+
+		$this->assert_failure( ErrorCode::EngineUnavailable, RunFailureStage::scheduling() );
+		$this->rig->assert_failed( ErrorCode::EngineUnavailable );
 	}
 
 	/**

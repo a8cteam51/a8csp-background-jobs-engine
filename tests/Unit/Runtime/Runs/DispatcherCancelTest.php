@@ -300,9 +300,51 @@ final class DispatcherCancelTest extends TestCase {
 
 		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
+		$error = $this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
+		self::assertStringContainsString( 're-inspect the run before retrying', $error->message );
 		self::assertSame( self::NOW + 1, $this->decoded_job_state()['heartbeat_at'] ?? null );
 		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+	}
+
+	/**
+	 * A failed cancellation write remains distinguishable from a lost terminal compare-and-swap.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_reports_storage_failure_when_its_terminal_write_fails(): void {
+		$run_id = $this->enqueue_job();
+		$before = $this->cancellation_effects();
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
+
+		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		self::assertSame( $before, $this->cancellation_effects() );
+	}
+
+	/**
+	 * A cancellation storage failure advises storage repair instead of reporting changed state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_cancel_storage_failure_recommends_storage_repair_instead_of_reinspection(): void {
+		$run_id = $this->enqueue_job();
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$result = $this->client->cancel( self::JOB_NAME, $run_id );
+
+		self::assertInstanceOf( Failure::class, $result );
+		$error = $result->error;
+		self::assertInstanceOf( BoundaryError::class, $error );
+		self::assertStringContainsString( 'repair option writes', $error->message );
+		self::assertStringNotContainsString( 're-inspect', $error->message );
+		self::assertStringNotContainsString( 'changed state', $error->message );
 	}
 
 	/**

@@ -1238,6 +1238,103 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * A generated continuation reports a complete-row rejection as a start-action failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_handle_start_action_reports_a_rejected_continuation_replacement(): void {
+		$start_args               = array( 'values' => \array_fill( 0, 4_000, 0 ) );
+		$this->chunked_job->queue = self::queue_with_persisted_bytes( 983_616 );
+		$this->register_chunked_job();
+		$dispatched = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $dispatched );
+
+		$this->rig->run_due();
+
+		$events = $this->rig->hooks()->fired( 'a8csp_bgje/failed' );
+		self::assertCount( 1, $events );
+		$failure = $events[0][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( ErrorCode::PayloadRejected, $failure->code );
+		self::assertSame( RunFailureStage::queue_generation(), $failure->stage );
+		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
+	 * A processed continuation reports a complete-row rejection while preparing its successor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_handle_continue_action_reports_a_rejected_continuation_replacement(): void {
+		$current        = array( 'chunk' => 'current' );
+		$candidate      = self::queue_with_persisted_bytes( 983_616 );
+		$mutation_chunk = \array_pop( $candidate );
+		$start_args     = array( 'values' => \array_fill( 0, 2_000, 0 ) );
+		self::assertIsArray( $mutation_chunk );
+		$this->chunked_job->queue = array( $current, ...$candidate );
+		$this->register_chunked_job();
+		$dispatched = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $dispatched );
+		$this->rig->run_due();
+		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ) use ( $mutation_chunk ): void {
+			$context->append_chunk( $mutation_chunk );
+		};
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), null );
+		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
+		self::assertCount( 1, $this->chunked_job->process_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
+	 * A processed chunk that loses its exact run-row write leaves the concurrent generation alone.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_continue_action_returns_quietly_after_losing_its_running_replacement_cas(): void {
+		$current   = array( 'chunk' => 'current' );
+		$remaining = array( 'chunk' => 'remaining' );
+		$this->prepare_scheduled_chunk( array( $current, $remaining ) );
+		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ): void {
+			$context->append_chunk( array( 'chunk' => 'discarded' ) );
+		};
+		$this->set_filter_value(
+			'a8csp_bgje/continue_delay',
+			function (): int {
+				$this->replace_failed_attempts( 2 );
+
+				return 30;
+			}
+		);
+
+		$this->rig->run_due();
+
+		$state = $this->run_state();
+		self::assertIsArray( $state );
+		self::assertSame( 2, $state['failed_attempts'] ?? null );
+		self::assertSame( array( $current, $remaining ), $state['kind_state'] ?? null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
+		self::assertCount( 1, $this->chunked_job->process_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
 	 * Supplies both context mutation directions with invalid leaves.
 	 *
 	 * @since   1.0.0
@@ -1468,6 +1565,45 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * A post-processing failure reports a complete-row rejection with its original execution stage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_handle_continue_action_reports_a_rejected_post_processing_failure_replacement(): void {
+		$current        = array( 'chunk' => 'current' );
+		$candidate      = self::queue_with_persisted_bytes( 983_616 );
+		$mutation_chunk = \array_pop( $candidate );
+		$start_args     = array( 'values' => \array_fill( 0, 2_000, 0 ) );
+		self::assertIsArray( $mutation_chunk );
+		$this->chunked_job->queue = array( $current, ...$candidate );
+		$this->register_chunked_job();
+		$dispatched = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $dispatched );
+		$this->rig->run_due();
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkedRunContextInterface $context ) use ( $mutation_chunk ): void {
+			$context->append_chunk( $mutation_chunk );
+		};
+		$this->set_filter_value(
+			'a8csp_bgje/continue_delay',
+			static function (): never {
+				throw new \DomainException( 'Continue-delay filter exploded.' );
+			}
+		);
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::execution(), null );
+		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
+		self::assertCount( 1, $this->chunked_job->process_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
 	 * A processed-chunk failure retains retry priority without persisting a replayable successor.
 	 *
 	 * @load-bearing durability
@@ -1620,6 +1756,41 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertSame( 'schedule_single', $retry_call['verb'] );
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, 3 ), $retry_call['args']['args'] ?? null );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
+	}
+
+	/**
+	 * A retry replacement that crosses the complete-row ceiling reports the deterministic rejection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_handle_continue_action_reports_a_rejected_retry_replacement(): void {
+		$start_args               = array( 'values' => \array_fill( 0, 1_548, 0 ) );
+		$queue                    = self::queue_with_persisted_bytes( 983_616 );
+		$current                  = $queue[0];
+		$this->options            = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) );
+		$this->chunked_job->queue = $queue;
+		$this->register_chunked_job();
+		$dispatched = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $dispatched );
+		$this->rig->run_due();
+		$pre_retry_state = $this->run_state();
+		self::assertIsArray( $pre_retry_state );
+		$pre_retry_raw = \maybe_serialize( $pre_retry_state );
+		self::assertIsString( $pre_retry_raw );
+		self::assertSame( 999_994, \strlen( $pre_retry_raw ) );
+
+		$this->chunked_job->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
+		$this->rig->randomizer()->value       = 11;
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), $current );
+		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**

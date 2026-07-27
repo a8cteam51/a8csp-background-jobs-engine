@@ -759,6 +759,28 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
+	 * An exact-row update failure preserves the unclassified state replacement's null outcome.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_replace_if_state_matches_returns_null_when_the_exact_row_update_fails(): void {
+		$running     = $this->state();
+		$replacement = $running->with_action_sequence( 2 );
+		$fixture     = $this->fixtures->run( self::RUN_ID, $running );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$result = $this->store()->replace_if_state_matches( self::RUN_ID, $running, $replacement );
+
+		self::assertNull( $result );
+		self::assertSame( $fixture[1], $this->raw_row() );
+		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
 	 * Different interleaved terminal effects converge in append order on one exact snapshot.
 	 *
 	 * @load-bearing concurrency

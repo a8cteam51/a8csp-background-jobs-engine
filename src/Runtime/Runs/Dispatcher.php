@@ -348,6 +348,9 @@ final readonly class Dispatcher {
 		}
 
 		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->scheduler->unschedule_group( (string) $identity . '|' . $run_id ) );
+		if ( $cancelled instanceof Failure ) {
+			return $cancelled;
+		}
 		if ( $cancelled ) {
 			return new Success( $run_id );
 		}
