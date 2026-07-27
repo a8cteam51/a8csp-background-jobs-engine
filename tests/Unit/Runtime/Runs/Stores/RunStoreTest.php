@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -353,7 +354,7 @@ final class RunStoreTest extends TestCase {
 	 */
 	public function test_full_row_below_persisted_byte_ceiling_is_accepted(): void {
 		// These literals derive from the row and kind-state ceilings to pin the below, exact, and over boundaries.
-		$start_args = array( 'payload' => \str_repeat( 'x', 16_026 ) );
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_006 ) );
 		$kind_state = array( 'payload' => \str_repeat( 'x', 983_584 ) );
 		$store      = $this->store();
 
@@ -377,7 +378,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_full_row_at_persisted_byte_ceiling_is_accepted(): void {
-		$start_args = array( 'payload' => \str_repeat( 'x', 16_027 ) );
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_007 ) );
 		$kind_state = array( 'payload' => \str_repeat( 'x', 983_584 ) );
 		$store      = $this->store();
 
@@ -401,7 +402,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_full_row_over_persisted_byte_ceiling_is_rejected_before_create(): void {
-		$start_args = array( 'payload' => \str_repeat( 'x', 16_028 ) );
+		$start_args = array( 'payload' => \str_repeat( 'x', 16_008 ) );
 		$kind_state = array( 'payload' => \str_repeat( 'x', 983_584 ) );
 
 		$result = $this->store()->create( self::RUN_ID, 'acme.export', $start_args, $this->fixtures->args_hash( $start_args ), $kind_state );
@@ -436,7 +437,7 @@ final class RunStoreTest extends TestCase {
 		$fixture  = $this->fixtures->run( self::RUN_ID, $expected );
 		$this->put_fixture( $fixture );
 
-		$start_args  = array( 'payload' => \str_repeat( 'x', 16_028 ) );
+		$start_args  = array( 'payload' => \str_repeat( 'x', 16_008 ) );
 		$replacement = new RunState( status: RunStatus::Running, kind: 'acme.export', executing: false, start_args: $start_args, args_hash: $this->fixtures->args_hash( $start_args ), kind_state: array( 'payload' => \str_repeat( 'x', 983_584 ) ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW );
 
 		$result = $this->store()->replace_if_state_matches( self::RUN_ID, $expected, $replacement );
@@ -1023,33 +1024,75 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * A redundant top-level priority is corrupt raw evidence.
+	 * A pending descriptor and top-level priority together are corrupt raw evidence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
 	public function test_redundant_priority_representation_never_hydrates(): void {
-		$pending_fixture   = $this->fixtures->run( self::RUN_ID, $this->state()->with_pending( PendingAction::async( 'run', 42 ) ) );
-		$pending_row       = \maybe_unserialize( $pending_fixture[1] );
-		$pendingless_state = $this->state()->with_pending( null );
-		$default_fixture   = $this->fixtures->run( self::RUN_ID, $pendingless_state );
-		$default_row       = \maybe_unserialize( $default_fixture[1] );
+		$pending_fixture = $this->fixtures->run( self::RUN_ID, $this->state()->with_pending( PendingAction::async( 'run', 42 ) ) );
+		$pending_row     = \maybe_unserialize( $pending_fixture[1] );
 		self::assertIsArray( $pending_row );
-		self::assertIsArray( $default_row );
 		$pending_row['priority'] = 42;
-		$default_row['priority'] = 10;
+		$raw                     = \maybe_serialize( $pending_row );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $pending_fixture[0], $raw );
 
-		foreach ( array( $pending_row, $default_row ) as $stored ) {
-			$raw = \maybe_serialize( $stored );
-			self::assertIsString( $raw );
-			$this->rig->wpdb()->put( $pending_fixture[0], $raw );
+		$inspected = $this->store()->inspect( self::RUN_ID );
 
-			$inspected = $this->store()->inspect( self::RUN_ID );
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertSame( $raw, $inspected->value['raw'] ?? null );
+		self::assertNull( $inspected->value['state'] ?? null );
+	}
 
-			self::assertInstanceOf( Success::class, $inspected );
-			self::assertIsArray( $inspected->value );
-			self::assertSame( $raw, $inspected->value['raw'] ?? null );
-			self::assertNull( $inspected->value['state'] ?? null );
-		}
+	/**
+	 * A pendingless explicit engine-default priority hydrates as admitted provenance.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale An explicit priority equal to the engine default is admitted provenance rather than corrupt raw evidence.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_pendingless_explicit_engine_default_priority_hydrates(): void {
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state()->with_pending( null ) );
+		$this->put_fixture( $fixture );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertSame( $fixture[1], $inspected->value['raw'] ?? null );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( 10, $inspected->value['state']->priority );
+	}
+
+	/**
+	 * A pendingless engine-default state writes explicit priority provenance.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Priority provenance stays readable after successor removal because the wire location never depends on the default's value.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_pendingless_engine_default_priority_is_written_explicitly(): void {
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state()->with_pending( null ) );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+
+		self::assertArrayNotHasKey( 'pending', $stored );
+		self::assertArrayHasKey( 'priority', $stored );
+		self::assertSame( 10, $stored['priority'] );
 	}
 
 	/**
@@ -1187,10 +1230,131 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Optional terminal error and effect metadata accept only their canonical nested shapes.
+	 * Additive portable error metadata survives hydration and exact persisted-byte replacement.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Typed terminal state retains portable extension data so exact-state writes preserve its authoritative generation.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_portable_error_field_survives_a_full_persisted_byte_round_trip(): void {
+		$error   = array(
+			'class'   => null,
+			'message' => 'Failure.',
+			'stage'   => 'execution',
+			'code'    => ErrorCode::ExecutionFailed->value,
+		);
+		$state   = $this->state()->with_status( RunStatus::Failed )->with_pending( null )->with_error( $error );
+		$fixture = $this->fixtures->run( self::RUN_ID, $state );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		self::assertIsArray( $stored['error'] ?? null );
+		$error['diagnostics'] = array(
+			'provider'  => 'acme',
+			'retryable' => false,
+		);
+		$stored['error']      = $error;
+		$raw                  = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $fixture[0], $raw );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( $error, $inspected->value['state']->error );
+
+		$round_trip = $this->store()->replace_if_state_matches( self::RUN_ID, $inspected->value['state'], $inspected->value['state'] );
+
+		self::assertSame( $raw, $round_trip );
+		self::assertSame( $raw, $this->raw_row() );
+	}
+
+	/**
+	 * Error details at the portable depth boundary survive exact persisted bytes.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Error-envelope validation preserves the complete portable depth available to the canonical details payload.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_error_details_at_the_portable_depth_limit_survive_persisted_bytes(): void {
+		$error   = array(
+			'class'   => null,
+			'message' => 'Failure.',
+			'stage'   => 'execution',
+			'code'    => ErrorCode::ExecutionFailed->value,
+			'details' => $this->maximum_portable_values(),
+		);
+		$state   = $this->state()->with_status( RunStatus::Failed )->with_pending( null )->with_error( $error );
+		$fixture = $this->fixtures->run( self::RUN_ID, $state );
+		$this->put_fixture( $fixture );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertInstanceOf( RunState::class, $inspected->value['state'] );
+		self::assertSame( $error, $inspected->value['state']->error );
+
+		$round_trip = $this->store()->replace_if_state_matches( self::RUN_ID, $inspected->value['state'], $inspected->value['state'] );
+
+		self::assertSame( $fixture[1], $round_trip );
+		self::assertSame( $fixture[1], $this->raw_row() );
+	}
+
+	/**
+	 * A non-portable additive error value remains corrupt raw evidence.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale Inline malformed metadata cannot be produced by StoreFixtureBuilder and proves persisted data cannot smuggle ambiguous errors or replayable duplicate effect keys into terminal recovery.
+	 * @pin-rationale Error extension values cross the typed boundary only when their complete value tree is portable.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_nonportable_unknown_error_value_never_hydrates(): void {
+		$error   = array(
+			'class'   => null,
+			'message' => 'Failure.',
+			'stage'   => 'execution',
+			'code'    => ErrorCode::ExecutionFailed->value,
+		);
+		$state   = $this->state()->with_status( RunStatus::Failed )->with_pending( null )->with_error( $error );
+		$fixture = $this->fixtures->run( self::RUN_ID, $state );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		self::assertIsArray( $stored['error'] ?? null );
+		$stored['error']['diagnostics'] = new \stdClass();
+		$raw                            = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $fixture[0], $raw );
+
+		$inspected = $this->store()->inspect( self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertIsArray( $inspected->value );
+		self::assertSame( $raw, $inspected->value['raw'] ?? null );
+		self::assertNull( $inspected->value['state'] ?? null );
+	}
+
+	/**
+	 * Optional terminal error and effect metadata accept only readable, portable shapes.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Inline malformed metadata cannot be produced by StoreFixtureBuilder and proves a hydratable terminal state has
+	 *                readable, portable error metadata, status-compatible predecessor and error fields, and non-empty unique effect keys.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1221,9 +1385,48 @@ final class RunStoreTest extends TestCase {
 			),
 			array(
 				'error' => array(
+					'message' => 'Failure.',
+					'stage'   => 'execution',
+					'code'    => ErrorCode::ExecutionFailed->value,
+				),
+			),
+			array(
+				'error' => array(
+					'class' => null,
+					'stage' => 'execution',
+					'code'  => ErrorCode::ExecutionFailed->value,
+				),
+			),
+			array(
+				'error' => array(
 					'class'   => null,
 					'message' => 'Failure.',
-					'extra'   => true,
+					'code'    => ErrorCode::ExecutionFailed->value,
+				),
+			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => 'Failure.',
+					'stage'   => 'execution',
+				),
+			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => 'Failure.',
+					'stage'   => 'execution',
+					'code'    => ErrorCode::ExecutionFailed->value,
+					'details' => false,
+				),
+			),
+			array(
+				'error' => array(
+					'class'   => null,
+					'message' => 'Failure.',
+					'stage'   => 'execution',
+					'code'    => ErrorCode::ExecutionFailed->value,
+					'details' => array( new \stdClass() ),
 				),
 			),
 			array(
@@ -1294,6 +1497,23 @@ final class RunStoreTest extends TestCase {
 		$pending_stage = 'job' === $kind ? 'run' : 'start';
 
 		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( $pending_stage, 10 ) );
+	}
+
+	/**
+	 * Builds the deepest values accepted by the portable-arguments boundary.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private function maximum_portable_values(): array {
+		$values = array( null );
+		while ( PortableArguments::is_valid( array( $values ) ) ) {
+			$values = array( $values );
+		}
+
+		return $values;
 	}
 
 	/**

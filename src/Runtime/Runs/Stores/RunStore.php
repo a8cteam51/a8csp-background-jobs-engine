@@ -32,6 +32,7 @@ use Psr\Clock\ClockInterface;
  *
  * @internal
  *
+ * @phpstan-type StoredError = array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>, ...<array-key, mixed>}
  * @phpstan-type StoredPendingAction = array{stage: string, mode: 'async', fire_at: null, priority: int}|array{stage: string, mode: 'single', fire_at: int, priority: int}
  *
  * @since   1.0.0
@@ -586,7 +587,7 @@ final readonly class RunStore {
 	 *     heartbeat_at: int,
 	 *     priority?: int,
 	 *     pending?: array{stage: string, mode: 'async'|'single', fire_at: int|null, priority: int},
-	 *     error?: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>},
+	 *     error?: StoredError,
 	 *     previous_completed_run_id?: string,
 	 *     effects?: non-empty-list<string>
 	 * }
@@ -611,8 +612,8 @@ final readonly class RunStore {
 				'fire_at'  => $state->pending->fire_at,
 				'priority' => $state->pending->priority,
 			);
-		} elseif ( 10 !== $state->priority ) {
-			// A retained descriptor owns the canonical wire priority; pendingless non-default runs need separate provenance.
+		} else {
+			// A retained descriptor owns wire priority; pendingless runs carry admitted priority at the top level.
 			$option['priority'] = $state->priority;
 		}
 		if ( null !== $state->error ) {
@@ -713,7 +714,7 @@ final readonly class RunStore {
 	 *     heartbeat_at: int,
 	 *     priority?: int,
 	 *     pending?: StoredPendingAction,
-	 *     error?: array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>},
+	 *     error?: StoredError,
 	 *     previous_completed_run_id?: string,
 	 *     effects?: non-empty-list<string>
 	 * } $value
@@ -744,7 +745,6 @@ final readonly class RunStore {
 					! \is_int( $value['priority'] )
 					|| 0 > $value['priority']
 					|| Dispatcher::MAX_PRIORITY < $value['priority']
-					|| 10 === $value['priority']
 					|| \array_key_exists( 'pending', $value )
 				)
 			)
@@ -870,7 +870,7 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-assert-if-true array{class: string|null, message: string, stage: string, code: string, details?: array<array-key, mixed>} $value
+	 * @phpstan-assert-if-true StoredError $value
 	 *
 	 * @param   mixed $value Persisted terminal failure detail.
 	 *
@@ -880,7 +880,6 @@ final readonly class RunStore {
 		$has_details = \is_array( $value ) && \array_key_exists( 'details', $value );
 		if (
 			! \is_array( $value )
-			|| ( $has_details ? 5 : 4 ) !== \count( $value )
 			|| ! \array_key_exists( 'class', $value )
 			|| ( null !== $value['class'] && ! \is_string( $value['class'] ) )
 			|| ! \is_string( $value['message'] ?? null )
@@ -888,12 +887,15 @@ final readonly class RunStore {
 			|| null === RunFailureStage::tryFrom( $value['stage'] )
 			|| ! \is_string( $value['code'] ?? null )
 			|| null === ErrorCode::tryFrom( $value['code'] )
+			|| ( $has_details && ! \is_array( $value['details'] ) )
+			// Verbatim pass-through persists additive metadata, so the whole record is portable. The record occupies one array level
+			// itself, so its budget runs one deeper than the payload default to leave details their full depth.
+			|| ! PortableArguments::is_valid( $value, 513 )
 		) {
 			return false;
 		}
 
-		return ! $has_details
-			|| ( \is_array( $value['details'] ) && PortableArguments::is_valid( $value['details'] ) );
+		return true;
 	}
 
 	/**

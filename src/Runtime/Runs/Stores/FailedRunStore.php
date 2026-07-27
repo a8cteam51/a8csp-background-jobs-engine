@@ -583,8 +583,7 @@ final readonly class FailedRunStore {
 		$error       = $value['error'];
 		$has_details = \array_key_exists( 'details', $error );
 		if (
-			( $has_details ? 5 : 4 ) !== \count( $error )
-			|| ! \is_string( $error['stage'] ?? null )
+			! \is_string( $error['stage'] ?? null )
 			|| null === RunFailureStage::tryFrom( $error['stage'] )
 			|| ! \is_string( $error['code'] ?? null )
 			|| null === ErrorCode::tryFrom( $error['code'] )
@@ -599,6 +598,8 @@ final readonly class FailedRunStore {
 			}
 		}
 
+		// Retained entries compare and swap against the raw read rather than a re-serialized state, so named-field reconstruction
+		// can drop additive metadata without destabilizing a later write.
 		$error_detail = array(
 			'class'   => $error['class'],
 			'message' => $error['message'],
