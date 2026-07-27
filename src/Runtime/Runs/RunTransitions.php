@@ -197,19 +197,19 @@ final readonly class RunTransitions {
 		$at = $handler->delivery_liveness_at( $identity, $run_id, $state ) ?? $this->clock->now()->getTimestamp();
 
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
-		if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
+		if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], $at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
-		$marked = $run_store->mark_executing_with_heartbeat( $run_id, $state, $at );
+		$marked = $run_store->mark_executing_with_heartbeat( $run_id, $state, $at, $snapshot['raw'] );
 		if ( $marked instanceof Failure ) {
 			// replace_if_state_matches(), replace_if_raw_matches(), and mark_executing_with_heartbeat()
 			// collapse lost CAS and SQL write failure to null, so Failure denotes payload rejection.
-			if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $at, $at ) ) {
+			if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], $at, $at ) ) {
 				return null;
 			}
 			$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed delivery requires a canonical background-work identity.' );
-			$this->fail_run( $handler, $canonical_identity, $run_id, $state, $run_store, $marked->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::PayloadRejected, $handler->failure_details( $state ) );
+			$this->fail_run( $handler, $canonical_identity, $run_id, $state, $run_store, $marked->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::PayloadRejected, $handler->failure_details( $state ), $snapshot['raw'] );
 
 			return null;
 		}
@@ -358,7 +358,7 @@ final readonly class RunTransitions {
 	 * @param   RunFailureStage      $stage        Terminalization stage.
 	 * @param   ErrorCode            $code         Machine-readable cause classification.
 	 * @param   array|null           $details      Generic diagnostic payload, or null when no details are available.
-	 * @param   string|null          $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 * @param   string|null          $expected_raw Exact state bytes observed by the caller, or null to compare the typed state.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
@@ -514,6 +514,7 @@ final readonly class RunTransitions {
 	 * @param   string               $run_id                Run identifier.
 	 * @param   RunState             $state                 Running state observed before the fence.
 	 * @param   RunStore             $run_store             Active-run store.
+	 * @param   string               $expected_raw          Exact run state observed before the fence.
 	 * @param   int|null             $at                    Liveness timestamp, or null to use the current clock time.
 	 * @param   int|null             $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
@@ -521,7 +522,7 @@ final readonly class RunTransitions {
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	private function enforce_raw_delivery_fence( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at, ?int $expected_heartbeat_at ): bool {
+	private function enforce_raw_delivery_fence( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?int $at, ?int $expected_heartbeat_at ): bool {
 		$outcome = $this->overlap_guard->raw_heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
@@ -544,7 +545,7 @@ final readonly class RunTransitions {
 		}
 
 		$latest_run_id = $this->stores->raw_latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
-		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store );
+		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
 		if ( $claimed instanceof Failure ) {
 			$this->logger->error(
 				$claimed->error->message,
@@ -581,7 +582,7 @@ final readonly class RunTransitions {
 	 * @param   RunState    $replacement    Terminal replacement state.
 	 * @param   RunStore    $run_store      Active-run store.
 	 * @param   array|null  $failure_detail Reconstructed internal and client failure detail.
-	 * @param   string|null $expected_raw   Exact maintenance snapshot, or null for a live transition.
+	 * @param   string|null $expected_raw   Exact state bytes observed by the caller, or null to compare the typed state.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
@@ -631,7 +632,7 @@ final readonly class RunTransitions {
 	 * @param   RunState    $expected     Complete state observed by the terminalizing path.
 	 * @param   RunState    $replacement  Terminal replacement state.
 	 * @param   RunStore    $run_store    Active-run store.
-	 * @param   string|null $expected_raw Exact pre-gate snapshot supplied by maintenance, or null.
+	 * @param   string|null $expected_raw Exact state bytes observed by the caller, or null to compare the typed state.
 	 *
 	 * @return  string|Failure<EngineError>|null Exact terminal snapshot bytes for cleanup, storage or payload failure, or null after a lost fence.
 	 */

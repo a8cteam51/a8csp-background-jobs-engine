@@ -142,51 +142,113 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
-	 * Multiple schedule identities are bucketed from one hook-wide pending-action read.
+	 * Each declared identity receives only the pending total returned by its scoped query.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_scheduled_counts_buckets_multiple_identities_from_one_query(): void {
+	public function test_scheduled_counts_keep_declared_identity_totals_separate(): void {
 		$GLOBALS['a8csp_bgje_test_as_results'] = array(
 			'as_get_scheduled_actions' => array(
-				array(
-					41 => self::action( array( 'single' ), 'single' ),
-					42 => self::action( array( 'many' ), 'many' ),
-					43 => self::action( array( 'many' ), 'many' ),
-					44 => self::action( array( 'many' ), 'wrong-group' ),
-					45 => self::action( array( 'many', 'extra' ), 'many' ),
-					46 => self::action( array( '' ), 'empty-group-is-unconstrained' ),
-				),
+				array( 41 ),
+				array(),
+				array( 42, 43 ),
 			),
 		);
 
-		$counts = ( new ActionSchedulerBackend() )->scheduled_counts( self::HOOK, array( 'single', 'missing', 'many', '' ) );
+		$counts = ( new ActionSchedulerBackend() )->scheduled_counts( self::HOOK, array( 'single', 'missing', 'many' ) );
 
 		self::assertSame(
 			array(
 				'single'  => 1,
 				'missing' => 0,
 				'many'    => 2,
-				''        => 1,
 			),
 			$counts
 		);
+	}
+
+	/**
+	 * The census asks Action Scheduler for IDs through one exact query per declared identity.
+	 *
+	 * @load-bearing performance
+	 * @pin-rationale The IDs return format bypasses per-row action hydration, while args and group retain the engine's complete schedule identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_scheduled_counts_use_identity_scoped_id_queries_without_hydration(): void {
+		$GLOBALS['a8csp_bgje_test_as_results'] = array(
+			'as_get_scheduled_actions' => array(
+				array(),
+				array(),
+			),
+		);
+
+		( new ActionSchedulerBackend() )->scheduled_counts( self::HOOK, array( 'single', 'many' ) );
+
 		self::assertSame(
 			array(
 				array(
-					'hook'     => self::HOOK,
-					'status'   => 'pending',
-					'per_page' => -1,
-					'orderby'  => 'none',
+					'function' => 'as_get_scheduled_actions',
+					'args'     => array(
+						array(
+							'hook'     => self::HOOK,
+							'args'     => array( 'single' ),
+							'group'    => 'single',
+							'status'   => 'pending',
+							'per_page' => -1,
+							'orderby'  => 'none',
+						),
+						'ids',
+					),
 				),
-				'OBJECT',
+				array(
+					'function' => 'as_get_scheduled_actions',
+					'args'     => array(
+						array(
+							'hook'     => self::HOOK,
+							'args'     => array( 'many' ),
+							'group'    => 'many',
+							'status'   => 'pending',
+							'per_page' => -1,
+							'orderby'  => 'none',
+						),
+						'ids',
+					),
+				),
 			),
-			$this->calls( 'as_get_scheduled_actions' )[0]['args']
+			$this->calls( 'as_get_scheduled_actions' )
 		);
-		self::assertCount( 1, $this->calls( 'as_get_scheduled_actions' ) );
+	}
+
+	/**
+	 * Numeric-string identities retain their string type in exact Action Scheduler queries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_scheduled_counts_preserve_numeric_string_identity_query_types(): void {
+		$GLOBALS['a8csp_bgje_test_as_results'] = array(
+			'as_get_scheduled_actions' => array(
+				array(),
+			),
+		);
+
+		( new ActionSchedulerBackend() )->scheduled_counts( self::HOOK, array( '123' ) );
+
+		$calls = $this->calls( 'as_get_scheduled_actions' );
+		self::assertCount( 1, $calls );
+		$query = $calls[0]['args'][0] ?? null;
+		self::assertIsArray( $query );
+		self::assertSame( array( '123' ), $query['args'] ?? null );
+		self::assertSame( '123', $query['group'] ?? null );
 	}
 
 	/**
@@ -229,47 +291,6 @@ final class ActionSchedulerBackendTest extends TestCase {
 		return null === $function_name
 			? $calls
 			: \array_values( \array_filter( $calls, static fn ( array $call ): bool => $function_name === $call['function'] ) );
-	}
-
-	/**
-	 * Returns one Action Scheduler object-shaped fixture.
-	 *
-	 * @param   list<mixed> $args  Action arguments.
-	 * @param   string      $group Action group.
-	 *
-	 * @return  object
-	 */
-	private static function action( array $args, string $group ): object {
-		return new readonly class( $args, $group ) {
-			/**
-			 * Creates an immutable action fixture.
-			 *
-			 * @param   list<mixed> $args  Action arguments.
-			 * @param   string      $group Action group.
-			 */
-			public function __construct(
-				private array $args,
-				private string $group,
-			) {}
-
-			/**
-			 * Returns the action arguments.
-			 *
-			 * @return  list<mixed>
-			 */
-			public function get_args(): array {
-				return $this->args;
-			}
-
-			/**
-			 * Returns the action group.
-			 *
-			 * @return  string
-			 */
-			public function get_group(): string {
-				return $this->group;
-			}
-		};
 	}
 
 	// endregion.

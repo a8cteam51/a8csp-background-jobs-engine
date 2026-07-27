@@ -336,6 +336,109 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
+	 * A delivery claim uses the exact tolerated run bytes it observed as its ownership precondition.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A valid noncanonical field order decodes to the writer's canonical state but retains different compare-and-swap bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_anchors_on_the_exact_observed_run_bytes(): void {
+		$this->prepare_run_action();
+		$expected_raw = $this->install_reordered_run_row();
+		$run_store    = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+
+		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+
+		self::assertInstanceOf( RunState::class, $claimed );
+		self::assertTrue( $claimed->executing );
+		self::assertNotSame( $expected_raw, $this->wpdb->rows[ $this->run_option_name() ] ?? null );
+		self::assertEquals( $claimed, $run_store->get( self::RUN_ID ) );
+		self::assertSame( array(), $this->logger->records );
+	}
+
+	/**
+	 * A lost ownership fence supersedes the exact tolerated run bytes inspected by the delivery.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The ownership fence reaches terminal compare-and-swap before the execution marker, so it must retain the same raw precondition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_raw_anchors_supersession_after_lock_loss(): void {
+		$this->prepare_run_action();
+		$this->install_reordered_run_row();
+		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+
+		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+
+		self::assertNull( $claimed );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertSame(
+			array(
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_terminal_history( 'superseded' );
+	}
+
+	/**
+	 * A mark rejection terminalizes the exact tolerated run bytes inspected by the delivery.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Reader-valid oversized state reaches failure terminalization before the execution marker and retains its raw precondition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_raw_anchors_payload_rejection_after_mark_failure(): void {
+		$this->prepare_run_action();
+		$this->install_reordered_run_row(
+			array(
+				'kind_state' => array(
+					'payload' => \str_repeat( 'x', RunStore::MAX_KIND_STATE_BYTES ),
+				),
+			)
+		);
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+
+		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+
+		self::assertNull( $claimed );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		$history = $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY );
+		self::assertIsArray( $history );
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		$first_terminal = $terminal[0] ?? null;
+		self::assertIsArray( $first_terminal );
+		$expected_terminal = array(
+			'run_id' => self::RUN_ID,
+			'status' => 'failed',
+		);
+		self::assertSame( $expected_terminal, $first_terminal );
+		$by_hash = $history['by_hash'] ?? null;
+		self::assertIsArray( $by_hash );
+		$hashed_history = $by_hash[ self::ARGS_HASH ] ?? null;
+		self::assertIsArray( $hashed_history );
+		$by_hash_terminal = $hashed_history['terminal'] ?? null;
+		self::assertIsArray( $by_hash_terminal );
+		self::assertSame( $expected_terminal, $by_hash_terminal[0] ?? null );
+	}
+
+	/**
 	 * A fresh execution marker excludes a same-sequence delivery after its read and before another fence write.
 	 *
 	 * @return  void
@@ -1102,6 +1205,31 @@ final class RunTransitionsTest extends TestCase {
 		$claimed = $this->terminal_transitions->claim_delivery_ownership( $this->handlers, self::IDENTITY, $run_id, $action_sequence, $run_store );
 
 		return $claimed?->state;
+	}
+
+	/**
+	 * A reordered fixture exercises the reader/writer byte mismatch without invalidating the decoded state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<string, mixed> $overrides Top-level state overrides applied before reordering.
+	 *
+	 * @return  string Exact installed bytes.
+	 */
+	private function install_reordered_run_row( array $overrides = array() ): string {
+		$option_name = $this->run_option_name();
+		$current     = $this->wpdb->rows[ $option_name ] ?? null;
+		self::assertIsString( $current );
+		$stored = \maybe_unserialize( $current );
+		self::assertIsArray( $stored );
+		$stored    = \array_replace( $stored, $overrides );
+		$reordered = \maybe_serialize( \array_reverse( $stored, true ) );
+		self::assertIsString( $reordered );
+		self::assertNotSame( $current, $reordered );
+		$this->wpdb->put( $option_name, $reordered );
+
+		return $reordered;
 	}
 
 	/**

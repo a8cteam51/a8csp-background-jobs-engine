@@ -151,6 +151,8 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$registration_before = \get_option( $registry_option, null );
 		self::assertIsArray( $registration_before );
 
+		// Synchronizing a consumer scope against an unready backend reports the dormant occurrences it leaves behind.
+		$this->expectOutputRegex( '/Schedule synchronization ran while a scheduling backend was not ready/' );
 		$action_scheduler->ready = false;
 		$fallback                = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $fallback );
@@ -209,7 +211,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 
-		return new ScheduleOperations( $registry, $scheduler, $clock, $occurrence_delivery );
+		return new ScheduleOperations( $registry, $scheduler, $clock, $occurrence_delivery, $logger );
 	}
 
 	// endregion.

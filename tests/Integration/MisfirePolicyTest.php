@@ -401,7 +401,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
-		$schedules            = new ScheduleOperations( $schedule_registry, $scheduler, $clock, $occurrence_delivery );
+		$schedules            = new ScheduleOperations( $schedule_registry, $scheduler, $clock, $occurrence_delivery, $logger );
 		$inspection           = new Inspection( $schedule_registry, $job_registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $clock );
 		$engine               = new EngineFacade( $schedules, $dispatcher );
 

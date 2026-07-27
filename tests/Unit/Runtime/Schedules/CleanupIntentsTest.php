@@ -129,8 +129,9 @@ final class CleanupIntentsTest extends TestCase {
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
 		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ), $this->logger );
-		$this->delivery = $this->new_delivery( $this->registry );
-		$this->api      = new ScheduleOperations( $this->registry, $this->backend, $this->clock, $this->delivery );
+		$scheduler      = new SchedulerFacade( array( $this->backend ) );
+		$this->delivery = $this->new_delivery( $this->registry, $scheduler );
+		$this->api      = new ScheduleOperations( $this->registry, $scheduler, $this->clock, $this->delivery, $this->logger );
 	}
 
 	// endregion.

@@ -142,7 +142,7 @@ interface BackendInterface {
 	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int;
 
 	/**
-	 * Returns pending-occurrence counts for multiple canonical schedule identities in one backend pass.
+	 * Returns one pending-occurrence count for every requested canonical schedule identity.
 	 *
 	 * Each identity is matched as the hook plus arguments containing only that identity, plus the
 	 * identity as its group where the backend supports groups. Every requested identity is present in

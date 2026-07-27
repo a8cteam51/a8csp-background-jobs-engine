@@ -18,7 +18,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -137,17 +136,17 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
-	 * Unchanged declarations share one bulk backend census per synchronization.
+	 * Only declarations eligible for the fingerprint fast path enter the backend census.
 	 *
 	 * @load-bearing performance
-	 * @pin-rationale Schedule sync runs on every init, so per-declaration backend reads multiply an unbounded Action Scheduler query and WP-Cron scan by the declaration count.
+	 * @pin-rationale Per-identity backend reads are consumed only by fingerprint matches, so mixed synchronization excludes declarations that follow replacement flow.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_sync_bulk_counts_unchanged_declarations_once(): void {
+	public function test_sync_census_includes_exactly_the_fingerprint_matching_declarations(): void {
 		$declarations = array(
 			self::schedule( 'nightly', 300 ),
 			self::schedule( 'hourly', 3_600 ),
@@ -155,15 +154,49 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Success::class, $this->client_a->sync( $declarations ) );
 		$this->reset_backend_observations();
 
-		$result = $this->client_a->sync( $declarations );
+		$result = $this->client_a->sync(
+			array(
+				self::schedule( 'nightly', 300 ),
+				self::schedule( 'hourly', 7_200 ),
+			)
+		);
 
 		self::assertInstanceOf( Success::class, $result );
 		$calls = $this->calls( 'scheduled_counts' );
 		self::assertCount( 1, $calls );
 		self::assertSame( OccurrenceDelivery::SCHEDULE_HOOK, $calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( 'scope-a:nightly', 'scope-a:hourly' ), $calls[0]['args']['identities'] ?? null );
+		self::assertSame( array( 'scope-a:nightly' ), $calls[0]['args']['identities'] ?? null );
 		self::assertSame( array(), $this->calls( 'scheduled_count' ) );
-		self::assertSame( array(), $this->write_calls() );
+		self::assertSame(
+			array( 'scope-a:hourly', 'scope-a:hourly' ),
+			\array_map( static fn ( array $call ): mixed => $call['args']['group'] ?? null, $this->write_calls() )
+		);
+	}
+
+	/**
+	 * A programmatic synchronization reports a scheduling backend that is not ready.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_programmatic_sync_warns_when_a_scheduling_backend_is_not_ready(): void {
+		$this->rig->tear_down();
+		$this->rig                    = EngineRig::set_up( self::NOW, 2 );
+		$client                       = $this->rig->operations( 'scope-a' );
+		$backends                     = $this->rig->backends();
+		$backends[0]->ready           = false;
+		$this->rig->logger()->records = array();
+
+		$result = $client->sync( array() );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertStringContainsString( 'scheduling backend was not ready', $this->rig->logger()->records[0]['message'] ?? '' );
+		self::assertStringContainsString( 'synchronize this scope again', $this->rig->logger()->records[0]['message'] ?? '' );
+		self::assertSame( 'scope-a', $this->rig->logger()->records[0]['context']['scope'] ?? null );
 	}
 
 	/**
@@ -376,7 +409,7 @@ final class ScheduleOperationsTest extends TestCase {
 			),
 			$result->error->context
 		);
-		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertSame( array(), $this->write_calls() );
 		self::assertSame( $poison, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 	}
 

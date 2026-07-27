@@ -483,14 +483,18 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string        $run_id   Run identifier.
-	 * @param   RunState|null $expected Complete state already observed by the caller, or null to inspect it here.
-	 * @param   int|null      $at       Liveness timestamp, or null to use the current clock time.
+	 * @param   string        $run_id       Run identifier.
+	 * @param   RunState|null $expected     Complete state already observed by the caller, or null to inspect it here.
+	 * @param   int|null      $at           Liveness timestamp, or null to use the current clock time.
+	 * @param   string|null   $expected_raw Exact state bytes observed with the supplied complete state, or null to derive them.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
+	 *                          not serialize the run state to a string.
 	 *
 	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, or null when the run is absent, invalid, or changed concurrently.
 	 */
-	public function mark_executing_with_heartbeat( string $run_id, ?RunState $expected = null, ?int $at = null ): RunState|Failure|null {
-		$raw = null;
+	public function mark_executing_with_heartbeat( string $run_id, ?RunState $expected = null, ?int $at = null, ?string $expected_raw = null ): RunState|Failure|null {
+		$raw = $expected_raw;
 		if ( null === $expected ) {
 			$inspected = $this->inspect( $run_id );
 			if ( $inspected->is_failure() ) {
