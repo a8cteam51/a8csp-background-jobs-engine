@@ -65,7 +65,7 @@ final readonly class Schedule {
 	public array $args;
 
 	/**
-	 * Stable identity of every field that changes scheduled behavior.
+	 * Stable identity of the fields that determine the engine-owned recurring chain.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -89,7 +89,7 @@ final readonly class Schedule {
 	 * @param   string                  $job        Stable target job name.
 	 * @param   array<array-key, mixed> $args       Target job arguments.
 	 * @param   CatchUpPolicy           $catch_up   Missed-occurrence policy.
-	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
 	 *
 	 * @throws  \InvalidArgumentException When a schedule or target job name is invalid, or the definition is not portable or violates a boundary.
 	 */
@@ -117,7 +117,6 @@ final readonly class Schedule {
 					'job'        => $this->job,
 					'args'       => $this->args,
 					'catch_up'   => $this->catch_up->value,
-					'priority'   => $this->priority,
 				),
 				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
 			);
@@ -137,7 +136,7 @@ final readonly class Schedule {
 	// region GETTERS
 
 	/**
-	 * Returns the stable SHA-256 definition identity.
+	 * Returns the stable SHA-256 recurring-chain identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

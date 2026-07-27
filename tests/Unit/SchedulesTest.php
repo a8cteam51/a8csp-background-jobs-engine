@@ -45,7 +45,7 @@ final class SchedulesTest extends AbstractCapabilityManagerTestCase {
 		self::assertTrue( $engine->schedules()->sync( $schedule ) );
 		$schedule_call = self::latest_backend_call( $this->rig, 'schedule_recurring' );
 		self::assertSame( 300, $schedule_call['args']['interval'] ?? null );
-		self::assertSame( 41, $schedule_call['args']['priority'] ?? null );
+		self::assertSame( 0, $schedule_call['args']['priority'] ?? null );
 		self::assertIsInt( $schedule_call['args']['first_run_timestamp'] ?? null );
 		self::assertSame( 50, ( $schedule_call['args']['first_run_timestamp'] ?? 0 ) % 300 );
 

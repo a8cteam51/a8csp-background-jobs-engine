@@ -259,26 +259,32 @@ final class ScheduleTest extends TestCase {
 	}
 
 	/**
-	 * An unspecified priority remains distinct from an explicit engine-default priority.
+	 * Consumer delivery priority does not alter the engine-owned recurring chain identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_unspecified_priority_fingerprints_as_json_null(): void {
+	public function test_priority_does_not_change_the_schedule_fingerprint(): void {
 		$unspecified = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' );
 		$explicit    = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', priority: 10 );
-		$encoded     = '{"name":"nightly","recurrence":{"kind":"every","interval":300},"job":"refresh-index","args":[],"catch_up":"run_once","priority":null}';
+		$encoded     = '{"name":"nightly","recurrence":{"kind":"every","interval":300},"job":"refresh-index","args":[],"catch_up":"run_once"}';
 
 		self::assertNull( $unspecified->priority );
 		self::assertSame( \hash( 'sha256', $encoded ), $unspecified->fingerprint() );
-		self::assertNotSame( $explicit->fingerprint(), $unspecified->fingerprint() );
+		self::assertSame( $explicit->fingerprint(), $unspecified->fingerprint() );
 	}
 
 	/**
-	 * Every behavioral field contributes to the stable fingerprint.
+	 * Every recurring-chain field contributes to the stable fingerprint.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_each_field_change_changes_the_fingerprint(): void {
+	public function test_each_recurring_chain_field_change_changes_the_fingerprint(): void {
 		$baseline = $this->schedule();
 		$changed  = array(
 			new Schedule( 'nightly-2', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ) ),
@@ -287,7 +293,6 @@ final class ScheduleTest extends TestCase {
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index-2', array( 'site_id' => 7 ) ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 8 ) ),
 			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), catch_up: CatchUpPolicy::Skip ),
-			new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'site_id' => 7 ), priority: 11 ),
 		);
 
 		foreach ( $changed as $schedule ) {

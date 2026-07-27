@@ -153,11 +153,14 @@ final class ScheduleExecutionTest extends TestCase {
 	// region BEHAVIOR.
 
 	/**
-	 * Unspecified and explicit default priorities both reach recurring and target backends as 10.
+	 * Engine-owned ticks use the fixed urgent priority while defaulted deliveries use 10.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_default_priority_forms_dispatch_occurrences_at_backend_priority_10(): void {
+	public function test_tick_priority_is_engine_owned_while_defaulted_deliveries_use_10(): void {
 		$unspecified = new Schedule( 'unspecified', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'unspecified' ), priority: null );
 		$explicit    = new Schedule( 'explicit-default', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'explicit' ), priority: 10 );
 		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow ) ) );
@@ -165,7 +168,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertInstanceOf( Success::class, $this->client->sync( array( $unspecified, $explicit ) ) );
 		$recurring_calls = $this->calls( 'schedule_recurring' );
 		self::assertCount( 2, $recurring_calls );
-		self::assertSame( array( 10, 10 ), \array_column( \array_column( $recurring_calls, 'args' ), 'priority' ) );
+		self::assertSame( array( 0, 0 ), \array_column( \array_column( $recurring_calls, 'args' ), 'priority' ) );
 
 		$this->reset_observations();
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
@@ -176,6 +179,53 @@ final class ScheduleExecutionTest extends TestCase {
 		$occurrence_calls = $this->calls( 'enqueue_async' );
 		self::assertCount( 2, $occurrence_calls );
 		self::assertSame( array( 10, 10 ), \array_column( \array_column( $occurrence_calls, 'args' ), 'priority' ) );
+	}
+
+	/**
+	 * A schedule priority beats the target job default, which supplies priority when the schedule leaves it unspecified.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_delivery_priority_resolves_the_schedule_and_job_default_rungs(): void {
+		$schedule_priority = new Schedule( 'schedule-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'schedule' ), priority: 23 );
+		$job_priority      = new Schedule( 'job-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'job' ) );
+		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow, priority: 41 ) ) );
+
+		self::assertInstanceOf( Success::class, $this->client->sync( array( $schedule_priority, $job_priority ) ) );
+		$this->reset_observations();
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$this->rig->run_due();
+		$this->rig->run_due();
+		$this->rig->run_due();
+
+		$occurrence_calls = $this->calls( 'enqueue_async' );
+		self::assertCount( 2, $occurrence_calls );
+		self::assertSame( array( 23, 41 ), \array_column( \array_column( $occurrence_calls, 'args' ), 'priority' ) );
+	}
+
+	/**
+	 * The most urgent schedule priority reaches the delivery instead of collapsing to the job default.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_urgent_schedule_priority_outranks_the_job_default(): void {
+		$urgent = new Schedule( 'urgent-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'urgent' ), priority: 0 );
+		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow, priority: 41 ) ) );
+
+		self::assertInstanceOf( Success::class, $this->client->sync( array( $urgent ) ) );
+		$this->reset_observations();
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$this->rig->run_due();
+
+		$occurrence_calls = $this->calls( 'enqueue_async' );
+		self::assertCount( 1, $occurrence_calls );
+		self::assertSame( 0, $occurrence_calls[0]['args']['priority'] ?? null );
 	}
 
 	/**

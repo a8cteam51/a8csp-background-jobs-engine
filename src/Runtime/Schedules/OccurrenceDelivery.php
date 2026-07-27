@@ -497,7 +497,7 @@ final readonly class OccurrenceDelivery {
 		$dispatched                          = $this->dispatcher->dispatch_scheduled_target(
 			$declaration['job'],
 			$schedule->args,
-			$schedule->priority ?? 10,
+			$schedule->priority,
 			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
 				try {
 					$this->persist_delivery_state( $identity, $scope, $accepted_registration );
@@ -606,7 +606,7 @@ final readonly class OccurrenceDelivery {
 		$dispatched                          = $this->dispatcher->dispatch_scheduled_target(
 			$declaration['job'],
 			$schedule->args,
-			$schedule->priority ?? 10,
+			$schedule->priority,
 			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
 				try {
 					$this->persist_delivery_state( $identity, $scope, $accepted_registration );

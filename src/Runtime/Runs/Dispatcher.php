@@ -46,8 +46,9 @@ final readonly class Dispatcher {
 	/**
 	 * Highest scheduler priority accepted by run admission.
 	 *
-	 * `Schedule::MAX_PRIORITY` mirrors this dispatch-owned limit because the frozen
-	 * public model keeps its constant private.
+	 * `Schedule::MAX_PRIORITY` and `JobOptions::MAX_PRIORITY` mirror this dispatch-owned limit
+	 * because the frozen public models keep their constants private. Lowering this ceiling without
+	 * lowering both leaves a model accepting an input that admission then rejects.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -142,7 +143,7 @@ final readonly class Dispatcher {
 	 * @param   Identity                $identity Complete scope-qualified work identity.
 	 * @param   array<array-key, mixed> $args     Start arguments.
 	 * @param   int|null                $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
-	 * @param   int|null                $priority Scheduler priority from 0 through 255, or null for the engine default.
+	 * @param   int|null                $priority Scheduler priority from 0 through 255, or null to defer to the job default.
 	 *
 	 * @return  AbstractResult<string, EngineError|SchedulingError>
 	 */
@@ -157,7 +158,6 @@ final readonly class Dispatcher {
 		if ( null === $handler->execution( $identity ) || null === $options ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
 		}
-		$priority ??= 10;
 
 		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $args, $fire_at, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
 	}
@@ -170,14 +170,14 @@ final readonly class Dispatcher {
 	 *
 	 * @param   Identity                $identity                        Complete scope-qualified work identity.
 	 * @param   array<array-key, mixed> $args                            Target arguments.
-	 * @param   int                     $priority                        Scheduler priority from 0 through 255.
+	 * @param   int|null                $priority                        Scheduler priority from 0 through 255, or null to defer to the job default.
 	 * @param   \Closure|null           $on_accepted                     Internal callback after backend acceptance and before history.
 	 * @param   bool                    $terminalize_overlap_key_failure Whether resolver failure consumes a recurring occurrence as a failed run.
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
 	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
-	public function dispatch_scheduled_target( Identity $identity, array $args, int $priority = 10, ?\Closure $on_accepted = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
+	public function dispatch_scheduled_target( Identity $identity, array $args, ?int $priority = null, ?\Closure $on_accepted = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
 		$kind = $this->registry->kind( $identity );
 		if ( null === $kind ) {
 			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
@@ -376,7 +376,7 @@ final readonly class Dispatcher {
 	 * @param   Identity                $identity                        Complete scope-qualified work identity.
 	 * @param   array<array-key, mixed> $args                            Start arguments.
 	 * @param   int|null                $fire_at                         Absolute first-delivery timestamp, or null for asynchronous admission.
-	 * @param   int                     $priority                        Scheduler priority.
+	 * @param   int|null                $priority                        Scheduler priority, or null to defer to the job default.
 	 * @param   OverlapPolicy           $overlap                         Effective overlap policy.
 	 * @param   \Closure|null           $on_accepted                     Callback after scheduler acceptance.
 	 * @param   string|null             $resolved_args_hash              Pre-resolved overlap identity for retry.
@@ -386,8 +386,9 @@ final readonly class Dispatcher {
 	 *
 	 * @return  AbstractResult<string|SkippedJobDispatch, EngineError|SchedulingError>
 	 */
-	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, Identity $identity, array $args, ?int $fire_at, int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
-		$kind = $handler->key();
+	private function dispatch_resolved( KindHandlerInterface $handler, JobOptions $options, Identity $identity, array $args, ?int $fire_at, ?int $priority, OverlapPolicy $overlap, ?\Closure $on_accepted = null, ?string $resolved_args_hash = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
+		$kind     = $handler->key();
+		$priority = $priority ?? $options->priority ?? 10;
 		if ( 0 > $priority || self::MAX_PRIORITY < $priority ) {
 			return new Failure(
 				new EngineError(

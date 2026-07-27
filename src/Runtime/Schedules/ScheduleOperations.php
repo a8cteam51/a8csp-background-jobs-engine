@@ -27,6 +27,26 @@ use Psr\Clock\ClockInterface;
  * @version 1.0.0
  */
 final readonly class ScheduleOperations {
+	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Recurring ticks run admission machinery at the most urgent supported priority.
+	 *
+	 * A tick performs admission only; the work itself runs on the delivery row the tick creates.
+	 * Carrying the consumer's priority here would apply it twice — once delaying admission and again
+	 * delaying the delivery — so the tick is engine-owned and the consumer's value reaches only the
+	 * delivery row. Zero keeps admission ahead of the work it admits, so a queue saturated with
+	 * consumer jobs cannot starve the step that enqueues them.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int TICK_PRIORITY = 0;
+
+	// endregion
+
 	// region MAGIC METHODS
 
 	/**
@@ -193,7 +213,7 @@ final readonly class ScheduleOperations {
 					}
 				}
 
-				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $schedule_identity ], array( $schedule_identity ), $current['next_due'], $schedule_identity, priority: $schedule->priority ?? 10 );
+				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $schedule_identity ], array( $schedule_identity ), $current['next_due'], $schedule_identity, priority: self::TICK_PRIORITY );
 				if ( $recreated->is_failure() ) {
 					return $recreated;
 				}
@@ -225,7 +245,7 @@ final readonly class ScheduleOperations {
 				return $this->registry_replacement_failure( $scope, $replacement );
 			}
 
-			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: $schedule->priority ?? 10 );
+			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: self::TICK_PRIORITY );
 			if ( $scheduled->is_failure() ) {
 				// A scheduling failure leaves the benign registration-without-chain that the fingerprint-match fast path
 				// recreates; rolling back can race a delivery and manufacture chain-without-registration, the exact orphan

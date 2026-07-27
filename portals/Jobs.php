@@ -54,7 +54,7 @@ final readonly class Jobs extends AbstractPortal {
 	 *
 	 * @param   string                  $name       Scope-local background-work name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *
@@ -84,7 +84,7 @@ final readonly class Jobs extends AbstractPortal {
 	 * @param   string                  $name       Scope-local background-work name.
 	 * @param   int                     $run_at     Absolute Unix timestamp for the first delivery.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *

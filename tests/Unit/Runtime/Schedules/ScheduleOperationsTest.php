@@ -251,7 +251,7 @@ final class ScheduleOperationsTest extends TestCase {
 		$registration = $this->scope_entries( 'scope-a' )[0];
 		$next_due     = $registration['next_due'] ?? null;
 		self::assertIsInt( $next_due );
-		self::assertInstanceOf( Success::class, $this->rig->backend()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'scope-a:nightly' ), $next_due + 300, 'scope-a:nightly', priority: $schedule->priority ?? 10 ) );
+		self::assertInstanceOf( Success::class, $this->rig->backend()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( 'scope-a:nightly' ), $next_due + 300, 'scope-a:nightly', priority: 0 ) );
 		$this->reset_backend_observations();
 
 		$repaired = $this->client_a->sync( array( $schedule ) );
