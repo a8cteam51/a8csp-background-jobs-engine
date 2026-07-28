@@ -66,7 +66,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 	 *
 	 * @var     string
 	 */
-	private const string SWEEP_CURSOR_OPTION = 'a8csp_bgje_maintenance_sweep';
+	public const string SWEEP_CURSOR_OPTION = 'a8csp_bgje_maintenance_sweep';
 
 	/**
 	 * Maximum option names returned by one maintenance enumeration query.

@@ -896,7 +896,7 @@ final readonly class RunStore {
 			|| ( $has_details && ! \is_array( $value['details'] ) )
 			// Verbatim pass-through persists additive metadata, so the whole record is portable. The record occupies one array level
 			// itself, so its budget runs one deeper than the payload default to leave details their full depth.
-			|| ! PortableArguments::is_valid( $value, 513 )
+			|| ! PortableArguments::is_valid( $value, PortableArguments::MAX_ARGUMENTS_JSON_DEPTH + 1 )
 		) {
 			return false;
 		}
