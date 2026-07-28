@@ -9,6 +9,8 @@
 
 declare( strict_types=1 );
 
+\defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
+
 return array(
 	'option_sweep_prefix'      => 'a8csp_bgje_',
 	'retained_option_prefixes' => array(
