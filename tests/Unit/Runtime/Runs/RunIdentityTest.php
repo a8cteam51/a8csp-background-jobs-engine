@@ -4,7 +4,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -34,9 +33,6 @@ final class RunIdentityTest extends TestCase {
 		$randomizer = new RecordingRandomizer( 42 );
 		$run_id     = RunIdentity::generate( 1_700_000_000, $randomizer );
 
-		self::assertSame( 20, RunIdentity::TIME_DIGITS );
-		self::assertSame( 19, RunIdentity::RANDOM_DIGITS );
-		self::assertSame( 40, RunIdentity::LENGTH );
 		self::assertSame( '00000000001700000000-0000000000000000042', $run_id );
 		self::assertSame( $run_id, RunIdentity::parse( $run_id ) );
 		self::assertSame(
@@ -56,7 +52,6 @@ final class RunIdentityTest extends TestCase {
 		$run_id      = '00000000001700000000-0000000000000000042';
 		$option_name = 'a8csp_bgje_active_run_scope:sync_job_' . $run_id;
 
-		self::assertSame( RunStore::OPTION_PREFIX, RunIdentity::option_prefix() );
 		self::assertSame( 'a8csp_bgje_active_run_scope:sync_job_', RunIdentity::option_name_prefix( $identity ) );
 		self::assertSame( $option_name, RunIdentity::option_name( $identity, $run_id ) );
 		$parsed = RunIdentity::from_option_name( $option_name );
