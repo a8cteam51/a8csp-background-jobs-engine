@@ -70,6 +70,8 @@ final readonly class RunStore {
 	 * A decimal megabyte stays below Memcached's default 1 MiB item ceiling, leaving 48,576 bytes
 	 * for the cache key, item metadata, and object-cache serialization wrappers.
 	 *
+	 * `FailedRunStore::MAX_ROW_BYTES` mirrors this ceiling for its independent option row.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

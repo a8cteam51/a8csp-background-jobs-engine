@@ -168,6 +168,190 @@ final class FailedRunStoreTest extends TestCase {
 	}
 
 	/**
+	 * Byte retention evicts oldest entries until the persisted row fits.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_byte_retention_evicts_oldest_entries_until_the_persisted_row_fits(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 7 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'byte-run-' . $index );
+			$run_ids[] = $run_id;
+			self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + $index, details: array( 'payload' => \str_repeat( 'x', 110_000 ) ) ) ) );
+		}
+		$this->rig->logger()->records = array();
+
+		$run_id    = self::fixture_run_id( 'byte-run-8' );
+		$run_ids[] = $run_id;
+		self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + 8, details: array( 'payload' => \str_repeat( 'x', 300_000 ) ) ) ) );
+
+		$raw = $this->raw_row();
+		self::assertLessThanOrEqual( 1_000_000, \strlen( $raw ) );
+		$persisted = \maybe_unserialize( $raw );
+		self::assertIsArray( $persisted );
+		self::assertSame( \array_slice( $run_ids, 2 ), \array_column( $persisted, 'run_id' ) );
+		self::assertCount( 1, $this->rig->logger()->records );
+		$warning = $this->rig->logger()->records[0];
+		self::assertSame( 'warning', $warning['level'] ?? null );
+		self::assertSame( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 1000000-byte serialized-row limit: {evicted_run_ids}.', $warning['message'] ?? null );
+		self::assertStringNotContainsString( '20-entry limit', $warning['message'] ?? '' );
+		self::assertSame( self::IDENTITY, $warning['context']['identity'] ?? null );
+		self::assertSame( \implode( ', ', \array_slice( $run_ids, 0, 2 ) ), $warning['context']['evicted_run_ids'] ?? null );
+	}
+
+	/**
+	 * A write reports count and byte eviction as separate causes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_record_logs_count_and_byte_evictions_separately(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 19 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'combined-run-' . $index );
+			$run_ids[] = $run_id;
+			self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + $index, details: array( 'payload' => \str_repeat( 'x', 45_000 ) ) ) ) );
+		}
+		$this->rig->logger()->records = array();
+
+		$run_id    = self::fixture_run_id( 'combined-run-20' );
+		$run_ids[] = $run_id;
+		self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + 20, details: array( 'payload' => \str_repeat( 'x', 160_000 ) ) ) ) );
+
+		self::assertLessThanOrEqual( 1_000_000, \strlen( $this->raw_row() ) );
+		self::assertCount( 2, $this->rig->logger()->records );
+		$count_message = 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 20-entry limit: {evicted_run_ids}.';
+		$count_warning = \array_find( $this->rig->logger()->records, static fn ( array $record ): bool => ( $record['message'] ?? null ) === $count_message );
+		self::assertIsArray( $count_warning );
+		self::assertSame( 'warning', $count_warning['level'] ?? null );
+		self::assertSame( $run_ids[0], $count_warning['context']['evicted_run_ids'] ?? null );
+		$byte_message = 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 1000000-byte serialized-row limit: {evicted_run_ids}.';
+		$byte_warning = \array_find( $this->rig->logger()->records, static fn ( array $record ): bool => ( $record['message'] ?? null ) === $byte_message );
+		self::assertIsArray( $byte_warning );
+		self::assertSame( 'warning', $byte_warning['level'] ?? null );
+		self::assertSame( $run_ids[1], $byte_warning['context']['evicted_run_ids'] ?? null );
+	}
+
+	/**
+	 * A single oversized newest entry is rejected without writing or retrying.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_single_oversized_newest_entry_is_rejected_without_a_write_or_retry(): void {
+		$details   = array( 'payload' => \str_repeat( 'x', 1_000_000 ) );
+		$prototype = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+		$wire      = \maybe_unserialize( $prototype[1] );
+		self::assertIsArray( $wire );
+		$wire_entry = $wire[0] ?? null;
+		self::assertIsArray( $wire_entry );
+		$wire_error = $wire_entry['error'] ?? null;
+		self::assertIsArray( $wire_error );
+		$wire_error['details'] = $details;
+		$wire_entry['error']   = $wire_error;
+		$oversized_raw         = \maybe_serialize( array( $wire_entry ) );
+		self::assertIsString( $oversized_raw );
+		$expected_bytes = \strlen( $oversized_raw );
+		self::assertGreaterThan( 1_000_000, $expected_bytes );
+
+		self::assertTrue( $this->record_entry( self::fixture_entry( self::fixture_run_id( 'floor-existing' ), self::NOW - 1 ) ) );
+		$original_raw                        = $this->raw_row();
+		$entry                               = self::fixture_entry( self::RUN_ID, self::NOW, details: $details );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->logger()->records        = array();
+
+		self::assertFalse( $this->record_entry( $entry ) );
+
+		self::assertSame( array(), $this->write_queries() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertSame( $original_raw, $this->raw_row() );
+		self::assertCount( 1, $this->rig->logger()->records );
+		$warning = $this->rig->logger()->records[0];
+		self::assertSame( 'warning', $warning['level'] ?? null );
+		self::assertSame( 'Failed-run retention for "{identity}" rejected run "{run_id}" because a row retaining only that entry contains {actual_bytes} persisted serialization bytes; the limit is {limit_bytes} bytes.', $warning['message'] ?? null );
+		self::assertSame( self::IDENTITY, $warning['context']['identity'] ?? null );
+		self::assertSame( self::RUN_ID, $warning['context']['run_id'] ?? null );
+		self::assertSame( $expected_bytes, $warning['context']['actual_bytes'] ?? null );
+		self::assertSame( 1_000_000, $warning['context']['limit_bytes'] ?? null );
+	}
+
+	/**
+	 * Count retention keeps its entry-limit warning.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_count_retention_logs_the_entry_limit_message(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 19 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'count-run-' . $index );
+			$run_ids[] = $run_id;
+			self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + $index ) ) );
+		}
+		$this->rig->logger()->records = array();
+
+		self::assertTrue( $this->record_entry( self::fixture_entry( self::fixture_run_id( 'count-run-20' ), self::NOW + 20 ) ) );
+
+		self::assertCount( 1, $this->rig->logger()->records );
+		$warning = $this->rig->logger()->records[0];
+		self::assertSame( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 20-entry limit: {evicted_run_ids}.', $warning['message'] ?? null );
+		self::assertSame( $run_ids[0], $warning['context']['evicted_run_ids'] ?? null );
+	}
+
+	/**
+	 * Removal reports count trimming with the entry-limit warning.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_remove_logs_count_evictions_with_the_entry_limit_message(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 19 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'remove-run-' . $index );
+			$run_ids[] = $run_id;
+			self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + $index ) ) );
+		}
+		$persisted = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $persisted );
+		foreach ( \range( 20, 21 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'remove-run-' . $index );
+			$run_ids[] = $run_id;
+			$fixture   = $this->fixtures->failed_runs( array( self::fixture_entry( $run_id, self::NOW + $index ) ) );
+			$extra     = \maybe_unserialize( $fixture[1] );
+			self::assertIsArray( $extra );
+			$entry = $extra[0] ?? null;
+			self::assertIsArray( $entry );
+			$persisted[] = $entry;
+		}
+		$raw = \maybe_serialize( $persisted );
+		self::assertIsString( $raw );
+		$this->put_fixture( array( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $raw ) );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->logger()->records        = array();
+
+		self::assertTrue( $this->store()->remove( $run_ids[21] ) );
+
+		self::assertCount( 1, $this->rig->logger()->records );
+		$warning = $this->rig->logger()->records[0];
+		self::assertSame( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 20-entry limit: {evicted_run_ids}.', $warning['message'] ?? null );
+		self::assertSame( $run_ids[0], $warning['context']['evicted_run_ids'] ?? null );
+		$remaining = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $remaining );
+		self::assertSame( \array_slice( $run_ids, 1, 20 ), \array_column( $remaining, 'run_id' ) );
+	}
+
+	/**
 	 * Failed-run recording persists and hydrates the admitted run kind.
 	 *
 	 * @since   1.0.0
@@ -923,16 +1107,17 @@ final class FailedRunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   int                     $failed_at  Failure timestamp.
-	 * @param   array<array-key, mixed> $start_args Original run arguments.
-	 * @param   string                  $summary    Failure summary.
+	 * @param   string                       $run_id     Run identifier.
+	 * @param   int                          $failed_at  Failure timestamp.
+	 * @param   array<array-key, mixed>      $start_args Original run arguments.
+	 * @param   string                       $summary    Failure summary.
+	 * @param   array<array-key, mixed>|null $details    Generic diagnostic payload, or null.
 	 *
 	 * @return  array{kind: string, failed_at: int, start_args: array<array-key, mixed>, priority: int, failure: RunFailure, error: EngineError}
 	 */
-	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
+	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.', ?array $details = null ): array {
 		$wire_id = null === RunId::tryFrom( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: $summary, details: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: $summary, details: $details );
 
 		return array(
 			'kind'       => 'job',
