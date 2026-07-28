@@ -7,6 +7,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
@@ -16,6 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -137,6 +140,50 @@ final class ScopeOperationsTest extends TestCase {
 		$this->rig->run_due();
 		self::assertSame( array( array( 'site_id' => 7 ) ), $chunked_job->generate_calls );
 		$this->rig->assert_completed();
+	}
+
+	/**
+	 * Registration accepts null crash-reclamation and priority policy defaults.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_register_accepts_null_job_policy_defaults(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$job    = new RecordingJob( 'nullable-defaults' );
+
+		$client->register( $job->definition( new JobOptions( max_runtime: null, priority: null ) ) );
+		$result = $client->dispatch( 'nullable-defaults' );
+
+		self::assertInstanceOf( Success::class, $result );
+	}
+
+	/**
+	 * A null schedule priority remains deferred to the registered job default.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_preserves_a_null_schedule_priority_for_job_default_resolution(): void {
+		$client   = $this->rig->operations( 'facade-tests' );
+		$job      = new RecordingJob( 'scheduled-job' );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job', priority: null );
+		$client->register( $job->definition( new JobOptions( priority: 37 ) ) );
+
+		$synced = $client->sync( array( $schedule ) );
+		self::assertInstanceOf( Success::class, $synced );
+		$this->rig->backend()->calls = array();
+
+		$dispatched = $client->dispatch_now( 'nightly' );
+
+		self::assertInstanceOf( Success::class, $dispatched );
+		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] ) );
+		self::assertCount( 1, $calls );
+		self::assertSame( 37, $calls[0]['args']['priority'] ?? null );
 	}
 
 	/**

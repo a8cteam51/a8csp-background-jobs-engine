@@ -82,13 +82,23 @@ final readonly class ScopeOperations {
 	 *
 	 * @param   JobDefinition $definition Job definition to register.
 	 *
-	 * @throws  \InvalidArgumentException When the identity, kind, or execution role is invalid.
+	 * @throws  \InvalidArgumentException When the identity, job-default priority, crash-reclamation window, kind, or execution role is invalid.
 	 * @throws  \LogicException           When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
 	public function register( JobDefinition $definition ): void {
-		$this->dispatcher->register( Identity::compose( $this->scope, $definition->name ), $definition );
+		$identity = Identity::compose( $this->scope, $definition->name );
+		$context  = \sprintf( 'Background-work "%s"', $definition->name );
+		if ( null !== $definition->options->max_runtime && 1 > $definition->options->max_runtime ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( '%1$s max_runtime %2$d is invalid; the crash-reclamation window must be at least one second, or pass null for the engine default.', $context, $definition->options->max_runtime ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+		if ( null !== $definition->options->priority ) {
+			self::assert_priority( $definition->options->priority, $context );
+		}
+
+		$this->dispatcher->register( $identity, $definition );
 	}
 
 	/**
@@ -134,7 +144,7 @@ final readonly class ScopeOperations {
 	 *
 	 * @param   array<Schedule> $schedules Complete schedule declaration for the bound scope.
 	 *
-	 * @throws  \InvalidArgumentException When an entry, scope/name identity, scope/target identity, or declaration uniqueness is invalid.
+	 * @throws  \InvalidArgumentException When an entry, scope/name identity, scope/target identity, declaration uniqueness, schedule priority, or schedule argument portability is invalid.
 	 *
 	 * @return  AbstractResult<true, BoundaryError>
 	 */
@@ -146,14 +156,25 @@ final readonly class ScopeOperations {
 				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
 			}
 
-			$identity = Identity::compose( $this->scope, $schedule->name );
+			$context  = \sprintf( 'Schedule "%s"', $schedule->name );
+			$identity = self::compose_declared( $this->scope, $schedule->name, $context );
 			if ( isset( $declarations[ (string) $identity ] ) ) {
 				throw new \InvalidArgumentException( 'Schedule sync accepts each scope-local schedule name exactly once.' );
 			}
 
+			// Both identities resolve before any policy check so a declaration reports every naming defect first.
+			$job_identity = self::compose_declared( $this->scope, $schedule->job, $context . ' target job' );
+			if ( null !== $schedule->priority ) {
+				self::assert_priority( $schedule->priority, $context );
+			}
+			$payload_error = self::assert_portable_args( $schedule->args, $context );
+			if ( null !== $payload_error ) {
+				return new Failure( $payload_error );
+			}
+
 			$declarations[ (string) $identity ] = array(
 				'schedule' => $schedule,
-				'job'      => Identity::compose( $this->scope, $schedule->job ),
+				'job'      => $job_identity,
 			);
 		}
 
@@ -310,6 +331,32 @@ final readonly class ScopeOperations {
 	 */
 	private static function run( Identity $identity, string $run_id, RunStatus $status ): Run {
 		return new Run( (string) $identity, RunId::from( $run_id ), $status );
+	}
+
+	/**
+	 * Composes one declared identity, naming the declaration that carries the invalid name.
+	 *
+	 * Sync accepts a whole declaration set, so an identity rejection that does not say which entry
+	 * failed leaves a consumer bisecting its own array.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $scope   Bound scope slug.
+	 * @param   string $name    Declared scope-local name.
+	 * @param   string $context Concept-specific exception context.
+	 *
+	 * @throws  \InvalidArgumentException When the scope/name identity is invalid.
+	 *
+	 * @return  Identity
+	 */
+	private static function compose_declared( string $scope, string $name, string $context ): Identity {
+		try {
+			return Identity::compose( $scope, $name );
+		} catch ( \InvalidArgumentException $exception ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( '%1$s: %2$s', $context, $exception->getMessage() ), previous: $exception ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
 	}
 
 	/**
