@@ -2,40 +2,41 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Owner-bound adapter from supported operations to internal engine services.
+ * Scope-bound adapter from supported operations to internal engine services.
  *
  * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class OwnerOperations {
+final readonly class ScopeOperations {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Maximum encoded JSON bytes accepted for persisted start arguments.
+	 * Maximum encoded JSON bytes accepted for persisted job start arguments and declared schedule arguments.
 	 *
-	 * `Schedule\Schedule::MAX_ARGUMENTS_BYTES` mirrors this owner-boundary limit because the frozen
-	 * public model keeps its constant private.
+	 * `Runs\Stores\RunStore::ROW_ENVELOPE_RESERVE_BYTES` budgets twice this limit for PHP-serialized
+	 * start arguments and fixed lifecycle metadata; its complete-row boundary remains authoritative
+	 * for higher-overhead shapes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -54,13 +55,13 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string             $owner      Client plugin owner.
+	 * @param   string             $scope      Client plugin scope.
 	 * @param   ScheduleOperations $schedules  Schedule engine operations.
 	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
 	 * @param   Inspection         $inspection Read-only run inspection.
 	 */
 	public function __construct(
-		private string $owner,
+		private string $scope,
 		private ScheduleOperations $schedules,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
@@ -71,20 +72,30 @@ final readonly class OwnerOperations {
 	// region METHODS
 
 	/**
-	 * Registers one definition under the bound owner and its declared local name.
+	 * Registers one definition under the bound scope and its declared local name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   JobDefinition $definition Job definition to register.
 	 *
-	 * @throws  \InvalidArgumentException When the identity, kind, or execution role is invalid.
+	 * @throws  \InvalidArgumentException When the identity, job-default priority, crash-reclamation window, kind, or execution role is invalid.
 	 * @throws  \LogicException           When the job identity is already registered.
 	 *
 	 * @return  void
 	 */
 	public function register( JobDefinition $definition ): void {
-		$this->dispatcher->register( Identity::compose( $this->owner, $definition->name ), $definition );
+		$identity = Identity::compose( $this->scope, $definition->name );
+		$context  = \sprintf( 'Background-work "%s"', $definition->name );
+		if ( null !== $definition->options->max_runtime && 1 > $definition->options->max_runtime ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( '%1$s max_runtime %2$d is invalid; the crash-reclamation window must be at least one second, or pass null for the engine default.', $context, $definition->options->max_runtime ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+		if ( null !== $definition->options->priority ) {
+			self::assert_priority( $definition->options->priority, $context );
+		}
+
+		$this->dispatcher->register( $identity, $definition );
 	}
 
 	/**
@@ -95,23 +106,19 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $name       Owner-local background-work name.
+	 * @param   string                  $name       Scope-local background-work name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
-	 * @param   int                     $delay      Scheduling delay in seconds.
-	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
+	 * @param   int|null                $fire_at    Absolute first-delivery timestamp, or null for asynchronous admission.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity, delay, or priority is invalid, or arguments are not portable.
+	 * @throws  \InvalidArgumentException When the scope/name identity or priority is invalid, or arguments are not portable.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
-	public function dispatch( string $name, array $start_args = array(), int $delay = 0, ?int $priority = null ): AbstractResult {
-		$identity = Identity::compose( $this->owner, $name );
-		if ( 0 > $delay ) {
-			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( 'Background-work "%1$s" delay %2$d is invalid; pass a non-negative number of seconds.', $name, $delay ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
+	public function dispatch( string $name, array $start_args = array(), ?int $fire_at = null, ?int $priority = null ): AbstractResult {
+		$identity = Identity::compose( $this->scope, $name );
 		if ( null !== $priority ) {
 			self::assert_priority( $priority, \sprintf( 'Background-work "%s"', $name ) );
 		}
@@ -121,20 +128,20 @@ final readonly class OwnerOperations {
 			return new Failure( $payload_error );
 		}
 
-		$result = BoundaryErrorMapper::map( $this->dispatcher->dispatch( $identity, $start_args, $delay, $priority ) );
+		$result = BoundaryErrorMapper::map( $this->dispatcher->dispatch( $identity, $start_args, $fire_at, $priority ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
 	}
 
 	/**
-	 * Synchronizes the bound owner's complete declared schedule set.
+	 * Synchronizes the bound scope's complete declared schedule set.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<Schedule> $schedules Complete schedule declaration for the bound owner.
+	 * @param   array<array-key, Schedule> $schedules Complete schedule declaration for the bound scope.
 	 *
-	 * @throws  \InvalidArgumentException When an entry, owner/name identity, owner/target identity, or declaration uniqueness is invalid.
+	 * @throws  \InvalidArgumentException When a scope/name identity, scope/target identity, declaration uniqueness, or schedule priority is invalid.
 	 *
 	 * @return  AbstractResult<true, BoundaryError>
 	 */
@@ -142,22 +149,29 @@ final readonly class OwnerOperations {
 	public function sync( array $schedules ): AbstractResult {
 		$declarations = array();
 		foreach ( $schedules as $schedule ) {
-			if ( ! $schedule instanceof Schedule ) {
-				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
+			$context  = \sprintf( 'Schedule "%s"', $schedule->name );
+			$identity = self::compose_declared( $this->scope, $schedule->name, $context );
+			if ( isset( $declarations[ (string) $identity ] ) ) {
+				throw new \InvalidArgumentException( 'Schedule sync accepts each scope-local schedule name exactly once.' );
 			}
 
-			$identity = Identity::compose( $this->owner, $schedule->name );
-			if ( isset( $declarations[ (string) $identity ] ) ) {
-				throw new \InvalidArgumentException( 'Schedule sync accepts each owner-local schedule name exactly once.' );
+			// Both identities resolve before any policy check so a declaration reports every naming defect first.
+			$job_identity = self::compose_declared( $this->scope, $schedule->job, $context . ' target job' );
+			if ( null !== $schedule->priority ) {
+				self::assert_priority( $schedule->priority, $context );
+			}
+			$payload_error = self::assert_portable_args( $schedule->args, $context );
+			if ( null !== $payload_error ) {
+				return new Failure( $payload_error );
 			}
 
 			$declarations[ (string) $identity ] = array(
 				'schedule' => $schedule,
-				'job'      => Identity::compose( $this->owner, $schedule->job ),
+				'job'      => $job_identity,
 			);
 		}
 
-		return BoundaryErrorMapper::map( $this->schedules->sync( $this->owner, $declarations ) );
+		return BoundaryErrorMapper::map( $this->schedules->sync( $this->scope, $declarations ) );
 	}
 
 	/**
@@ -166,16 +180,16 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Owner-local schedule name.
+	 * @param   string $name Scope-local schedule name.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
+	 * @throws  \InvalidArgumentException When the scope/name identity is invalid.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch_now( string $name ): AbstractResult {
-		$result = BoundaryErrorMapper::map( $this->schedules->dispatch_now( Identity::compose( $this->owner, $name ) ) );
+		$result = BoundaryErrorMapper::map( $this->schedules->dispatch_now( Identity::compose( $this->scope, $name ) ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $result->value['identity'], $result->value['run_id'], RunStatus::Running ) );
 	}
@@ -186,17 +200,17 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Owner-local job or chunked job name.
+	 * @param   string $name   Scope-local job or chunked job name.
 	 * @param   string $run_id Retained run identifier.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
+	 * @throws  \InvalidArgumentException When the scope/name identity is invalid or the run_id is malformed.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  AbstractResult<Run|null, BoundaryError>
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
 	public function inspect( string $name, string $run_id ): AbstractResult {
-		$identity = Identity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->scope, $name );
 		$result   = BoundaryErrorMapper::map( $this->inspection->run_status( $identity, $run_id ) );
 		if ( $result->is_failure() ) {
 			return $result;
@@ -222,16 +236,16 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Owner-local job or chunked job name.
+	 * @param   string $name Scope-local job or chunked job name.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity is invalid.
+	 * @throws  \InvalidArgumentException When the scope/name identity is invalid.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  AbstractResult<Run|null, BoundaryError>
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	public function last_completed_run( string $name ): AbstractResult {
-		$identity = Identity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->scope, $name );
 		$result   = BoundaryErrorMapper::map( $this->inspection->last_completed_run_id( $identity ) );
 		if ( $result->is_failure() ) {
 			return $result;
@@ -252,17 +266,17 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Owner-local job or chunked job name.
+	 * @param   string $name   Scope-local job or chunked job name.
 	 * @param   string $run_id Retained failed-run identifier.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
+	 * @throws  \InvalidArgumentException When the scope/name identity is invalid or the run_id is malformed.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, string $run_id ): AbstractResult {
-		$identity = Identity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->scope, $name );
 		$result   = BoundaryErrorMapper::map( $this->dispatcher->retry_failed( $identity, $run_id ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
@@ -274,17 +288,17 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Owner-local job or chunked job name.
+	 * @param   string $name   Scope-local job or chunked job name.
 	 * @param   string $run_id Retained run identifier.
 	 *
-	 * @throws  \InvalidArgumentException When the owner/name identity is invalid or the run_id is malformed.
+	 * @throws  \InvalidArgumentException When the scope/name identity is invalid or the run_id is malformed.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  AbstractResult<Run, BoundaryError>
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, string $run_id ): AbstractResult {
-		$identity = Identity::compose( $this->owner, $name );
+		$identity = Identity::compose( $this->scope, $name );
 		$result   = BoundaryErrorMapper::map( $this->dispatcher->cancel( $identity, $run_id ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Cancelled ) );
@@ -300,7 +314,7 @@ final readonly class OwnerOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity  $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity  $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string    $run_id   Run identifier.
 	 * @param   RunStatus $status   Public lifecycle state.
 	 *
@@ -310,6 +324,32 @@ final readonly class OwnerOperations {
 	 */
 	private static function run( Identity $identity, string $run_id, RunStatus $status ): Run {
 		return new Run( (string) $identity, RunId::from( $run_id ), $status );
+	}
+
+	/**
+	 * Composes one declared identity, naming the declaration that carries the invalid name.
+	 *
+	 * Sync accepts a whole declaration set, so an identity rejection that does not say which entry
+	 * failed leaves a consumer bisecting its own array.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $scope   Bound scope slug.
+	 * @param   string $name    Declared scope-local name.
+	 * @param   string $context Concept-specific exception context.
+	 *
+	 * @throws  \InvalidArgumentException When the scope/name identity is invalid.
+	 *
+	 * @return  Identity
+	 */
+	private static function compose_declared( string $scope, string $name, string $context ): Identity {
+		try {
+			return Identity::compose( $scope, $name );
+		} catch ( \InvalidArgumentException $exception ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( '%1$s: %2$s', $context, $exception->getMessage() ), previous: $exception ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
 	}
 
 	/**

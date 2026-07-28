@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
@@ -308,8 +308,8 @@ final class MaintenanceJob implements JobExecutionInterface {
 
 			$registration_count += $registration_page->value['scanned'];
 			foreach ( $registration_page->value['names'] as $option_name ) {
-				$owner = ScheduleRegistry::owner_from_option_name( $option_name );
-				if ( null === $owner ) {
+				$scope = ScheduleRegistry::scope_from_option_name( $option_name );
+				if ( null === $scope ) {
 					continue;
 				}
 
@@ -326,7 +326,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 					null === $raw
 					|| (
 						\is_array( $decoded )
-						&& ! ScheduleRegistry::has_registration_without_undeclared_markers( $owner, $decoded )
+						&& ! ScheduleRegistry::has_registration_without_undeclared_markers( $scope, $decoded )
 					)
 				) {
 					continue;

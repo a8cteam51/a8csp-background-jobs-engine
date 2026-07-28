@@ -2,22 +2,22 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -53,17 +53,17 @@ final class FailedRunStorePoison {
  * @version 1.0.0
  */
 #[CoversClass( FailedRunStore::class )]
-#[UsesClass( HookLogger::class )]
+#[UsesClass( EngineLogger::class )]
 final class FailedRunStoreTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 	private const string NAME     = 'reports';
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
+	private const string SCOPE    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private Identity $identity;
 	private EngineRig $rig;
@@ -100,8 +100,8 @@ final class FailedRunStoreTest extends TestCase {
 		parent::setUp();
 
 		$this->rig            = EngineRig::set_up( self::NOW );
-		$this->client         = $this->rig->operations( self::OWNER );
-		$this->identity       = Identity::compose( self::OWNER, self::NAME );
+		$this->client         = $this->rig->operations( self::SCOPE );
+		$this->identity       = Identity::compose( self::SCOPE, self::NAME );
 		$this->job            = new RecordingJob( self::NAME );
 		$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
@@ -165,6 +165,190 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertSame( 'error', $this->rig->logger()->records[0]['level'] ?? null );
 		self::assertSame( self::IDENTITY, $this->rig->logger()->records[0]['context']['identity'] ?? null );
 		self::assertSame( $run_id, $this->rig->logger()->records[0]['context']['run_id'] ?? null );
+	}
+
+	/**
+	 * Byte retention evicts oldest entries until the persisted row fits.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_byte_retention_evicts_oldest_entries_until_the_persisted_row_fits(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 7 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'byte-run-' . $index );
+			$run_ids[] = $run_id;
+			self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + $index, details: array( 'payload' => \str_repeat( 'x', 110_000 ) ) ) ) );
+		}
+		$this->rig->logger()->records = array();
+
+		$run_id    = self::fixture_run_id( 'byte-run-8' );
+		$run_ids[] = $run_id;
+		self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + 8, details: array( 'payload' => \str_repeat( 'x', 300_000 ) ) ) ) );
+
+		$raw = $this->raw_row();
+		self::assertLessThanOrEqual( 1_000_000, \strlen( $raw ) );
+		$persisted = \maybe_unserialize( $raw );
+		self::assertIsArray( $persisted );
+		self::assertSame( \array_slice( $run_ids, 2 ), \array_column( $persisted, 'run_id' ) );
+		self::assertCount( 1, $this->rig->logger()->records );
+		$warning = $this->rig->logger()->records[0];
+		self::assertSame( 'warning', $warning['level'] ?? null );
+		self::assertSame( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 1000000-byte serialized-row limit: {evicted_run_ids}.', $warning['message'] ?? null );
+		self::assertStringNotContainsString( '20-entry limit', $warning['message'] ?? '' );
+		self::assertSame( self::IDENTITY, $warning['context']['identity'] ?? null );
+		self::assertSame( \implode( ', ', \array_slice( $run_ids, 0, 2 ) ), $warning['context']['evicted_run_ids'] ?? null );
+	}
+
+	/**
+	 * A write reports count and byte eviction as separate causes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_record_logs_count_and_byte_evictions_separately(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 19 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'combined-run-' . $index );
+			$run_ids[] = $run_id;
+			self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + $index, details: array( 'payload' => \str_repeat( 'x', 45_000 ) ) ) ) );
+		}
+		$this->rig->logger()->records = array();
+
+		$run_id    = self::fixture_run_id( 'combined-run-20' );
+		$run_ids[] = $run_id;
+		self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + 20, details: array( 'payload' => \str_repeat( 'x', 160_000 ) ) ) ) );
+
+		self::assertLessThanOrEqual( 1_000_000, \strlen( $this->raw_row() ) );
+		self::assertCount( 2, $this->rig->logger()->records );
+		$count_message = 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 20-entry limit: {evicted_run_ids}.';
+		$count_warning = \array_find( $this->rig->logger()->records, static fn ( array $record ): bool => ( $record['message'] ?? null ) === $count_message );
+		self::assertIsArray( $count_warning );
+		self::assertSame( 'warning', $count_warning['level'] ?? null );
+		self::assertSame( $run_ids[0], $count_warning['context']['evicted_run_ids'] ?? null );
+		$byte_message = 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 1000000-byte serialized-row limit: {evicted_run_ids}.';
+		$byte_warning = \array_find( $this->rig->logger()->records, static fn ( array $record ): bool => ( $record['message'] ?? null ) === $byte_message );
+		self::assertIsArray( $byte_warning );
+		self::assertSame( 'warning', $byte_warning['level'] ?? null );
+		self::assertSame( $run_ids[1], $byte_warning['context']['evicted_run_ids'] ?? null );
+	}
+
+	/**
+	 * A single oversized newest entry is rejected without writing or retrying.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_single_oversized_newest_entry_is_rejected_without_a_write_or_retry(): void {
+		$details   = array( 'payload' => \str_repeat( 'x', 1_000_000 ) );
+		$prototype = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+		$wire      = \maybe_unserialize( $prototype[1] );
+		self::assertIsArray( $wire );
+		$wire_entry = $wire[0] ?? null;
+		self::assertIsArray( $wire_entry );
+		$wire_error = $wire_entry['error'] ?? null;
+		self::assertIsArray( $wire_error );
+		$wire_error['details'] = $details;
+		$wire_entry['error']   = $wire_error;
+		$oversized_raw         = \maybe_serialize( array( $wire_entry ) );
+		self::assertIsString( $oversized_raw );
+		$expected_bytes = \strlen( $oversized_raw );
+		self::assertGreaterThan( 1_000_000, $expected_bytes );
+
+		self::assertTrue( $this->record_entry( self::fixture_entry( self::fixture_run_id( 'floor-existing' ), self::NOW - 1 ) ) );
+		$original_raw                        = $this->raw_row();
+		$entry                               = self::fixture_entry( self::RUN_ID, self::NOW, details: $details );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->logger()->records        = array();
+
+		self::assertFalse( $this->record_entry( $entry ) );
+
+		self::assertSame( array(), $this->write_queries() );
+		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
+		self::assertSame( $original_raw, $this->raw_row() );
+		self::assertCount( 1, $this->rig->logger()->records );
+		$warning = $this->rig->logger()->records[0];
+		self::assertSame( 'warning', $warning['level'] ?? null );
+		self::assertSame( 'Failed-run retention for "{identity}" rejected run "{run_id}" because a row retaining only that entry contains {actual_bytes} persisted serialization bytes; the limit is {limit_bytes} bytes.', $warning['message'] ?? null );
+		self::assertSame( self::IDENTITY, $warning['context']['identity'] ?? null );
+		self::assertSame( self::RUN_ID, $warning['context']['run_id'] ?? null );
+		self::assertSame( $expected_bytes, $warning['context']['actual_bytes'] ?? null );
+		self::assertSame( 1_000_000, $warning['context']['limit_bytes'] ?? null );
+	}
+
+	/**
+	 * Count retention keeps its entry-limit warning.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_count_retention_logs_the_entry_limit_message(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 19 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'count-run-' . $index );
+			$run_ids[] = $run_id;
+			self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + $index ) ) );
+		}
+		$this->rig->logger()->records = array();
+
+		self::assertTrue( $this->record_entry( self::fixture_entry( self::fixture_run_id( 'count-run-20' ), self::NOW + 20 ) ) );
+
+		self::assertCount( 1, $this->rig->logger()->records );
+		$warning = $this->rig->logger()->records[0];
+		self::assertSame( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 20-entry limit: {evicted_run_ids}.', $warning['message'] ?? null );
+		self::assertSame( $run_ids[0], $warning['context']['evicted_run_ids'] ?? null );
+	}
+
+	/**
+	 * Removal reports count trimming with the entry-limit warning.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_remove_logs_count_evictions_with_the_entry_limit_message(): void {
+		$run_ids = array();
+		foreach ( \range( 0, 19 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'remove-run-' . $index );
+			$run_ids[] = $run_id;
+			self::assertTrue( $this->record_entry( self::fixture_entry( $run_id, self::NOW + $index ) ) );
+		}
+		$persisted = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $persisted );
+		foreach ( \range( 20, 21 ) as $index ) {
+			$run_id    = self::fixture_run_id( 'remove-run-' . $index );
+			$run_ids[] = $run_id;
+			$fixture   = $this->fixtures->failed_runs( array( self::fixture_entry( $run_id, self::NOW + $index ) ) );
+			$extra     = \maybe_unserialize( $fixture[1] );
+			self::assertIsArray( $extra );
+			$entry = $extra[0] ?? null;
+			self::assertIsArray( $entry );
+			$persisted[] = $entry;
+		}
+		$raw = \maybe_serialize( $persisted );
+		self::assertIsString( $raw );
+		$this->put_fixture( array( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $raw ) );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->logger()->records        = array();
+
+		self::assertTrue( $this->store()->remove( $run_ids[21] ) );
+
+		self::assertCount( 1, $this->rig->logger()->records );
+		$warning = $this->rig->logger()->records[0];
+		self::assertSame( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the 20-entry limit: {evicted_run_ids}.', $warning['message'] ?? null );
+		self::assertSame( $run_ids[0], $warning['context']['evicted_run_ids'] ?? null );
+		$remaining = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $remaining );
+		self::assertSame( \array_slice( $run_ids, 1, 20 ), \array_column( $remaining, 'run_id' ) );
 	}
 
 	/**
@@ -358,7 +542,7 @@ final class FailedRunStoreTest extends TestCase {
 	public function test_corrupt_entry_warning_is_guarded_across_reentrant_store_instances(): void {
 		$fixture = StoreFixtureBuilder::failed_runs_with_corrupt_member( $this->fixtures->failed_runs( array( self::fixture_entry( 'run-a', 100 ) ) ) );
 		$this->put_fixture( $fixture );
-		$store          = new FailedRunStore( $this->identity, $this->rows, new HookLogger() );
+		$store          = new FailedRunStore( $this->identity, $this->rows, new EngineLogger() );
 		$listener_calls = 0;
 		$nested         = null;
 		$callbacks      = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
@@ -366,7 +550,7 @@ final class FailedRunStoreTest extends TestCase {
 		$callbacks['a8csp_bgje/log']                 = function () use ( &$listener_calls, &$nested ): void {
 			++$listener_calls;
 			if ( 1 === $listener_calls ) {
-				$nested = new FailedRunStore( $this->identity, $this->rows, new HookLogger() )->all();
+				$nested = new FailedRunStore( $this->identity, $this->rows, new EngineLogger() )->all();
 			}
 		};
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
@@ -478,6 +662,89 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
+	}
+
+	/**
+	 * A retained failure remains readable when its error carries additive metadata of any shape.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Required error fields stay authoritative, and named-field reconstruction drops every additive key before the
+	 *                next retention write, so an unreadable extension can neither hide an entry nor reach storage.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retained_failure_with_additive_error_metadata_hydrates(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		self::assertIsArray( $stored[0] ?? null );
+		self::assertIsArray( $stored[0]['error'] ?? null );
+		$expected_error                    = $stored[0]['error'];
+		$expected_error['details']         = array( 'attempt' => 3 );
+		$stored[0]['error']                = $expected_error;
+		$stored[0]['error']['diagnostics'] = array(
+			'provider'  => 'acme',
+			'retryable' => false,
+		);
+		$stored[0]['error']['unsafe']      = new \stdClass();
+		$raw                               = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->put_fixture( array( $fixture[0], $raw ) );
+
+		$result = $this->store()->all();
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsArray( $result->value );
+		$entry = $result->value[0] ?? null;
+		self::assertIsArray( $entry );
+		self::assertSame( self::RUN_ID, $entry['run_id'] ?? null );
+		$error = $entry['error'] ?? null;
+		self::assertIsArray( $error );
+		self::assertSame( $expected_error, $error );
+
+		self::assertTrue( $this->record_entry( self::fixture_entry( 'run-b', self::NOW + 1 ) ) );
+		$round_tripped = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $round_tripped );
+		self::assertIsArray( $round_tripped[0] ?? null );
+		$round_tripped_error = $round_tripped[0]['error'] ?? null;
+		self::assertIsArray( $round_tripped_error );
+		self::assertSame( $expected_error, $round_tripped_error );
+	}
+
+	/**
+	 * Retained failure errors require every field consumed by inspection and manual retry.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Additive compatibility does not admit errors missing class, message, stage, or code.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retained_failure_errors_require_their_readable_fields(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+
+		foreach ( array( 'class', 'message', 'stage', 'code' ) as $required_field ) {
+			$stored = \maybe_unserialize( $fixture[1] );
+			self::assertIsArray( $stored );
+			self::assertIsArray( $stored[0] ?? null );
+			self::assertIsArray( $stored[0]['error'] ?? null );
+			unset( $stored[0]['error'][ $required_field ] );
+			$raw = \maybe_serialize( $stored );
+			self::assertIsString( $raw );
+			$this->put_fixture( array( $fixture[0], $raw ) );
+
+			$result = $this->store()->all();
+
+			self::assertInstanceOf( Success::class, $result );
+			self::assertSame( array(), $result->value, $required_field );
+		}
 	}
 
 	/**
@@ -840,16 +1107,17 @@ final class FailedRunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                  $run_id     Run identifier.
-	 * @param   int                     $failed_at  Failure timestamp.
-	 * @param   array<array-key, mixed> $start_args Original run arguments.
-	 * @param   string                  $summary    Failure summary.
+	 * @param   string                       $run_id     Run identifier.
+	 * @param   int                          $failed_at  Failure timestamp.
+	 * @param   array<array-key, mixed>      $start_args Original run arguments.
+	 * @param   string                       $summary    Failure summary.
+	 * @param   array<array-key, mixed>|null $details    Generic diagnostic payload, or null.
 	 *
 	 * @return  array{kind: string, failed_at: int, start_args: array<array-key, mixed>, priority: int, failure: RunFailure, error: EngineError}
 	 */
-	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.' ): array {
+	private static function fixture_entry( string $run_id, int $failed_at, array $start_args = array(), string $summary = 'Failure.', ?array $details = null ): array {
 		$wire_id = null === RunId::tryFrom( $run_id ) ? self::fixture_run_id( $run_id ) : $run_id;
-		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: $summary, details: null );
+		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $wire_id ), attempts: 1, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: $summary, details: $details );
 
 		return array(
 			'kind'       => 'job',

@@ -4,8 +4,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
@@ -31,10 +31,10 @@ final class KindDeliveryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const string DELIVER_HOOK = 'a8csp_bgje/internal/deliver';
-	private const string IDENTITY     = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY     = self::SCOPE . ':' . self::NAME;
 	private const string NAME         = 'export';
 	private const int NOW             = 1_700_000_000;
-	private const string OWNER        = 'kind-tests';
+	private const string SCOPE        = 'kind-tests';
 
 	private Identity $identity;
 	private EngineRig $rig;
@@ -68,7 +68,7 @@ final class KindDeliveryTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->identity = Identity::compose( self::SCOPE, self::NAME );
 		$this->rig      = EngineRig::set_up( self::NOW );
 	}
 
@@ -280,7 +280,7 @@ final class KindDeliveryTest extends TestCase {
 	 * @return  string
 	 */
 	private function enqueue_job(): string {
-		$client = $this->rig->operations( self::OWNER );
+		$client = $this->rig->operations( self::SCOPE );
 		$client->register( ( new RecordingJob( self::NAME ) )->definition() );
 		$result = $client->dispatch( self::NAME );
 		self::assertInstanceOf( Success::class, $result );

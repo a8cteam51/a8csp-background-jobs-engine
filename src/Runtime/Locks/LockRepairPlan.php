@@ -40,7 +40,7 @@ final readonly class LockRepairPlan {
 	 *
 	 * @phpstan-param list<array{run_id: string, raw: string, state: RunState}> $running_runs
 	 *
-	 * @param   Identity $identity     Complete owner-qualified work identity.
+	 * @param   Identity $identity     Complete scope-qualified work identity.
 	 * @param   string   $args_hash    Selected overlap-lock lane.
 	 * @param   int      $raw_length   Selected malformed raw-value length.
 	 * @param   string   $raw_sha256   Selected truncated malformed raw-value digest.

@@ -3,20 +3,21 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\RedeliveryFenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -75,7 +76,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   string   $args_hash Stable single-flight identity.
 	 * @param   string   $run_id    Lock owner run identifier.
 	 *
@@ -130,7 +131,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity       Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id         Run identifier.
 	 * @param   int      $terminal_grace Grace before belt-and-braces terminal cleanup.
 	 *
@@ -230,7 +231,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string                  $run_id       Run identifier.
 	 * @param   RunState                $state        Running state observed by maintenance.
 	 * @param   RunStore                $run_store    Name-bound run store.
@@ -266,7 +267,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity             $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state observed by maintenance.
 	 * @param   RunStore             $run_store    Name-bound run store.
@@ -355,7 +356,7 @@ final readonly class RunReconciliation {
 	 *
 	 * @phpstan-param array{error: EngineError, failure: RunFailure}|null $failure_detail
 	 *
-	 * @param   Identity   $identity       Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity       Complete scope-qualified job or chunked job identity.
 	 * @param   string     $run_id         Run identifier.
 	 * @param   RunState   $state          Terminal state observed by maintenance.
 	 * @param   RunStore   $run_store      Name-bound run store.
@@ -385,7 +386,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity             $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity             $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state observed by maintenance.
 	 * @param   RunStore             $run_store    Name-bound run store.
@@ -408,7 +409,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity     Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id       Run identifier.
 	 * @param   RunState $state        Running state observed by maintenance.
 	 * @param   RunStore $run_store    Name-bound run store.
@@ -419,9 +420,25 @@ final readonly class RunReconciliation {
 	private function supersede_transferred_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw ): AbstractResult {
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$claimed       = $this->terminal_transitions->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
-		if ( \is_array( $claimed ) ) {
-			$this->terminal_transitions->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
+		if ( $claimed instanceof Failure ) {
+			// A failing supersession write is a per-item outcome the sweep reports and steps over, so the lock, intent,
+			// and registry phases and the page cursor stay reachable behind a row whose write keeps failing.
+			$this->logger->error(
+				$claimed->error->message,
+				array(
+					'identity'     => (string) $identity,
+					'run_id'       => $run_id,
+					'error_class'  => $claimed->error::class,
+					'error_reason' => $claimed->error->reason?->value,
+				)
+			);
+
+			return new Success( null );
 		}
+		if ( null === $claimed ) {
+			return new Success( null );
+		}
+		$this->terminal_transitions->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
 
 		return new Success( null );
 	}
@@ -434,7 +451,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Stale non-executing running state.
 	 *
@@ -457,7 +474,7 @@ final readonly class RunReconciliation {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id   Run identifier.
 	 *
 	 * @return  EngineError

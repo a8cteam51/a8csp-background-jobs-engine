@@ -2,17 +2,18 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobKind;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\DuplicateRegistrationException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobKind;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\KindExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -98,7 +99,7 @@ final class JobRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registration_does_not_revalidate_execution_compatibility(): void {
-		$execution  = new \stdClass();
+		$execution  = new class() implements KindExecutionInterface {};
 		$definition = JobDefinition::for_kind( 'sync', JobKind::job(), $execution );
 		$registry   = new JobRegistry();
 
@@ -230,19 +231,19 @@ final class JobRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Equal local names under different owners remain independent registrations.
+	 * Equal local names under different scopes remain independent registrations.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_different_owners_can_register_the_same_local_name(): void {
+	public function test_different_scopes_can_register_the_same_local_name(): void {
 		$job              = self::registration( 'job', 'sync' );
 		$chunked_job      = self::registration( 'chunked_job', 'sync' );
 		$registry         = new JobRegistry();
-		$job_identity     = self::identity( 'owner-a:sync' );
-		$chunked_identity = self::identity( 'owner-b:sync' );
+		$job_identity     = self::identity( 'scope-a:sync' );
+		$chunked_identity = self::identity( 'scope-b:sync' );
 
 		$registry->register( $job_identity, $job['definition'] );
 		$registry->register( $chunked_identity, $chunked_job['definition'] );
@@ -336,7 +337,7 @@ final class JobRegistryTest extends TestCase {
 	/**
 	 * Returns one canonical identity fixture.
 	 *
-	 * @param   string $identity Complete owner-qualified identity.
+	 * @param   string $identity Complete scope-qualified identity.
 	 *
 	 * @return  Identity
 	 */
@@ -390,7 +391,7 @@ final class JobRegistryTest extends TestCase {
 
 			/** {@inheritDoc} */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void {}
 		};
 	}
 

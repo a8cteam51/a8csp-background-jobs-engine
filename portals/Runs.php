@@ -2,17 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Owner-bound public service for supported run operations.
+ * Scope-bound public service for supported run operations.
  *
- * Owner validation and engine resolution remain lazy until a verb is invoked. Every expected
+ * Scope validation and engine resolution remain lazy until a verb is invoked. Every expected
  * validation, readiness, or engine failure crosses this boundary as a `WP_Error`.
  *
  * @api
@@ -29,7 +26,7 @@ final readonly class Runs extends AbstractPortal {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Owner-local job or chunked job name.
+	 * @param   string $name   Scope-local job or chunked job name.
 	 * @param   RunId  $run_id Run identifier.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
@@ -61,7 +58,7 @@ final readonly class Runs extends AbstractPortal {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Owner-local job or chunked job name.
+	 * @param   string $name Scope-local job or chunked job name.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *
@@ -81,12 +78,15 @@ final readonly class Runs extends AbstractPortal {
 	}
 
 	/**
-	 * Starts a fresh run from one retained failed run's original arguments.
+	 * Starts a fresh run from one retained failed run's arguments and priority.
+	 *
+	 * The retained priority is replayed directly without resolving the priority ladder.
+	 * A retained entry without a priority field uses engine default 10.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Owner-local job or chunked job name.
+	 * @param   string $name   Scope-local job or chunked job name.
 	 * @param   RunId  $run_id Retained failed-run identifier.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
@@ -112,7 +112,7 @@ final readonly class Runs extends AbstractPortal {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Owner-local job or chunked job name.
+	 * @param   string $name   Scope-local job or chunked job name.
 	 * @param   RunId  $run_id Retained run identifier.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.

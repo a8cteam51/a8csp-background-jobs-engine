@@ -1,8 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
-
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -27,7 +25,7 @@ final readonly class RunFailure {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                       $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string                       $identity Complete scope-qualified job or chunked job identity.
 	 * @param   RunId                        $run_id   Run identifier.
 	 * @param   int                          $attempts Attempts consumed before terminal failure.
 	 * @param   RunFailureStage              $stage    Terminalization stage.

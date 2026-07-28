@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

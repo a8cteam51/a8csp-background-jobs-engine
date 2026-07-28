@@ -3,23 +3,23 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\CatchUpPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -61,7 +61,7 @@ final class ScheduleExecutionWakeupProbe {
 }
 
 /**
- * Exercises schedule occurrence policies through the owner-bound production graph.
+ * Exercises schedule occurrence policies through the scope-bound production graph.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -77,16 +77,16 @@ final class ScheduleExecutionTest extends TestCase {
 	);
 	private const int ANCHOR              = 50;
 	private const string CHUNKED_JOB      = 'refresh-index-chunked';
-	private const string CHUNKED_IDENTITY = self::OWNER . ':' . self::CHUNKED_JOB;
+	private const string CHUNKED_IDENTITY = self::SCOPE . ':' . self::CHUNKED_JOB;
 	private const int INTERVAL            = 300;
 	private const string NAME             = 'nightly';
 	private const int NOW                 = 1_700_000_000;
-	private const string OWNER            = 'owner-a';
-	private const string REGISTRATION_KEY = self::OWNER . ':' . self::NAME;
+	private const string SCOPE            = 'scope-a';
+	private const string REGISTRATION_KEY = self::SCOPE . ':' . self::NAME;
 	private const string JOB              = 'refresh-index';
-	private const string JOB_IDENTITY     = self::OWNER . ':' . self::JOB;
+	private const string JOB_IDENTITY     = self::SCOPE . ':' . self::JOB;
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private RecordingChunkedJob $chunked_job;
 	private StoreFixtureBuilder $chunked_fixtures;
 	private StoreFixtureBuilder $fixtures;
@@ -123,7 +123,7 @@ final class ScheduleExecutionTest extends TestCase {
 		parent::setUp();
 
 		$this->rig              = EngineRig::set_up( self::NOW );
-		$this->client           = $this->rig->operations( self::OWNER );
+		$this->client           = $this->rig->operations( self::SCOPE );
 		$this->job              = new RecordingJob( self::JOB );
 		$this->chunked_job      = new RecordingChunkedJob( self::CHUNKED_JOB );
 		$this->fixtures         = StoreFixtureBuilder::for_identity( self::JOB_IDENTITY );
@@ -153,11 +153,14 @@ final class ScheduleExecutionTest extends TestCase {
 	// region BEHAVIOR.
 
 	/**
-	 * Unspecified and explicit default priorities both reach recurring and target backends as 10.
+	 * Engine-owned ticks use the fixed urgent priority while defaulted deliveries use 10.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_default_priority_forms_dispatch_occurrences_at_backend_priority_10(): void {
+	public function test_tick_priority_is_engine_owned_while_defaulted_deliveries_use_10(): void {
 		$unspecified = new Schedule( 'unspecified', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'unspecified' ), priority: null );
 		$explicit    = new Schedule( 'explicit-default', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'explicit' ), priority: 10 );
 		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow ) ) );
@@ -165,7 +168,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertInstanceOf( Success::class, $this->client->sync( array( $unspecified, $explicit ) ) );
 		$recurring_calls = $this->calls( 'schedule_recurring' );
 		self::assertCount( 2, $recurring_calls );
-		self::assertSame( array( 10, 10 ), \array_column( \array_column( $recurring_calls, 'args' ), 'priority' ) );
+		self::assertSame( array( 0, 0 ), \array_column( \array_column( $recurring_calls, 'args' ), 'priority' ) );
 
 		$this->reset_observations();
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
@@ -176,6 +179,77 @@ final class ScheduleExecutionTest extends TestCase {
 		$occurrence_calls = $this->calls( 'enqueue_async' );
 		self::assertCount( 2, $occurrence_calls );
 		self::assertSame( array( 10, 10 ), \array_column( \array_column( $occurrence_calls, 'args' ), 'priority' ) );
+	}
+
+	/**
+	 * A schedule priority beats the target job default, which supplies priority when the schedule leaves it unspecified.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_delivery_priority_resolves_the_schedule_and_job_default_rungs(): void {
+		$schedule_priority = new Schedule( 'schedule-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'schedule' ), priority: 23 );
+		$job_priority      = new Schedule( 'job-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'job' ) );
+		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow, priority: 41 ) ) );
+
+		self::assertInstanceOf( Success::class, $this->client->sync( array( $schedule_priority, $job_priority ) ) );
+		$this->reset_observations();
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$this->rig->run_due();
+		$this->rig->run_due();
+		$this->rig->run_due();
+
+		$occurrence_calls = $this->calls( 'enqueue_async' );
+		self::assertCount( 2, $occurrence_calls );
+		self::assertSame( array( 23, 41 ), \array_column( \array_column( $occurrence_calls, 'args' ), 'priority' ) );
+	}
+
+	/**
+	 * The most urgent schedule priority reaches the delivery instead of collapsing to the job default.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_urgent_schedule_priority_outranks_the_job_default(): void {
+		$urgent = new Schedule( 'urgent-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'urgent' ), priority: 0 );
+		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow, priority: 41 ) ) );
+
+		self::assertInstanceOf( Success::class, $this->client->sync( array( $urgent ) ) );
+		$this->reset_observations();
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$this->rig->run_due();
+
+		$occurrence_calls = $this->calls( 'enqueue_async' );
+		self::assertCount( 1, $occurrence_calls );
+		self::assertSame( 0, $occurrence_calls[0]['args']['priority'] ?? null );
+	}
+
+	/**
+	 * A failed delivery-state write reports that the occurrence redelivers and can run twice.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_delivery_state_persistence_failure_reports_the_redelivery_consequences(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$this->rig->run_due();
+
+		$messages = \array_column( $this->rig->logger()->records, 'message' );
+		$reported = \array_filter( $messages, static fn ( string $message ): bool => \str_starts_with( $message, 'Schedule delivery state could not be persisted:' ) );
+		self::assertCount( 1, $reported );
+		$message = \reset( $reported );
+		self::assertIsString( $message );
+		self::assertStringContainsString( 'the occurrence stays due and redelivers', $message );
+		self::assertStringContainsString( 'runs twice for one occurrence whatever its overlap policy', $message );
 	}
 
 	/**
@@ -239,11 +313,11 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::JOB_IDENTITY ) );
 		self::assertSame(
-			array( array( self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
+			array( array( self::SCOPE, self::NOW + self::INTERVAL, $fired_at ) ),
 			$this->rig->hooks()->fired( 'a8csp_bgje/misfire_skipped/' . self::REGISTRATION_KEY )
 		);
 		self::assertSame(
-			array( array( self::REGISTRATION_KEY, self::OWNER, self::NOW + self::INTERVAL, $fired_at ) ),
+			array( array( self::REGISTRATION_KEY, self::SCOPE, self::NOW + self::INTERVAL, $fired_at ) ),
 			$this->rig->hooks()->fired( 'a8csp_bgje/misfire_skipped' )
 		);
 		$registration = $this->registration();
@@ -316,7 +390,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertIsArray( $action_args );
 		$run_id = $action_args[1] ?? null;
 		self::assertIsString( $run_id );
-		$live = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::CHUNKED_JOB ) )['live'];
+		$live = $this->rig->inspection()->runs( Identity::compose( self::SCOPE, self::CHUNKED_JOB ) )['live'];
 		self::assertCount( 1, $live );
 		self::assertSame( $run_id, $live[0]['run_id'] ?? null );
 		self::assertSame( 'chunked_job', $live[0]['kind'] ?? null );
@@ -355,7 +429,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
 		self::assertSame( RunFailureStage::execution(), $failure->stage );
 		self::assertSame( 1, $failure->attempts );
-		$snapshot = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::JOB ) );
+		$snapshot = $this->rig->inspection()->runs( Identity::compose( self::SCOPE, self::JOB ) );
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertSame( 'failed', $snapshot['history'][0]['outcome'] ?? null );
 		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
@@ -384,14 +458,14 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertSame( self::NOW + 2 * self::INTERVAL, $registration['next_due'] ?? null );
 		self::assertSame( self::NOW + self::INTERVAL, $registration['last_fired'] ?? null );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
-		$history = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::JOB ) )['history'];
+		$history = $this->rig->inspection()->runs( Identity::compose( self::SCOPE, self::JOB ) )['history'];
 		self::assertNotNull( $history );
 		self::assertCount( 1, $history );
 
 		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
 
 		$redelivered        = $this->registration();
-		$redelivery_history = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::JOB ) )['history'];
+		$redelivery_history = $this->rig->inspection()->runs( Identity::compose( self::SCOPE, self::JOB ) )['history'];
 		self::assertSame( $registration['next_due'], $redelivered['next_due'] ?? null );
 		self::assertSame( $registration['last_fired'], $redelivered['last_fired'] ?? null );
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
@@ -567,7 +641,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 */
 	public function test_inactive_registration_warns_once_after_three_consecutive_deliveries(): void {
 		$schedule = self::schedule();
-		$this->put_fixture( $this->fixtures->schedule_registration( self::owner_fixture( $schedule, self::NOW + self::INTERVAL ) ) );
+		$this->put_fixture( $this->fixtures->schedule_registration( self::scope_fixture( $schedule, self::NOW + self::INTERVAL ) ) );
 		$scheduled = $this->rig->backend()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, self::INTERVAL, array( self::REGISTRATION_KEY ), self::NOW + self::INTERVAL, self::REGISTRATION_KEY );
 		self::assertInstanceOf( Success::class, $scheduled );
 		$this->reset_observations();
@@ -591,7 +665,7 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertIsString( $warning_message );
 		self::assertStringContainsString( 'reinstate', $warning_message );
 		self::assertStringContainsString( 'sync()', $warning_message );
-		self::assertStringContainsString( 'wp a8csp-bgje schedules remove ' . self::OWNER, $warning_message );
+		self::assertStringContainsString( 'wp a8csp-bgje schedules remove ' . self::SCOPE, $warning_message );
 
 		$this->rig->run_due();
 
@@ -599,15 +673,15 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertCount( 1, $this->inactive_warning_records() );
 		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
 
-		$redeclared   = self::owner_fixture( $schedule, self::NOW + self::INTERVAL );
+		$redeclared   = self::scope_fixture( $schedule, self::NOW + self::INTERVAL );
 		$registry     = new ScheduleRegistry( new OptionRows( $this->rig->wpdb() ), $this->rig->logger() );
 		$declarations = array(
 			self::REGISTRATION_KEY => array(
 				'schedule' => $schedule,
-				'job'      => Identity::compose( self::OWNER, $schedule->job ),
+				'job'      => Identity::compose( self::SCOPE, $schedule->job ),
 			),
 		);
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( self::OWNER, $declarations, $redeclared['registrations'], reset_undeclared_episodes: true ) );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( self::SCOPE, $declarations, $redeclared['registrations'], reset_undeclared_episodes: true ) );
 		$this->reset_observations();
 
 		$this->rig->run_due();
@@ -641,7 +715,7 @@ final class ScheduleExecutionTest extends TestCase {
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( $replacement, &$replacement_raw ): void {
 				self::assertInstanceOf( Success::class, $this->client->sync( array( $replacement ) ) );
-				$replacement_raw = $wpdb->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null;
+				$replacement_raw = $wpdb->rows[ ScheduleRegistry::option_name( self::SCOPE ) ] ?? null;
 				self::assertIsString( $replacement_raw );
 			}
 		);
@@ -650,12 +724,12 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->run_due();
 
 		self::assertIsString( $replacement_raw );
-		self::assertSame( $replacement_raw, $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null );
+		self::assertSame( $replacement_raw, $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::SCOPE ) ] ?? null );
 		self::assertSame( 600, $this->registration()['recurrence'] ?? null );
 		self::assertContains( 'enqueue_async', \array_column( $this->rig->backend()->calls, 'verb' ) );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::OWNER, $this->rig->logger()->records[0]['context']['owner'] ?? null );
+		self::assertSame( self::SCOPE, $this->rig->logger()->records[0]['context']['scope'] ?? null );
 		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
 	}
 
@@ -675,14 +749,14 @@ final class ScheduleExecutionTest extends TestCase {
 		$original    = self::schedule();
 		$replacement = self::schedule( interval: 600 );
 		$this->sync_schedule( $original );
-		$fixture = $this->fixtures->schedule_registration( self::owner_fixture( $replacement, self::NOW + 600 ) );
+		$fixture = $this->fixtures->schedule_registration( self::scope_fixture( $replacement, self::NOW + 600 ) );
 		$this->rig->wpdb()->put( $fixture[0], $fixture[1] );
 		$this->rig->clock()->timestamp = self::NOW + 600;
 
 		$this->rig->run_due();
 
 		self::assertSame( array(), $this->calls( 'enqueue_async' ) );
-		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null );
+		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::SCOPE ) ] ?? null );
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
 		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
@@ -845,7 +919,7 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
-	 * Returns one complete owner fixture request.
+	 * Returns one complete scope fixture request.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -853,15 +927,15 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @param   Schedule $schedule Schedule declaration.
 	 * @param   int      $next_due Next occurrence timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
+	 * @return  array{scope: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
-	private static function owner_fixture( Schedule $schedule, int $next_due ): array {
+	private static function scope_fixture( Schedule $schedule, int $next_due ): array {
 		return array(
-			'owner'         => self::OWNER,
+			'scope'         => self::SCOPE,
 			'declarations'  => array(
 				self::REGISTRATION_KEY => array(
 					'schedule' => $schedule,
-					'job'      => self::OWNER . ':' . $schedule->job,
+					'job'      => self::SCOPE . ':' . $schedule->job,
 				),
 			),
 			'registrations' => array( self::REGISTRATION_KEY => StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), $next_due ) ),
@@ -877,7 +951,7 @@ final class ScheduleExecutionTest extends TestCase {
 	 * @return  array<string, mixed>
 	 */
 	private function registration(): array {
-		$snapshot = $this->rig->inspection()->schedules( self::OWNER );
+		$snapshot = $this->rig->inspection()->schedules( self::SCOPE );
 		self::assertNotNull( $snapshot );
 		$entry = $snapshot['entries'][0] ?? null;
 		self::assertIsArray( $entry );

@@ -2,23 +2,23 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
@@ -28,7 +28,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises chunked job admission and manual retry through owner-bound facades.
+ * Exercises chunked job admission and manual retry through scope-bound facades.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -42,15 +42,15 @@ final class DispatcherChunkedJobTest extends TestCase {
 		'mode'    => 'full',
 	);
 	private const string FAILED_RUN_ID    = '00000000001699999999-0000000000000000041';
-	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY         = self::SCOPE . ':' . self::NAME;
 	private const string INCUMBENT_RUN_ID = '00000000001699999998-0000000000000000040';
 	private const string NAME             = 'catalog-sync';
 	private const int NOW                 = 1_700_000_000;
-	private const string OWNER            = 'runs-tests';
+	private const string SCOPE            = 'runs-tests';
 	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
 
 	private RecordingChunkedJob $chunked_job;
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 
@@ -84,7 +84,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		parent::setUp();
 
 		$this->rig                   = EngineRig::set_up( self::NOW );
-		$this->client                = $this->rig->operations( self::OWNER );
+		$this->client                = $this->rig->operations( self::SCOPE );
 		$this->chunked_job           = new RecordingChunkedJob( self::NAME );
 		$this->fixtures              = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls = array();
@@ -143,17 +143,17 @@ final class DispatcherChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A delayed chunked job retains a timed start action at the requested fire time.
+	 * A chunked job with a future fire time retains a timed start action at the requested timestamp.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_chunked_job_with_delay_persists_a_timed_start_action(): void {
+	public function test_dispatch_chunked_job_with_future_fire_time_persists_a_timed_start_action(): void {
 		$this->register_chunked_job();
 
-		$result = $this->client->dispatch( self::NAME, self::ARGS, delay: 120, priority: 23 );
+		$result = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120, priority: 23 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'schedule_single' === $call['verb'] ) );
@@ -185,7 +185,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_chunked_job_without_delay_persists_an_async_start_action(): void {
+	public function test_immediate_dispatch_of_a_chunked_job_persists_an_async_start_action(): void {
 		$this->register_chunked_job();
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS, priority: 23 );

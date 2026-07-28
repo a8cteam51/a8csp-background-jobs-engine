@@ -16,7 +16,7 @@ final readonly class ResetOutput {
 	// region METHODS
 
 	/**
-	 * Requires acknowledgement of the reset's irreversible scope.
+	 * Requires acknowledgement of the reset's irreversible reach.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

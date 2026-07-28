@@ -2,42 +2,42 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -49,7 +49,7 @@ use PHPUnit\Framework\Assert;
 final class EngineRig {
 	// region FIELDS AND CONSTANTS.
 
-	/** @var array<string, OwnerOperations> */
+	/** @var array<string, ScopeOperations> */
 	private array $operations = array();
 
 	/** @var non-empty-list<RecordingBackend> */
@@ -174,18 +174,18 @@ final class EngineRig {
 	// region GETTERS.
 
 	/**
-	 * Returns owner-bound operations from the published component graph.
+	 * Returns scope-bound operations from the published component graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Owner identifier.
+	 * @param   string $scope Scope identifier.
 	 *
-	 * @return  OwnerOperations
+	 * @return  ScopeOperations
 	 */
-	public function operations( string $owner ): OwnerOperations {
-		$operations                 = Component::operations( $owner );
-		$this->operations[ $owner ] = $operations;
+	public function operations( string $scope ): ScopeOperations {
+		$operations                 = Component::operations( $scope );
+		$this->operations[ $scope ] = $operations;
 
 		return $operations;
 	}
@@ -304,8 +304,8 @@ final class EngineRig {
 
 		$work_identity = Identity::tryFrom( $identity );
 		Assert::assertNotNull( $work_identity );
-		$operations = $this->operations[ $work_identity->owner() ] ?? null;
-		Assert::assertInstanceOf( OwnerOperations::class, $operations );
+		$operations = $this->operations[ $work_identity->scope() ] ?? null;
+		Assert::assertInstanceOf( ScopeOperations::class, $operations );
 		$result = $operations->last_completed_run( $work_identity->name() );
 		Assert::assertInstanceOf( Success::class, $result );
 		Assert::assertInstanceOf( Run::class, $result->value );
@@ -432,8 +432,8 @@ final class EngineRig {
 		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
 
 		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$dispatcher->register( Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job ) );
-		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery );
+		$dispatcher->register( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job ) );
+		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery, $this->logger );
 		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
 		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $this->clock );
 		$engine               = new EngineFacade( $schedule_api, $dispatcher );
@@ -613,6 +613,9 @@ final class EngineRig {
 			$GLOBALS['a8csp_bgje_test_update_option_results'],
 			$GLOBALS['a8csp_bgje_test_update_option_values']
 		);
+
+		// Rig-driven tests assert on captured output, so engine events keep the default error-log sink off.
+		$GLOBALS['a8csp_bgje_test_filter_values']['a8csp_bgje/log_to_error_log'] = false;
 	}
 
 	/**

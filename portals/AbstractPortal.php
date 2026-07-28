@@ -5,12 +5,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Shared owner resolution and error conversion for the public verb portals.
+ * Shared scope resolution and error conversion for the public verb portals.
  *
  * @internal
  *
@@ -26,10 +26,10 @@ abstract readonly class AbstractPortal {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Client plugin owner.
+	 * @param   string $scope Client plugin scope.
 	 */
 	public function __construct(
-		protected string $owner,
+		protected string $scope,
 	) {}
 
 	// endregion
@@ -37,18 +37,18 @@ abstract readonly class AbstractPortal {
 	// region HELPERS
 
 	/**
-	 * Resolves the owner operations adapter for the bound owner.
+	 * Resolves the scope operations adapter for the bound scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @throws  \InvalidArgumentException  When the owner violates the owner contract.
+	 * @throws  \InvalidArgumentException  When the scope violates the scope contract.
 	 * @throws  EngineUnavailableException When the internal graph is unavailable.
 	 *
-	 * @return  OwnerOperations
+	 * @return  ScopeOperations
 	 */
-	protected function operations(): OwnerOperations {
-		return Component::operations( $this->owner );
+	protected function operations(): ScopeOperations {
+		return Component::operations( $this->scope );
 	}
 
 	/**

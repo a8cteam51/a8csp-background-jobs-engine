@@ -66,7 +66,7 @@ final readonly class ActionDeliveries {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity        Complete owner-qualified work identity.
+	 * @param   string $identity        Complete scope-qualified work identity.
 	 * @param   string $run_id          Run identifier.
 	 * @param   int    $action_sequence Expected lifecycle action sequence.
 	 *

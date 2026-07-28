@@ -354,7 +354,7 @@ final class LockRepairTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_repair_handles_the_engine_maintenance_lane_directly(): void {
-		$identity = Identity::compose( Identity::ENGINE_OWNER, 'maintenance', true );
+		$identity = Identity::compose( Identity::ENGINE_SCOPE, 'maintenance', true );
 		$lock     = $this->put_malformed_lock( (string) $identity, self::ARGS_HASH, 'malformed-maintenance-lock' );
 		$this->put_running_run( (string) $identity, self::RUN_ID, self::ARGS_HASH );
 

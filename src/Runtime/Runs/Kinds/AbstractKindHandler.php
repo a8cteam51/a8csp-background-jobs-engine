@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -53,7 +53,7 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced running state.
 	 * @param   RunStore $run_store Active-run store.

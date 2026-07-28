@@ -3,20 +3,20 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
@@ -60,10 +60,10 @@ final class LifecycleEffectsTest extends TestCase {
 	);
 
 	private const string ARGS_HASH       = '7dcca9cc21619f109d6f0423c49b010606457ea4a713721e9ce5134949d72bd2';
-	private const string IDENTITY        = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY        = self::SCOPE . ':' . self::NAME;
 	private const string NAME            = 'email-digest';
 	private const int NOW                = 1_700_000_000;
-	private const string OWNER           = 'runs-tests';
+	private const string SCOPE           = 'runs-tests';
 	private const string PREVIOUS_RUN_ID = '00000000001699999999-0000000000000000041';
 	private const string RUN_ID          = '00000000001700000000-0000000000000000042';
 
@@ -123,7 +123,7 @@ final class LifecycleEffectsTest extends TestCase {
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
 		$this->clock    = new FixedClock( self::NOW );
-		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->identity = Identity::compose( self::SCOPE, self::NAME );
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
 		$rows           = new OptionRows( $this->wpdb );

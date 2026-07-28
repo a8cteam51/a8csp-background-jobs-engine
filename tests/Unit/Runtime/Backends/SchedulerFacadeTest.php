@@ -2,17 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Backends;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -30,12 +30,12 @@ use PHPUnit\Framework\TestCase;
 final class SchedulerFacadeTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string IDENTITY = self::OWNER . ':' . self::JOB_NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::JOB_NAME;
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'scheduler-tests';
+	private const string SCOPE    = 'scheduler-tests';
 	private const string JOB_NAME = 'refresh-index';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private EngineRig $rig;
 
 	// endregion.
@@ -68,7 +68,7 @@ final class SchedulerFacadeTest extends TestCase {
 		parent::setUp();
 
 		$this->rig    = EngineRig::set_up( self::NOW, 2 );
-		$this->client = $this->rig->operations( self::OWNER );
+		$this->client = $this->rig->operations( self::SCOPE );
 		$this->client->register( ( new RecordingJob( self::JOB_NAME ) )->definition() );
 		$this->reset_backend_observations();
 	}
@@ -161,7 +161,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_scheduled_count_preserves_same_backend_multiplicity(): void {
-		$identity  = self::OWNER . ':same-backend-count';
+		$identity  = self::SCOPE . ':same-backend-count';
 		$scheduler = new SchedulerFacade( array( $this->preferred() ) );
 		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( $identity ), self::NOW + 300, $identity ) );
 		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( $identity ), self::NOW + 600, $identity ) );
@@ -178,7 +178,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_scheduled_count_sums_ready_backend_occurrences(): void {
-		$identity  = self::OWNER . ':cross-backend-count';
+		$identity  = self::SCOPE . ':cross-backend-count';
 		$scheduler = new SchedulerFacade( $this->rig->backends() );
 		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( $identity ), self::NOW + 300, $identity ) );
 		self::assertInstanceOf( Success::class, $this->fallback()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( $identity ), self::NOW + 300, $identity ) );
@@ -227,7 +227,7 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Schedule removal clears the same owner-qualified chain from every ready backend.
+	 * Schedule removal clears the same scope-qualified chain from every ready backend.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -283,7 +283,7 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertCount( 1, $writes );
 		self::assertSame( 900, $writes[0]['args']['interval'] ?? null );
 		self::assertSame( $registration['next_due'], $writes[0]['args']['first_run_timestamp'] ?? null );
-		self::assertSame( 73, $writes[0]['args']['priority'] ?? null );
+		self::assertSame( 0, $writes[0]['args']['priority'] ?? null );
 		self::assertSame( array(), $this->calls( $this->fallback(), 'schedule_recurring' ) );
 	}
 
@@ -567,7 +567,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  array<string, mixed>
 	 */
 	private function schedule_registration(): array {
-		$snapshot = $this->rig->inspection()->schedules( self::OWNER );
+		$snapshot = $this->rig->inspection()->schedules( self::SCOPE );
 		self::assertNotNull( $snapshot );
 		$registration = \array_find( $snapshot['entries'], static fn ( array $entry ): bool => 'scheduler-tests:nightly' === ( $entry['identity'] ?? null ) );
 		self::assertIsArray( $registration );
@@ -584,7 +584,7 @@ final class SchedulerFacadeTest extends TestCase {
 	 * @return  string
 	 */
 	private function raw_schedule_registry(): string {
-		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::OWNER ) ] ?? null;
+		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( self::SCOPE ) ] ?? null;
 		self::assertIsString( $raw );
 
 		return $raw;

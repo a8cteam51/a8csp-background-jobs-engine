@@ -4,10 +4,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
@@ -22,32 +22,32 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Public owner unique to this integration-test graph. */
-	private const string OWNER = 'integration-chunked-job-chunking';
+	/** Public scope unique to this integration-test graph. */
+	private const string SCOPE = 'integration-chunked-job-chunking';
 
 	/** Chunked Job identity unique within the request-persistent integration registry. */
 	private const string NAME = 'integration-chunked-job-chunking';
 
-	/** Owner-qualified chunked job identity persisted by the engine. */
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	/** Scope-qualified chunked job identity persisted by the engine. */
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 
 	/** Chunked Job identity for the Action Scheduler float-fidelity regression. */
 	private const string FIDELITY_NAME = 'integration-chunked-job-chunk-fidelity';
 
-	/** Owner-qualified identity for the Action Scheduler float-fidelity regression. */
-	private const string FIDELITY_IDENTITY = self::OWNER . ':' . self::FIDELITY_NAME;
+	/** Scope-qualified identity for the Action Scheduler float-fidelity regression. */
+	private const string FIDELITY_IDENTITY = self::SCOPE . ':' . self::FIDELITY_NAME;
 
 	/** Chunked Job identity for generic and identity-specific queue filter ordering. */
 	private const string QUEUE_FILTER_NAME = 'integration-chunked-job-queue-filter';
 
-	/** Owner-qualified identity for generic and identity-specific queue filter ordering. */
-	private const string QUEUE_FILTER_IDENTITY = self::OWNER . ':' . self::QUEUE_FILTER_NAME;
+	/** Scope-qualified identity for generic and identity-specific queue filter ordering. */
+	private const string QUEUE_FILTER_IDENTITY = self::SCOPE . ':' . self::QUEUE_FILTER_NAME;
 
 	/** Chunked Job identity for generic and identity-specific continuation-delay filter ordering. */
 	private const string CONTINUE_DELAY_FILTER_NAME = 'integration-chunked-job-continue-delay-filter';
 
-	/** Owner-qualified identity for generic and identity-specific continuation-delay filter ordering. */
-	private const string CONTINUE_DELAY_FILTER_IDENTITY = self::OWNER . ':' . self::CONTINUE_DELAY_FILTER_NAME;
+	/** Scope-qualified identity for generic and identity-specific continuation-delay filter ordering. */
+	private const string CONTINUE_DELAY_FILTER_IDENTITY = self::SCOPE . ':' . self::CONTINUE_DELAY_FILTER_NAME;
 
 	// endregion.
 
@@ -72,7 +72,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 			array( 'chunk' => 'two' ),
 			array( 'chunk' => 'three' ),
 		);
-		$chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ): void {
+		$chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ): void {
 			if ( 'one' !== ( $chunk_args['chunk'] ?? null ) ) {
 				return;
 			}
@@ -81,7 +81,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 			$context->prepend_chunk( array( 'chunk' => 'front' ) );
 		};
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $chunked_job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
@@ -178,7 +178,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertInstanceOf( Run::class, $last_completed->value );
 		self::assertSame( $run_id, (string) $last_completed->value->id );
-		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
+		$runs = $this->inspection()->runs( Identity::compose( self::SCOPE, self::NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal chunked job completion must leave no live run' );
 		self::assertSame(
 			array(
@@ -209,7 +209,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		$chunked_job        = new RecordingChunkedJob( self::QUEUE_FILTER_NAME );
 		$chunked_job->queue = $generated_queue;
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::QUEUE_FILTER_IDENTITY );
 
@@ -281,7 +281,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 			array( 'chunk' => 'two' ),
 		);
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::CONTINUE_DELAY_FILTER_IDENTITY );
 
@@ -362,7 +362,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 	public function test_action_scheduler_delivers_float_chunk_from_the_authoritative_run_row(): void {
 		$chunked_job        = new RecordingChunkedJob( self::FIDELITY_NAME );
 		$chunked_job->queue = array( array( 'value' => 1.0 ) );
-		$client             = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client             = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $chunked_job->definition() );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FIDELITY_IDENTITY );
 		\add_filter( 'a8csp_bgje/continue_delay', static fn ( int $delay, string $name, string $run_id ): int => 0, 10, 3 );

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Boundary;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 
 \defined( 'ABSPATH' ) || exit;
 

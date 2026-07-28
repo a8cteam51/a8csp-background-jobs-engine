@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\Fixtures;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 
 /**
  * Demonstrates a small job execution that stores one idempotent site-health snapshot.

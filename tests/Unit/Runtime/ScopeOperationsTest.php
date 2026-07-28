@@ -4,33 +4,37 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises owner-bound operations through the production graph.
+ * Exercises scope-bound operations through the production graph.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversClass( OwnerOperations::class )]
-final class OwnerOperationsTest extends TestCase {
+#[CoversClass( ScopeOperations::class )]
+final class ScopeOperationsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const string FAILED_RUN_ID = '00000000001699999999-0000000000000000041';
@@ -104,7 +108,7 @@ final class OwnerOperationsTest extends TestCase {
 		$job    = new RecordingJob( 'email-digest' );
 		$client->register( $job->definition() );
 
-		$result = $client->dispatch( 'email-digest', array( 'site_id' => 7 ), delay: 300, priority: 5 );
+		$result = $client->dispatch( 'email-digest', array( 'site_id' => 7 ), fire_at: self::NOW + 300, priority: 5 );
 
 		self::assertInstanceOf( Success::class, $result );
 		self::assertInstanceOf( Run::class, $result->value );
@@ -137,6 +141,247 @@ final class OwnerOperationsTest extends TestCase {
 		$this->rig->run_due();
 		self::assertSame( array( array( 'site_id' => 7 ) ), $chunked_job->generate_calls );
 		$this->rig->assert_completed();
+	}
+
+	/**
+	 * Registration accepts null crash-reclamation and priority policy defaults.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_register_accepts_null_job_policy_defaults(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$job    = new RecordingJob( 'nullable-defaults' );
+
+		$client->register( $job->definition( new JobOptions( max_runtime: null, priority: null ) ) );
+		$result = $client->dispatch( 'nullable-defaults' );
+
+		self::assertInstanceOf( Success::class, $result );
+	}
+
+	/**
+	 * Registration rejects each job-default priority outside the supported range with job context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $priority Invalid job-default priority.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_priority_provider' )]
+	public function test_register_rejects_job_default_priorities_outside_the_supported_range( int $priority ): void {
+		$client  = $this->rig->operations( 'facade-tests' );
+		$options = new JobOptions( priority: $priority );
+		$job     = new RecordingJob( 'priority-job' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( \sprintf( 'Background-work "priority-job" priority %d is invalid; pass a value from 0 through 255.', $priority ) );
+
+		$client->register( $job->definition( $options ) );
+	}
+
+	/**
+	 * Registration accepts both inclusive job-default priority boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_register_accepts_both_job_default_priority_boundaries(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'lowest-priority' ) )->definition( new JobOptions( priority: 0 ) ) );
+		$client->register( ( new RecordingJob( 'highest-priority' ) )->definition( new JobOptions( priority: 255 ) ) );
+
+		$lowest  = $client->dispatch( 'lowest-priority' );
+		$highest = $client->dispatch( 'highest-priority' );
+
+		self::assertInstanceOf( Success::class, $lowest );
+		self::assertInstanceOf( Success::class, $highest );
+		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] ) );
+		self::assertCount( 2, $calls );
+		self::assertSame( 0, $calls[0]['args']['priority'] ?? null );
+		self::assertSame( 255, $calls[1]['args']['priority'] ?? null );
+	}
+
+	/**
+	 * Registration rejects non-positive crash-reclamation windows with job context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $max_runtime Invalid maximum runtime.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'non_positive_max_runtime_provider' )]
+	public function test_register_rejects_non_positive_max_runtime( int $max_runtime ): void {
+		$client  = $this->rig->operations( 'facade-tests' );
+		$options = new JobOptions( max_runtime: $max_runtime );
+		$job     = new RecordingJob( 'runtime-job' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( \sprintf( 'Background-work "runtime-job" max_runtime %d is invalid; the crash-reclamation window must be at least one second, or pass null for the engine default.', $max_runtime ) );
+
+		$client->register( $job->definition( $options ) );
+	}
+
+	/**
+	 * A null schedule priority remains deferred to the registered job default.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_preserves_a_null_schedule_priority_for_job_default_resolution(): void {
+		$client   = $this->rig->operations( 'facade-tests' );
+		$job      = new RecordingJob( 'scheduled-job' );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job', priority: null );
+		$client->register( $job->definition( new JobOptions( priority: 37 ) ) );
+
+		$synced = $client->sync( array( $schedule ) );
+		self::assertInstanceOf( Success::class, $synced );
+		$this->rig->backend()->calls = array();
+
+		$dispatched = $client->dispatch_now( 'nightly' );
+
+		self::assertInstanceOf( Success::class, $dispatched );
+		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] ) );
+		self::assertCount( 1, $calls );
+		self::assertSame( 37, $calls[0]['args']['priority'] ?? null );
+	}
+
+	/**
+	 * Sync rejects each schedule priority outside the supported range with declaration context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $priority Invalid schedule priority.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_priority_provider' )]
+	public function test_sync_rejects_schedule_priorities_outside_the_supported_range( int $priority ): void {
+		$client   = $this->rig->operations( 'facade-tests' );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', priority: $priority );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( \sprintf( 'Schedule "nightly" priority %d is invalid; pass a value from 0 through 255.', $priority ) );
+
+		(void) $client->sync( array( $schedule ) );
+	}
+
+	/**
+	 * Sync accepts both inclusive schedule priority boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_accepts_both_schedule_priority_boundaries(): void {
+		$client  = $this->rig->operations( 'facade-tests' );
+		$job     = new RecordingJob( 'refresh-index' );
+		$lowest  = new Schedule( 'lowest-priority', Recurrence::every( 300 ), 'refresh-index', priority: 0 );
+		$highest = new Schedule( 'highest-priority', Recurrence::every( 300 ), 'refresh-index', priority: 255 );
+		$client->register( $job->definition() );
+
+		$result = $client->sync( array( $lowest, $highest ) );
+
+		self::assertInstanceOf( Success::class, $result );
+	}
+
+	/**
+	 * Sync accepts the persisted JSON ceiling and returns a payload rejection for adjacent overflow.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_observes_the_schedule_argument_json_byte_ceiling(): void {
+		$client   = $this->rig->operations( 'facade-tests' );
+		$job      = new RecordingJob( 'refresh-index' );
+		$accepted = new Schedule( 'accepted', Recurrence::every( 300 ), 'refresh-index', array( 'payload' => \str_repeat( 'a', 8_192 - 14 ) ) );
+		$client->register( $job->definition() );
+
+		self::assertInstanceOf( Success::class, $client->sync( array( $accepted ) ) );
+
+		$rejected = new Schedule( 'rejected', Recurrence::every( 300 ), 'refresh-index', array( 'payload' => \str_repeat( 'a', 8_193 - 14 ) ) );
+		$result   = $client->sync( array( $rejected ) );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
+		self::assertSame( ErrorCode::PayloadRejected, $result->error->code );
+		self::assertSame( 'Schedule "rejected" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $result->error->message );
+	}
+
+	/**
+	 * Sync rejects invalid schedule names with declaration context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Invalid schedule name.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_schedule_name_provider' )]
+	public function test_sync_rejects_invalid_schedule_names_with_declaration_context( string $name ): void {
+		$client   = $this->rig->operations( 'facade-tests' );
+		$schedule = new Schedule( $name, Recurrence::every( 300 ), 'refresh-index' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( \sprintf( 'Schedule "%s": Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.', $name ) );
+
+		(void) $client->sync( array( $schedule ) );
+	}
+
+	/**
+	 * Sync applies the inclusive 64-byte schedule-name ceiling with declaration context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_accepts_64_schedule_name_bytes_and_rejects_65(): void {
+		$client   = $this->rig->operations( 'facade-tests' );
+		$job      = new RecordingJob( 'refresh-index' );
+		$accepted = new Schedule( \str_repeat( 'a', 64 ), Recurrence::every( 300 ), 'refresh-index' );
+		$client->register( $job->definition() );
+
+		self::assertInstanceOf( Success::class, $client->sync( array( $accepted ) ) );
+
+		$name     = \str_repeat( 'a', 65 );
+		$rejected = new Schedule( $name, Recurrence::every( 300 ), 'refresh-index' );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( \sprintf( 'Schedule "%s": Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.', $name ) );
+
+		(void) $client->sync( array( $rejected ) );
+	}
+
+	/**
+	 * Sync rejects an invalid target job name with declaration context.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_rejects_an_invalid_target_job_name_with_declaration_context(): void {
+		$client   = $this->rig->operations( 'facade-tests' );
+		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'Refresh Index' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Schedule "nightly" target job: Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
+
+		(void) $client->sync( array( $schedule ) );
 	}
 
 	/**
@@ -201,7 +446,7 @@ final class OwnerOperationsTest extends TestCase {
 	}
 
 	/**
-	 * Cancellation through the owner-bound facade terminalizes retained waiting work.
+	 * Cancellation through the scope-bound facade terminalizes retained waiting work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -226,14 +471,14 @@ final class OwnerOperationsTest extends TestCase {
 	}
 
 	/**
-	 * Owner-bound inspection projects retained statuses and retention absence as public runs.
+	 * Scope-bound inspection projects retained statuses and retention absence as public runs.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_owner_run_inspection_projects_public_status_and_retention_absence(): void {
+	public function test_scope_run_inspection_projects_public_status_and_retention_absence(): void {
 		$client = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 
@@ -272,7 +517,7 @@ final class OwnerOperationsTest extends TestCase {
 	}
 
 	/**
-	 * A completed run outside the retained history window is absent at the owner boundary.
+	 * A completed run outside the retained history window is absent at the scope boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -314,6 +559,54 @@ final class OwnerOperationsTest extends TestCase {
 		$evicted = $client->last_completed_run( 'email-digest' );
 		self::assertInstanceOf( Success::class, $evicted );
 		self::assertNull( $evicted->value );
+	}
+
+	// endregion.
+
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies priorities immediately outside both inclusive boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  iterable<string, array{priority: int}>
+	 */
+	public static function invalid_priority_provider(): iterable {
+		yield 'below minimum' => array( 'priority' => -1 );
+		yield 'above maximum' => array( 'priority' => 256 );
+	}
+
+	/**
+	 * Supplies non-positive maximum runtimes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  iterable<string, array{max_runtime: int}>
+	 */
+	public static function non_positive_max_runtime_provider(): iterable {
+		yield 'zero' => array( 'max_runtime' => 0 );
+		yield 'negative' => array( 'max_runtime' => -1 );
+	}
+
+	/**
+	 * Supplies names outside the complete stable-name grammar.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{name: string}>
+	 */
+	public static function invalid_schedule_name_provider(): array {
+		return array(
+			'empty'     => array( 'name' => '' ),
+			'uppercase' => array( 'name' => 'RefreshIndex' ),
+			'space'     => array( 'name' => 'refresh index' ),
+			'period'    => array( 'name' => 'refresh.index' ),
+			'non-ASCII' => array( 'name' => 'réindex' ),
+		);
 	}
 
 	// endregion.

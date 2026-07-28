@@ -6,14 +6,14 @@
  * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
 \WP_CLI::add_hook(
 	'after_wp_load',
 	static function (): void {
-		$operations = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( 'integration-cli-inspection-owner' );
+		$operations = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( 'integration-cli-inspection-scope' );
 		$operations->register( ( new RecordingJob( 'integration-cli-inspection-job' ) )->definition() );
 		$result = $operations->sync(
 			array(

@@ -5,20 +5,17 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
@@ -35,7 +32,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -191,7 +187,7 @@ final class Component extends AbstractComponent {
 			 */
 			$option_rows          = new OptionRows( $wpdb );
 			$registry             = new JobRegistry();
-			$logger               = new HookLogger();
+			$logger               = new EngineLogger();
 			$schedules            = new ScheduleRegistry( $option_rows, $logger );
 			$clock                = new SystemClock();
 			$randomizer           = new Randomizer();
@@ -223,10 +219,10 @@ final class Component extends AbstractComponent {
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 			$dispatcher->register(
-				Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ),
+				Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ),
 				JobDefinition::job( MaintenanceJob::NAME, new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) )
 			);
-			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery );
+			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery, $logger );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
 			$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $option_rows, $lock_windows, $clock );
 			$engine               = new EngineFacade( $schedule_api, $dispatcher );
@@ -265,7 +261,6 @@ final class Component extends AbstractComponent {
 			return;
 		}
 
-		ErrorLogSink::register();
 		$scheduler->register_hooks();
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
@@ -280,20 +275,20 @@ final class Component extends AbstractComponent {
 	// region METHODS
 
 	/**
-	 * Returns supported operations bound to one validated client owner.
+	 * Returns supported operations bound to one validated client scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Validated client owner.
+	 * @param   string $scope Validated client scope.
 	 *
-	 * @throws  \InvalidArgumentException  When the owner violates the client-owner contract.
+	 * @throws  \InvalidArgumentException  When the scope violates the client-scope contract.
 	 * @throws  EngineUnavailableException When the internal graph is unavailable.
 	 *
-	 * @return  OwnerOperations
+	 * @return  ScopeOperations
 	 */
-	public static function operations( string $owner ): OwnerOperations {
-		Identity::validate_owner( $owner );
+	public static function operations( string $scope ): ScopeOperations {
+		Identity::validate_scope( $scope );
 		$registry   = self::$registry;
 		$schedules  = self::$schedules;
 		$dispatcher = self::$dispatcher;
@@ -302,7 +297,7 @@ final class Component extends AbstractComponent {
 			throw new EngineUnavailableException( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully or after teardown; invoke engine operations from init or a later hook.' );
 		}
 
-		return new OwnerOperations( $owner, $schedules, $dispatcher, $inspection );
+		return new ScopeOperations( $scope, $schedules, $dispatcher, $inspection );
 	}
 
 	// endregion

@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
@@ -22,14 +22,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 final class NonRetryableTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Public owner unique to this integration-test graph. */
-	private const string OWNER = 'integration-non-retryable';
+	/** Public scope unique to this integration-test graph. */
+	private const string SCOPE = 'integration-non-retryable';
 
 	/** Job identity unique within the request-persistent integration registry. */
 	private const string NAME = 'integration-non-retryable';
 
-	/** Owner-qualified job identity persisted by the engine. */
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	/** Scope-qualified job identity persisted by the engine. */
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 
 	// endregion.
 
@@ -55,7 +55,7 @@ final class NonRetryableTest extends AbstractIntegrationTestCase {
 		$job            = new RecordingJob( self::NAME );
 		$job->throwable = new NonRetryableException( 'The requested record is permanently unavailable.' );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
@@ -115,7 +115,7 @@ final class NonRetryableTest extends AbstractIntegrationTestCase {
 		self::assertSame( array( $failure ), $failed, 'The failed hook must receive only the self-identifying failure value' );
 
 		self::assertSame( 0, $this->run_next_due_action(), 'A non-retryable failure must not schedule another attempt' );
-		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
+		$runs = $this->inspection()->runs( Identity::compose( self::SCOPE, self::NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal non-retryable failure must leave no live run' );
 		self::assertSame(
 			array(

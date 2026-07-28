@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Boundary;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Wraps one canonical owner-qualified background-work identity.
+ * Wraps one canonical scope-qualified background-work identity.
  *
  * @internal
  *
@@ -16,7 +16,7 @@ final class Identity implements \Stringable {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Client-owner ceiling paired with `NAME_MAX_BYTES` so the longest composed identity leaves the
+	 * Client-scope ceiling paired with `NAME_MAX_BYTES` so the longest composed identity leaves the
 	 * 24-byte overlap-lock prefix, separator, and 64-byte single-flight hash inside WordPress's
 	 * 191-character `option_name` boundary.
 	 *
@@ -25,13 +25,10 @@ final class Identity implements \Stringable {
 	 *
 	 * @var     int
 	 */
-	public const int OWNER_MAX_BYTES = 32;
+	public const int SCOPE_MAX_BYTES = 32;
 
 	/**
-	 * Local-name ceiling paired with `OWNER_MAX_BYTES` under the same WordPress `option_name` limit.
-	 *
-	 * `Schedule\Schedule::MAX_NAME_BYTES` mirrors this boundary-owned limit because the frozen
-	 * public model keeps its constant private.
+	 * Local-name ceiling paired with `SCOPE_MAX_BYTES` under the same WordPress `option_name` limit.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -41,24 +38,24 @@ final class Identity implements \Stringable {
 	public const int NAME_MAX_BYTES = 64;
 
 	/**
-	 * Longest `{owner}:{name}` identity admitted by the component ceilings.
+	 * Longest `{scope}:{name}` identity admitted by the component ceilings.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     int
 	 */
-	public const int IDENTITY_MAX_BYTES = self::OWNER_MAX_BYTES + 1 + self::NAME_MAX_BYTES;
+	public const int IDENTITY_MAX_BYTES = self::SCOPE_MAX_BYTES + 1 + self::NAME_MAX_BYTES;
 
 	/**
-	 * Owner namespace retained exclusively for engine work.
+	 * Scope namespace retained exclusively for engine work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string ENGINE_OWNER = 'a8csp-bgje';
+	public const string ENGINE_SCOPE = 'a8csp-bgje';
 
 	// endregion
 
@@ -70,14 +67,14 @@ final class Identity implements \Stringable {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $value Complete owner-qualified background-work identity.
+	 * @param   string $value Complete scope-qualified background-work identity.
 	 */
 	private function __construct(
 		private readonly string $value,
 	) {}
 
 	/**
-	 * Returns the complete owner-qualified background-work identity.
+	 * Returns the complete scope-qualified background-work identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -98,21 +95,21 @@ final class Identity implements \Stringable {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner                 Client or engine owner.
-	 * @param   string $name                  Owner-local work name.
+	 * @param   string $scope                 Client or engine scope.
+	 * @param   string $name                  Scope-local work name.
 	 * @param   bool   $allow_engine_reserved Whether the engine-reserved namespace is accepted.
 	 *
-	 * @throws  \InvalidArgumentException When the owner or name violates the canonical grammar.
+	 * @throws  \InvalidArgumentException When the scope or name violates the canonical grammar.
 	 *
 	 * @return  self
 	 */
-	public static function compose( string $owner, string $name, bool $allow_engine_reserved = false ): self {
-		self::validate_owner( $owner, $allow_engine_reserved );
+	public static function compose( string $scope, string $name, bool $allow_engine_reserved = false ): self {
+		self::validate_scope( $scope, $allow_engine_reserved );
 		self::validate_name( $name );
 
-		$identity = $owner . ':' . $name;
+		$identity = $scope . ':' . $name;
 		if ( self::IDENTITY_MAX_BYTES < \strlen( $identity ) ) {
-			throw new \InvalidArgumentException( \sprintf( 'Background-work identity must be at most %d bytes; shorten the owner or name.', self::IDENTITY_MAX_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new \InvalidArgumentException( \sprintf( 'Background-work identity must be at most %d bytes; shorten the scope or name.', self::IDENTITY_MAX_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
 		return new self( $identity );
@@ -123,12 +120,12 @@ final class Identity implements \Stringable {
 	 * Wraps one canonical background-work identity, or returns null for another shape.
 	 *
 	 * Reserved engine identities are valid persisted identities even though clients cannot claim
-	 * their owner prefix.
+	 * their scope prefix.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete `{owner}:{name}` identity.
+	 * @param   string $identity Complete `{scope}:{name}` identity.
 	 *
 	 * @return  self|null
 	 */
@@ -137,9 +134,9 @@ final class Identity implements \Stringable {
 			return null;
 		}
 
-		[ $owner, $name ] = \explode( ':', $identity, 2 );
+		[ $scope, $name ] = \explode( ':', $identity, 2 );
 		try {
-			self::validate_owner( $owner, true );
+			self::validate_scope( $scope, true );
 			self::validate_name( $name );
 		} catch ( \InvalidArgumentException ) {
 			return null;
@@ -154,21 +151,21 @@ final class Identity implements \Stringable {
 	// region METHODS
 
 	/**
-	 * Returns the client or engine owner.
+	 * Returns the client or engine scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  string
 	 */
-	public function owner(): string {
-		[ $owner ] = \explode( ':', $this->value, 2 );
+	public function scope(): string {
+		[ $scope ] = \explode( ':', $this->value, 2 );
 
-		return $owner;
+		return $scope;
 	}
 
 	/**
-	 * Returns the owner-local work name.
+	 * Returns the scope-local work name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -182,38 +179,38 @@ final class Identity implements \Stringable {
 	}
 
 	/**
-	 * Validates one client or engine owner.
+	 * Validates one client or engine scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner                 Client or engine owner.
+	 * @param   string $scope                 Client or engine scope.
 	 * @param   bool   $allow_engine_reserved Whether the engine-reserved namespace is accepted.
 	 *
-	 * @throws  \InvalidArgumentException When the owner violates the canonical grammar.
+	 * @throws  \InvalidArgumentException When the scope violates the canonical grammar.
 	 *
 	 * @return  void
 	 */
-	public static function validate_owner( string $owner, bool $allow_engine_reserved = false ): void {
+	public static function validate_scope( string $scope, bool $allow_engine_reserved = false ): void {
 		if (
-			1 !== \preg_match( '/\A[a-z0-9][a-z0-9-]*\z/D', $owner )
-			|| self::OWNER_MAX_BYTES < \strlen( $owner )
+			1 !== \preg_match( '/\A[a-z0-9][a-z0-9-]*\z/D', $scope )
+			|| self::SCOPE_MAX_BYTES < \strlen( $scope )
 		) {
-			throw new \InvalidArgumentException( 'Background-work owner is invalid; pass 1 to 32 bytes matching [a-z0-9][a-z0-9-]*.' );
+			throw new \InvalidArgumentException( 'Background-work scope is invalid; pass 1 to 32 bytes matching [a-z0-9][a-z0-9-]*.' );
 		}
 
-		if ( ! $allow_engine_reserved && \str_starts_with( $owner, self::ENGINE_OWNER ) ) {
-			throw new \InvalidArgumentException( 'Background-work owner uses the engine-reserved "a8csp-bgje" prefix; use the client plugin slug.' );
+		if ( ! $allow_engine_reserved && \str_starts_with( $scope, self::ENGINE_SCOPE ) ) {
+			throw new \InvalidArgumentException( 'Background-work scope uses the engine-reserved "a8csp-bgje" prefix; use the client plugin slug.' );
 		}
 	}
 
 	/**
-	 * Validates one owner-local job, chunked job, or schedule name.
+	 * Validates one scope-local job, chunked job, or schedule name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Owner-local name.
+	 * @param   string $name Scope-local name.
 	 *
 	 * @throws  \InvalidArgumentException When the name violates the canonical grammar.
 	 *

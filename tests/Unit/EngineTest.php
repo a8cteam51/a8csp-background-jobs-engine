@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises the owner-bound handle's capability-manager wiring.
+ * Exercises the scope-bound handle's capability-manager wiring.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -38,7 +38,7 @@ final class EngineTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * Each portal returns the owner-bound manager for its capability.
+	 * Each portal returns the scope-bound manager for its capability.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

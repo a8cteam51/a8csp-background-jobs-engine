@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Run;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -23,7 +23,7 @@ final readonly class Run {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string    $identity Complete {owner}:{name} job or chunked-job identity.
+	 * @param   string    $identity Complete {scope}:{name} job or chunked-job identity.
 	 * @param   RunId     $id       Run identifier.
 	 * @param   RunStatus $status   Run lifecycle state at projection time.
 	 */

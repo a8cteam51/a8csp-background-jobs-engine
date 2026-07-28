@@ -2,24 +2,24 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use Psr\Log\NullLogger;
@@ -39,7 +39,7 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 */
 	private function __construct(
 		private Identity $identity,
@@ -55,7 +55,7 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $identity Complete scope-qualified work identity.
 	 *
 	 * @return  self
 	 */
@@ -63,7 +63,7 @@ final readonly class StoreFixtureBuilder {
 		EngineRig::bootstrap();
 		$work_identity = Identity::tryFrom( $identity );
 		if ( null === $work_identity ) {
-			throw new \InvalidArgumentException( 'Store fixtures require one canonical owner-qualified work identity.' );
+			throw new \InvalidArgumentException( 'Store fixtures require one canonical scope-qualified work identity.' );
 		}
 
 		return new self( $work_identity );
@@ -133,7 +133,7 @@ final readonly class StoreFixtureBuilder {
 	public static function schedule_registration_without_undeclared_markers( array $fixture ): array {
 		$registrations = RawOptionDecoder::decode( $fixture[1] );
 		if ( ! \is_array( $registrations ) ) {
-			throw new \InvalidArgumentException( 'The schedule-registration fixture must decode to an owner row.' );
+			throw new \InvalidArgumentException( 'The schedule-registration fixture must decode to a scope row.' );
 		}
 
 		foreach ( $registrations as $registration_key => $registration ) {
@@ -174,7 +174,7 @@ final readonly class StoreFixtureBuilder {
 				}
 
 				$raw = self::same_state( $created, $state )
-					? $this->raw_option( RunIdentity::option_name( $this->identity, $run_id ) )
+					? $this->row( $wpdb, RunIdentity::option_name( $this->identity, $run_id ) )[1]
 					: $store->replace_if_state_matches( $run_id, $created, $state );
 				if ( ! \is_string( $raw ) ) {
 					throw new \LogicException( 'Production RunStore could not serialize the requested active-run fixture.' );
@@ -312,26 +312,26 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
-	 * Returns one owner's schedule-registration option name and exact raw value.
+	 * Returns one scope's schedule-registration option name and exact raw value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param array{
-	 *     owner: string,
-	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule, job: string}>,
+	 *     scope: string,
+	 *     declarations: array<string, array{schedule: \A8C\SpecialProjects\BackgroundJobsEngine\Schedule, job: string}>,
 	 *     registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>
-	 * } $owner
+	 * } $scope
 	 *
-	 * @param   array $owner Complete owner fixture request.
+	 * @param   array $scope Complete scope fixture request.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function schedule_registration( array $owner ): array {
+	public function schedule_registration( array $scope ): array {
 		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $owner ): array {
+			function ( \wpdb $wpdb ) use ( $scope ): array {
 				$declarations = array();
-				foreach ( $owner['declarations'] as $schedule_identity => $declaration ) {
+				foreach ( $scope['declarations'] as $schedule_identity => $declaration ) {
 					$job = Identity::tryFrom( $declaration['job'] );
 					if ( null === $job ) {
 						throw new \InvalidArgumentException( 'Schedule-registration fixtures require canonical target identities.' );
@@ -344,11 +344,11 @@ final readonly class StoreFixtureBuilder {
 				}
 
 				$registry = new ScheduleRegistry( new OptionRows( $wpdb ), new NullLogger() );
-				if ( OwnerReplacementOutcome::Persisted !== $registry->replace_owner( $owner['owner'], $declarations, $owner['registrations'] ) ) {
+				if ( ScopeReplacementOutcome::Persisted !== $registry->replace_scope( $scope['scope'], $declarations, $scope['registrations'] ) ) {
 					throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registration fixture.' );
 				}
 
-				return $this->row( $wpdb, ScheduleRegistry::option_name( $owner['owner'] ) );
+				return $this->row( $wpdb, ScheduleRegistry::option_name( $scope['scope'] ) );
 			}
 		);
 	}
@@ -601,7 +601,7 @@ final readonly class StoreFixtureBuilder {
 			);
 		}
 
-		// Production stores need a clean engine-row window: a caller-persisted row under the same option name makes add_option refuse the fixture write.
+		// Production stores need a clean engine-row window because the option-name unique key rejects a fixture write under an existing name.
 		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $pattern ) ?? throw new \LogicException( 'Store fixtures could not prepare the real WordPress option cleanup.' ) );
 		\wp_cache_flush();
 
@@ -719,7 +719,7 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
-	 * Returns one exact raw option created through add_option().
+	 * Returns one exact raw option from the real WordPress database.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -731,15 +731,8 @@ final readonly class StoreFixtureBuilder {
 	 * @return  string
 	 */
 	private function raw_option( string $option_name ): string {
-		if ( \defined( 'WPINC' ) ) {
-			$wpdb = $this->wordpress_database();
-			$raw  = $wpdb->get_var( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s', $wpdb->options, $option_name ) );
-		} else {
-			$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
-			$raw     = \is_array( $options ) && \array_key_exists( $option_name, $options )
-				? \maybe_serialize( $options[ $option_name ] )
-				: null;
-		}
+		$wpdb = $this->wordpress_database();
+		$raw  = $wpdb->get_var( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s', $wpdb->options, $option_name ) );
 
 		if ( ! \is_string( $raw ) ) {
 			throw new \LogicException( 'The production run store did not emit the expected isolated option.' );

@@ -1,6 +1,6 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -15,18 +15,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
 final readonly class JobKind {
 	// region FIELDS AND CONSTANTS
 
-	/**
-	 * Lexical grammar shared by installed and prospective kind keys.
-	 *
-	 * The public-model copy mirrors `Runtime\Runs\Kinds\KindHandlerInterface::KEY_PATTERN` because
-	 * models do not import Runtime internals.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     string
-	 */
-	private const string PATTERN = '/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?\z/';
+	/** Mirrors `Runtime\Runs\Kinds\KindHandlerInterface::KEY_PATTERN`. */
+	private const string KEY_PATTERN = '/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?\z/';
 
 	// endregion
 
@@ -51,6 +41,8 @@ final readonly class JobKind {
 	/**
 	 * Returns the standard job kind.
 	 *
+	 * Mirrors `Runtime\Runs\Kinds\JobKindHandler::KIND`.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -62,6 +54,8 @@ final readonly class JobKind {
 
 	/**
 	 * Returns the chunked job kind.
+	 *
+	 * Mirrors `Runtime\Runs\Kinds\ChunkedJobKindHandler::KIND`.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -109,7 +103,7 @@ final readonly class JobKind {
 	 * @return  self|null
 	 */
 	public static function tryFrom( string $value ): ?self {
-		return 1 === \preg_match( self::PATTERN, $value ) ? new self( $value ) : null;
+		return 1 === \preg_match( self::KEY_PATTERN, $value ) ? new self( $value ) : null;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 

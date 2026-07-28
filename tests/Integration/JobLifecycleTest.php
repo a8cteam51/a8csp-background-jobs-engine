@@ -4,12 +4,12 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
@@ -23,20 +23,20 @@ use PHPUnit\Framework\Attributes\Group;
 final class JobLifecycleTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Public owner unique to this integration-test graph. */
-	private const string OWNER = 'integration-job-lifecycle';
+	/** Public scope unique to this integration-test graph. */
+	private const string SCOPE = 'integration-job-lifecycle';
 
 	/** Successful job identity unique within the request-persistent integration registry. */
 	private const string SUCCESS_NAME = 'integration-job-lifecycle-success';
 
-	/** Owner-qualified successful job identity persisted by the engine. */
-	private const string SUCCESS_IDENTITY = self::OWNER . ':' . self::SUCCESS_NAME;
+	/** Scope-qualified successful job identity persisted by the engine. */
+	private const string SUCCESS_IDENTITY = self::SCOPE . ':' . self::SUCCESS_NAME;
 
 	/** Failed job identity unique within the request-persistent integration registry. */
 	private const string FAILURE_NAME = 'integration-job-lifecycle-failure';
 
-	/** Owner-qualified failed job identity persisted by the engine. */
-	private const string FAILURE_IDENTITY = self::OWNER . ':' . self::FAILURE_NAME;
+	/** Scope-qualified failed job identity persisted by the engine. */
+	private const string FAILURE_IDENTITY = self::SCOPE . ':' . self::FAILURE_NAME;
 
 	// endregion.
 
@@ -58,7 +58,7 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 		);
 		$job  = new RecordingJob( self::SUCCESS_NAME );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::SUCCESS_IDENTITY );
@@ -103,7 +103,7 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $last_completed );
 		self::assertInstanceOf( Run::class, $last_completed->value );
 		self::assertSame( $run_id, (string) $last_completed->value->id );
-		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::SUCCESS_NAME ) );
+		$runs = $this->inspection()->runs( Identity::compose( self::SCOPE, self::SUCCESS_NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal job success must leave no live run' );
 		self::assertSame(
 			array(
@@ -137,7 +137,7 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 		$job            = new RecordingJob( self::FAILURE_NAME );
 		$job->throwable = new NonRetryableException( 'The remote record no longer exists.' );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition() );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FAILURE_IDENTITY );
@@ -179,7 +179,7 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 		self::assertNull( $failure->details );
 		self::assertSame( array( $failure ), $failed, 'The failed hook must receive only the self-identifying failure value' );
 		self::assertSame( 0, $this->run_next_engine_action(), 'A non-retryable failure must not schedule another run attempt' );
-		$runs = $this->inspection()->runs( Identity::compose( self::OWNER, self::FAILURE_NAME ) );
+		$runs = $this->inspection()->runs( Identity::compose( self::SCOPE, self::FAILURE_NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal job failure must leave no live run' );
 		self::assertSame(
 			array(

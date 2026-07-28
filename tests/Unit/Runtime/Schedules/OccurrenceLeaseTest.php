@@ -34,7 +34,7 @@ use PHPUnit\Framework\TestCase;
 final class OccurrenceLeaseTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string KEY = 'owner-a:email-digest';
+	private const string KEY = 'scope-a:email-digest';
 	private const int NOW    = 1_700_000_000;
 
 	private FixedClock $clock;

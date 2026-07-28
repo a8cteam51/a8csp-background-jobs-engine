@@ -22,6 +22,9 @@ final class RunIdentity {
 	/**
 	 * Decimal width reserved for a run identifier's timestamp prefix.
 	 *
+	 * `RunId::PATTERN` embeds this value as `{20}` in its frozen public grammar, and `RunId::from()`
+	 * restates it in the rejection message a caller reads.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -32,6 +35,9 @@ final class RunIdentity {
 	/**
 	 * Decimal width reserved for a run identifier's random suffix.
 	 *
+	 * `RunId::PATTERN` embeds this value as `{19}` in its frozen public grammar, and `RunId::from()`
+	 * restates it in the rejection message a caller reads.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -41,6 +47,10 @@ final class RunIdentity {
 
 	/**
 	 * Fixed character length of the canonical timestamp-randomness run identifier.
+	 *
+	 * `RunId::LENGTH` mirrors this value. Together with `RunId::PATTERN`, that public check is
+	 * load-bearing: `ScopeOperations::run()` validates every successful dispatch result through
+	 * `RunId::from()`, and `\ValueError` extends `\Error`, outside the portal catches.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -102,7 +112,7 @@ final class RunIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @return  string
 	 */
@@ -130,7 +140,7 @@ final class RunIdentity {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id   Run identifier.
 	 *
 	 * @return  string

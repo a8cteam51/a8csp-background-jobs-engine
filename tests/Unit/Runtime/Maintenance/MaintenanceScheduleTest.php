@@ -4,10 +4,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Maintenanc
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
@@ -76,7 +76,7 @@ final class MaintenanceScheduleTest extends TestCase {
 		$engine = Component::get_engine();
 		self::assertNotNull( $engine );
 		$maintenance = new MaintenanceSchedule( $engine->schedules, $this->rig->logger() );
-		$option_name = ScheduleRegistry::option_name( Identity::ENGINE_OWNER );
+		$option_name = ScheduleRegistry::option_name( Identity::ENGINE_SCOPE );
 		$poison      = 'poison-maintenance-registry-row';
 		$this->rig->wpdb()->put( $option_name, $poison );
 		$this->rig->backend()->scheduled = true;
@@ -104,8 +104,31 @@ final class MaintenanceScheduleTest extends TestCase {
 		self::assertIsString( $raw );
 		$registrations = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $registrations );
-		self::assertArrayHasKey( (string) Identity::compose( Identity::ENGINE_OWNER, MaintenanceJob::NAME, true ), $registrations );
+		self::assertArrayHasKey( (string) Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ), $registrations );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_values( \array_filter( \array_column( $this->rig->backend()->calls, 'verb' ), static fn ( string $verb ): bool => \in_array( $verb, array( 'unschedule', 'schedule_recurring' ), true ) ) ) );
+		self::assertSame( array(), $this->rig->logger()->records );
+	}
+
+	/**
+	 * Engine-owned per-request synchronization stays silent while a backend candidate is dormant.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dormant_backend_does_not_warn_during_engine_maintenance_sync(): void {
+		$this->rig->tear_down();
+		$this->rig = EngineRig::set_up( self::NOW, 2 );
+		$engine    = Component::get_engine();
+		self::assertNotNull( $engine );
+		$maintenance                  = new MaintenanceSchedule( $engine->schedules, $this->rig->logger() );
+		$backends                     = $this->rig->backends();
+		$backends[0]->ready           = false;
+		$this->rig->logger()->records = array();
+
+		$maintenance->sync_maintenance_schedule();
+
 		self::assertSame( array(), $this->rig->logger()->records );
 	}
 

@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -20,20 +20,20 @@ use PHPUnit\Framework\Attributes\Group;
 final class OptionsHygieneTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Public owner unique to this integration-test graph. */
-	private const string OWNER = 'integration-options-hygiene';
+	/** Public scope unique to this integration-test graph. */
+	private const string SCOPE = 'integration-options-hygiene';
 
 	/** Job identity unique within the request-persistent integration registry. */
 	private const string JOB_NAME = 'integration-options-job';
 
-	/** Owner-qualified job identity persisted by the engine. */
-	private const string JOB_IDENTITY = self::OWNER . ':' . self::JOB_NAME;
+	/** Scope-qualified job identity persisted by the engine. */
+	private const string JOB_IDENTITY = self::SCOPE . ':' . self::JOB_NAME;
 
 	/** Chunked Job identity unique within the request-persistent integration registry. */
 	private const string CHUNKED_JOB_NAME = 'integration-options-chunked-job';
 
-	/** Owner-qualified chunked job identity persisted by the engine. */
-	private const string CHUNKED_JOB_IDENTITY = self::OWNER . ':' . self::CHUNKED_JOB_NAME;
+	/** Scope-qualified chunked job identity persisted by the engine. */
+	private const string CHUNKED_JOB_IDENTITY = self::SCOPE . ':' . self::CHUNKED_JOB_NAME;
 
 	// endregion.
 
@@ -54,7 +54,7 @@ final class OptionsHygieneTest extends AbstractIntegrationTestCase {
 		$chunked_job        = new RecordingChunkedJob( self::CHUNKED_JOB_NAME );
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition() );
 		$client->register( $chunked_job->definition() );
 

@@ -3,51 +3,51 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceLockSweep;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceLockSweep;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
-use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -82,10 +82,10 @@ final class RunReconciliationTest extends TestCase {
 
 	private const array ARGS             = array( 'site_id' => 7 );
 	private const string ARGS_HASH       = 'd3e2a7f3f4041a96ec4e9d3de1622dea7c050a65d9ee0b77a49a76848fdd9737';
-	private const string IDENTITY        = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY        = self::SCOPE . ':' . self::NAME;
 	private const string NAME            = 'crashed-job';
 	private const int NOW                = 1_700_000_000;
-	private const string OWNER           = 'runs-tests';
+	private const string SCOPE           = 'runs-tests';
 	private const string PREVIOUS_RUN_ID = '00000000001699999999-0000000000000000041';
 	private const string RUN_ID          = '00000000001700000000-0000000000000000042';
 
@@ -158,7 +158,7 @@ final class RunReconciliationTest extends TestCase {
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
 		$this->clock    = new FixedClock( self::NOW );
-		$this->identity = Identity::compose( self::OWNER, self::NAME );
+		$this->identity = Identity::compose( self::SCOPE, self::NAME );
 		$this->registry = new JobRegistry();
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
@@ -193,11 +193,11 @@ final class RunReconciliationTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The maintenance execution co-locates its stable owner-local job name.
+	 * The maintenance execution co-locates its stable scope-local job name.
 	 *
 	 * @return  void
 	 */
-	public function test_job_name_is_owner_local(): void {
+	public function test_job_name_is_scope_local(): void {
 		self::assertSame( 'maintenance', MaintenanceJob::NAME );
 	}
 
@@ -207,7 +207,7 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_converges_pending_unknown_chain_intent(): void {
-		$registration_key = 'orphan-owner:orphan-schedule';
+		$registration_key = 'orphan-scope:orphan-schedule';
 
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( self::NOW );
 		$this->wpdb->put( $option_name, $raw );
@@ -288,10 +288,9 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		$state   = $options[ $this->run_option_name() ] ?? null;
 		self::assertIsArray( $state );
-		$state['executing']                  = true;
-		$options[ $this->run_option_name() ] = $state;
-		$GLOBALS['a8csp_bgje_test_options']  = $options;
-		$this->clock->timestamp              = self::NOW + 901;
+		$state['executing'] = true;
+		$this->put_run_option( $this->run_option_name(), $state );
+		$this->clock->timestamp = self::NOW + 901;
 
 		$this->run_maintenance();
 
@@ -652,10 +651,13 @@ final class RunReconciliationTest extends TestCase {
 	/**
 	 * A newer same-owner lock credit defers redelivery until it can be restored to the retained generation.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_sweep_repairs_a_stale_same_owner_heartbeat_mismatch_before_redelivery(): void {
-		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS, delay: 1_200 );
+		$result = $this->dispatcher->dispatch( $this->identity, self::ARGS, fire_at: self::NOW + 1_200 );
 		self::assertInstanceOf( Success::class, $result );
 		$this->set_run_fields( self::IDENTITY, array( 'heartbeat_at' => self::NOW ) );
 		$this->backend->calls   = array();
@@ -1443,9 +1445,8 @@ final class RunReconciliationTest extends TestCase {
 				$options = $this->options();
 				$state   = $options[ $this->run_option_name() ] ?? null;
 				self::assertIsArray( $state );
-				$state['heartbeat_at']               = $this->clock->timestamp;
-				$options[ $this->run_option_name() ] = $state;
-				$GLOBALS['a8csp_bgje_test_options']  = $options;
+				$state['heartbeat_at'] = $this->clock->timestamp;
+				$this->put_run_option( $this->run_option_name(), $state );
 			}
 		);
 
@@ -1516,10 +1517,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$decoded = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $decoded );
-		$options                 = $this->options();
-		$options[ $option_name ] = $decoded;
-
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$this->put_run_option( $option_name, $decoded );
 
 		$this->run_maintenance();
 
@@ -1651,13 +1649,11 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_reclaims_a_stale_lock_whose_run_row_is_corrupt(): void {
-		$name                               = self::identity( 'corrupt-job' );
-		$args_hash                          = \str_repeat( 'b', 64 );
-		$run_name                           = RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
-		$options                            = $this->options();
-		$options[ $run_name ]               = 'corrupt-run';
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
-		$lock_name                          = OverlapGuard::OPTION_PREFIX . $name . '_' . $args_hash;
+		$name      = self::identity( 'corrupt-job' );
+		$args_hash = \str_repeat( 'b', 64 );
+		$run_name  = RunStore::OPTION_PREFIX . $name . '_' . self::RUN_ID;
+		$this->put_run_option( $run_name, 'corrupt-run' );
+		$lock_name = OverlapGuard::OPTION_PREFIX . $name . '_' . $args_hash;
 		$this->put_lock( $lock_name, self::RUN_ID, self::NOW - 901 );
 
 		$this->run_maintenance();
@@ -1691,10 +1687,8 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sweep_exact_deletes_an_unpaired_corrupt_run_row(): void {
-		$run_name                           = RunStore::OPTION_PREFIX . self::identity( 'corrupt-job' ) . '_' . self::RUN_ID;
-		$options                            = $this->options();
-		$options[ $run_name ]               = 'corrupt-run';
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$run_name = RunStore::OPTION_PREFIX . self::identity( 'corrupt-job' ) . '_' . self::RUN_ID;
+		$this->put_run_option( $run_name, 'corrupt-run' );
 
 		$this->run_maintenance();
 
@@ -2484,7 +2478,8 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	public function test_sweep_retries_a_failed_terminal_delete_without_repeating_effects(): void {
 		$this->store_terminal_run( self::IDENTITY, 'completed' );
-		$options = $this->options();
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
+		self::assertIsArray( $options );
 		// A retained pre-bucket row exercises normalization; current history writes also populate by_hash.
 		$options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] = array(
 			'started'  => array( self::PREVIOUS_RUN_ID ),
@@ -2554,20 +2549,20 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Returns one owner-qualified test work identity.
+	 * Returns one scope-qualified test work identity.
 	 *
-	 * @param   string $name Owner-local work name.
+	 * @param   string $name Scope-local work name.
 	 *
 	 * @return  string
 	 */
 	private static function identity( string $name ): string {
-		return self::OWNER . ':' . $name;
+		return self::SCOPE . ':' . $name;
 	}
 
 	/**
 	 * Wraps one canonical test identity for direct internal calls.
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $identity Complete scope-qualified work identity.
 	 *
 	 * @return  Identity
 	 */
@@ -2623,10 +2618,7 @@ final class RunReconciliationTest extends TestCase {
 		$decoded               = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $decoded );
 
-		$options                 = $this->options();
-		$options[ $option_name ] = $decoded;
-
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$this->put_run_option( $option_name, $decoded );
 	}
 
 	/**
@@ -2656,11 +2648,7 @@ final class RunReconciliationTest extends TestCase {
 		$decoded = RawOptionDecoder::decode( $raw );
 		self::assertIsArray( $decoded );
 
-		$options = $this->options();
-
-		$options[ $option_name ] = $decoded;
-
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$this->put_run_option( $option_name, $decoded );
 	}
 
 	/**
@@ -2753,9 +2741,8 @@ final class RunReconciliationTest extends TestCase {
 		$options = $this->options();
 		$state   = $options[ $option_name ] ?? null;
 		self::assertIsArray( $state );
-		$state['failed_attempts']           = $failed_attempts;
-		$options[ $option_name ]            = $state;
-		$GLOBALS['a8csp_bgje_test_options'] = $options;
+		$state['failed_attempts'] = $failed_attempts;
+		$this->put_run_option( $option_name, $state );
 	}
 
 	/**
@@ -2779,9 +2766,21 @@ final class RunReconciliationTest extends TestCase {
 	 * @return  void
 	 */
 	private function replace_run_state( string $name, array $state ): void {
-		$options                                    = $this->options();
-		$options[ $this->run_option_name( $name ) ] = $state;
-		$GLOBALS['a8csp_bgje_test_options']         = $options;
+		$this->put_run_option( $this->run_option_name( $name ), $state );
+	}
+
+	/**
+	 * Stores one active-run fixture in the authoritative raw-row model.
+	 *
+	 * @param   string $option_name Option name.
+	 * @param   mixed  $value       Decoded option value.
+	 *
+	 * @return  void
+	 */
+	private function put_run_option( string $option_name, mixed $value ): void {
+		$raw = \maybe_serialize( $value );
+		self::assertIsString( $raw );
+		$this->wpdb->put( $option_name, $raw );
 	}
 
 	/**
@@ -2896,7 +2895,8 @@ final class RunReconciliationTest extends TestCase {
 			self::assertIsString( $name );
 			self::assertIsString( $raw );
 			if (
-				\str_starts_with( $name, 'a8csp_bgje_failed_runs_' )
+				\str_starts_with( $name, RunStore::OPTION_PREFIX )
+				|| \str_starts_with( $name, 'a8csp_bgje_failed_runs_' )
 				|| \str_starts_with( $name, 'a8csp_bgje_run_history_' )
 			) {
 				$options[ $name ] = RawOptionDecoder::decode( $raw );

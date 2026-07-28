@@ -16,7 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
  *
  * @phpstan-import-type ScheduleEntry from Inspection
  * @phpstan-type ScheduleRow array{
- *     owner: string,
+ *     scope: string,
  *     identity: string,
  *     recurrence: int|string,
  *     next_due: string,
@@ -39,7 +39,7 @@ final readonly class ScheduleOutput {
 	 * @var     list<string>
 	 */
 	private const array FIELDS = array(
-		'owner',
+		'scope',
 		'identity',
 		'recurrence',
 		'next_due',
@@ -61,14 +61,14 @@ final readonly class ScheduleOutput {
 	private const string DORMANT_BACKEND_NOTE = 'a scheduling backend is not ready; dormant occurrences are not visible.';
 
 	/**
-	 * Eventual-clearance warning for destructive owner removal with an unavailable backend.
+	 * Eventual-clearance warning for destructive scope removal with an unavailable backend.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	private const string DORMANT_REMOVAL_NOTE = 'a scheduling backend is not ready; dormant recurring occurrences for this owner may remain until that backend delivers them or subsequent maintenance clears the recurring chain.';
+	private const string DORMANT_REMOVAL_NOTE = 'a scheduling backend is not ready; dormant recurring occurrences for this scope may remain until that backend delivers them or subsequent maintenance clears the recurring chain.';
 
 	// endregion
 
@@ -95,15 +95,15 @@ final readonly class ScheduleOutput {
 		\usort(
 			$entries,
 			static function ( array $left, array $right ): int {
-				$owner_order = $left['owner'] <=> $right['owner'];
-				return 0 !== $owner_order ? $owner_order : $left['identity'] <=> $right['identity'];
+				$scope_order = $left['scope'] <=> $right['scope'];
+				return 0 !== $scope_order ? $scope_order : $left['identity'] <=> $right['identity'];
 			}
 		);
 
 		$rows = array();
 		foreach ( $entries as $entry ) {
 			$rows[] = array(
-				'owner'              => $entry['owner'],
+				'scope'              => $entry['scope'],
 				'identity'           => $entry['identity'],
 				'recurrence'         => $entry['recurrence'] ?? 'unknown (not declared this request)',
 				'next_due'           => self::due_label( $entry['next_due'], $observed_at ),
@@ -137,51 +137,51 @@ final readonly class ScheduleOutput {
 	}
 
 	/**
-	 * Requires acknowledgement of one owner's recurring-schedule removal.
+	 * Requires acknowledgement of one scope's recurring-schedule removal.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string               $owner      Canonical client owner.
+	 * @param   string               $scope      Canonical client scope.
 	 * @param   array<string, mixed> $assoc_args Named command arguments.
 	 *
 	 * @return  void
 	 */
-	public static function confirm_removal( string $owner, array $assoc_args ): void {
-		\WP_CLI::confirm( \sprintf( 'This permanently removes every schedule registration for owner "%s" and converges its recurring occurrences on ready backends. Dormant occurrences on unavailable backends converge later. Existing runs are not cancelled. Continue?', $owner ), $assoc_args );
+	public static function confirm_removal( string $scope, array $assoc_args ): void {
+		\WP_CLI::confirm( \sprintf( 'This permanently removes every schedule registration for scope "%s" and converges its recurring occurrences on ready backends. Dormant occurrences on unavailable backends converge later. Existing runs are not cancelled. Continue?', $scope ), $assoc_args );
 	}
 
 	/**
-	 * Reports successful owner-scoped removal.
+	 * Reports successful per-scope removal.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner                 Canonical client owner.
+	 * @param   string $scope                 Canonical client scope.
 	 * @param   bool   $has_dormant_candidate Whether an unavailable backend may retain occurrences.
 	 *
 	 * @return  void
 	 */
-	public static function report_removal( string $owner, bool $has_dormant_candidate ): void {
+	public static function report_removal( string $scope, bool $has_dormant_candidate ): void {
 		if ( $has_dormant_candidate ) {
 			\WP_CLI::warning( self::DORMANT_REMOVAL_NOTE );
 		}
-		\WP_CLI::success( \sprintf( 'Removed every persisted schedule registration for owner "%s".', $owner ) );
+		\WP_CLI::success( \sprintf( 'Removed every persisted schedule registration for scope "%s".', $scope ) );
 	}
 
 	/**
-	 * Reports an incremental owner-removal failure with its retry path.
+	 * Reports an incremental scope-removal failure with its retry path.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner   Canonical client owner.
+	 * @param   string $scope   Canonical client scope.
 	 * @param   string $message Scheduling or storage failure.
 	 *
 	 * @return  void
 	 */
-	public static function removal_error( string $owner, string $message ): void {
-		self::error( \sprintf( '%1$s Owner removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove %2$s" to clear any remaining registrations.', $message, $owner ) );
+	public static function removal_error( string $scope, string $message ): void {
+		self::error( \sprintf( '%1$s Scope removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove %2$s" to clear any remaining registrations.', $message, $scope ) );
 	}
 
 	/**
@@ -264,15 +264,15 @@ final readonly class ScheduleOutput {
 	 * @phpstan-param array{entries: list<ScheduleEntry>, observed_at: int, dormant_candidate: bool} $snapshot
 	 *
 	 * @param   array       $snapshot Persisted schedule inspection snapshot.
-	 * @param   string|null $owner    Exact owner filter, or null for every owner.
+	 * @param   string|null $scope    Exact scope filter, or null for every scope.
 	 * @param   string      $format   WP-CLI output format.
 	 *
 	 * @return  void
 	 */
-	public static function render( array $snapshot, ?string $owner, string $format ): void {
+	public static function render( array $snapshot, ?string $scope, string $format ): void {
 		$rows = self::rows_from_entries( $snapshot['entries'], $snapshot['observed_at'] );
 		if ( array() === $rows && 'table' === $format ) {
-			\WP_CLI::line( null === $owner ? 'No schedule registrations are persisted.' : \sprintf( 'No schedule registrations are persisted for owner "%s".', $owner ) );
+			\WP_CLI::line( null === $scope ? 'No schedule registrations are persisted.' : \sprintf( 'No schedule registrations are persisted for scope "%s".', $scope ) );
 		} else {
 			\WP_CLI\Utils\format_items( $format, $rows, self::FIELDS );
 		}

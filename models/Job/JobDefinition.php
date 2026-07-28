@@ -1,13 +1,11 @@
 <?php declare( strict_types=1 );
 
-namespace A8C\SpecialProjects\BackgroundJobsEngine\Job;
-
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
+namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Composes a stable owner-local job name, execution role, kind, and policy declaration.
+ * Composes a stable scope-local job name, execution role, kind, and policy declaration.
  *
  * @api
  *
@@ -23,15 +21,15 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $name      Stable owner-local job name.
-	 * @param   JobKind    $kind      Engine-owned job kind.
-	 * @param   object     $execution Kind-specific execution object.
-	 * @param   JobOptions $options   Execution, retry, and overlap policy.
+	 * @param   string                 $name      Stable scope-local job name.
+	 * @param   JobKind                $kind      Engine-owned job kind.
+	 * @param   KindExecutionInterface $execution Kind-specific execution object.
+	 * @param   JobOptions             $options   Execution, retry, and overlap policy.
 	 */
 	private function __construct(
 		public string $name,
 		public JobKind $kind,
-		public object $execution,
+		public KindExecutionInterface $execution,
 		public JobOptions $options,
 	) {}
 
@@ -45,7 +43,7 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                $name      Stable owner-local job name.
+	 * @param   string                $name      Stable scope-local job name.
 	 * @param   JobExecutionInterface $execution Job execution.
 	 * @param   JobOptions|null       $options   Optional policy declaration.
 	 *
@@ -61,7 +59,7 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                       $name      Stable owner-local job name.
+	 * @param   string                       $name      Stable scope-local job name.
 	 * @param   ChunkedJobExecutionInterface $execution Chunked job execution.
 	 * @param   JobOptions|null              $options   Optional policy declaration.
 	 *
@@ -79,13 +77,32 @@ final readonly class JobDefinition {
 	 *
 	 * @phpstan-param \Closure(array<array-key, mixed>, RunContextInterface): mixed $handler
 	 *
-	 * @param   string   $name    Stable owner-local job name.
+	 * @param   string   $name    Stable scope-local job name.
 	 * @param   \Closure $handler Job handler.
 	 *
 	 * @return  self
 	 */
 	public static function closure( string $name, \Closure $handler ): self {
-		return self::job( $name, new ClosureJobExecution( $handler ) );
+		$execution = new readonly class( $handler ) implements JobExecutionInterface {
+			/**
+			 * Constructor.
+			 *
+			 * @phpstan-param \Closure(array<array-key, mixed>, RunContextInterface): mixed $handler
+			 *
+			 * @param   \Closure $handler Job handler.
+			 */
+			public function __construct(
+				private \Closure $handler,
+			) {}
+
+			/** {@inheritDoc} */
+			#[\Override]
+			public function handle( array $start_args, RunContextInterface $context ): void {
+				( $this->handler )( $start_args, $context );
+			}
+		};
+
+		return self::job( $name, $execution );
 	}
 
 	/**
@@ -98,14 +115,14 @@ final readonly class JobDefinition {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string          $name      Stable owner-local job name.
-	 * @param   JobKind         $kind      Engine-owned job kind.
-	 * @param   object          $execution Kind-specific execution object.
-	 * @param   JobOptions|null $options   Optional policy declaration.
+	 * @param   string                 $name      Stable scope-local job name.
+	 * @param   JobKind                $kind      Engine-owned job kind.
+	 * @param   KindExecutionInterface $execution Kind-specific execution object.
+	 * @param   JobOptions|null        $options   Optional policy declaration.
 	 *
 	 * @return  self
 	 */
-	public static function for_kind( string $name, JobKind $kind, object $execution, ?JobOptions $options = null ): self {
+	public static function for_kind( string $name, JobKind $kind, KindExecutionInterface $execution, ?JobOptions $options = null ): self {
 		return new self( $name, $kind, $execution, $options ?? new JobOptions() );
 	}
 

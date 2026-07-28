@@ -3,9 +3,9 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
@@ -72,12 +72,12 @@ final readonly class RunTransitions {
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
 	 * @param   array    $handlers        Kind handlers keyed by their persisted keys.
-	 * @param   string   $identity        Complete owner-qualified work identity.
+	 * @param   string   $identity        Complete scope-qualified work identity.
 	 * @param   string   $run_id          Run identifier.
 	 * @param   int|null $action_sequence Received lifecycle action sequence.
 	 * @param   RunStore $run_store       Active-run store.
 	 *
-	 * @throws  \LogicException When a claimed run does not retain its canonical identity.
+	 * @throws  \LogicException When a delivery claim does not retain its canonical identity.
 	 *
 	 * @return  ClaimedDelivery|null
 	 */
@@ -197,14 +197,26 @@ final readonly class RunTransitions {
 		$at = $handler->delivery_liveness_at( $identity, $run_id, $state ) ?? $this->clock->now()->getTimestamp();
 
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
-		if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $at, $state->heartbeat_at ) ) {
+		if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], $at, $state->heartbeat_at ) ) {
 			return null;
 		}
 
-		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $at );
-		if ( $state instanceof Failure || null === $state ) {
+		$marked = $run_store->mark_executing_with_heartbeat( $run_id, $state, $at, $snapshot['raw'] );
+		if ( $marked instanceof Failure ) {
+			// replace_if_state_matches(), replace_if_raw_matches(), and mark_executing_with_heartbeat()
+			// collapse lost CAS and SQL write failure to null, so Failure denotes payload rejection.
+			if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], $at, $at ) ) {
+				return null;
+			}
+			$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed delivery requires a canonical background-work identity.' );
+			$this->fail_run( $handler, $canonical_identity, $run_id, $state, $run_store, $marked->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::PayloadRejected, $handler->failure_details( $state ), $snapshot['raw'] );
+
 			return null;
 		}
+		if ( null === $marked ) {
+			return null;
+		}
+		$state = $marked;
 
 		$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed delivery requires a canonical background-work identity.' );
 		$latest_pointer     = $this->stores->latest_run_pointer( $canonical_identity );
@@ -233,7 +245,7 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler   Handler selected by the persisted kind.
-	 * @param   Identity             $identity  Complete owner-qualified work identity.
+	 * @param   Identity             $identity  Complete scope-qualified work identity.
 	 * @param   string               $run_id    Run identifier.
 	 * @param   RunState             $state     Running state.
 	 * @param   RunStore             $run_store Active-run store.
@@ -261,19 +273,22 @@ final readonly class RunTransitions {
 	 * @phpstan-param \Closure(): mixed $clear_pending_actions
 	 *
 	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
-	 * @param   Identity             $identity              Complete owner-qualified work identity.
+	 * @param   Identity             $identity              Complete scope-qualified work identity.
 	 * @param   string               $run_id                Run identifier.
 	 * @param   RunState             $state                 Running state from the exact inspected snapshot.
 	 * @param   RunStore             $run_store             Active-run store.
 	 * @param   string               $expected_raw          Exact pre-cancel snapshot.
 	 * @param   \Closure             $clear_pending_actions Winner-only scheduler-group clear.
 	 *
-	 * @return  bool Whether the cancellation transition was claimed.
+	 * @return  bool|Failure<EngineError> True when the cancellation transition is claimed, false after a lost fence, or the classified write failure.
 	 */
-	public function cancel_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool {
+	public function cancel_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool|Failure {
 		$terminal_state = $state->with_status( RunStatus::Cancelled )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw, );
-		if ( ! \is_string( $terminal_raw ) ) {
+		if ( $terminal_raw instanceof Failure ) {
+			return $terminal_raw;
+		}
+		if ( null === $terminal_raw ) {
 			return false;
 		}
 
@@ -307,7 +322,7 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler   Handler selected by the persisted kind.
-	 * @param   Identity             $identity  Complete owner-qualified work identity.
+	 * @param   Identity             $identity  Complete scope-qualified work identity.
 	 * @param   string               $run_id    Run identifier.
 	 * @param   RunState             $state     Running state.
 	 * @param   RunStore             $run_store Active-run store.
@@ -334,7 +349,7 @@ final readonly class RunTransitions {
 	 * @phpstan-param array<array-key, mixed>|null $details
 	 *
 	 * @param   KindHandlerInterface $handler      Handler selected by the persisted kind.
-	 * @param   Identity             $identity     Complete owner-qualified work identity.
+	 * @param   Identity             $identity     Complete scope-qualified work identity.
 	 * @param   string               $run_id       Run identifier.
 	 * @param   RunState             $state        Running state.
 	 * @param   RunStore             $run_store    Active-run store.
@@ -343,7 +358,7 @@ final readonly class RunTransitions {
 	 * @param   RunFailureStage      $stage        Terminalization stage.
 	 * @param   ErrorCode            $code         Machine-readable cause classification.
 	 * @param   array|null           $details      Generic diagnostic payload, or null when no details are available.
-	 * @param   string|null          $expected_raw Exact maintenance snapshot, or null for a live transition.
+	 * @param   string|null          $expected_raw Exact state bytes observed by the caller, or null to compare the typed state.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
@@ -368,7 +383,7 @@ final readonly class RunTransitions {
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
-	 * @param   Identity             $identity              Complete owner-qualified work identity.
+	 * @param   Identity             $identity              Complete scope-qualified work identity.
 	 * @param   string               $run_id                Run identifier.
 	 * @param   RunState             $state                 Running state observed before the fence.
 	 * @param   RunStore             $run_store             Active-run store.
@@ -376,6 +391,8 @@ final readonly class RunTransitions {
 	 * @param   int|null             $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
+	 *
+	 * @phpstan-impure
 	 */
 	public function enforce_delivery_fence( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
 		$outcome = $this->overlap_guard->heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
@@ -401,9 +418,23 @@ final readonly class RunTransitions {
 
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store );
-		if ( \is_array( $claimed ) ) {
-			$this->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
+		if ( $claimed instanceof Failure ) {
+			$this->logger->error(
+				$claimed->error->message,
+				array(
+					'identity'     => (string) $identity,
+					'run_id'       => $run_id,
+					'error_class'  => $claimed->error::class,
+					'error_reason' => $claimed->error->reason?->value,
+				)
+			);
+
+			return true;
 		}
+		if ( null === $claimed ) {
+			return true;
+		}
+		$this->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
 
 		return true;
 	}
@@ -447,7 +478,7 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity                            $identity      Complete owner-qualified work identity.
+	 * @param   Identity                            $identity      Complete scope-qualified work identity.
 	 * @param   string                              $run_id        Run identifier.
 	 * @param   string|null                         $latest_run_id Latest discoverable pointer value for the single-flight identity.
 	 * @param   array{raw: string, state: RunState} $claimed       Exact claimed terminal snapshot.
@@ -483,6 +514,7 @@ final readonly class RunTransitions {
 	 * @param   string               $run_id                Run identifier.
 	 * @param   RunState             $state                 Running state observed before the fence.
 	 * @param   RunStore             $run_store             Active-run store.
+	 * @param   string               $expected_raw          Exact run state observed before the fence.
 	 * @param   int|null             $at                    Liveness timestamp, or null to use the current clock time.
 	 * @param   int|null             $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
@@ -490,7 +522,7 @@ final readonly class RunTransitions {
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	private function enforce_raw_delivery_fence( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at, ?int $expected_heartbeat_at ): bool {
+	private function enforce_raw_delivery_fence( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?int $at, ?int $expected_heartbeat_at ): bool {
 		$outcome = $this->overlap_guard->raw_heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
@@ -513,11 +545,25 @@ final readonly class RunTransitions {
 		}
 
 		$latest_run_id = $this->stores->raw_latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
-		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store );
-		if ( \is_array( $claimed ) ) {
-			$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed supersession requires a canonical background-work identity.' );
-			$this->execute_claimed_supersession( $canonical_identity, $run_id, $latest_run_id, $claimed, $run_store );
+		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
+		if ( $claimed instanceof Failure ) {
+			$this->logger->error(
+				$claimed->error->message,
+				array(
+					'identity'     => $identity,
+					'run_id'       => $run_id,
+					'error_class'  => $claimed->error::class,
+					'error_reason' => $claimed->error->reason?->value,
+				)
+			);
+
+			return true;
 		}
+		if ( null === $claimed ) {
+			return true;
+		}
+		$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed supersession requires a canonical background-work identity.' );
+		$this->execute_claimed_supersession( $canonical_identity, $run_id, $latest_run_id, $claimed, $run_store );
 
 		return true;
 	}
@@ -528,21 +574,34 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param array{error: EngineError, failure: \A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure}|null $failure_detail
+	 * @phpstan-param array{error: EngineError, failure: \A8C\SpecialProjects\BackgroundJobsEngine\RunFailure}|null $failure_detail
 	 *
-	 * @param   Identity    $identity       Complete owner-qualified work identity.
+	 * @param   Identity    $identity       Complete scope-qualified work identity.
 	 * @param   string      $run_id         Run identifier.
 	 * @param   RunState    $expected       Complete running state observed by the terminalizing path.
 	 * @param   RunState    $replacement    Terminal replacement state.
 	 * @param   RunStore    $run_store      Active-run store.
 	 * @param   array|null  $failure_detail Reconstructed internal and client failure detail.
-	 * @param   string|null $expected_raw   Exact maintenance snapshot, or null for a live transition.
+	 * @param   string|null $expected_raw   Exact state bytes observed by the caller, or null to compare the typed state.
 	 *
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
 	private function claim_and_execute_terminal_transition( Identity $identity, string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?array $failure_detail, ?string $expected_raw = null ): bool {
 		$terminal_raw = $this->claim_terminal_transition( $run_id, $expected, $replacement, $run_store, $expected_raw );
-		if ( ! \is_string( $terminal_raw ) ) {
+		if ( $terminal_raw instanceof Failure ) {
+			$this->logger->error(
+				$terminal_raw->error->message,
+				array(
+					'identity'     => (string) $identity,
+					'run_id'       => $run_id,
+					'error_class'  => $terminal_raw->error::class,
+					'error_reason' => $terminal_raw->error->reason?->value,
+				)
+			);
+
+			return false;
+		}
+		if ( null === $terminal_raw ) {
 			return false;
 		}
 		if ( RunStatus::Failed === $replacement->status ) {
@@ -573,7 +632,7 @@ final readonly class RunTransitions {
 	 * @param   RunState    $expected     Complete state observed by the terminalizing path.
 	 * @param   RunState    $replacement  Terminal replacement state.
 	 * @param   RunStore    $run_store    Active-run store.
-	 * @param   string|null $expected_raw Exact pre-gate snapshot supplied by maintenance, or null.
+	 * @param   string|null $expected_raw Exact state bytes observed by the caller, or null to compare the typed state.
 	 *
 	 * @return  string|Failure<EngineError>|null Exact terminal snapshot bytes for cleanup, storage or payload failure, or null after a lost fence.
 	 */
@@ -590,7 +649,7 @@ final readonly class RunTransitions {
 			RowWriteOutcome::Lost        => null,
 			RowWriteOutcome::WriteFailed => new Failure(
 				new EngineError(
-					'Run terminal transition could not write authoritative active-run storage.',
+					'Run terminal transition could not write authoritative active-run storage; repair option writes before retrying.',
 					reason: EngineErrorReason::StorageFailure,
 					context: array( 'run_id' => $run_id ),
 				)
@@ -604,7 +663,7 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @return  string|null
 	 */

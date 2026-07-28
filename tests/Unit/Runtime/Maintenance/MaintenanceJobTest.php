@@ -2,16 +2,15 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Maintenance;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
@@ -24,9 +23,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
@@ -246,7 +246,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_corrupt_schedule_registry_row_is_reclaimed(): void {
-		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
+		$option_name = ScheduleRegistry::option_name( 'poison-scope' );
 		$this->wpdb->put( $option_name, 'poison-registry-row' );
 
 		$this->maintenance->handle( array(), $this->run_context );
@@ -268,12 +268,12 @@ final class MaintenanceJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_schema_invalid_schedule_registry_row_is_reclaimed(): void {
-		$complete   = StoreFixtureBuilder::for_identity( 'legacy-owner:job' )->schedule_registration(
+		$complete   = StoreFixtureBuilder::for_identity( 'legacy-scope:job' )->schedule_registration(
 			array(
-				'owner'         => 'legacy-owner',
+				'scope'         => 'legacy-scope',
 				'declarations'  => array(),
 				'registrations' => array(
-					'legacy-owner:schedule' => StoreFixtureBuilder::schedule_registration_state( 'legacy-fingerprint', self::NOW + 300 ),
+					'legacy-scope:schedule' => StoreFixtureBuilder::schedule_registration_state( 'legacy-fingerprint', self::NOW + 300 ),
 				),
 			)
 		);
@@ -298,14 +298,14 @@ final class MaintenanceJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_corrupt_schedule_registry_reclaim_preserves_a_concurrent_replacement(): void {
-		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
+		$option_name = ScheduleRegistry::option_name( 'poison-scope' );
 		$this->wpdb->put( $option_name, 'poison-registry-row' );
-		[ $replacement_name, $replacement ] = StoreFixtureBuilder::for_identity( 'poison-owner:replacement-job' )->schedule_registration(
+		[ $replacement_name, $replacement ] = StoreFixtureBuilder::for_identity( 'poison-scope:replacement-job' )->schedule_registration(
 			array(
-				'owner'         => 'poison-owner',
+				'scope'         => 'poison-scope',
 				'declarations'  => array(),
 				'registrations' => array(
-					'poison-owner:replacement' => StoreFixtureBuilder::schedule_registration_state( 'replacement-fingerprint', self::NOW + 300 ),
+					'poison-scope:replacement' => StoreFixtureBuilder::schedule_registration_state( 'replacement-fingerprint', self::NOW + 300 ),
 				),
 			)
 		);
@@ -332,7 +332,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_corrupt_schedule_registry_delete_failure_retries_the_same_row(): void {
-		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
+		$option_name = ScheduleRegistry::option_name( 'poison-scope' );
 		$this->wpdb->put( $option_name, 'poison-registry-row' );
 		$this->wpdb->script_result( 'delete', false );
 
@@ -635,7 +635,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registry_row_read_failure_logs_the_aborted_phase(): void {
-		$option_name = ScheduleRegistry::option_name( 'poison-owner' );
+		$option_name = ScheduleRegistry::option_name( 'poison-scope' );
 		$this->wpdb->put( $option_name, 'poison-registry-row' );
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next( 'select', static function (): void {} );
@@ -778,7 +778,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * @return  string
 	 */
 	private static function registration_name( int $index ): string {
-		return ScheduleRegistry::option_name( 'sweep-owner-' . \sprintf( '%03d', $index ) );
+		return ScheduleRegistry::option_name( 'sweep-scope-' . \sprintf( '%03d', $index ) );
 	}
 
 	/**

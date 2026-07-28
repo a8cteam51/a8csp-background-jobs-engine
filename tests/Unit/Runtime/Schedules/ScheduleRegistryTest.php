@@ -2,21 +2,21 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OwnerReplacementOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\UndeclaredOccurrenceOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
@@ -44,21 +44,21 @@ final class ScheduleRegistryWakeupProbe {
 }
 
 /**
- * Exercises schedule persistence through owner facades and retains whole-row CAS proofs.
+ * Exercises schedule persistence through scope facades and retains whole-row CAS proofs.
  *
  * @since   1.0.0
  * @version 1.0.0
  */
 #[CoversClass( ScheduleRegistry::class )]
-#[CoversClass( OwnerReplacementOutcome::class )]
-#[UsesClass( HookLogger::class )]
+#[CoversClass( ScopeReplacementOutcome::class )]
+#[UsesClass( EngineLogger::class )]
 final class ScheduleRegistryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const int NOW = 1_700_000_000;
 
-	private OwnerOperations $client_a;
-	private OwnerOperations $client_b;
+	private ScopeOperations $client_a;
+	private ScopeOperations $client_b;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private OptionRows $rows;
@@ -81,7 +81,7 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Boots two owner-bound facades against one deterministic production graph.
+	 * Boots two scope-bound facades against one deterministic production graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -93,11 +93,11 @@ final class ScheduleRegistryTest extends TestCase {
 		parent::setUp();
 
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client_a = $this->rig->operations( 'owner-a' );
-		$this->client_b = $this->rig->operations( 'owner-b' );
+		$this->client_a = $this->rig->operations( 'scope-a' );
+		$this->client_b = $this->rig->operations( 'scope-b' );
 		$this->client_a->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		$this->client_b->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
-		$this->fixtures = StoreFixtureBuilder::for_identity( 'owner-a:refresh-index' );
+		$this->fixtures = StoreFixtureBuilder::for_identity( 'scope-a:refresh-index' );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
 	}
 
@@ -123,61 +123,61 @@ final class ScheduleRegistryTest extends TestCase {
 	// region BEHAVIOR.
 
 	/**
-	 * Owner syncs preserve sibling slices, expose canonical identities, and remove only their own rows.
+	 * Scope syncs preserve sibling slices, expose canonical identities, and remove only their own rows.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_owner_sync_and_removal_are_visible_through_schedule_inspection(): void {
+	public function test_scope_sync_and_removal_are_visible_through_schedule_inspection(): void {
 		$nightly = self::schedule( 'nightly', 300 );
 		$hourly  = self::schedule( 'hourly', 3_600 );
 		self::assertInstanceOf( Success::class, $this->client_b->sync( array( $hourly ) ) );
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $nightly ) ) );
 
-		$owner_a = $this->owner_entries( 'owner-a' );
-		$owner_b = $this->owner_entries( 'owner-b' );
-		self::assertSame( array( 'owner-a:nightly' ), \array_column( $owner_a, 'identity' ) );
-		self::assertSame( 300, $owner_a[0]['recurrence'] );
-		self::assertSame( self::NOW + 300, $owner_a[0]['next_due'] );
-		self::assertSame( array( 'owner-b:hourly' ), \array_column( $owner_b, 'identity' ) );
-		self::assertSame( 3_600, $owner_b[0]['recurrence'] );
+		$scope_a = $this->scope_entries( 'scope-a' );
+		$scope_b = $this->scope_entries( 'scope-b' );
+		self::assertSame( array( 'scope-a:nightly' ), \array_column( $scope_a, 'identity' ) );
+		self::assertSame( 300, $scope_a[0]['recurrence'] );
+		self::assertSame( self::NOW + 300, $scope_a[0]['next_due'] );
+		self::assertSame( array( 'scope-b:hourly' ), \array_column( $scope_b, 'identity' ) );
+		self::assertSame( 3_600, $scope_b[0]['recurrence'] );
 
 		$replacement = self::schedule( 'nightly', 600 );
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $replacement ) ) );
-		$owner_a = $this->owner_entries( 'owner-a' );
-		self::assertSame( 600, $owner_a[0]['recurrence'] );
-		self::assertSame( self::NOW + 600, $owner_a[0]['next_due'] );
+		$scope_a = $this->scope_entries( 'scope-a' );
+		self::assertSame( 600, $scope_a[0]['recurrence'] );
+		self::assertSame( self::NOW + 600, $scope_a[0]['next_due'] );
 
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array() ) );
-		self::assertSame( array(), $this->owner_entries( 'owner-a' ) );
-		self::assertSame( array( 'owner-b:hourly' ), \array_column( $this->owner_entries( 'owner-b' ), 'identity' ) );
+		self::assertSame( array(), $this->scope_entries( 'scope-a' ) );
+		self::assertSame( array( 'scope-b:hourly' ), \array_column( $this->scope_entries( 'scope-b' ), 'identity' ) );
 	}
 
 	/**
-	 * Each owner persists an independent registration row without a global registry row.
+	 * Each scope persists an independent registration row without a global registry row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_owner_sync_persists_one_registration_row_per_owner(): void {
+	public function test_scope_sync_persists_one_registration_row_per_scope(): void {
 		$nightly = self::schedule( 'nightly', 300 );
 		$hourly  = self::schedule( 'hourly', 3_600 );
 		self::assertInstanceOf( Success::class, $this->client_b->sync( array( $hourly ) ) );
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $nightly ) ) );
 
-		$owner_a = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgje_schedule_registrations_owner-a'] ?? null );
-		$owner_b = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgje_schedule_registrations_owner-b'] ?? null );
+		$scope_a = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgje_schedule_registrations_scope-a'] ?? null );
+		$scope_b = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgje_schedule_registrations_scope-b'] ?? null );
 
-		self::assertIsArray( $owner_a );
-		self::assertIsArray( $owner_b );
-		self::assertSame( array( 'owner-a:nightly' ), \array_keys( $owner_a ) );
-		self::assertSame( self::registration( $nightly, self::NOW + 300 ), $owner_a['owner-a:nightly'] );
-		self::assertSame( array( 'owner-b:hourly' ), \array_keys( $owner_b ) );
-		self::assertSame( self::registration( $hourly, self::NOW + 3_600 ), $owner_b['owner-b:hourly'] );
+		self::assertIsArray( $scope_a );
+		self::assertIsArray( $scope_b );
+		self::assertSame( array( 'scope-a:nightly' ), \array_keys( $scope_a ) );
+		self::assertSame( self::registration( $nightly, self::NOW + 300 ), $scope_a['scope-a:nightly'] );
+		self::assertSame( array( 'scope-b:hourly' ), \array_keys( $scope_b ) );
+		self::assertSame( self::registration( $hourly, self::NOW + 3_600 ), $scope_b['scope-b:hourly'] );
 		self::assertArrayNotHasKey( 'a8csp_bgje_schedule_registrations', $this->rig->wpdb()->rows );
 	}
 
@@ -194,7 +194,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$entries = $this->owner_entries( 'owner-a' );
+		$entries = $this->scope_entries( 'scope-a' );
 		self::assertCount( 1, $entries );
 		self::assertSame( self::NOW + 300, $entries[0]['last_fired'] );
 		self::assertSame( self::NOW + 600, $entries[0]['next_due'] );
@@ -214,14 +214,14 @@ final class ScheduleRegistryTest extends TestCase {
 		$schedule = self::schedule( 'nightly', 300 );
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
 		$registry     = $this->registry();
-		$registration = $registry->registration( 'owner-a:nightly' );
+		$registration = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $registration );
 		self::assertIsArray( $registration->value );
 		$marked   = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 600, self::NOW + 300, 2, 3, 3, true );
 		$identity = self::identity( 'nightly' );
 		self::assertSame( RegistrationUpdateOutcome::Updated, $registry->update_registration( $identity, $schedule->fingerprint(), $marked ) );
 
-		$persisted = $registry->registration( 'owner-a:nightly' );
+		$persisted = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $persisted );
 		self::assertIsArray( $persisted->value );
 		self::assertSame( 3, $persisted->value['undeclared_occurrences'] ?? null );
@@ -230,7 +230,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->backend()->calls = array();
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
 
-		$reset = $registry->registration( 'owner-a:nightly' );
+		$reset = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $reset );
 		self::assertIsArray( $reset->value );
 		self::assertSame( self::NOW + 600, $reset->value['next_due'] ?? null );
@@ -247,7 +247,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
 		self::assertSame( array(), $this->queries_starting_with( 'UPDATE ' ) );
-		$fresh_episode = $registry->registration( 'owner-a:nightly' );
+		$fresh_episode = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $fresh_episode );
 		self::assertIsArray( $fresh_episode->value );
 		self::assertSame( 3, $fresh_episode->value['undeclared_occurrences'] ?? null );
@@ -255,7 +255,7 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * A declaration reset survives deletion of the selected owner row.
+	 * A declaration reset survives deletion of the selected scope row.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale Deletion at the reset CAS boundary forces the absent-row retry path, which must not reinsert the selected inactive episode.
@@ -266,27 +266,27 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_declaration_reset_survives_row_deletion_during_owner_update(): void {
+	public function test_declaration_reset_survives_row_deletion_during_scope_update(): void {
 		$schedule = self::schedule( 'nightly', 300 );
-		$owner    = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
 
-		$owner['registrations']['owner-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 3, undeclared_escalated: true );
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 3, undeclared_escalated: true );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope ) );
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->before_next(
 			'update',
 			static function ( WpdbLockSpy $wpdb ): void {
-				$option_name = ScheduleRegistry::option_name( 'owner-a' );
+				$option_name = ScheduleRegistry::option_name( 'scope-a' );
 				unset( $wpdb->rows[ $option_name ], $wpdb->autoload[ $option_name ] );
 			}
 		);
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner['declarations'] ), $owner['registrations'], reset_undeclared_episodes: true ) );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'], reset_undeclared_episodes: true ) );
 
-		$expected = $owner;
+		$expected = $scope;
 
-		$expected['registrations']['owner-a:nightly'] = self::registration( $schedule, self::NOW + 300 );
+		$expected['registrations']['scope-a:nightly'] = self::registration( $schedule, self::NOW + 300 );
 		self::assertSame( self::registration_bytes( $expected['registrations'] ), $this->raw_row() );
 		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
@@ -301,19 +301,19 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_numeric_owner_and_schedule_components_remain_canonical_strings(): void {
+	public function test_numeric_scope_and_schedule_components_remain_canonical_strings(): void {
 		$client = $this->rig->operations( '123' );
 		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		self::assertInstanceOf( Success::class, $client->sync( array( self::schedule( '456', 300 ) ) ) );
 
-		self::assertSame( array( '123:456' ), \array_column( $this->owner_entries( '123' ), 'identity' ) );
+		self::assertSame( array( '123:456' ), \array_column( $this->scope_entries( '123' ), 'identity' ) );
 	}
 
 	/**
 	 * Valid neighbors survive malformed rows without constructing serialized classes.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale The deliberately corrupt owner row bypasses production serialization and mixes an object payload with one valid registration, proving hardened inspection does not execute wakeup hooks or discard safe data.
+	 * @pin-rationale The deliberately corrupt scope row bypasses production serialization and mixes an object payload with one valid registration, proving hardened inspection does not execute wakeup hooks or discard safe data.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -325,18 +325,18 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
 		$raw = \maybe_serialize(
 			array(
-				'owner-a:nightly' => self::registration( $schedule, self::NOW + 300 ),
+				'scope-a:nightly' => self::registration( $schedule, self::NOW + 300 ),
 				'nightly'         => array( 'fingerprint' => 'unqualified' ),
 				'poison'          => new ScheduleRegistryWakeupProbe(),
 			)
 		);
 		self::assertIsString( $raw );
-		$this->rig->wpdb()->put( ScheduleRegistry::option_name( 'owner-a' ), $raw );
+		$this->rig->wpdb()->put( ScheduleRegistry::option_name( 'scope-a' ), $raw );
 		ScheduleRegistryWakeupProbe::$wakeups = 0;
 
-		$entries = $this->owner_entries( 'owner-a' );
+		$entries = $this->scope_entries( 'scope-a' );
 
-		self::assertSame( array( 'owner-a:nightly' ), \array_column( $entries, 'identity' ) );
+		self::assertSame( array( 'scope-a:nightly' ), \array_column( $entries, 'identity' ) );
 		self::assertSame( 0, ScheduleRegistryWakeupProbe::$wakeups );
 	}
 
@@ -350,7 +350,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_sync_reports_authoritative_read_failure_without_changing_registry_bytes(): void {
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( self::schedule( 'nightly', 300 ) ) ) );
-		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+		$option_name = ScheduleRegistry::option_name( 'scope-a' );
 		$before      = $this->rig->wpdb()->rows[ $option_name ] ?? null;
 		self::assertIsString( $before );
 		$this->rig->wpdb()->before_next(
@@ -367,18 +367,18 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertSame( array(), \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'schedule_recurring', 'unschedule' ), true ) ) ) );
 		self::assertSame( $before, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 		self::assertSame( array(), $this->write_queries() );
 	}
 
 	/**
-	 * Owner replacement distinguishes an authoritative read failure from write contention.
+	 * Scope replacement distinguishes an authoritative read failure from write contention.
 	 *
 	 * @return  void
 	 */
-	public function test_owner_replacement_reports_read_failure(): void {
-		$owner = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+	public function test_scope_replacement_reports_read_failure(): void {
+		$scope = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
 
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->before_next(
@@ -389,49 +389,49 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		$outcome = $registry->replace_owner( 'owner-a', self::internal_declarations( $owner['declarations'] ), $owner['registrations'] );
+		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'] );
 
-		self::assertSame( OwnerReplacementOutcome::ReadFailed, $outcome );
+		self::assertSame( ScopeReplacementOutcome::ReadFailed, $outcome );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 		self::assertSame( array(), $this->write_queries() );
 	}
 
 	/**
-	 * Owner replacement names an undecodable selected row as corruption.
+	 * Scope replacement names an undecodable selected row as corruption.
 	 *
 	 * @return  void
 	 */
-	public function test_owner_replacement_reports_corrupt_row(): void {
-		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+	public function test_scope_replacement_reports_corrupt_row(): void {
+		$option_name = ScheduleRegistry::option_name( 'scope-a' );
 		$poison      = 'poison-registry-row';
 		$this->rig->wpdb()->put( $option_name, $poison );
-		$owner    = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$scope    = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
 		$registry = $this->registry();
 
-		$outcome = $registry->replace_owner( 'owner-a', self::internal_declarations( $owner['declarations'] ), $owner['registrations'] );
+		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'] );
 
-		self::assertSame( OwnerReplacementOutcome::Corrupt, $outcome );
+		self::assertSame( ScopeReplacementOutcome::Corrupt, $outcome );
 		self::assertSame( $poison, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 	}
 
 	/**
-	 * Each listing call reports one warning for an undecodable owner row.
+	 * Each listing call reports one warning for an undecodable scope row.
 	 *
 	 * @return  void
 	 */
-	public function test_corrupt_owner_row_warns_once_per_listing_call(): void {
-		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+	public function test_corrupt_scope_row_warns_once_per_listing_call(): void {
+		$option_name = ScheduleRegistry::option_name( 'scope-a' );
 		$this->rig->wpdb()->put( $option_name, 'poison-registry-row' );
 		$this->rig->logger()->records = array();
 
 		$registry = $this->registry();
 
-		$owner = $registry->registrations_for( 'owner-a' );
+		$scope = $registry->registrations_for( 'scope-a' );
 
-		self::assertInstanceOf( Failure::class, $owner );
-		self::assertInstanceOf( SchedulingError::class, $owner->error );
-		self::assertSame( $option_name, $owner->error->context['option_name'] ?? null );
+		self::assertInstanceOf( Failure::class, $scope );
+		self::assertInstanceOf( SchedulingError::class, $scope->error );
+		self::assertSame( $option_name, $scope->error->context['option_name'] ?? null );
 		$records = $this->rig->logger()->records;
 		self::assertCount( 1, $records );
 		self::assertSame( 'warning', $records[0]['level'] ?? null );
@@ -443,7 +443,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $all );
 		self::assertIsArray( $all->value );
-		self::assertSame( array(), \array_filter( \array_keys( $all->value ), static fn ( int|string $identity ): bool => \is_string( $identity ) && \str_starts_with( $identity, 'owner-a:' ) ) );
+		self::assertSame( array(), \array_filter( \array_keys( $all->value ), static fn ( int|string $identity ): bool => \is_string( $identity ) && \str_starts_with( $identity, 'scope-a:' ) ) );
 		$records = $this->rig->logger()->records;
 		self::assertCount( 1, $records );
 		self::assertSame( 'warning', $records[0]['level'] ?? null );
@@ -451,20 +451,20 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * A registration without mandatory inactive-episode markers fails and reports its owner row.
+	 * A registration without mandatory inactive-episode markers fails and reports its scope row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registration_without_undeclared_markers_breaks_and_reports_the_owner_row(): void {
-		$complete   = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 ) );
+	public function test_registration_without_undeclared_markers_breaks_and_reports_the_scope_row(): void {
+		$complete   = $this->fixtures->schedule_registration( self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 ) );
 		$incomplete = StoreFixtureBuilder::schedule_registration_without_undeclared_markers( $complete );
 		$this->put_fixture( $incomplete );
 		$this->rig->logger()->records = array();
 
-		$read = $this->registry()->registrations_for( 'owner-a' );
+		$read = $this->registry()->registrations_for( 'scope-a' );
 
 		self::assertInstanceOf( Failure::class, $read );
 		self::assertInstanceOf( SchedulingError::class, $read->error );
@@ -480,10 +480,10 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_corrupt_owner_warning_is_guarded_against_reentrant_listeners(): void {
-		$option_name = ScheduleRegistry::option_name( 'owner-a' );
+	public function test_corrupt_scope_warning_is_guarded_against_reentrant_listeners(): void {
+		$option_name = ScheduleRegistry::option_name( 'scope-a' );
 		$this->rig->wpdb()->put( $option_name, 'poison-registry-row' );
-		$registry       = new ScheduleRegistry( $this->rows, new HookLogger() );
+		$registry       = new ScheduleRegistry( $this->rows, new EngineLogger() );
 		$listener_calls = 0;
 		$nested         = null;
 		$callbacks      = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
@@ -491,12 +491,12 @@ final class ScheduleRegistryTest extends TestCase {
 		$callbacks['a8csp_bgje/log']                 = static function () use ( $registry, &$listener_calls, &$nested ): void {
 			++$listener_calls;
 			if ( 1 === $listener_calls ) {
-				$nested = $registry->registrations_for( 'owner-a' );
+				$nested = $registry->registrations_for( 'scope-a' );
 			}
 		};
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
 
-		$outer = $registry->registrations_for( 'owner-a' );
+		$outer = $registry->registrations_for( 'scope-a' );
 
 		self::assertInstanceOf( Failure::class, $outer );
 		self::assertInstanceOf( Failure::class, $nested );
@@ -520,7 +520,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * Interleaved inactive-aging writers persist one warning transition.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Two writers crossing the threshold at the same owner-row update boundary must classify exactly one winning CAS as the escalation.
+	 * @pin-rationale Two writers crossing the threshold at the same scope-row update boundary must classify exactly one winning CAS as the escalation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -529,10 +529,10 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_interleaved_undeclared_aging_has_exactly_one_escalation_winner(): void {
 		$schedule = self::schedule( 'nightly', 300 );
-		$owner    = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
 
-		$owner['registrations']['owner-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope ) );
 		$nested = null;
 		$this->rig->wpdb()->before_next(
 			'update',
@@ -545,7 +545,7 @@ final class ScheduleRegistryTest extends TestCase {
 
 		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $nested );
 		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $outer );
-		$persisted = $this->registry()->registration( 'owner-a:nightly' );
+		$persisted = $this->registry()->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $persisted );
 		self::assertIsArray( $persisted->value );
 		self::assertSame( 3, $persisted->value['undeclared_occurrences'] ?? null );
@@ -562,11 +562,11 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_undeclared_aging_write_failure_leaves_the_selected_registration_unchanged(): void {
 		$schedule = self::schedule( 'nightly', 300 );
-		$owner    = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
 
-		$owner['registrations']['owner-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
 
-		$fixture = $this->fixtures->schedule_registration( $owner );
+		$fixture = $this->fixtures->schedule_registration( $scope );
 		$this->put_fixture( $fixture );
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
@@ -578,10 +578,10 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Owner replacement and final removal compare exact binary option bytes.
+	 * Scope replacement and final removal compare exact binary option bytes.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Fixture-built generations and literal SQL predicates prove owner updates cannot match a collation-equivalent but byte-distinct registry row.
+	 * @pin-rationale Fixture-built generations and literal SQL predicates prove scope updates cannot match a collation-equivalent but byte-distinct registry row.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -589,31 +589,31 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_owner_replace_and_final_remove_use_binary_exact_row_comparisons(): void {
+	public function test_scope_replace_and_final_remove_use_binary_exact_row_comparisons(): void {
 		$schedule    = self::schedule( 'nightly', 300 );
 		$replacement = self::schedule( 'nightly', 600 );
-		$initial     = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
-		$owner_a     = self::owner_fixture( 'owner-a', $replacement, self::NOW + 600 );
+		$initial     = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+		$scope_a     = self::scope_fixture( 'scope-a', $replacement, self::NOW + 600 );
 		$this->put_fixture( $this->fixtures->schedule_registration( $initial ) );
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
-		self::assertSame( self::registration_bytes( $owner_a['registrations'] ), $this->raw_row() );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		self::assertSame( self::registration_bytes( $scope_a['registrations'] ), $this->raw_row() );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner_a ) );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope_a ) );
 		$this->rig->wpdb()->recorded_queries = array();
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', array(), array() ) );
-		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'owner-a' ), $this->rig->wpdb()->rows );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', array(), array() ) );
+		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'DELETE ' )[0] );
 	}
 
 	/**
-	 * Interleaved owner writers update independent rows without retrying each other.
+	 * Interleaved scope writers update independent rows without retrying each other.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Production-built owner rows and an update-boundary interleave prove cross-owner writes do not share a CAS generation while both timing advances survive.
+	 * @pin-rationale Production-built scope rows and an update-boundary interleave prove cross-scope writes do not share a CAS generation while both timing advances survive.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -621,37 +621,37 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_interleaved_owner_writers_update_independent_rows_without_retry(): void {
+	public function test_interleaved_scope_writers_update_independent_rows_without_retry(): void {
 		$schedule_a    = self::schedule( 'nightly', 300 );
 		$schedule_b    = self::schedule( 'hourly', 3_600 );
 		$replacement_a = self::schedule( 'nightly', 600 );
 		$replacement_b = self::schedule( 'hourly', 7_200 );
-		$initial_a     = self::owner_fixture( 'owner-a', $schedule_a, self::NOW + 300 );
-		$initial_b     = self::owner_fixture( 'owner-b', $schedule_b, self::NOW + 3_600 );
-		$next_a        = self::owner_fixture( 'owner-a', $replacement_a, self::NOW + 600 );
-		$next_b        = self::owner_fixture( 'owner-b', $replacement_b, self::NOW + 7_200, self::NOW + 3_600 );
+		$initial_a     = self::scope_fixture( 'scope-a', $schedule_a, self::NOW + 300 );
+		$initial_b     = self::scope_fixture( 'scope-b', $schedule_b, self::NOW + 3_600 );
+		$next_a        = self::scope_fixture( 'scope-a', $replacement_a, self::NOW + 600 );
+		$next_b        = self::scope_fixture( 'scope-b', $replacement_b, self::NOW + 7_200, self::NOW + 3_600 );
 		$this->put_fixture( $this->fixtures->schedule_registration( $initial_a ) );
 		$this->put_fixture( $this->fixtures->schedule_registration( $initial_b ) );
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( $next_b ): void {
-				self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-b', self::internal_declarations( $next_b['declarations'] ), $next_b['registrations'] ) );
+				self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-b', self::internal_declarations( $next_b['declarations'] ), $next_b['registrations'] ) );
 			}
 		);
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
-		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row( 'owner-a' ) );
-		self::assertSame( self::registration_bytes( $next_b['registrations'] ), $this->raw_row( 'owner-b' ) );
+		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row( 'scope-a' ) );
+		self::assertSame( self::registration_bytes( $next_b['registrations'] ), $this->raw_row( 'scope-b' ) );
 	}
 
 	/**
-	 * Owner replacement preserves a delivery advance for an unchanged schedule definition.
+	 * Scope replacement preserves a delivery advance for an unchanged schedule definition.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The sync-vs-delivery rewind race occurs at the owner-row update boundary, where only a staged storage interleave proves the fresh delivery fence survives the replacement retry.
+	 * @pin-rationale The sync-vs-delivery rewind race occurs at the scope-row update boundary, where only a staged storage interleave proves the fresh delivery fence survives the replacement retry.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -659,12 +659,12 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_owner_replacement_preserves_concurrently_advanced_unchanged_registration(): void {
+	public function test_scope_replacement_preserves_concurrently_advanced_unchanged_registration(): void {
 		$nightly     = self::schedule( 'nightly', 300 );
 		$hourly      = self::schedule( 'hourly', 3_600 );
-		$stored      = self::owner_fixture( 'owner-a', $nightly, self::NOW + 300 );
-		$replacement = self::owner_fixture_many( 'owner-a', array( $nightly, $hourly ), array( self::NOW + 300, self::NOW + 3_600 ) );
-		$advanced    = $stored['registrations']['owner-a:nightly'];
+		$stored      = self::scope_fixture( 'scope-a', $nightly, self::NOW + 300 );
+		$replacement = self::scope_fixture_many( 'scope-a', array( $nightly, $hourly ), array( self::NOW + 300, self::NOW + 3_600 ) );
+		$advanced    = $stored['registrations']['scope-a:nightly'];
 
 		$advanced['next_due']      = self::NOW + 600;
 		$advanced['last_fired']    = self::NOW + 300;
@@ -679,16 +679,16 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
 
 		$expected                                     = $replacement;
-		$expected['registrations']['owner-a:nightly'] = $advanced;
+		$expected['registrations']['scope-a:nightly'] = $advanced;
 		self::assertSame( self::registration_bytes( $expected['registrations'] ), $this->raw_row() );
-		$registrations = $registry->registrations_for( 'owner-a' );
+		$registrations = $registry->registrations_for( 'scope-a' );
 		self::assertInstanceOf( Success::class, $registrations );
 		self::assertIsArray( $registrations->value );
-		self::assertArrayHasKey( 'owner-a:nightly', $registrations->value );
-		$persisted = $registrations->value['owner-a:nightly'];
+		self::assertArrayHasKey( 'scope-a:nightly', $registrations->value );
+		$persisted = $registrations->value['scope-a:nightly'];
 		self::assertIsArray( $persisted );
 		self::assertSame( self::NOW + 600, $persisted['next_due'] ?? null );
 		self::assertSame( self::NOW + 300, $persisted['last_fired'] ?? null );
@@ -697,7 +697,7 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Owner replacement performs no write when only an unchanged schedule's timing state advanced.
+	 * Scope replacement performs no write when only an unchanged schedule's timing state advanced.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The sync-vs-delivery rewind race cannot be excluded through public state alone; a zero-write assertion proves a stale sync snapshot merges to the freshly advanced delivery fence before equality comparison.
@@ -708,9 +708,9 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_owner_replacement_merges_advanced_unchanged_registration_without_writing(): void {
+	public function test_scope_replacement_merges_advanced_unchanged_registration_without_writing(): void {
 		$schedule              = self::schedule( 'nightly', 300 );
-		$stale                 = self::owner_fixture( 'owner-a', $schedule, self::NOW + 300 );
+		$stale                 = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
 		$advanced_registration = self::registration( $schedule, self::NOW + 600, self::NOW + 300 );
 
 		$advanced_registration['misfire_skips'] = 2;
@@ -718,46 +718,46 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$advanced = $stale;
 
-		$advanced['registrations']['owner-a:nightly'] = $advanced_registration;
+		$advanced['registrations']['scope-a:nightly'] = $advanced_registration;
 
 		$fixture = $this->fixtures->schedule_registration( $advanced );
 		$this->put_fixture( $fixture );
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $stale['declarations'] ), $stale['registrations'] ) );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $stale['declarations'] ), $stale['registrations'] ) );
 
 		self::assertSame( array(), $this->write_queries() );
 		self::assertSame( $fixture[1], $this->raw_row() );
 	}
 
 	/**
-	 * Owner replacement resets timing state when a schedule definition fingerprint changes.
+	 * Scope replacement resets timing state when a schedule definition fingerprint changes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_owner_replacement_keeps_fresh_timing_for_changed_fingerprint(): void {
-		$stored      = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 600, self::NOW + 300 );
-		$replacement = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 600 ), self::NOW + 600 );
+	public function test_scope_replacement_keeps_fresh_timing_for_changed_fingerprint(): void {
+		$stored      = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 600, self::NOW + 300 );
+		$replacement = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 600 ), self::NOW + 600 );
 		$this->put_fixture( $this->fixtures->schedule_registration( $stored ) );
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
 
-		$registrations = $registry->registrations_for( 'owner-a' );
+		$registrations = $registry->registrations_for( 'scope-a' );
 		self::assertInstanceOf( Success::class, $registrations );
 		self::assertIsArray( $registrations->value );
-		self::assertSame( $replacement['registrations']['owner-a:nightly'], $registrations->value['owner-a:nightly'] ?? null );
+		self::assertSame( $replacement['registrations']['scope-a:nightly'], $registrations->value['scope-a:nightly'] ?? null );
 	}
 
 	/**
-	 * A row deleted during owner replacement is reinserted from the caller's authoritative state.
+	 * A row deleted during scope replacement is reinserted from the caller's authoritative state.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Deleting the selected owner generation at the exact update boundary proves retry reconstructs only that owner's current declaration.
+	 * @pin-rationale Deleting the selected scope generation at the exact update boundary proves retry reconstructs only that scope's current declaration.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -766,31 +766,31 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_concurrent_row_deletion_reinserts_only_the_callers_slice(): void {
-		$owner_a = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
-		$owner_b = self::owner_fixture( 'owner-b', self::schedule( 'hourly', 3_600 ), self::NOW + 3_600 );
-		$next_a  = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 600 ), self::NOW + 600 );
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner_a ) );
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner_b ) );
-		$owner_b_raw = $this->raw_row( 'owner-b' );
+		$scope_a = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$scope_b = self::scope_fixture( 'scope-b', self::schedule( 'hourly', 3_600 ), self::NOW + 3_600 );
+		$next_a  = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 600 ), self::NOW + 600 );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope_a ) );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope_b ) );
+		$scope_b_raw = $this->raw_row( 'scope-b' );
 		$this->rig->wpdb()->before_next(
 			'update',
 			static function ( WpdbLockSpy $wpdb ): void {
-				$option_name = ScheduleRegistry::option_name( 'owner-a' );
+				$option_name = ScheduleRegistry::option_name( 'scope-a' );
 				unset( $wpdb->rows[ $option_name ], $wpdb->autoload[ $option_name ] );
 			}
 		);
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $this->registry()->replace_owner( 'owner-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row() );
-		self::assertSame( $owner_b_raw, $this->raw_row( 'owner-b' ) );
+		self::assertSame( $scope_b_raw, $this->raw_row( 'scope-b' ) );
 	}
 
 	/**
 	 * Delivery-state updates retry sibling changes and fence replaced or pruned definitions.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Owner-row CAS must merge a same-owner sibling update, but the same retry must refuse to resurrect a definition whose fingerprint changed or whose row disappeared.
+	 * @pin-rationale Scope-row CAS must merge a same-scope sibling update, but the same retry must refuse to resurrect a definition whose fingerprint changed or whose row disappeared.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -801,12 +801,12 @@ final class ScheduleRegistryTest extends TestCase {
 	public function test_registration_updates_merge_siblings_and_fence_superseded_or_pruned_rows(): void {
 		$nightly = self::schedule( 'nightly', 300 );
 		$hourly  = self::schedule( 'hourly', 3_600 );
-		$owner   = self::owner_fixture_many( 'owner-a', array( $nightly, $hourly ), array( self::NOW + 300, self::NOW + 3_600 ) );
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
-		$nightly_next               = $owner['registrations']['owner-a:nightly'];
+		$scope   = self::scope_fixture_many( 'scope-a', array( $nightly, $hourly ), array( self::NOW + 300, self::NOW + 3_600 ) );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope ) );
+		$nightly_next               = $scope['registrations']['scope-a:nightly'];
 		$nightly_next['next_due']   = self::NOW + 600;
 		$nightly_next['last_fired'] = self::NOW + 300;
-		$hourly_next                = $owner['registrations']['owner-a:hourly'];
+		$hourly_next                = $scope['registrations']['scope-a:hourly'];
 		$hourly_next['last_fired']  = self::NOW + 111;
 		$this->rig->wpdb()->before_next(
 			'update',
@@ -816,13 +816,13 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 
 		self::assertSame( RegistrationUpdateOutcome::Updated, $this->registry()->update_registration( self::identity( 'nightly' ), $nightly_next['fingerprint'], $nightly_next ) );
-		$expected                                     = $owner;
-		$expected['registrations']['owner-a:nightly'] = $nightly_next;
-		$expected['registrations']['owner-a:hourly']  = $hourly_next;
+		$expected                                     = $scope;
+		$expected['registrations']['scope-a:nightly'] = $nightly_next;
+		$expected['registrations']['scope-a:hourly']  = $hourly_next;
 		self::assertSame( self::registration_bytes( $expected['registrations'] ), $this->raw_row() );
 
-		$replacement = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 600 ), self::NOW + 1_200 );
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
+		$replacement = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 600 ), self::NOW + 1_200 );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope ) );
 		$replacement_fixture = $this->fixtures->schedule_registration( $replacement );
 		$this->rig->wpdb()->before_next(
 			'update',
@@ -833,16 +833,16 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertSame( RegistrationUpdateOutcome::Superseded, $this->registry()->update_registration( self::identity( 'nightly' ), $nightly_next['fingerprint'], $nightly_next ) );
 		self::assertSame( $replacement_fixture[1], $this->raw_row() );
 
-		$this->put_fixture( $this->fixtures->schedule_registration( $owner ) );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope ) );
 		$this->rig->wpdb()->before_next(
 			'update',
 			static function ( WpdbLockSpy $wpdb ): void {
-				$option_name = ScheduleRegistry::option_name( 'owner-a' );
+				$option_name = ScheduleRegistry::option_name( 'scope-a' );
 				unset( $wpdb->rows[ $option_name ], $wpdb->autoload[ $option_name ] );
 			}
 		);
 		self::assertSame( RegistrationUpdateOutcome::Pruned, $this->registry()->update_registration( self::identity( 'nightly' ), $nightly_next['fingerprint'], $nightly_next ) );
-		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'owner-a' ), $this->rig->wpdb()->rows );
+		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
 	}
 
 	/**
@@ -858,10 +858,10 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_registration_update_write_failure_returns_without_a_diagnostic_read(): void {
-		$owner   = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
-		$fixture = $this->fixtures->schedule_registration( $owner );
+		$scope   = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$fixture = $this->fixtures->schedule_registration( $scope );
 		$this->put_fixture( $fixture );
-		$next               = $owner['registrations']['owner-a:nightly'];
+		$next               = $scope['registrations']['scope-a:nightly'];
 		$next['next_due']   = self::NOW + 600;
 		$next['last_fired'] = self::NOW + 300;
 
@@ -878,7 +878,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * An unchanged row after a failed exact update reports failure without retaining declarations.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale A typed write-failed outcome prevents request-local declarations from claiming an unpersisted owner state without entering the comparison-loss retry path.
+	 * @pin-rationale A typed write-failed outcome prevents request-local declarations from claiming an unpersisted scope state without entering the comparison-loss retry path.
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @since   1.0.0
@@ -886,16 +886,16 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_failed_exact_owner_update_leaves_bytes_and_declarations_unchanged(): void {
-		$owner_a   = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
-		$incumbent = self::owner_fixture( 'owner-a', self::schedule( 'hourly', 3_600 ), self::NOW + 3_600 );
+	public function test_failed_exact_scope_update_leaves_bytes_and_declarations_unchanged(): void {
+		$scope_a   = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$incumbent = self::scope_fixture( 'scope-a', self::schedule( 'hourly', 3_600 ), self::NOW + 3_600 );
 		$fixture   = $this->fixtures->schedule_registration( $incumbent );
 		$this->put_fixture( $fixture );
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
+		self::assertSame( ScopeReplacementOutcome::CasFailed, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
 
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
@@ -904,7 +904,7 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Same-owner replacement retries and wins after an ABA row restoration.
+	 * Same-scope replacement retries and wins after an ABA row restoration.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A rival generation at the update boundary and restoration at the retry-read boundary reproduce A-to-B-to-A; only a staged storage interleave proves the comparison loss remains retryable when the selected bytes reappear.
@@ -915,11 +915,11 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_same_owner_replace_retries_and_wins_after_an_aba_restore(): void {
-		$owner_a    = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+	public function test_same_scope_replace_retries_and_wins_after_an_aba_restore(): void {
+		$scope_a    = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
 		$schedule_b = self::schedule( 'hourly', 3_600 );
-		$initial    = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_600 ) );
-		$rival      = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_601 ) );
+		$initial    = $this->fixtures->schedule_registration( self::scope_fixture( 'scope-a', $schedule_b, self::NOW + 3_600 ) );
+		$rival      = $this->fixtures->schedule_registration( self::scope_fixture( 'scope-a', $schedule_b, self::NOW + 3_601 ) );
 		$this->put_fixture( $initial );
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->before_next(
@@ -936,14 +936,14 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::Persisted, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
+		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
 		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
-		self::assertSame( self::registration_bytes( $owner_a['registrations'] ), $this->raw_row() );
+		self::assertSame( self::registration_bytes( $scope_a['registrations'] ), $this->raw_row() );
 	}
 
 	/**
-	 * Same-owner replacement stops after five consecutive comparison losses.
+	 * Same-scope replacement stops after five consecutive comparison losses.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The exact five-attempt bound (UPDATE_ATTEMPTS=5) is the liveness contract; an unbounded loop under permanent contention would hang schedule synchronization.
@@ -954,16 +954,16 @@ final class ScheduleRegistryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_same_owner_replace_stops_after_five_consecutive_cas_losses(): void {
-		$owner_a    = self::owner_fixture( 'owner-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+	public function test_same_scope_replace_stops_after_five_consecutive_cas_losses(): void {
+		$scope_a    = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
 		$schedule_b = self::schedule( 'hourly', 3_600 );
-		$fixture    = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_600 ) );
+		$fixture    = $this->fixtures->schedule_registration( self::scope_fixture( 'scope-a', $schedule_b, self::NOW + 3_600 ) );
 		$this->put_fixture( $fixture );
 		$this->rig->wpdb()->recorded_queries = array();
 
 		$last_rival = $fixture;
 		for ( $attempt = 1; $attempt <= 5; ++$attempt ) {
-			$rival      = $this->fixtures->schedule_registration( self::owner_fixture( 'owner-a', $schedule_b, self::NOW + 3_600 + $attempt ) );
+			$rival      = $this->fixtures->schedule_registration( self::scope_fixture( 'scope-a', $schedule_b, self::NOW + 3_600 + $attempt ) );
 			$last_rival = $rival;
 			$this->rig->wpdb()->before_next(
 				'update',
@@ -974,7 +974,7 @@ final class ScheduleRegistryTest extends TestCase {
 		}
 		$registry = $this->registry();
 
-		self::assertSame( OwnerReplacementOutcome::CasFailed, $registry->replace_owner( 'owner-a', self::internal_declarations( $owner_a['declarations'] ), $owner_a['registrations'] ) );
+		self::assertSame( ScopeReplacementOutcome::CasFailed, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
 		self::assertCount( 5, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 5, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'INSERT ' ) );
@@ -1003,7 +1003,7 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Returns one canonical owner-qualified schedule identity.
+	 * Returns one canonical scope-qualified schedule identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1013,7 +1013,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  Identity
 	 */
 	private static function identity( string $name ): Identity {
-		return Identity::compose( 'owner-a', $name );
+		return Identity::compose( 'scope-a', $name );
 	}
 
 	/**
@@ -1039,41 +1039,41 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
-	 * Returns inspected entries belonging to exactly one owner.
+	 * Returns inspected entries belonging to exactly one scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Owner filter.
+	 * @param   string $scope Scope filter.
 	 *
 	 * @return  list<array<string, mixed>>
 	 */
-	private function owner_entries( string $owner ): array {
-		$snapshot = $this->rig->inspection()->schedules( $owner );
+	private function scope_entries( string $scope ): array {
+		$snapshot = $this->rig->inspection()->schedules( $scope );
 		self::assertNotNull( $snapshot );
 
 		return $snapshot['entries'];
 	}
 
 	/**
-	 * Returns one complete owner fixture request.
+	 * Returns one complete scope fixture request.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $owner       Owner identifier.
+	 * @param   string   $scope       Scope identifier.
 	 * @param   Schedule $schedule    Schedule declaration.
 	 * @param   int      $next_due    Next occurrence timestamp.
 	 * @param   int|null $last_fired  Last occurrence timestamp.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
+	 * @return  array{scope: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
-	private static function owner_fixture( string $owner, Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
-		return self::owner_fixture_many( $owner, array( $schedule ), array( $next_due ), array( $last_fired ) );
+	private static function scope_fixture( string $scope, Schedule $schedule, int $next_due, ?int $last_fired = null ): array {
+		return self::scope_fixture_many( $scope, array( $schedule ), array( $next_due ), array( $last_fired ) );
 	}
 
 	/**
-	 * Returns one owner fixture request containing several schedules.
+	 * Returns one scope fixture request containing several schedules.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -1082,27 +1082,27 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @phpstan-param list<int> $next_due
 	 * @phpstan-param list<int|null> $last_fired
 	 *
-	 * @param   string $owner       Owner identifier.
+	 * @param   string $scope       Scope identifier.
 	 * @param   array  $schedules   Schedule declarations.
 	 * @param   array  $next_due    Next occurrence timestamps.
 	 * @param   array  $last_fired  Last occurrence timestamps.
 	 *
-	 * @return  array{owner: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
+	 * @return  array{scope: string, declarations: array<string, array{schedule: Schedule, job: string}>, registrations: array<string, array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool}>}
 	 */
-	private static function owner_fixture_many( string $owner, array $schedules, array $next_due, array $last_fired = array() ): array {
+	private static function scope_fixture_many( string $scope, array $schedules, array $next_due, array $last_fired = array() ): array {
 		$declarations  = array();
 		$registrations = array();
 		foreach ( $schedules as $index => $schedule ) {
-			$identity                   = $owner . ':' . $schedule->name;
+			$identity                   = $scope . ':' . $schedule->name;
 			$declarations[ $identity ]  = array(
 				'schedule' => $schedule,
-				'job'      => $owner . ':' . $schedule->job,
+				'job'      => $scope . ':' . $schedule->job,
 			);
 			$registrations[ $identity ] = self::registration( $schedule, $next_due[ $index ], $last_fired[ $index ] ?? null );
 		}
 
 		return array(
-			'owner'         => $owner,
+			'scope'         => $scope,
 			'declarations'  => $declarations,
 			'registrations' => $registrations,
 		);
@@ -1135,7 +1135,7 @@ final class ScheduleRegistryTest extends TestCase {
 	/**
 	 * Returns independently serialized schedule-registration bytes.
 	 *
-	 * The test owns this encoding so expected bytes do not execute ScheduleRegistry::replace_owner().
+	 * The test owns this encoding so expected bytes do not execute ScheduleRegistry::replace_scope().
 	 *
 	 * @phpstan-param array<string, array{
 	 *     fingerprint: string,
@@ -1190,12 +1190,12 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Owner identifier.
+	 * @param   string $scope Scope identifier.
 	 *
 	 * @return  string
 	 */
-	private function raw_row( string $owner = 'owner-a' ): string {
-		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( $owner ) ] ?? null;
+	private function raw_row( string $scope = 'scope-a' ): string {
+		$raw = $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( $scope ) ] ?? null;
 		self::assertIsString( $raw );
 
 		return $raw;

@@ -62,7 +62,7 @@ final readonly class LatestRunPointer {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $identity Complete owner-qualified job or chunked job identity.
+	 * @param   string     $identity Complete scope-qualified job or chunked job identity.
 	 * @param   OptionRows $rows     Authoritative raw pointer-row I/O.
 	 */
 	public function __construct(

@@ -2,21 +2,21 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -39,13 +39,13 @@ final class ActionDeliveriesTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 	private const string NAME     = 'email-digest';
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
+	private const string SCOPE    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -502,7 +502,7 @@ final class ActionDeliveriesTest extends TestCase {
 	public function test_unregistered_job_delivery_terminalizes_the_live_run(): void {
 		$this->rig->tear_down();
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client   = $this->rig->operations( self::OWNER );
+		$this->client   = $this->rig->operations( self::SCOPE );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->seed_pending_run();
 
@@ -568,7 +568,7 @@ final class ActionDeliveriesTest extends TestCase {
 	private function boot( ?JobOptions $options = null ): void {
 		$this->overlap_key_resolver = null;
 		$this->rig                  = EngineRig::set_up( self::NOW );
-		$this->client               = $this->rig->operations( self::OWNER );
+		$this->client               = $this->rig->operations( self::SCOPE );
 		$this->job                  = new RecordingJob( self::NAME );
 		if ( null === $options ) {
 			$options = new JobOptions(
@@ -601,7 +601,7 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * Enqueues the deterministic job through the owner-bound facade.
+	 * Enqueues the deterministic job through the scope-bound facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

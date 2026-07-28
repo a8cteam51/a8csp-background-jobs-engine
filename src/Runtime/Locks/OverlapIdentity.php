@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 
@@ -43,7 +43,7 @@ final readonly class OverlapIdentity {
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $kind     Persisted kind key.
-	 * @param   Identity                $identity Complete owner-qualified work identity.
+	 * @param   Identity                $identity Complete scope-qualified work identity.
 	 * @param   JobOptions              $options  Registered policy declaration.
 	 * @param   array<array-key, mixed> $args     Work arguments.
 	 *
@@ -91,7 +91,7 @@ final readonly class OverlapIdentity {
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $kind     Persisted kind key.
-	 * @param   Identity                $identity Complete owner-qualified work identity.
+	 * @param   Identity                $identity Complete scope-qualified work identity.
 	 * @param   array<array-key, mixed> $args     Work arguments.
 	 *
 	 * @return  string|Failure<EngineError>

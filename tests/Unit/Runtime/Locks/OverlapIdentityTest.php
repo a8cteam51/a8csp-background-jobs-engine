@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Locks;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -54,7 +54,7 @@ final class OverlapIdentityTest extends TestCase {
 			'ratio'   => 1.0,
 			'nested'  => array( 'mode' => 'incremental' ),
 		);
-		$identity = Identity::compose( 'owner', 'catalog-sync' );
+		$identity = Identity::compose( 'scope', 'catalog-sync' );
 
 		$canonical = $resolver->resolve( 'job', $identity, new JobOptions(), $args );
 		$opaque    = $resolver->resolve( 'job', $identity, new JobOptions( overlap_key: static fn ( array $start_args ): string => "catalog\0\xFF" ), $args );

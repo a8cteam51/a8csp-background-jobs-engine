@@ -2,13 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 
@@ -41,7 +41,7 @@ final readonly class RunsCommand {
 	 * : Operation to perform: list or cancel.
 	 *
 	 * <identity>
-	 * : Composed `{owner}:{name}` job or chunked job identity.
+	 * : Composed `{scope}:{name}` job or chunked job identity.
 	 *
 	 * [<run_id>]
 	 * : Retained engine-run identifier. Required by cancel.
@@ -126,7 +126,7 @@ final readonly class RunsCommand {
 			if ( null === $identity ) {
 				return array(
 					'action'  => 'error',
-					'message' => 'Cancel identity is invalid; use a composed {owner}:{name} identity.',
+					'message' => 'Cancel identity is invalid; use a composed {scope}:{name} identity.',
 				);
 			}
 			$run_id = RunId::tryFrom( $args[2] );
@@ -155,7 +155,7 @@ final readonly class RunsCommand {
 		if ( null === $identity ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Run identity is invalid; use a composed {owner}:{name} identity.',
+				'message' => 'Run identity is invalid; use a composed {scope}:{name} identity.',
 			);
 		}
 
@@ -183,7 +183,7 @@ final readonly class RunsCommand {
 	 * : Operation to perform: list, retry, or purge.
 	 *
 	 * [<identity>]
-	 * : Composed `{owner}:{name}` job or chunked job identity. Required by retry and by an identity-scoped purge.
+	 * : Composed `{scope}:{name}` job or chunked job identity. Required by retry and by an identity-scoped purge.
 	 *
 	 * [<run_id>]
 	 * : Retained failed-run identifier. Required by retry.
@@ -191,8 +191,8 @@ final readonly class RunsCommand {
 	 * [--all]
 	 * : Purge every failed-run store. Valid only with purge and without an identity.
 	 *
-	 * [--owner=<owner>]
-	 * : Show only failed runs belonging to the exact owner. Valid only with list.
+	 * [--scope=<scope>]
+	 * : Show only failed runs belonging to the exact scope. Valid only with list.
 	 *
 	 * [--format=<format>]
 	 * : Render list output in the selected format. Defaults to table.
@@ -208,7 +208,7 @@ final readonly class RunsCommand {
 	 * ## EXAMPLES
 	 *
 	 *     $ wp a8csp-bgje failed-runs list
-	 *     $ wp a8csp-bgje failed-runs list --owner=consumer-plugin --format=json
+	 *     $ wp a8csp-bgje failed-runs list --scope=consumer-plugin --format=json
 	 *     $ wp a8csp-bgje failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 	 *     $ wp a8csp-bgje failed-runs purge consumer-plugin:email-digest
 	 *     $ wp a8csp-bgje failed-runs purge --all
@@ -235,7 +235,7 @@ final readonly class RunsCommand {
 
 		switch ( $request['action'] ) {
 			case 'list':
-				$this->list_failed_runs( $request['owner'], $request['format'] );
+				$this->list_failed_runs( $request['scope'], $request['format'] );
 				break;
 			case 'retry':
 				$this->retry_failed_run( $request['identity'], $request['run_id'] );
@@ -258,7 +258,7 @@ final readonly class RunsCommand {
 	 * @param   array<string, mixed> $assoc_args Named command arguments.
 	 *
 	 * @return  array{action: 'error', message: string}
-	 *          |array{action: 'list', owner: string|null, format: string}
+	 *          |array{action: 'list', scope: string|null, format: string}
 	 *          |array{action: 'retry', identity: Identity, run_id: RunId}
 	 *          |array{action: 'purge', identity: Identity|null}
 	 */
@@ -273,30 +273,30 @@ final readonly class RunsCommand {
 		$action = $args[0];
 		switch ( $action ) {
 			case 'list':
-				if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'owner', 'format' ) ) ) {
+				if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'scope', 'format' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'List accepts only --owner and --format; use wp a8csp-bgje failed-runs list [--owner=<owner>] [--format=<format>].',
+						'message' => 'List accepts only --scope and --format; use wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>].',
 					);
 				}
 
-				$owner = null;
-				if ( \array_key_exists( 'owner', $assoc_args ) ) {
-					$owner_argument = $assoc_args['owner'];
-					if ( ! \is_string( $owner_argument ) ) {
+				$scope = null;
+				if ( \array_key_exists( 'scope', $assoc_args ) ) {
+					$scope_argument = $assoc_args['scope'];
+					if ( ! \is_string( $scope_argument ) ) {
 						return array(
 							'action'  => 'error',
-							'message' => 'List owner is invalid; pass a value with --owner=<owner>.',
+							'message' => 'List scope is invalid; pass a value with --scope=<scope>.',
 						);
 					}
 
-					$owner = $owner_argument;
+					$scope = $scope_argument;
 					try {
-						Identity::validate_owner( $owner, true );
+						Identity::validate_scope( $scope, true );
 					} catch ( \InvalidArgumentException ) {
 						return array(
 							'action'  => 'error',
-							'message' => 'List owner is invalid; pass a canonical owner with --owner=<owner>.',
+							'message' => 'List scope is invalid; pass a canonical scope with --scope=<scope>.',
 						);
 					}
 				}
@@ -312,7 +312,7 @@ final readonly class RunsCommand {
 
 				return array(
 					'action' => 'list',
-					'owner'  => $owner,
+					'scope'  => $scope,
 					'format' => $format,
 				);
 			case 'retry':
@@ -326,7 +326,7 @@ final readonly class RunsCommand {
 				if ( null === $identity ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Retry identity is invalid; use a composed {owner}:{name} identity.',
+						'message' => 'Retry identity is invalid; use a composed {scope}:{name} identity.',
 					);
 				}
 				$run_id = RunId::tryFrom( $args[2] );
@@ -362,7 +362,7 @@ final readonly class RunsCommand {
 					if ( null === $identity ) {
 						return array(
 							'action'  => 'error',
-							'message' => 'Purge identity is invalid; use a composed {owner}:{name} identity.',
+							'message' => 'Purge identity is invalid; use a composed {scope}:{name} identity.',
 						);
 					}
 
@@ -473,22 +473,22 @@ final readonly class RunsCommand {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $owner  Exact owner filter, or null for every owner.
+	 * @param   string|null $scope  Exact scope filter, or null for every scope.
 	 * @param   string      $format WP-CLI output format.
 	 *
 	 * @return  void
 	 */
-	private function list_failed_runs( ?string $owner, string $format ): void {
+	private function list_failed_runs( ?string $scope, string $format ): void {
 		$identities = $this->failed_run_identities();
 		if ( null === $identities ) {
 			\WP_CLI::error( 'The database check for failed-run stores failed; resolve the database error and try again.' );
 			return;
 		}
-		if ( null !== $owner ) {
+		if ( null !== $scope ) {
 			$identities = \array_values(
 				\array_filter(
 					$identities,
-					static fn ( Identity $identity ): bool => $owner === $identity->owner()
+					static fn ( Identity $identity ): bool => $scope === $identity->scope()
 				)
 			);
 		}
@@ -501,7 +501,7 @@ final readonly class RunsCommand {
 		 * @var \wpdb $wpdb
 		 */
 		$option_rows        = new OptionRows( $wpdb );
-		$logger             = new HookLogger();
+		$logger             = new EngineLogger();
 		$groups             = array();
 		$unreadable_entries = 0;
 		$unreadable_rows    = 0;
@@ -523,7 +523,7 @@ final readonly class RunsCommand {
 			}
 		}
 
-		FailedRunOutput::render( $groups, $owner, $format, $unreadable_entries, $unreadable_rows );
+		FailedRunOutput::render( $groups, $scope, $format, $unreadable_entries, $unreadable_rows );
 	}
 
 	/**
@@ -580,7 +580,7 @@ final readonly class RunsCommand {
 		 * @var \wpdb $wpdb
 		 */
 		$rows   = new OptionRows( $wpdb );
-		$logger = new HookLogger();
+		$logger = new EngineLogger();
 		$count  = 0;
 		foreach ( $identities as $store_identity ) {
 			$purged = new FailedRunStore( $store_identity, $rows, $logger )->purge();
@@ -592,8 +592,8 @@ final readonly class RunsCommand {
 			$count += $purged;
 		}
 
-		$scope = null === $identity ? 'across all names' : \sprintf( 'for "%s"', (string) $identity );
-		\WP_CLI::success( \sprintf( 'Purged %1$d failed run%2$s %3$s.', $count, 1 === $count ? '' : 's', $scope ) );
+		$range = null === $identity ? 'across all names' : \sprintf( 'for "%s"', (string) $identity );
+		\WP_CLI::success( \sprintf( 'Purged %1$d failed run%2$s %3$s.', $count, 1 === $count ? '' : 's', $range ) );
 	}
 
 	/**

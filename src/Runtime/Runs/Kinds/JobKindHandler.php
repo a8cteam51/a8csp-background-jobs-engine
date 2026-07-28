@@ -4,13 +4,13 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContext;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
@@ -39,6 +39,9 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 
 	/**
 	 * Persisted key owned by this handler.
+	 *
+	 * Handler resolution keys the registry by this value and looks it up by a declaration's
+	 * `JobKind`, so `JobKind::job()` carries a frozen public copy that must stay byte-equal.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -100,7 +103,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity   Complete owner-qualified job identity.
+	 * @param   Identity      $identity   Complete scope-qualified job identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
 	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecutionInterface.
@@ -122,7 +125,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job identity.
+	 * @param   Identity $identity Complete scope-qualified job identity.
 	 *
 	 * @return  JobExecutionInterface|null
 	 */
@@ -139,7 +142,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job identity.
+	 * @param   Identity $identity Complete scope-qualified job identity.
 	 *
 	 * @return  JobOptions|null
 	 */
@@ -179,22 +182,22 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Returns the first durable job delivery for the requested delay.
+	 * Returns the first durable job delivery for the requested absolute time.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $scheduled_at Delivery timestamp.
-	 * @param   int $delay        Requested delay in seconds.
-	 * @param   int $priority     Scheduler priority.
+	 * @param   int|null $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
+	 * @param   int      $now      Admission timestamp.
+	 * @param   int      $priority Scheduler priority.
 	 *
 	 * @return  PendingAction
 	 */
 	#[\Override]
-	public function initial_pending( int $scheduled_at, int $delay, int $priority ): PendingAction {
-		return 0 === $delay
+	public function initial_pending( ?int $fire_at, int $now, int $priority ): PendingAction {
+		return null === $fire_at || $fire_at <= $now
 			? PendingAction::async( 'run', $priority )
-			: PendingAction::single( 'run', $scheduled_at, $priority );
+			: PendingAction::single( 'run', $fire_at, $priority );
 	}
 
 	/**
@@ -203,7 +206,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified job identity.
+	 * @param   Identity $identity  Complete scope-qualified job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Persisted running state.
 	 * @param   RunStore $run_store Active-run store.
@@ -292,7 +295,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified job identity.
+	 * @param   Identity $identity  Complete scope-qualified job identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
@@ -346,6 +349,21 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	#[\Override]
 	public function failure_error( \Throwable $throwable ): EngineError {
 		return EngineError::from_throwable( $throwable );
+	}
+
+	/**
+	 * Permits retry policy for ordinary job execution failures.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable $throwable Execution failure.
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
+	public function is_failure_retryable( \Throwable $throwable ): bool {
+		return true;
 	}
 
 	/**

@@ -40,6 +40,7 @@
     "phpcompatibility/php-compatibility": "^10@alpha",
     "phpcompatibility/phpcompatibility-paragonie": "^2@alpha",
 
+    "infection/infection": "^0.34",
     "phpunit/phpunit": "^13",
     "wp-cli/i18n-command": "^2",
 
@@ -50,8 +51,9 @@
 
   "autoload": {
     "psr-4": {
-      "A8C\\SpecialProjects\\BackgroundJobsEngine\\": ["src/", "models/", "portals/"]
-    }
+      "A8C\\SpecialProjects\\BackgroundJobsEngine\\": ["src/", "portals/"]
+    },
+    "classmap": ["models/"]
   },
   "autoload-dev": {
     "psr-4": {

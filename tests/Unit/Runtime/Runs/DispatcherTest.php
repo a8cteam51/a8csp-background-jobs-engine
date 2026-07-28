@@ -2,18 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -21,6 +20,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -32,7 +32,7 @@ use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises job admission and failed-run retry through owner-bound facades.
+ * Exercises job admission and failed-run retry through scope-bound facades.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -45,17 +45,17 @@ final class DispatcherTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY         = self::SCOPE . ':' . self::NAME;
 	private const string INCUMBENT_RUN_ID = '00000000001699999998-0000000000000000040';
 	private const string NAME             = 'email-digest';
 	private const int NOW                 = 1_700_000_000;
 	private const string OTHER_RUN_ID     = '00000000001700000001-0000000000000000043';
-	private const string OWNER            = 'runs-tests';
+	private const string SCOPE            = 'runs-tests';
 	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
 	private const string UNKNOWN_NAME     = 'unknown';
-	private const string UNKNOWN_IDENTITY = self::OWNER . ':' . self::UNKNOWN_NAME;
+	private const string UNKNOWN_IDENTITY = self::SCOPE . ':' . self::UNKNOWN_NAME;
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -132,7 +132,7 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$call = $this->single_run_delivery_call();
 		self::assertSame( 23, $call['args']['priority'] ?? null );
-		$run = \get_option( $this->run_option_name() );
+		$run = $this->option( $this->run_option_name() );
 		self::assertIsArray( $run );
 		self::assertSame( 'job', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
@@ -143,6 +143,28 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( array( array( $run_id, self::ARGS ) ), $started );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
+	}
+
+	/**
+	 * Imperative admission resolves an explicit priority before the job and engine defaults.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $job_priority      Registered job default.
+	 * @param   int|null $dispatch_priority Explicit dispatch priority.
+	 * @param   int      $expected          Resolved backend priority.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'priority_ladder_provider' )]
+	public function test_dispatch_resolves_the_priority_ladder_at_admission( ?int $job_priority, ?int $dispatch_priority, int $expected ): void {
+		$this->restart_with_job_priority( $job_priority );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS, priority: $dispatch_priority );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $expected, $this->single_run_delivery_call()['args']['priority'] ?? null );
 	}
 
 	/**
@@ -352,28 +374,6 @@ final class DispatcherTest extends TestCase {
 			'value'  => &$value,
 			'mirror' => &$value,
 		);
-		$run_option = $this->run_option_name();
-		$wpdb       = $this->rig->wpdb();
-		$GLOBALS['a8csp_bgje_test_before_add_option'] = static function ( string $option, mixed $option_value, string $deprecated, bool|string|null $autoload ) use ( $run_option, $wpdb ): void {
-			if ( $run_option !== $option ) {
-				return;
-			}
-
-			$raw = \maybe_serialize( $option_value );
-			self::assertIsString( $raw );
-			$wpdb->put( $option, $raw );
-			$wpdb->before_next(
-				'update',
-				static function () use ( $option ): void {
-					$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
-					self::assertIsArray( $options );
-
-					// The option stub mirrors add_option() outside the authoritative wpdb row, so its shadow must not survive the raw-row fixture.
-					unset( $options[ $option ] );
-					$GLOBALS['a8csp_bgje_test_options'] = $options;
-				}
-			);
-		};
 
 		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
@@ -390,7 +390,7 @@ final class DispatcherTest extends TestCase {
 		$this->assert_failure_code( $result, ErrorCode::ExecutionFailed );
 		self::assertSame( 'accepted', $value );
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
-		$snapshot = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
+		$snapshot = $this->rig->inspection()->runs( Identity::compose( self::SCOPE, self::NAME ) );
 		self::assertSame( array(), $snapshot['live'] );
 		self::assertSame( 'failed', $snapshot['history'][0]['outcome'] ?? null );
 		self::assertTrue( $snapshot['history'][0]['failed_store'] ?? false );
@@ -730,11 +730,15 @@ final class DispatcherTest extends TestCase {
 		$this->rig->backend()->before_next(
 			'enqueue_async',
 			function () use ( $run_option, $lock_option, &$advanced_state, &$lock_raw ): void {
-				$advanced = \get_option( $run_option );
+				$advanced_raw = $this->rig->wpdb()->rows[ $run_option ] ?? null;
+				self::assertIsString( $advanced_raw );
+				$advanced = \maybe_unserialize( $advanced_raw );
 				self::assertIsArray( $advanced );
 				$advanced['action_sequence'] = 2;
 				$advanced_state              = $advanced;
-				self::assertTrue( \update_option( $run_option, $advanced, false ) );
+				$replacement_raw             = \maybe_serialize( $advanced );
+				self::assertIsString( $replacement_raw );
+				$this->rig->wpdb()->put( $run_option, $replacement_raw );
 				$lock_raw = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
 				self::assertIsString( $lock_raw );
 			}
@@ -744,7 +748,7 @@ final class DispatcherTest extends TestCase {
 
 		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
 		self::assertIsArray( $advanced_state );
-		self::assertSame( $advanced_state, \get_option( $run_option ) );
+		self::assertSame( $advanced_state, $this->option( $run_option ) );
 		self::assertIsString( $lock_raw );
 		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
 		self::assertFalse( \get_option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID ) );
@@ -981,15 +985,15 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Positive delay selects single scheduling at the clock-relative timestamp.
+	 * A future absolute fire time selects single scheduling at the requested timestamp.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_with_delay_routes_to_single_scheduling(): void {
-		$result = $this->client->dispatch( self::NAME, self::ARGS, delay: 120, priority: 31 );
+	public function test_dispatch_with_future_fire_time_routes_to_single_scheduling(): void {
+		$result = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
 		$calls = $this->backend_calls( 'schedule_single' );
@@ -1003,27 +1007,43 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Negative delay is rejected before job admission reaches a boundary.
+	 * A requested fire time that becomes due during overlap-lock admission selects asynchronous delivery.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The clock reaches the requested instant immediately before lock persistence, proving lane selection uses post-claim admission time and treats equality as due.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_rejects_a_negative_delay_for_a_job_before_every_boundary(): void {
-		$before = $this->security_boundary_snapshot();
+	public function test_dispatch_routes_a_fire_time_that_becomes_due_during_lock_admission_to_async(): void {
+		$this->rig->wpdb()->before_next(
+			'insert',
+			function (): void {
+				$this->rig->clock()->timestamp = self::NOW + 1;
+			}
+		);
 
-		try {
-			(void) $this->client->dispatch( self::NAME, self::ARGS, delay: -1 );
-			self::fail( 'Negative delay must throw before job admission.' );
-		} catch ( \InvalidArgumentException $exception ) {
-			self::assertSame( 'Background-work "email-digest" delay -1 is invalid; pass a non-negative number of seconds.', $exception->getMessage() );
-			self::assertSame( $before, $this->security_boundary_snapshot() );
-		}
+		$result = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 1, priority: 31 );
+
+		self::assertInstanceOf( Success::class, $result );
+		$run = $this->option( $this->run_option_name() );
+		self::assertIsArray( $run );
+		self::assertSame(
+			array(
+				'stage'    => 'run',
+				'mode'     => 'async',
+				'fire_at'  => null,
+				'priority' => 31,
+			),
+			$run['pending'] ?? null
+		);
+		self::assertSame( array( 'enqueue_async' ), \array_column( $this->run_delivery_calls(), 'verb' ) );
 	}
 
 	/**
-	 * A failed delayed-heartbeat write releases the provisional lock and run.
+	 * A failed future-action heartbeat write releases the provisional lock and run.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale A storage write error occurs after provisional state exists; a second public dispatch proves compensation released both fences.
@@ -1033,10 +1053,10 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_with_delay_releases_its_lock_when_heartbeat_write_fails(): void {
+	public function test_dispatch_with_future_fire_time_releases_its_lock_when_heartbeat_write_fails(): void {
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
@@ -1045,7 +1065,7 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * An indeterminate delayed heartbeat aborts scheduling and removes provisional state.
+	 * An indeterminate future-action heartbeat aborts scheduling and removes provisional state.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale An authoritative read fails after lock claim and run creation; successful re-admission proves the fail-closed cleanup left no fence.
@@ -1055,7 +1075,7 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_with_delay_aborts_when_heartbeat_read_is_indeterminate(): void {
+	public function test_dispatch_with_future_fire_time_aborts_when_heartbeat_read_is_indeterminate(): void {
 		$this->rig->wpdb()->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -1063,7 +1083,7 @@ final class DispatcherTest extends TestCase {
 			}
 		);
 
-		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
@@ -1072,7 +1092,7 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * A failed delayed-state transition releases the resolved overlap key for immediate reuse.
+	 * A failed future-action state transition releases the resolved overlap key for immediate reuse.
 	 *
 	 * @load-bearing concurrency
 	 * @pin-rationale The second run-state write fails after the lock heartbeat; reusing the opaque key proves both provisional generations were compensated.
@@ -1082,17 +1102,17 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_dispatch_with_delay_releases_overlap_key_when_state_transition_fails(): void {
-		$this->overlap_key_resolver = static fn ( array $args ): string => 'delayed-site-digest';
+	public function test_dispatch_with_future_fire_time_releases_overlap_key_when_state_transition_fails(): void {
+		$this->overlap_key_resolver = static fn ( array $args ): string => 'timed-site-digest';
 		$this->rig->wpdb()->before_next( 'update', static function (): void {} );
 		$this->rig->wpdb()->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->script_result( 'update', false ) );
 
-		$failed = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
+		$failed = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 120 );
 		$this->assert_failure_code( $failed, ErrorCode::StorageFailed );
 		self::assertSame( array(), $this->run_delivery_calls() );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
-		$reused                        = $this->client->dispatch( self::NAME, self::ARGS, delay: 120 );
+		$reused                        = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 121 );
 		self::assertInstanceOf( Success::class, $reused );
 	}
 
@@ -1267,23 +1287,6 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Delay overflow returns a typed public payload rejection without scheduling.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_dispatch_rejects_a_delay_that_overflows_unix_seconds(): void {
-		$this->rig->clock()->timestamp = \PHP_INT_MAX - 5;
-
-		$result = $this->client->dispatch( self::NAME, self::ARGS, delay: 10 );
-
-		$this->assert_failure_code( $result, ErrorCode::PayloadRejected );
-		self::assertSame( array(), $this->run_delivery_calls() );
-	}
-
-	/**
 	 * Failed-run retry rejects a malformed run identifier at the engine boundary.
 	 *
 	 * @since   1.0.0
@@ -1366,6 +1369,25 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$consumed = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		$this->assert_failure_code( $consumed, ErrorCode::RunNotRetained );
+	}
+
+	/**
+	 * Manual retry preserves the priority admitted with the failed run when the job default differs.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_reuses_the_persisted_priority_instead_of_the_current_job_default(): void {
+		$this->restart_with_job_priority( 73 );
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2, 0 );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( 0, $this->single_run_delivery_call()['args']['priority'] ?? null );
 	}
 
 	/**
@@ -1676,6 +1698,42 @@ final class DispatcherTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Supplies each imperative priority-resolution rung.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  iterable<string, array{job_priority: int|null, dispatch_priority: int|null, expected: int}>
+	 */
+	public static function priority_ladder_provider(): iterable {
+		yield 'explicit dispatch argument beats the job default' => array(
+			'job_priority'      => 41,
+			'dispatch_priority' => 23,
+			'expected'          => 23,
+		);
+		yield 'job default beats the engine default' => array(
+			'job_priority'      => 41,
+			'dispatch_priority' => null,
+			'expected'          => 41,
+		);
+		yield 'engine default applies when both input rungs are unspecified' => array(
+			'job_priority'      => null,
+			'dispatch_priority' => null,
+			'expected'          => 10,
+		);
+		yield 'the most urgent job default survives resolution' => array(
+			'job_priority'      => 0,
+			'dispatch_priority' => null,
+			'expected'          => 0,
+		);
+		yield 'the most urgent dispatch argument beats a job default' => array(
+			'job_priority'      => 41,
+			'dispatch_priority' => 0,
+			'expected'          => 0,
+		);
+	}
+
 	// endregion.
 
 	// region HELPERS.
@@ -1686,14 +1744,15 @@ final class DispatcherTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OverlapPolicy|null $overlap Optional overlap policy.
+	 * @param   OverlapPolicy|null $overlap  Optional overlap policy.
+	 * @param   int|null           $priority Optional job-default priority.
 	 *
 	 * @return  void
 	 */
-	private function boot( ?OverlapPolicy $overlap = null ): void {
+	private function boot( ?OverlapPolicy $overlap = null, ?int $priority = null ): void {
 		$this->overlap_key_resolver = null;
 		$this->rig                  = EngineRig::set_up( self::NOW );
-		$this->client               = $this->rig->operations( self::OWNER );
+		$this->client               = $this->rig->operations( self::SCOPE );
 		$this->job                  = new RecordingJob( self::NAME );
 		$overlap_key                = function ( array $args ): ?string {
 			if ( null === $this->overlap_key_resolver ) {
@@ -1708,7 +1767,7 @@ final class DispatcherTest extends TestCase {
 
 			return $resolved;
 		};
-		$this->client->register( $this->job->definition( new JobOptions( overlap: $overlap, overlap_key: $overlap_key ) ) );
+		$this->client->register( $this->job->definition( new JobOptions( overlap: $overlap, overlap_key: $overlap_key, priority: $priority ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->reset_observations();
 	}
@@ -1726,6 +1785,21 @@ final class DispatcherTest extends TestCase {
 	private function restart_with_overlap_policy( OverlapPolicy $overlap ): void {
 		$this->rig->tear_down();
 		$this->boot( $overlap );
+	}
+
+	/**
+	 * Rebuilds the request-local graph with one job-default priority.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $priority Optional job-default priority.
+	 *
+	 * @return  void
+	 */
+	private function restart_with_job_priority( ?int $priority ): void {
+		$this->rig->tear_down();
+		$this->boot( priority: $priority );
 	}
 
 	/**
@@ -1796,12 +1870,13 @@ final class DispatcherTest extends TestCase {
 	 * @param   string                  $run_id     Failed run identifier.
 	 * @param   array<array-key, mixed> $start_args Original arguments.
 	 * @param   int                     $attempts   Attempts consumed.
+	 * @param   int                     $priority   Admitted scheduler priority.
 	 *
 	 * @return  void
 	 */
-	private function seed_failed_run( string $run_id, array $start_args, int $attempts ): void {
+	private function seed_failed_run( string $run_id, array $start_args, int $attempts, int $priority = 10 ): void {
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $run_id ), attempts: $attempts, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Database unavailable.', details: null );
-		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure ) );
+		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure, priority: $priority ) );
 		$this->reset_observations();
 	}
 
@@ -1902,6 +1977,30 @@ final class DispatcherTest extends TestCase {
 	 */
 	private function run_option_name(): string {
 		return 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Returns one persisted option value from either modeled storage view.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Option name.
+	 *
+	 * @return  mixed
+	 */
+	private function option( string $name ): mixed {
+		$raw = $this->rig->wpdb()->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return \maybe_unserialize( $raw );
+		}
+
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
+		self::assertIsArray( $options );
+
+		return $options[ $name ] ?? null;
 	}
 
 	/**

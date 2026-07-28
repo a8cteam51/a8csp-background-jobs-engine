@@ -2,19 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\ErrorInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus as PublicRunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus as PublicRunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -23,6 +21,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -41,18 +41,18 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
 	private const array ARGS              = array( 'site_id' => 7 );
-	private const string CHUNKED_IDENTITY = self::OWNER . ':' . self::CHUNKED_NAME;
+	private const string CHUNKED_IDENTITY = self::SCOPE . ':' . self::CHUNKED_NAME;
 	private const string CHUNKED_NAME     = 'email-digest-chunked';
 	private const string CHUNKED_SCHEDULE = 'email-digest-chunked-schedule';
-	private const string IDENTITY         = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY         = self::SCOPE . ':' . self::NAME;
 	private const string INCUMBENT_RUN_ID = '00000000001699999998-0000000000000000040';
 	private const string NAME             = 'email-digest';
 	private const int NOW                 = 1_700_000_000;
-	private const string OWNER            = 'runs-tests';
+	private const string SCOPE            = 'runs-tests';
 	private const string RUN_ID           = '00000000001700000000-0000000000000000042';
 	private const string SCHEDULE         = 'email-digest-schedule';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private RecordingChunkedJob $chunked_job;
 	private EngineRig $rig;
 	private StoreFixtureBuilder $fixtures;
@@ -74,7 +74,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->operations( self::OWNER );
+		$this->client      = $this->rig->operations( self::SCOPE );
 		$this->job         = new RecordingJob( self::NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::CHUNKED_NAME );
 		$this->fixtures    = StoreFixtureBuilder::for_identity( self::IDENTITY );
@@ -426,7 +426,9 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 				$rival = $this->option( $run_option );
 				self::assertIsArray( $rival );
 				$rival['action_sequence'] = 2;
-				self::assertTrue( \update_option( $run_option, $rival, false ) );
+				$raw                      = \maybe_serialize( $rival );
+				self::assertIsString( $raw );
+				$this->rig->wpdb()->put( $run_option, $raw );
 			}
 		);
 
@@ -466,7 +468,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Synchronizes one declaration through the owner-bound schedule facade.
+	 * Synchronizes one declaration through the scope-bound schedule facade.
 	 *
 	 * @param   OverlapPolicy $policy   Job overlap policy.
 	 * @param   int           $priority Delivery priority.
@@ -478,7 +480,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Synchronizes one chunked-target declaration through the owner-bound schedule facade.
+	 * Synchronizes one chunked-target declaration through the scope-bound schedule facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -560,11 +562,20 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Returns one in-memory option value.
+	 * Returns one persisted option value from either modeled storage view.
 	 *
 	 * @param   string $name Option name.
+	 *
+	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->rig->wpdb()->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return \maybe_unserialize( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );
 

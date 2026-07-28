@@ -5,14 +5,14 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Outcome of replacing one owner's complete schedule-registration row.
+ * Outcome of replacing one scope's complete schedule-registration row.
  *
  * @internal
  *
  * @since   1.0.0
  * @version 1.0.0
  */
-enum OwnerReplacementOutcome: string {
+enum ScopeReplacementOutcome: string {
 	// region FIELDS AND CONSTANTS
 
 	case Persisted  = 'persisted';

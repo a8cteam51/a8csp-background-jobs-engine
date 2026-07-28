@@ -2,26 +2,29 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkedJobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RunContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -43,13 +46,13 @@ final class FailureLifecycleTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 	private const string NAME     = 'email-digest';
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
+	private const string SCOPE    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private EngineRig $rig;
 	private RecordingJob $job;
@@ -84,7 +87,7 @@ final class FailureLifecycleTest extends TestCase {
 		parent::setUp();
 
 		$this->rig                      = EngineRig::set_up( self::NOW );
-		$this->client                   = $this->rig->operations( self::OWNER );
+		$this->client                   = $this->rig->operations( self::SCOPE );
 		$this->job                      = new RecordingJob( self::NAME );
 		$this->fixtures                 = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->rig->backend()->calls    = array();
@@ -308,7 +311,7 @@ final class FailureLifecycleTest extends TestCase {
 	 */
 	public function test_retry_uses_the_registered_job_kind_for_a_dual_role_execution(): void {
 		$name     = 'dual-kind-job';
-		$identity = self::OWNER . ':' . $name;
+		$identity = self::SCOPE . ':' . $name;
 		$this->client->register( $this->dual_kind_job( $name ) );
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->dispatch( $name, self::ARGS );
@@ -405,6 +408,26 @@ final class FailureLifecycleTest extends TestCase {
 		self::assertCount( 1, $this->rig->hooks()->fired( 'a8csp_bgje/retry_scheduled' ) );
 		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 		self::assertSame( 2, $failure->attempts );
+	}
+
+	/**
+	 * A failed-attempt count at the integer maximum saturates during terminalization.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_saturates_the_attempt_count_at_the_integer_maximum(): void {
+		$this->job->throwable = new NonRetryableException( 'The request is permanently invalid.' );
+		$this->enqueue_job();
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: \PHP_INT_MAX, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
+		self::assertSame( \PHP_INT_MAX, $failure->attempts );
 	}
 
 	/**
@@ -622,6 +645,27 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * A retry-state construction error remains terminalizable after its ownership fence advances.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_retry_state_construction_failure_after_fencing(): void {
+		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 7;
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: 0, action_sequence: \PHP_INT_MAX, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+
+		\do_action( 'a8csp_bgje/internal/deliver', self::IDENTITY, self::RUN_ID, \PHP_INT_MAX );
+
+		$this->assert_failure( ErrorCode::EngineUnavailable, RunFailureStage::scheduling() );
+		$this->rig->assert_failed( ErrorCode::EngineUnavailable );
+	}
+
+	/**
 	 * A one-attempt ordinary policy enters terminal failure immediately.
 	 *
 	 * @since   1.0.0
@@ -657,25 +701,30 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunked_job_validation_exception_is_not_reclassified_on_the_job_path(): void {
-		$this->assert_terminal_job_failure(
-			InvalidChunkException::non_portable(),
-			new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) )
-		);
+		// The retry budget stays above one attempt so the scheduled retry evidences the job kind's own
+		// classification rather than policy exhaustion terminalizing every failure alike.
+		$this->job->throwable           = InvalidChunkException::non_portable();
+		$this->rig->randomizer()->value = 17;
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
+
+		$this->rig->run_due();
+
+		$this->rig->assert_retry_scheduled();
 	}
 
 	/**
-	 * A chunked job validation failure retains its engine-authored byte-limit diagnostic.
+	 * A deterministic chunk validation failure terminalizes without consuming retry policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_chunked_job_validation_exception_retains_its_engine_authored_diagnostic(): void {
+	public function test_chunked_job_validation_exception_terminalizes_without_consuming_retry_policy(): void {
 		$chunked_job                    = new RecordingChunkedJob( 'bounded-chunked-job' );
 		$chunked_job->queue             = array( array( 'chunk' => 'current' ) );
 		$chunked_job->process_throwable = InvalidChunkException::chunk_too_large( 8_193, 8_192 );
-		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
+		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) ) );
 		$result = $this->client->dispatch( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
@@ -685,6 +734,9 @@ final class FailureLifecycleTest extends TestCase {
 
 		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 		self::assertSame( 'Chunked Job chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
+		self::assertSame( 1, $failure->attempts );
+		self::assertCount( 1, $chunked_job->process_calls );
+		$this->rig->assert_no_retry();
 	}
 
 	// endregion.
@@ -692,7 +744,7 @@ final class FailureLifecycleTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Enqueues the deterministic job through its owner-bound facade.
+	 * Enqueues the deterministic job through its scope-bound facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -780,13 +832,13 @@ final class FailureLifecycleTest extends TestCase {
 			/**
 			 * Processes nothing.
 			 *
-			 * @param   array<array-key, mixed> $chunk_args Arguments for this chunk.
-			 * @param   ChunkContextInterface   $context    Controlled access to this chunk's run.
+			 * @param   array<array-key, mixed>    $chunk_args Arguments for this chunk.
+			 * @param   ChunkedRunContextInterface $context    Controlled access to this chunk's run.
 			 *
 			 * @return  void
 			 */
 			#[\Override]
-			public function process_chunk( array $chunk_args, ChunkContextInterface $context ): void {}
+			public function process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void {}
 
 		};
 
@@ -962,7 +1014,7 @@ final class FailureLifecycleTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $identity Complete owner-qualified work identity.
+	 * @param   string $identity Complete scope-qualified work identity.
 	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  array<array-key, mixed>|null

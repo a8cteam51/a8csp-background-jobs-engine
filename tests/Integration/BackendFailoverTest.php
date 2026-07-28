@@ -4,19 +4,15 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\HookLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
@@ -26,10 +22,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ReadinessControlledBackend;
 
@@ -51,10 +51,10 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 	/** Advisory group isolated to the WP-Cron fallback occurrence. */
 	private const string WP_CRON_GROUP = 'a8csp-bgje-integration-backend-failover-cron';
 
-	/** Owner isolated to recurring-chain convergence. */
-	private const string CONVERGENCE_OWNER = 'integration-backend-convergence';
+	/** Scope isolated to recurring-chain convergence. */
+	private const string CONVERGENCE_SCOPE = 'integration-backend-convergence';
 
-	/** Owner-qualified schedule identity isolated to recurring-chain convergence. */
+	/** Scope-qualified schedule identity isolated to recurring-chain convergence. */
 	private const string CONVERGENCE_IDENTITY = 'integration-backend-convergence:recurring';
 
 	/** Target job isolated to recurring-chain convergence. */
@@ -129,7 +129,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_sync_converges_a_recovered_recurring_chain_with_its_fallback_duplicate(): void {
-		$registry_option = ScheduleRegistry::option_name( self::CONVERGENCE_OWNER );
+		$registry_option = ScheduleRegistry::option_name( self::CONVERGENCE_SCOPE );
 		$this->expect_option( $registry_option );
 		$action_scheduler       = new ReadinessControlledBackend();
 		$scheduler              = $this->scheduler_facade_with_controllable_action_scheduler( $action_scheduler );
@@ -138,27 +138,29 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$declarations           = array(
 			self::CONVERGENCE_IDENTITY => array(
 				'schedule' => $schedule,
-				'job'      => Identity::compose( self::CONVERGENCE_OWNER, self::CONVERGENCE_JOB ),
+				'job'      => Identity::compose( self::CONVERGENCE_SCOPE, self::CONVERGENCE_JOB ),
 			),
 		);
 		$action_scheduler_probe = new SchedulerFacade( array( new ActionSchedulerBackend() ) );
 		$wp_cron_probe          = new SchedulerFacade( array( new WPCronBackend() ) );
 
-		$preferred = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
+		$preferred = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $preferred );
 		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 		self::assertSame( 0, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 		$registration_before = \get_option( $registry_option, null );
 		self::assertIsArray( $registration_before );
 
+		// Synchronizing a consumer scope against an unready backend reports the dormant occurrences it leaves behind.
+		$this->expectOutputRegex( '/Schedule synchronization ran while a scheduling backend was not ready/' );
 		$action_scheduler->ready = false;
-		$fallback                = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
+		$fallback                = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $fallback );
 		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 		self::assertSame( 1, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
 
 		$action_scheduler->ready = true;
-		$converged               = $schedules->sync( self::CONVERGENCE_OWNER, $declarations );
+		$converged               = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 
 		self::assertInstanceOf( Success::class, $converged );
 		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
@@ -187,7 +189,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$rows                 = new OptionRows( $wpdb );
 		$job_registry         = new JobRegistry();
 		$clock                = new SystemClock();
-		$logger               = new HookLogger();
+		$logger               = new EngineLogger();
 		$registry             = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new Randomizer();
 		$guard                = new OverlapGuard( $clock, $logger, $rows );
@@ -209,7 +211,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 
-		return new ScheduleOperations( $registry, $scheduler, $clock, $occurrence_delivery );
+		return new ScheduleOperations( $registry, $scheduler, $clock, $occurrence_delivery, $logger );
 	}
 
 	// endregion.

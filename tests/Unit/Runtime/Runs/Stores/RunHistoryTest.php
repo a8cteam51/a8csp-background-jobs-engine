@@ -3,14 +3,14 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -50,13 +50,13 @@ final class RunHistoryWakeupProbe {
 final class RunHistoryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 	private const string NAME     = 'reports';
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
+	private const string SCOPE    = 'runs-tests';
 
 	private RecordingChunkedJob $chunked_job;
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private Identity $identity;
 	private EngineRig $rig;
@@ -93,8 +93,8 @@ final class RunHistoryTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->operations( self::OWNER );
-		$this->identity    = Identity::compose( self::OWNER, self::NAME );
+		$this->client      = $this->rig->operations( self::SCOPE );
+		$this->identity    = Identity::compose( self::SCOPE, self::NAME );
 		$this->job         = new RecordingJob( self::NAME );
 		$this->chunked_job = new RecordingChunkedJob( self::NAME . '-chunked-job' );
 		$this->client->register( $this->job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
@@ -488,7 +488,7 @@ final class RunHistoryTest extends TestCase {
 		$this->rig->randomizer()->value = 7;
 		if ( 'superseded' === $status ) {
 			$name     = self::NAME . '-chunked-job';
-			$identity = self::OWNER . ':' . $name;
+			$identity = self::SCOPE . ':' . $name;
 			$first    = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
 			self::assertInstanceOf( Success::class, $first );
 			self::assertInstanceOf( Run::class, $first->value );

@@ -51,7 +51,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   string   $kind           Persisted kind key.
-	 * @param   Identity $identity       Complete owner-qualified work identity.
+	 * @param   Identity $identity       Complete scope-qualified work identity.
 	 * @param   string   $running_run_id Discoverable incumbent run identifier.
 	 *
 	 * @return  self
@@ -67,7 +67,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   string                             $kind      Persisted kind key.
-	 * @param   Identity                           $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity                           $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   'continue'|'run'|'cleanup'|'retry' $stage     Internal action that was not scheduled.
 	 * @param   SchedulingError                    $error     Scheduling failure.
 	 *
@@ -100,7 +100,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   string     $kind      Persisted kind key.
-	 * @param   Identity   $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   \Throwable $throwable Retry-policy provider or filter failure.
 	 *
 	 * @return  self
@@ -118,7 +118,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   string     $kind      Persisted kind key.
-	 * @param   Identity   $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   \Throwable $throwable Retry-state construction failure.
 	 *
 	 * @return  self
@@ -136,7 +136,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @version 1.0.0
 	 *
 	 * @param   string     $kind      Persisted kind key.
-	 * @param   Identity   $identity  Complete owner-qualified job or chunked job identity.
+	 * @param   Identity   $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   \Throwable $throwable Retry-policy, randomness, hook, or scheduler failure.
 	 *
 	 * @return  self

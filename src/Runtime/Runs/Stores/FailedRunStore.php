@@ -3,9 +3,12 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
@@ -13,9 +16,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -44,6 +44,19 @@ final readonly class FailedRunStore {
 	 * @var     int
 	 */
 	private const int ENTRY_LIMIT = 20;
+
+	/**
+	 * Maximum persisted serialization bytes accepted for one complete failed-run retention row.
+	 *
+	 * Retention shares the active-run row's option-table and object-cache substrate, so it accepts
+	 * the same complete-row ceiling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int MAX_ROW_BYTES = RunStore::MAX_ROW_BYTES;
 
 	/**
 	 * Prefix for failed-run option names.
@@ -85,7 +98,7 @@ final readonly class FailedRunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity        $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity        $identity Complete scope-qualified job or chunked job identity.
 	 * @param   OptionRows      $rows     Authoritative raw option-row I/O.
 	 * @param   LoggerInterface $logger   Engine diagnostic sink.
 	 */
@@ -145,7 +158,7 @@ final readonly class FailedRunStore {
 				$error_detail['details'] = $failure->details;
 			}
 
-			$entries[]       = array(
+			$entries[]         = array(
 				'run_id'     => $run_id,
 				'kind'       => $kind,
 				'failed_at'  => $failed_at,
@@ -154,13 +167,28 @@ final readonly class FailedRunStore {
 				'attempts'   => $attempts,
 				'error'      => $error_detail,
 			);
-			$trimmed         = \array_slice( $entries, -self::ENTRY_LIMIT );
-			$evicted         = \array_slice( $entries, 0, \count( $entries ) - \count( $trimmed ) );
-			$replacement_raw = self::serialize_entries( $trimmed );
+			$trimmed           = \array_slice( $entries, -self::ENTRY_LIMIT );
+			$count_evicted     = \array_slice( $entries, 0, \count( $entries ) - \count( $trimmed ) );
+			$byte_evicted      = array();
+			$replacement_raw   = self::serialize_entries( $trimmed );
+			$replacement_bytes = \strlen( $replacement_raw );
+			// A populated offset of one proves a second entry survives, so the oldest is still droppable.
+			while ( self::MAX_ROW_BYTES < $replacement_bytes && isset( $trimmed[1] ) ) {
+				$byte_evicted[]    = $trimmed[0];
+				$trimmed           = \array_slice( $trimmed, 1 );
+				$replacement_raw   = self::serialize_entries( $trimmed );
+				$replacement_bytes = \strlen( $replacement_raw );
+			}
+			if ( self::MAX_ROW_BYTES < $replacement_bytes ) {
+				$this->log_oversized_entry( $run_id, $replacement_bytes );
+
+				return false;
+			}
 
 			if ( null === $expected_raw ) {
 				if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, $replacement_raw ) ) {
-					$this->log_eviction( $evicted );
+					$this->log_count_eviction( $count_evicted );
+					$this->log_byte_eviction( $byte_evicted );
 
 					return true;
 				}
@@ -170,7 +198,8 @@ final readonly class FailedRunStore {
 
 			$write = $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw );
 			if ( RowWriteOutcome::Won === $write ) {
-				$this->log_eviction( $evicted );
+				$this->log_count_eviction( $count_evicted );
+				$this->log_byte_eviction( $byte_evicted );
 
 				return true;
 			}
@@ -284,7 +313,7 @@ final readonly class FailedRunStore {
 			$replacement_raw = self::serialize_entries( $trimmed );
 			$write           = $this->rows->compare_and_swap( $key, $expected_raw, $replacement_raw );
 			if ( RowWriteOutcome::Won === $write ) {
-				$this->log_eviction( $evicted );
+				$this->log_count_eviction( $evicted );
 
 				return true;
 			}
@@ -368,7 +397,7 @@ final readonly class FailedRunStore {
 	// region HELPERS
 
 	/**
-	 * Logs failed-run identifiers evicted by one confirmed trimmed persistence.
+	 * Logs failed-run identifiers evicted by the retained-entry count bound.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -377,16 +406,68 @@ final readonly class FailedRunStore {
 	 *
 	 * @return  void
 	 */
-	private function log_eviction( array $entries ): void {
+	private function log_count_eviction( array $entries ): void {
+		$this->log_eviction( $entries, \sprintf( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the %d-entry limit: {evicted_run_ids}.', self::ENTRY_LIMIT ) );
+	}
+
+	/**
+	 * Logs failed-run identifiers evicted by the serialized-row byte bound.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<array{run_id: string}> $entries Evicted failed-run entries, oldest first.
+	 *
+	 * @return  void
+	 */
+	private function log_byte_eviction( array $entries ): void {
+		$this->log_eviction( $entries, \sprintf( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the %d-byte serialized-row limit: {evicted_run_ids}.', self::MAX_ROW_BYTES ) );
+	}
+
+	/**
+	 * Logs failed-run identifiers evicted by one confirmed trimmed persistence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   list<array{run_id: string}> $entries Evicted failed-run entries, oldest first.
+	 * @param   string                      $message Retention bound that required the eviction.
+	 *
+	 * @return  void
+	 */
+	private function log_eviction( array $entries, string $message ): void {
 		if ( array() === $entries ) {
 			return;
 		}
 
 		$this->logger->warning(
-			\sprintf( 'Failed-run retention for "{identity}" evicted oldest run IDs beyond the %d-entry limit: {evicted_run_ids}.', self::ENTRY_LIMIT ),
+			$message,
 			array(
 				'identity'        => (string) $this->identity,
 				'evicted_run_ids' => \implode( ', ', \array_column( $entries, 'run_id' ) ),
+			)
+		);
+	}
+
+	/**
+	 * Reports a newest entry that cannot fit even after every older entry is evicted.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $run_id       Rejected run identifier.
+	 * @param   int    $actual_bytes Complete serialized row bytes for the single retained entry.
+	 *
+	 * @return  void
+	 */
+	private function log_oversized_entry( string $run_id, int $actual_bytes ): void {
+		$this->logger->warning(
+			'Failed-run retention for "{identity}" rejected run "{run_id}" because a row retaining only that entry contains {actual_bytes} persisted serialization bytes; the limit is {limit_bytes} bytes.',
+			array(
+				'identity'     => (string) $this->identity,
+				'run_id'       => $run_id,
+				'actual_bytes' => $actual_bytes,
+				'limit_bytes'  => self::MAX_ROW_BYTES,
 			)
 		);
 	}
@@ -583,8 +664,7 @@ final readonly class FailedRunStore {
 		$error       = $value['error'];
 		$has_details = \array_key_exists( 'details', $error );
 		if (
-			( $has_details ? 5 : 4 ) !== \count( $error )
-			|| ! \is_string( $error['stage'] ?? null )
+			! \is_string( $error['stage'] ?? null )
 			|| null === RunFailureStage::tryFrom( $error['stage'] )
 			|| ! \is_string( $error['code'] ?? null )
 			|| null === ErrorCode::tryFrom( $error['code'] )
@@ -599,6 +679,8 @@ final readonly class FailedRunStore {
 			}
 		}
 
+		// Retained entries compare and swap against the raw read rather than a re-serialized state, so named-field reconstruction
+		// can drop additive metadata without destabilizing a later write.
 		$error_detail = array(
 			'class'   => $error['class'],
 			'message' => $error['message'],

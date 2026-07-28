@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -26,7 +26,7 @@ interface KindHandlerInterface {
 	/**
 	 * Lexical grammar for persisted kind and lifecycle stage keys.
 	 *
-	 * `Job\JobKind` and `Run\RunFailureStage` carry frozen public copies of this grammar; a change
+	 * `JobKind` and `RunFailureStage` carry frozen public copies of this grammar; a change
 	 * here must be mirrored in both.
 	 *
 	 * @since   1.0.0
@@ -56,7 +56,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity   Complete owner-qualified work identity.
+	 * @param   Identity      $identity   Complete scope-qualified work identity.
 	 * @param   JobDefinition $definition Definition resolved to this handler.
 	 *
 	 * @throws  \InvalidArgumentException When the execution object does not implement this kind's execution role.
@@ -71,7 +71,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 *
 	 * @return  object|null
 	 */
@@ -83,7 +83,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified work identity.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 *
 	 * @return  JobOptions|null
 	 */
@@ -122,13 +122,13 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $scheduled_at Delivery timestamp.
-	 * @param   int $delay        Requested delay in seconds.
-	 * @param   int $priority     Scheduler priority.
+	 * @param   int|null $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
+	 * @param   int      $now      Admission timestamp.
+	 * @param   int      $priority Scheduler priority.
 	 *
 	 * @return  PendingAction
 	 */
-	public function initial_pending( int $scheduled_at, int $delay, int $priority ): PendingAction;
+	public function initial_pending( ?int $fire_at, int $now, int $priority ): PendingAction;
 
 	/**
 	 * Runs kind-owned admission effects before the first scheduler action is accepted.
@@ -136,7 +136,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Persisted running state.
 	 * @param   RunStore $run_store Active-run store.
@@ -190,7 +190,7 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete owner-qualified work identity.
+	 * @param   Identity $identity  Complete scope-qualified work identity.
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Fenced executing state.
 	 * @param   RunStore $run_store Active-run store.
@@ -210,6 +210,22 @@ interface KindHandlerInterface {
 	 * @return  EngineError
 	 */
 	public function failure_error( \Throwable $throwable ): EngineError;
+
+	/**
+	 * Classifies an execution failure for this kind's retry policy.
+	 *
+	 * Declining retry is decisive; permitting it is one input rather than the verdict. The public
+	 * `NonRetryableException` marker and an exhausted attempt budget each terminalize a failure this
+	 * classification admits.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable $throwable Execution failure.
+	 *
+	 * @return  bool
+	 */
+	public function is_failure_retryable( \Throwable $throwable ): bool;
 
 	/**
 	 * Returns kind-specific diagnostic details for the current failure state.

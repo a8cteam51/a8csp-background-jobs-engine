@@ -2,14 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 
@@ -22,14 +21,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 final class SupersededRunTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Client owner isolated to supersession coverage. */
-	private const string OWNER = 'integration-superseded';
+	/** Client scope isolated to supersession coverage. */
+	private const string SCOPE = 'integration-superseded';
 
 	/** Chunked Job identity unique within the request-persistent integration registry. */
 	private const string NAME = 'integration-superseded-run';
 
-	/** Owner-qualified chunked job identity persisted by the engine. */
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	/** Scope-qualified chunked job identity persisted by the engine. */
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 
 	// endregion.
 
@@ -57,7 +56,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 			array( 'chunk' => 'two' ),
 		);
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $chunked_job->definition( new JobOptions( overlap: OverlapPolicy::Replace ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
@@ -75,7 +74,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		$failed = array();
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		\add_action(
 			'a8csp_bgje/superseded/' . self::IDENTITY,
 			static function ( RunId $run_id, array $args ) use ( &$named_superseded ): void {
@@ -210,24 +209,24 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		);
 		$run_b_action_ids = array();
 		foreach ( $expected_chunks as $expected_chunk ) {
-			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls */
+			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}> $process_calls */
 			$process_calls      = $chunked_job->process_calls;
 			$process_call_count = \count( $process_calls );
 			$run_b_action_ids[] = $this->assert_pending_chunk_continuation( self::IDENTITY, $run_b, $group_b, $expected_chunk );
 			self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute one replacement continuation' );
-			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls */
+			/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}> $process_calls */
 			$process_calls = $chunked_job->process_calls;
 			self::assertCount( $process_call_count + 1, $process_calls, 'A replacement continue action must process one chunk' );
 			self::assertSame( $expected_chunk, $process_calls[ $process_call_count ]['chunk_args'] ?? null, 'The replacement continue action must process the authoritative queue head' );
 		}
 
-		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls_before */
+		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}> $process_calls_before */
 		$process_calls_before = $chunked_job->process_calls;
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained replacement queue' );
 		self::assertSame( $process_calls_before, $chunked_job->process_calls, 'The drained-queue continue action must not execute chunk work' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute replacement terminal cleanup' );
 
-		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkContextInterface}> $process_calls */
+		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}> $process_calls */
 		$process_calls = $chunked_job->process_calls;
 		self::assertSame( $expected_chunks, \array_column( $process_calls, 'chunk_args' ) );
 		foreach ( $process_calls as $process_call ) {

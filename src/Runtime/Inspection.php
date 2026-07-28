@@ -2,26 +2,26 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use Psr\Clock\ClockInterface;
 
 \defined( 'ABSPATH' ) || exit;
@@ -35,7 +35,7 @@ use Psr\Clock\ClockInterface;
  * @version 1.0.0
  *
  * @phpstan-type ScheduleEntry array{
- *     owner: string,
+ *     scope: string,
  *     identity: string,
  *     recurrence: int|null,
  *     next_due: int,
@@ -122,7 +122,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id   Retained run identifier.
 	 *
 	 * @throws  \InvalidArgumentException When the run identifier is malformed.
@@ -165,7 +165,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @return  AbstractResult<string|null, EngineError>
 	 */
@@ -185,13 +185,13 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $owner Exact owner filter, or null for every owner.
+	 * @param   string|null $scope Exact scope filter, or null for every scope.
 	 *
 	 * @phpstan-return array{observed_at: int, dormant_candidate: bool, entries: list<ScheduleEntry>}|null
 	 *
 	 * @return  array|null Null when authoritative schedule-registry inspection fails.
 	 */
-	public function schedules( ?string $owner = null ): ?array {
+	public function schedules( ?string $scope = null ): ?array {
 		$observed_at = $this->clock->now()->getTimestamp();
 		$read        = $this->schedules->all_registrations();
 		if ( $read->is_failure() ) {
@@ -208,14 +208,14 @@ final readonly class Inspection {
 				continue;
 			}
 
-			$registration_owner = $schedule_identity->owner();
-			if ( null !== $owner && $owner !== $registration_owner ) {
+			$registration_scope = $schedule_identity->scope();
+			if ( null !== $scope && $scope !== $registration_scope ) {
 				continue;
 			}
 
 			$declaration = $this->schedules->declaration( $schedule_identity );
 			$entries[]   = array(
-				'owner'              => $registration_owner,
+				'scope'              => $registration_scope,
 				'identity'           => $registration_key,
 				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval,
 				'next_due'           => $registration['next_due'],
@@ -235,19 +235,19 @@ final readonly class Inspection {
 	}
 
 	/**
-	 * Returns whether one owner has a persisted schedule-registry row.
+	 * Returns whether one scope has a persisted schedule-registry row.
 	 *
 	 * @internal CLI inspection only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Exact client owner.
+	 * @param   string $scope Exact client scope.
 	 *
 	 * @return  bool|null Null when the authoritative row read fails.
 	 */
-	public function schedule_owner_exists( string $owner ): ?bool {
-		$read = $this->schedules->owner_exists( $owner );
+	public function schedule_scope_exists( string $scope ): ?bool {
+		$read = $this->schedules->scope_exists( $scope );
 		return $read->is_failure() ? null : $read->value;
 	}
 
@@ -257,7 +257,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
 	 * @phpstan-return array{
 	 *     observed_at: int,
@@ -434,7 +434,7 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified background-work identity.
+	 * @param   Identity $identity Complete scope-qualified background-work identity.
 	 *
 	 * @phpstan-return list<HistoryEntry>|null
 	 *

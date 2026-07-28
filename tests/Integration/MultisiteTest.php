@@ -47,11 +47,11 @@ final class MultisiteTest extends AbstractIntegrationTestCase {
 	private array $created_site_ids = array();
 
 	/**
-	 * Sites where the current test seeds lifecycle work and teardown clears interrupted runs.
+	 * Sites where the current test seeds uninstall fixtures and teardown clears interrupted runs.
 	 *
 	 * @var list<int>
 	 */
-	private array $scheduled_site_ids = array();
+	private array $touched_site_ids = array();
 
 	// endregion.
 
@@ -95,10 +95,13 @@ final class MultisiteTest extends AbstractIntegrationTestCase {
 			}
 
 			try {
-				foreach ( $this->scheduled_site_ids as $site_id ) {
+				foreach ( $this->touched_site_ids as $site_id ) {
 					\switch_to_blog( $site_id );
 					try {
 						self::clear_scheduled_work();
+						foreach ( self::DOCUMENTED_OPTION_TEMPLATES as $template ) {
+							\delete_option( \sprintf( $template, $site_id ) );
+						}
 					} finally {
 						\restore_current_blog();
 					}
@@ -119,7 +122,8 @@ final class MultisiteTest extends AbstractIntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * Network uninstall sweeps documented engine options and scheduled work from every site.
+	 * Network uninstall preserves diagnostics by default while sweeping operational options and
+	 * scheduled work from every site.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -127,7 +131,7 @@ final class MultisiteTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	#[RunInSeparateProcess]
-	public function test_network_uninstall_sweeps_every_site(): void {
+	public function test_network_uninstall_preserves_diagnostics_by_default_on_every_site(): void {
 		$this->assert_engine_is_network_active();
 		$site_ids     = $this->ensure_site_count( 3 );
 		$scheduled_at = \time() + \HOUR_IN_SECONDS;
@@ -136,11 +140,11 @@ final class MultisiteTest extends AbstractIntegrationTestCase {
 			\switch_to_blog( $site_id );
 			try {
 				self::initialize_action_scheduler_schema();
-				$this->scheduled_site_ids[] = $site_id;
-				$schedule_args              = array( 'multisite-uninstall', \sprintf( 'site-%d', $site_id ), $site_id );
-				$schedule_group             = \sprintf( 'multisite-uninstall|site-%d', $site_id );
-				$wp_cron                    = new WPCronBackend();
-				$action_scheduler           = new ActionSchedulerBackend();
+				$this->touched_site_ids[] = $site_id;
+				$schedule_args            = array( 'multisite-uninstall', \sprintf( 'site-%d', $site_id ), $site_id );
+				$schedule_group           = \sprintf( 'multisite-uninstall|site-%d', $site_id );
+				$wp_cron                  = new WPCronBackend();
+				$action_scheduler         = new ActionSchedulerBackend();
 
 				foreach ( self::DOCUMENTED_OPTION_TEMPLATES as $template ) {
 					$option = \sprintf( $template, $site_id );
@@ -166,7 +170,14 @@ final class MultisiteTest extends AbstractIntegrationTestCase {
 			try {
 				// Action Scheduler binds its table names when a store initializes, not when the blog switches.
 				self::initialize_action_scheduler_schema();
-				self::assertSame( array(), self::engine_option_names(), "Network uninstall must leave site {$site_id} with zero a8csp_bgje_ rows" );
+				self::assertSame(
+					array(
+						\sprintf( 'a8csp_bgje_failed_runs_multisite-%d:job', $site_id ),
+						\sprintf( 'a8csp_bgje_run_history_multisite-%d:job', $site_id ),
+					),
+					self::engine_option_names(),
+					"Network uninstall must preserve only failed-run and run-history diagnostics on site {$site_id} by default"
+				);
 
 				$schedule_args    = array( 'multisite-uninstall', \sprintf( 'site-%d', $site_id ), $site_id );
 				$schedule_group   = \sprintf( 'multisite-uninstall|site-%d', $site_id );
@@ -176,6 +187,46 @@ final class MultisiteTest extends AbstractIntegrationTestCase {
 					self::assertFalse( $wp_cron->is_scheduled( $hook, $schedule_args ), "Network uninstall must remove every '{$hook}' WP-Cron event from site {$site_id}" );
 					self::assertFalse( $action_scheduler->is_scheduled( $hook, $schedule_args, $schedule_group ), "Network uninstall must remove every pending '{$hook}' Action Scheduler action from site {$site_id}" );
 				}
+			} finally {
+				\restore_current_blog();
+			}
+		}
+	}
+
+	/**
+	 * Literal boolean true removes diagnostic records with operational rows from every network site.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	public function test_network_uninstall_removes_diagnostics_when_explicitly_requested(): void {
+		$this->assert_engine_is_network_active();
+		$site_ids = $this->ensure_site_count( 3 );
+
+		foreach ( $site_ids as $site_id ) {
+			\switch_to_blog( $site_id );
+			try {
+				$this->touched_site_ids[] = $site_id;
+				foreach ( self::DOCUMENTED_OPTION_TEMPLATES as $template ) {
+					$option = \sprintf( $template, $site_id );
+					self::assertTrue( \update_option( $option, 'sentinel', false ), "Site {$site_id} must persist the '{$option}' uninstall sentinel" );
+				}
+			} finally {
+				\restore_current_blog();
+			}
+		}
+
+		\define( 'A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL', true );
+		\define( 'WP_UNINSTALL_PLUGIN', true );
+		require \dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		foreach ( $site_ids as $site_id ) {
+			\switch_to_blog( $site_id );
+			try {
+				self::assertSame( array(), self::engine_option_names(), "The uninstall opt-in must leave site {$site_id} with zero a8csp_bgje_ rows" );
 			} finally {
 				\restore_current_blog();
 			}

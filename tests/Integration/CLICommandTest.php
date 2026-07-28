@@ -2,25 +2,24 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\ErrorLogSink;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Schedule\Schedule;
+use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -68,8 +67,8 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	/** Test-only WP-CLI bootstrap that fails the retained-run row read after name discovery. */
 	private const string FAILED_READ_BOOTSTRAP = self::WP_PATH . '/wp-content/plugins/a8csp-background-jobs-engine/tests/Support/Fixtures/cli-failed-read.php';
 
-	/** Owner declared in every isolated inspection request. */
-	private const string INSPECTION_OWNER = 'integration-cli-inspection-owner';
+	/** Scope declared in every isolated inspection request. */
+	private const string INSPECTION_SCOPE = 'integration-cli-inspection-scope';
 
 	/** Schedule declared in every isolated inspection request. */
 	private const string INSPECTION_SCHEDULE = 'inspection-schedule';
@@ -77,8 +76,8 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	/** Job declared in every isolated inspection request. */
 	private const string INSPECTION_JOB = 'integration-cli-inspection-job';
 
-	/** Owner-qualified job identity declared in every isolated inspection request. */
-	private const string INSPECTION_JOB_IDENTITY = self::INSPECTION_OWNER . ':' . self::INSPECTION_JOB;
+	/** Scope-qualified job identity declared in every isolated inspection request. */
+	private const string INSPECTION_JOB_IDENTITY = self::INSPECTION_SCOPE . ':' . self::INSPECTION_JOB;
 
 	/** Run identity shared by deterministic retained-failure fixtures. */
 	private const string RUN_ID = '00000000001784030000-0000000000000000002';
@@ -92,17 +91,17 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	/** Prefix shared by dynamically named failed-run options. */
 	private const string FAILED_OPTION_PREFIX = 'a8csp_bgje_failed_runs_';
 
-	/** Owner isolated to real owner-scoped schedule removal. */
-	private const string REMOVE_OWNER = 'integration-cli-remove-owner';
+	/** Scope isolated to real per-scope schedule removal. */
+	private const string REMOVE_SCOPE = 'integration-cli-remove-scope';
 
-	/** Schedule isolated to real owner-scoped schedule removal. */
+	/** Schedule isolated to real per-scope schedule removal. */
 	private const string REMOVE_SCHEDULE = 'removable-schedule';
 
-	/** Job isolated to real owner-scoped schedule removal. */
+	/** Job isolated to real per-scope schedule removal. */
 	private const string REMOVE_JOB = 'removable-job';
 
-	/** Registration identity isolated to real owner-scoped schedule removal. */
-	private const string REMOVE_KEY = self::REMOVE_OWNER . ':' . self::REMOVE_SCHEDULE;
+	/** Registration identity isolated to real per-scope schedule removal. */
+	private const string REMOVE_KEY = self::REMOVE_SCOPE . ':' . self::REMOVE_SCHEDULE;
 
 	// endregion.
 
@@ -120,7 +119,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		parent::setUp();
 
 		$this->expect_option( 'a8csp_bgje_schedule_registrations_a8csp-bgje' );
-		$this->expect_option( 'a8csp_bgje_schedule_registrations_' . self::INSPECTION_OWNER );
+		$this->expect_option( 'a8csp_bgje_schedule_registrations_' . self::INSPECTION_SCOPE );
 	}
 
 	// endregion.
@@ -316,7 +315,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		$result = self::run_failed_runs_command( 'list', '--format=json' );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame( '[{"owner":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store","run_id":"' . self::RUN_ID . '","failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"stage":"execution","code":"execution_failed","error_class":"RuntimeException","error_message":"CLI boundary failure.","failed_chunk":null}]', $result['stdout'] );
+		self::assertSame( '[{"scope":"integration-cli-command","identity":"integration-cli-command:integration-cli-command-list-store","run_id":"' . self::RUN_ID . '","failed_at":"2023-11-14T22:13:21+00:00","attempts":3,"stage":"execution","code":"execution_failed","error_class":"RuntimeException","error_message":"CLI boundary failure.","failed_chunk":null}]', $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -589,10 +588,10 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( '', $result['stderr'] );
-		foreach ( array( 'owner', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfire_skips', 'overlap_skips', 'occurrence_visible', 'lock' ) as $field ) {
+		foreach ( array( 'scope', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfire_skips', 'overlap_skips', 'occurrence_visible', 'lock' ) as $field ) {
 			self::assertStringContainsString( $field, $result['stdout'] );
 		}
-		self::assertStringContainsString( self::INSPECTION_OWNER, $result['stdout'] );
+		self::assertStringContainsString( self::INSPECTION_SCOPE, $result['stdout'] );
 		self::assertStringContainsString( self::INSPECTION_SCHEDULE, $result['stdout'] );
 		self::assertStringContainsString( '300', $result['stdout'] );
 		self::assertStringContainsString( 'yes', $result['stdout'] );
@@ -601,7 +600,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * The real schedules command exposes the exact machine-readable owner-filtered row.
+	 * The real schedules command exposes the exact machine-readable scope-filtered row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -609,7 +608,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_schedules_list_json_exposes_the_registered_row(): void {
-		$result  = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--owner=' . self::INSPECTION_OWNER, '--format=json' );
+		$result  = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--scope=' . self::INSPECTION_SCOPE, '--format=json' );
 		$decoded = \json_decode( $result['stdout'], true, 512, \JSON_THROW_ON_ERROR );
 
 		self::assertSame( 0, $result['exit_code'] );
@@ -618,9 +617,9 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		self::assertCount( 1, $decoded );
 		$row = $decoded[0] ?? null;
 		self::assertIsArray( $row );
-		self::assertSame( array( 'owner', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfire_skips', 'overlap_skips', 'occurrence_visible', 'lock' ), \array_keys( $row ) );
-		self::assertSame( self::INSPECTION_OWNER, $row['owner'] ?? null );
-		self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $row['identity'] ?? null );
+		self::assertSame( array( 'scope', 'identity', 'recurrence', 'next_due', 'last_fired', 'misfire_skips', 'overlap_skips', 'occurrence_visible', 'lock' ), \array_keys( $row ) );
+		self::assertSame( self::INSPECTION_SCOPE, $row['scope'] ?? null );
+		self::assertSame( self::INSPECTION_SCOPE . ':' . self::INSPECTION_SCHEDULE, $row['identity'] ?? null );
 		self::assertSame( 300, $row['recurrence'] ?? null );
 		$next_due = $row['next_due'] ?? null;
 		self::assertIsString( $next_due );
@@ -633,7 +632,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * An unknown schedule owner exits successfully with the exact filtered empty state.
+	 * An unknown schedule scope exits successfully with the exact filtered empty state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -641,10 +640,10 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_schedules_list_reports_the_filtered_empty_state(): void {
-		$result = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--owner=missing-owner' );
+		$result = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--scope=missing-scope' );
 
 		self::assertSame( 0, $result['exit_code'] );
-		self::assertSame( "No schedule registrations are persisted for owner \"missing-owner\".\n", $result['stdout'] );
+		self::assertSame( "No schedule registrations are persisted for scope \"missing-scope\".\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
@@ -660,17 +659,17 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_schedules_remove_converges_one_owner_and_is_not_silently_idempotent(): void {
-		$option_name = ScheduleRegistry::option_name( self::REMOVE_OWNER );
+	public function test_schedules_remove_converges_one_scope_and_is_not_silently_idempotent(): void {
+		$option_name = ScheduleRegistry::option_name( self::REMOVE_SCOPE );
 		$this->expect_option( $option_name );
 		$schedule = new Schedule( self::REMOVE_SCHEDULE, Recurrence::every( 300 ), self::REMOVE_JOB );
 		$fixture  = StoreFixtureBuilder::for_identity( self::REMOVE_KEY )->schedule_registration(
 			array(
-				'owner'         => self::REMOVE_OWNER,
+				'scope'         => self::REMOVE_SCOPE,
 				'declarations'  => array(
 					self::REMOVE_KEY => array(
 						'schedule' => $schedule,
-						'job'      => self::REMOVE_OWNER . ':' . self::REMOVE_JOB,
+						'job'      => self::REMOVE_SCOPE . ':' . self::REMOVE_JOB,
 					),
 				),
 				'registrations' => array(
@@ -685,7 +684,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 
 		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
 		$log_records = array();
-		\remove_action( 'a8csp_bgje/log', array( ErrorLogSink::class, 'log' ), 10 );
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		\add_action(
 			'a8csp_bgje/log',
 			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
@@ -705,10 +704,10 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		);
 		self::assertCount( 1, $warnings );
 
-		$removed = self::run_command( 'schedules', 'remove', self::REMOVE_OWNER, '--yes' );
+		$removed = self::run_command( 'schedules', 'remove', self::REMOVE_SCOPE, '--yes' );
 
 		self::assertSame( 0, $removed['exit_code'] );
-		self::assertSame( 'Success: Removed every persisted schedule registration for owner "' . self::REMOVE_OWNER . '".' . "\n", $removed['stdout'] );
+		self::assertSame( 'Success: Removed every persisted schedule registration for scope "' . self::REMOVE_SCOPE . '".' . "\n", $removed['stdout'] );
 		self::assertSame( '', $removed['stderr'] );
 		\wp_cache_delete( $option_name, 'options' );
 		$missing = new \stdClass();
@@ -718,12 +717,12 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		$list = self::run_command( 'schedules', 'list', '--format=json' );
 		self::assertSame( 0, $list['exit_code'] );
 		self::assertSame( '', $list['stderr'] );
-		self::assertStringNotContainsString( self::REMOVE_OWNER, $list['stdout'] );
+		self::assertStringNotContainsString( self::REMOVE_SCOPE, $list['stdout'] );
 
-		$repeat = self::run_command( 'schedules', 'remove', self::REMOVE_OWNER, '--yes' );
+		$repeat = self::run_command( 'schedules', 'remove', self::REMOVE_SCOPE, '--yes' );
 		self::assertSame( 1, $repeat['exit_code'] );
 		self::assertSame( '', $repeat['stdout'] );
-		self::assertSame( 'Error: No schedule registrations are persisted for owner "' . self::REMOVE_OWNER . '".' . "\n", $repeat['stderr'] );
+		self::assertSame( 'Error: No schedule registrations are persisted for scope "' . self::REMOVE_SCOPE . '".' . "\n", $repeat['stderr'] );
 	}
 
 	/**
@@ -765,28 +764,28 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		$result = self::run_command( 'schedules' );
 
 		self::assertSame( 1, $result['exit_code'] );
-		self::assertSame( "usage: wp a8csp-bgje schedules <action> [<owner>] [--owner=<owner>] [--format=<format>] [--yes]\n", $result['stdout'] );
+		self::assertSame( "usage: wp a8csp-bgje schedules <action> [<scope>] [--scope=<scope>] [--format=<format>] [--yes]\n", $result['stdout'] );
 		self::assertSame( '', $result['stderr'] );
 	}
 
 	/**
-	 * A negated schedule owner reaches the command seam as false.
+	 * A negated schedule scope reaches the command seam as false.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_schedules_list_rejects_a_negated_owner(): void {
-		$owner = self::run_command( 'schedules', 'list', '--no-owner' );
+	public function test_schedules_list_rejects_a_negated_scope(): void {
+		$scope = self::run_command( 'schedules', 'list', '--no-scope' );
 
-		self::assertSame( 1, $owner['exit_code'] );
-		self::assertSame( '', $owner['stdout'] );
-		self::assertSame( "Error: Schedule list owner is invalid; pass a value with --owner=<owner>.\n", $owner['stderr'] );
+		self::assertSame( 1, $scope['exit_code'] );
+		self::assertSame( '', $scope['stdout'] );
+		self::assertSame( "Error: Schedule list scope is invalid; pass a value with --scope=<scope>.\n", $scope['stderr'] );
 	}
 
 	/**
-	 * The command guard rejects a remove-only owner positional on schedule listing.
+	 * The command guard rejects a remove-only scope positional on schedule listing.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -798,7 +797,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( "Error: Schedule list accepts only --owner and --format; use wp a8csp-bgje schedules list [--owner=<owner>] [--format=<format>].\n", $result['stderr'] );
+		self::assertSame( "Error: Schedule list accepts only --scope and --format; use wp a8csp-bgje schedules list [--scope=<scope>] [--format=<format>].\n", $result['stderr'] );
 	}
 
 	/**
@@ -964,7 +963,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
 		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
-		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::INSPECTION_OWNER );
+		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::INSPECTION_SCOPE );
 		$job            = new RecordingJob( self::INSPECTION_JOB );
 		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
 		$client->register( $job->definition() );
@@ -983,7 +982,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		try {
 			self::assertSame( 1, $this->run_next_engine_action() );
 
-			$schedules = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--owner=' . self::INSPECTION_OWNER, '--format=json' );
+			$schedules = self::run_command_with_globals( 'schedules', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', '--scope=' . self::INSPECTION_SCOPE, '--format=json' );
 			$runs      = self::run_command_with_globals( 'runs', array( '--require=' . self::INSPECTION_BOOTSTRAP ), 'list', self::INSPECTION_JOB_IDENTITY, '--format=json' );
 
 			self::assertSame( 0, $schedules['exit_code'] );
@@ -993,8 +992,8 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 			self::assertIsArray( $schedule_rows );
 			$schedule_row = $schedule_rows[0] ?? null;
 			self::assertIsArray( $schedule_row );
-			self::assertSame( self::INSPECTION_OWNER, $schedule_row['owner'] ?? null );
-			self::assertSame( self::INSPECTION_OWNER . ':' . self::INSPECTION_SCHEDULE, $schedule_row['identity'] ?? null );
+			self::assertSame( self::INSPECTION_SCOPE, $schedule_row['scope'] ?? null );
+			self::assertSame( self::INSPECTION_SCOPE . ':' . self::INSPECTION_SCHEDULE, $schedule_row['identity'] ?? null );
 			self::assertSame( 'yes', $schedule_row['occurrence_visible'] ?? null );
 			self::assertSame( 'free', $schedule_row['lock'] ?? null );
 
@@ -1239,7 +1238,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified background-work identity.
+	 * @param   string $name Complete scope-qualified background-work identity.
 	 *
 	 * @return  string Failed-run option name.
 	 */
@@ -1271,7 +1270,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name Complete owner-qualified background-work identity.
+	 * @param   string $name Complete scope-qualified background-work identity.
 	 *
 	 * @return  string
 	 */

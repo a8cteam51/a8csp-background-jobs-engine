@@ -45,7 +45,7 @@ final readonly class DeliveryScheduler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity      $identity        Complete owner-qualified work identity.
+	 * @param   Identity      $identity        Complete scope-qualified work identity.
 	 * @param   string        $run_id          Run identifier.
 	 * @param   int           $action_sequence Persisted delivery sequence.
 	 * @param   PendingAction $pending         Persisted delivery descriptor.
@@ -68,6 +68,7 @@ final readonly class DeliveryScheduler {
 			throw new \LogicException( 'Pending single-action delivery requires an integer fire time.' );
 		}
 
+		// Redelivery may replay a descriptor after its scheduled time has elapsed.
 		return $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, \max( $this->clock->now()->getTimestamp(), $fire_at ), $args, $group, $pending->priority );
 	}
 

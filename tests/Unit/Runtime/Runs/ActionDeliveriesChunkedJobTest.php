@@ -3,19 +3,18 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\Chunked\ChunkContextInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\OwnerOperations;
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\OverlapPolicy;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
@@ -23,6 +22,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
@@ -46,14 +46,14 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		'site_id' => 7,
 		'mode'    => 'full',
 	);
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 	private const string NAME     = 'catalog-sync';
 	private const int NOW         = 1_700_000_000;
-	private const string OWNER    = 'runs-tests';
+	private const string SCOPE    = 'runs-tests';
 	private const string RUN_ID   = '00000000001700000000-0000000000000000042';
 
 	private RecordingChunkedJob $chunked_job;
-	private OwnerOperations $client;
+	private ScopeOperations $client;
 	private StoreFixtureBuilder $fixtures;
 	private JobOptions $options;
 	private bool $registered;
@@ -89,7 +89,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		parent::setUp();
 
 		$this->rig         = EngineRig::set_up( self::NOW );
-		$this->client      = $this->rig->operations( self::OWNER );
+		$this->client      = $this->rig->operations( self::SCOPE );
 		$this->chunked_job = new RecordingChunkedJob( self::NAME );
 		$this->fixtures    = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->options     = new JobOptions();
@@ -284,7 +284,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertIsString( $raw );
 		$this->rig->wpdb()->put( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID, $raw );
 
-		$inspection = $this->rig->inspection()->runs( Identity::compose( self::OWNER, self::NAME ) );
+		$inspection = $this->rig->inspection()->runs( Identity::compose( self::SCOPE, self::NAME ) );
 		self::assertSame( 0, $inspection['live_unreadable'] );
 		self::assertNull( $inspection['live'][0]['queue_depth'] ?? null );
 
@@ -651,14 +651,14 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		if ( $accepted ) {
 			$serialized_queue = \maybe_serialize( $this->run_state()['kind_state'] ?? null );
 			self::assertIsString( $serialized_queue );
-			self::assertSame( 1_048_576, \strlen( $serialized_queue ) );
+			self::assertSame( $persisted_bytes, \strlen( $serialized_queue ) );
 			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
 
 			return;
 		}
 
 		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::queue_generation(), null );
-		self::assertSame( 'chunked_job queue contains 1048577 persisted serialization bytes; the limit is 1048576 bytes.', $failure->summary );
+		self::assertSame( 'chunked_job queue contains 983617 persisted serialization bytes; the limit is 983616 bytes.', $failure->summary );
 	}
 
 	/**
@@ -669,11 +669,11 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	public static function bounded_queue_bytes(): array {
 		return array(
 			'at limit'   => array(
-				'persisted_bytes' => 1_048_576,
+				'persisted_bytes' => 983_616,
 				'accepted'        => true,
 			),
 			'over limit' => array(
-				'persisted_bytes' => 1_048_577,
+				'persisted_bytes' => 983_617,
 				'accepted'        => false,
 			),
 		);
@@ -875,7 +875,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$queue   = array( $current, array( 'chunk' => 'remaining' ) );
 		$this->rig->tear_down();
 		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->client   = $this->rig->operations( self::OWNER );
+		$this->client   = $this->rig->operations( self::SCOPE );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$state          = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: $queue, failed_attempts: 0, action_sequence: 2, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'continue', 10 ) );
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
@@ -1018,7 +1018,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$current = array( 'chunk' => 'current' );
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
 		$this->set_filter_value( 'a8csp_bgje/continue_delay', 75 );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ) use ( $current ): void {
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkedRunContextInterface $context ) use ( $current ): void {
 			self::assertSame( $current, $chunk );
 			self::assertSame( self::RUN_ID, (string) $context->get_run_id() );
 			self::assertSame( self::ARGS, $context->get_start_args() );
@@ -1030,7 +1030,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		self::assertInstanceOf( ChunkContextInterface::class, $this->chunked_job->process_calls[0]['context'] ?? null );
+		self::assertInstanceOf( ChunkedRunContextInterface::class, $this->chunked_job->process_calls[0]['context'] ?? null );
 		self::assertSame( array( array( 'chunk' => 'prepended-2' ), array( 'chunk' => 'prepended-1' ), array( 'chunk' => 'remaining' ), array( 'chunk' => 'appended' ) ), $this->run_state()['kind_state'] ?? null );
 		self::assertSame( self::NOW + 195, $this->single_call_for_hook( ActionDeliveries::DELIVER_HOOK )['args']['timestamp'] ?? null );
 	}
@@ -1076,7 +1076,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->options = new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) );
 
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ) use ( $invalid_value, $mutation ): void {
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkedRunContextInterface $context ) use ( $invalid_value, $mutation ): void {
 			if ( 'append_chunk' === $mutation ) {
 				$context->append_chunk( array( 'execution-private-payload' => $invalid_value ) );
 
@@ -1109,7 +1109,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->options = new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) );
 
 		$this->prepare_scheduled_chunk( array( $current ) );
-		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $chunk, $mutation ): void {
+		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ) use ( $chunk, $mutation ): void {
 			if ( 'append_chunk' === $mutation ) {
 				$context->append_chunk( $chunk );
 
@@ -1183,7 +1183,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->prepare_scheduled_chunk( array( $current, ...$candidate ) );
 		$this->chunked_job->queue            = array();
 		$this->rig->wpdb()->recorded_queries = array();
-		$this->chunked_job->on_process       = static function ( array $chunk_args, ChunkContextInterface $context ) use ( $mutation, $mutation_chunk ): void {
+		$this->chunked_job->on_process       = static function ( array $chunk_args, ChunkedRunContextInterface $context ) use ( $mutation, $mutation_chunk ): void {
 			if ( 'append_chunk' === $mutation ) {
 				$context->append_chunk( $mutation_chunk );
 
@@ -1198,7 +1198,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		if ( $accepted ) {
 			$serialized_queue = \maybe_serialize( $this->run_state()['kind_state'] ?? null );
 			self::assertIsString( $serialized_queue );
-			self::assertSame( 1_048_576, \strlen( $serialized_queue ) );
+			self::assertSame( $persisted_bytes, \strlen( $serialized_queue ) );
 			self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
 
 			return;
@@ -1216,25 +1216,122 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		return array(
 			'append_chunk at limit'    => array(
 				'mutation'        => 'append_chunk',
-				'persisted_bytes' => 1_048_576,
+				'persisted_bytes' => 983_616,
 				'accepted'        => true,
 			),
 			'append_chunk over limit'  => array(
 				'mutation'        => 'append_chunk',
-				'persisted_bytes' => 1_048_577,
+				'persisted_bytes' => 983_617,
 				'accepted'        => false,
 			),
 			'prepend_chunk at limit'   => array(
 				'mutation'        => 'prepend_chunk',
-				'persisted_bytes' => 1_048_576,
+				'persisted_bytes' => 983_616,
 				'accepted'        => true,
 			),
 			'prepend_chunk over limit' => array(
 				'mutation'        => 'prepend_chunk',
-				'persisted_bytes' => 1_048_577,
+				'persisted_bytes' => 983_617,
 				'accepted'        => false,
 			),
 		);
+	}
+
+	/**
+	 * A generated continuation reports a complete-row rejection as a start-action failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_handle_start_action_reports_a_rejected_continuation_replacement(): void {
+		$start_args               = array( 'values' => \array_fill( 0, 4_000, 0 ) );
+		$this->chunked_job->queue = self::queue_with_persisted_bytes( 983_616 );
+		$this->register_chunked_job();
+		$dispatched = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $dispatched );
+
+		$this->rig->run_due();
+
+		$events = $this->rig->hooks()->fired( 'a8csp_bgje/failed' );
+		self::assertCount( 1, $events );
+		$failure = $events[0][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( ErrorCode::PayloadRejected, $failure->code );
+		self::assertSame( RunFailureStage::queue_generation(), $failure->stage );
+		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
+	 * A processed continuation reports a complete-row rejection while preparing its successor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_handle_continue_action_reports_a_rejected_continuation_replacement(): void {
+		$current        = array( 'chunk' => 'current' );
+		$candidate      = self::queue_with_persisted_bytes( 983_616 );
+		$mutation_chunk = \array_pop( $candidate );
+		$start_args     = array( 'values' => \array_fill( 0, 2_000, 0 ) );
+		self::assertIsArray( $mutation_chunk );
+		$this->chunked_job->queue = array( $current, ...$candidate );
+		$this->register_chunked_job();
+		$dispatched = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $dispatched );
+		$this->rig->run_due();
+		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ) use ( $mutation_chunk ): void {
+			$context->append_chunk( $mutation_chunk );
+		};
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), null );
+		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
+		self::assertCount( 1, $this->chunked_job->process_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
+	 * A processed chunk that loses its exact run-row write leaves the concurrent generation alone.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_continue_action_returns_quietly_after_losing_its_running_replacement_cas(): void {
+		$current   = array( 'chunk' => 'current' );
+		$remaining = array( 'chunk' => 'remaining' );
+		$this->prepare_scheduled_chunk( array( $current, $remaining ) );
+		$this->chunked_job->on_process = static function ( array $chunk_args, ChunkedRunContextInterface $context ): void {
+			$context->append_chunk( array( 'chunk' => 'discarded' ) );
+		};
+		$this->set_filter_value(
+			'a8csp_bgje/continue_delay',
+			function (): int {
+				$this->replace_failed_attempts( 2 );
+
+				return 30;
+			}
+		);
+
+		$this->rig->run_due();
+
+		$state = $this->run_state();
+		self::assertIsArray( $state );
+		self::assertSame( 2, $state['failed_attempts'] ?? null );
+		self::assertSame( array( $current, $remaining ), $state['kind_state'] ?? null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
+		self::assertCount( 1, $this->chunked_job->process_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**
@@ -1381,7 +1478,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_supersedes_after_chunk_work_loses_ownership(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process = function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process = function ( array $chunk, ChunkedRunContextInterface $context ): void {
 			$context->append_chunk( array( 'chunk' => 'discarded' ) );
 			$this->install_foreign_generation( self::NOW );
 		};
@@ -1430,7 +1527,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_fails_terminally_when_continue_scheduling_fails(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ), array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process                    = static function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process                    = static function ( array $chunk, ChunkedRunContextInterface $context ): void {
 			$context->prepend_chunk( array( 'chunk' => 'committed-front' ) );
 			$context->append_chunk( array( 'chunk' => 'committed-back' ) );
 		};
@@ -1452,7 +1549,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_handle_continue_action_fails_terminally_when_continue_delay_filter_throws(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ) );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkedRunContextInterface $context ): void {
 			$context->append_chunk( array( 'chunk' => 'committed' ) );
 		};
 		$this->set_filter_value(
@@ -1468,6 +1565,45 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * A post-processing failure reports a complete-row rejection with its original execution stage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_handle_continue_action_reports_a_rejected_post_processing_failure_replacement(): void {
+		$current        = array( 'chunk' => 'current' );
+		$candidate      = self::queue_with_persisted_bytes( 983_616 );
+		$mutation_chunk = \array_pop( $candidate );
+		$start_args     = array( 'values' => \array_fill( 0, 2_000, 0 ) );
+		self::assertIsArray( $mutation_chunk );
+		$this->chunked_job->queue = array( $current, ...$candidate );
+		$this->register_chunked_job();
+		$dispatched = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $dispatched );
+		$this->rig->run_due();
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkedRunContextInterface $context ) use ( $mutation_chunk ): void {
+			$context->append_chunk( $mutation_chunk );
+		};
+		$this->set_filter_value(
+			'a8csp_bgje/continue_delay',
+			static function (): never {
+				throw new \DomainException( 'Continue-delay filter exploded.' );
+			}
+		);
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::execution(), null );
+		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
+		self::assertCount( 1, $this->chunked_job->process_calls );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
 	 * A processed-chunk failure retains retry priority without persisting a replayable successor.
 	 *
 	 * @load-bearing durability
@@ -1480,7 +1616,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 */
 	public function test_processed_chunk_failure_retains_priority_without_persisting_a_replayable_successor(): void {
 		$this->prepare_scheduled_chunk( array( array( 'chunk' => 'current' ) ), 42 );
-		$this->chunked_job->on_process = static function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process = static function ( array $chunk, ChunkedRunContextInterface $context ): void {
 			$context->append_chunk( array( 'chunk' => 'committed' ) );
 		};
 		$this->set_filter_value(
@@ -1586,7 +1722,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->options = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) );
 
 		$this->prepare_scheduled_chunk( array( $current, array( 'chunk' => 'remaining' ) ) );
-		$this->chunked_job->on_process        = static function ( array $chunk, ChunkContextInterface $context ): void {
+		$this->chunked_job->on_process        = static function ( array $chunk, ChunkedRunContextInterface $context ): void {
 			$context->prepend_chunk( array( 'chunk' => 'discarded-front' ) );
 			$context->append_chunk( array( 'chunk' => 'discarded-back' ) );
 		};
@@ -1620,6 +1756,41 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertSame( 'schedule_single', $retry_call['verb'] );
 		self::assertSame( array( self::IDENTITY, self::RUN_ID, 3 ), $retry_call['args']['args'] ?? null );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed' ) );
+	}
+
+	/**
+	 * A retry replacement that crosses the complete-row ceiling reports the deterministic rejection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_handle_continue_action_reports_a_rejected_retry_replacement(): void {
+		$start_args               = array( 'values' => \array_fill( 0, 1_548, 0 ) );
+		$queue                    = self::queue_with_persisted_bytes( 983_616 );
+		$current                  = $queue[0];
+		$this->options            = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) );
+		$this->chunked_job->queue = $queue;
+		$this->register_chunked_job();
+		$dispatched = $this->client->dispatch( self::NAME, $start_args );
+		self::assertInstanceOf( Success::class, $dispatched );
+		$this->rig->run_due();
+		$pre_retry_state = $this->run_state();
+		self::assertIsArray( $pre_retry_state );
+		$pre_retry_raw = \maybe_serialize( $pre_retry_state );
+		self::assertIsString( $pre_retry_raw );
+		self::assertSame( 999_994, \strlen( $pre_retry_raw ) );
+
+		$this->chunked_job->process_throwable = new \RuntimeException( 'Chunk processing exploded.' );
+		$this->rig->randomizer()->value       = 11;
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), $current );
+		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
+		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
 	/**
@@ -2020,7 +2191,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	// region HELPERS.
 
 	/**
-	 * Starts the deterministic chunked job through its owner-bound facade.
+	 * Starts the deterministic chunked job through its scope-bound facade.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -2069,7 +2240,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Returns a portable 128-chunk queue with the requested PHP serialization length.
+	 * Returns a portable 120-chunk queue with the requested PHP serialization length.
 	 *
 	 * Each full chunk has an 8,178-byte payload and therefore an 8,192-byte JSON representation.
 	 * Measuring the complete serialized queue yields the overflow removed from the final payload;
@@ -2080,7 +2251,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @return  list<array{payload: string}>
 	 */
 	private static function queue_with_persisted_bytes( int $persisted_bytes ): array {
-		$payload_lengths = \array_fill( 0, 128, 8_178 );
+		$payload_lengths = \array_fill( 0, 120, 8_178 );
 		$overflow        = self::serialized_queue_bytes_for_payload_lengths( $payload_lengths ) - $persisted_bytes;
 		$tail_index      = \array_key_last( $payload_lengths );
 		$tail_bytes      = $payload_lengths[ $tail_index ] - $overflow;

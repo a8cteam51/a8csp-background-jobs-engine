@@ -45,6 +45,9 @@ final readonly class LockWindows {
 	 *
 	 * A bounded ceiling prevents an accidental declaration from deferring recovery indefinitely.
 	 *
+	 * `JobOptions`'s frozen public `$max_runtime` docblock states this ceiling in seconds, so
+	 * lowering it here breaks a published promise unless that copy moves with it.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -86,7 +89,7 @@ final readonly class LockWindows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id   Run identifier.
 	 *
 	 * @return  int
@@ -116,7 +119,7 @@ final readonly class LockWindows {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity Complete owner-qualified job or chunked job identity.
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string   $run_id   Run identifier.
 	 *
 	 * @return  int
@@ -199,7 +202,7 @@ final readonly class LockWindows {
 		 * @version 1.0.0
 		 *
 		 * @param   int    $delay    Default continuation delay in seconds.
-		 * @param   string $identity Complete owner-qualified job or chunked job identity.
+		 * @param   string $identity Complete scope-qualified job or chunked job identity.
 		 * @param   string $run_id   Run identifier.
 		 */
 		$delay = \apply_filters( 'a8csp_bgje/continue_delay', self::CONTINUE_DELAY, $identity, $run_id );
@@ -207,7 +210,7 @@ final readonly class LockWindows {
 		/**
 		 * Filters the inter-chunk delay for one work identity.
 		 *
-		 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+		 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
 		 *
 		 * @since   1.0.0
 		 * @version 1.0.0
@@ -256,14 +259,14 @@ final readonly class LockWindows {
 		 * @version 1.0.0
 		 *
 		 * @param   int    $default_staleness Default lock-staleness window in seconds.
-		 * @param   string $identity          Complete owner-qualified work identity.
+		 * @param   string $identity          Complete scope-qualified work identity.
 		 */
 		$staleness = \apply_filters( 'a8csp_bgje/lock_staleness', $default_staleness, $identity );
 
 		/**
 		 * Filters the lock-staleness window in seconds.
 		 *
-		 * The dynamic portion of the hook name, `$identity`, refers to the owner-qualified work identity.
+		 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
 		 *
 		 * @since   1.0.0
 		 * @version 1.0.0

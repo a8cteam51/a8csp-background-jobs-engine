@@ -41,50 +41,50 @@ final readonly class SchedulingError implements ErrorInterface {
 	// region METHODS
 
 	/**
-	 * Returns a registry-read failure for one owner.
+	 * Returns a registry-read failure for one scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable client identifier.
+	 * @param   string $scope Stable client identifier.
 	 *
 	 * @return  self
 	 */
-	public static function registry_read_failure( string $owner ): self {
-		return new self( SchedulingErrorReason::StorageFailure, \sprintf( 'Schedule registry state for owner "%s" could not be read; repair WordPress option reads and retry.', $owner ), array( 'owner' => $owner ), );
+	public static function registry_read_failure( string $scope ): self {
+		return new self( SchedulingErrorReason::StorageFailure, \sprintf( 'Schedule registry state for scope "%s" could not be read; repair WordPress option reads and retry.', $scope ), array( 'scope' => $scope ), );
 	}
 
 	/**
-	 * Returns a registry-persist failure for one owner.
+	 * Returns a registry-persist failure for one scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner Stable client identifier.
+	 * @param   string $scope Stable client identifier.
 	 *
 	 * @return  self
 	 */
-	public static function registry_persist_failure( string $owner ): self {
-		return new self( SchedulingErrorReason::StorageFailure, \sprintf( 'Schedule registry state for owner "%s" could not be persisted; repair WordPress option writes and retry synchronization.', $owner ), array( 'owner' => $owner ), );
+	public static function registry_persist_failure( string $scope ): self {
+		return new self( SchedulingErrorReason::StorageFailure, \sprintf( 'Schedule registry state for scope "%s" could not be persisted; repair WordPress option writes and retry synchronization.', $scope ), array( 'scope' => $scope ), );
 	}
 
 	/**
-	 * Returns a corrupt registry-row failure for one owner.
+	 * Returns a corrupt registry-row failure for one scope.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $owner       Stable client identifier.
+	 * @param   string $scope       Stable client identifier.
 	 * @param   string $option_name Exact unreadable option row.
 	 *
 	 * @return  self
 	 */
-	public static function registry_corrupt( string $owner, string $option_name ): self {
+	public static function registry_corrupt( string $scope, string $option_name ): self {
 		return new self(
 			SchedulingErrorReason::StorageFailure,
 			\sprintf( 'Schedule registry option row "%s" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $option_name ),
 			array(
-				'owner'       => $owner,
+				'scope'       => $scope,
 				'option_name' => $option_name,
 			)
 		);

@@ -2,7 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Run;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

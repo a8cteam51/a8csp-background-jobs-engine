@@ -2,14 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Error\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Run\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\JobOptions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Job\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 
@@ -22,14 +22,14 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 	// region FIELDS AND CONSTANTS.
 
-	/** Client owner isolated to retry round-trip coverage. */
-	private const string OWNER = 'integration-retry';
+	/** Client scope isolated to retry round-trip coverage. */
+	private const string SCOPE = 'integration-retry';
 
 	/** Job identity unique within the request-persistent integration registry. */
 	private const string NAME = 'integration-retry-round-trip';
 
-	/** Owner-qualified job identity persisted by the engine. */
-	private const string IDENTITY = self::OWNER . ':' . self::NAME;
+	/** Scope-qualified job identity persisted by the engine. */
+	private const string IDENTITY = self::SCOPE . ':' . self::NAME;
 
 	// endregion.
 
@@ -46,7 +46,7 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 	public function test_retry_policy_filters_run_generic_then_identity_specific_with_chained_values(): void {
 		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
 		$name              = 'integration-retry-policy-hooks';
-		$identity          = self::OWNER . ':' . $name;
+		$identity          = self::SCOPE . ':' . $name;
 		$args              = array( 'account_id' => 92 );
 		$job               = new RecordingJob( $name );
 		$job->throwable    = new \RuntimeException( 'The retry-policy fixture failed.' );
@@ -97,7 +97,7 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 			1
 		);
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition( new JobOptions( retry: $definition_policy ) ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . $identity );
 		$this->expect_option( 'a8csp_bgje_failed_runs_' . $identity );
@@ -153,7 +153,7 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 		$job->throwable          = new \RuntimeException( 'The upstream service remains unavailable.' );
 		$definition_retry_policy = new RetryPolicy();
 
-		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::OWNER );
+		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition( new JobOptions( retry: $definition_retry_policy ) ) );
 
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::IDENTITY );
