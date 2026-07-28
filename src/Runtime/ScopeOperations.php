@@ -139,9 +139,9 @@ final readonly class ScopeOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<Schedule> $schedules Complete schedule declaration for the bound scope.
+	 * @param   array<array-key, Schedule> $schedules Complete schedule declaration for the bound scope.
 	 *
-	 * @throws  \InvalidArgumentException When an entry, scope/name identity, scope/target identity, declaration uniqueness, or schedule priority is invalid.
+	 * @throws  \InvalidArgumentException When a scope/name identity, scope/target identity, declaration uniqueness, or schedule priority is invalid.
 	 *
 	 * @return  AbstractResult<true, BoundaryError>
 	 */
@@ -149,10 +149,6 @@ final readonly class ScopeOperations {
 	public function sync( array $schedules ): AbstractResult {
 		$declarations = array();
 		foreach ( $schedules as $schedule ) {
-			if ( ! $schedule instanceof Schedule ) {
-				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
-			}
-
 			$context  = \sprintf( 'Schedule "%s"', $schedule->name );
 			$identity = self::compose_declared( $this->scope, $schedule->name, $context );
 			if ( isset( $declarations[ (string) $identity ] ) ) {
