@@ -2,11 +2,11 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\LocksCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\RunsCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\SchedulesCommand;
-use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
 
 \defined( 'ABSPATH' ) || exit;
 
