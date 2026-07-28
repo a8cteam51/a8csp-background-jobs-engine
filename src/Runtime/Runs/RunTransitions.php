@@ -400,6 +400,16 @@ final readonly class RunTransitions {
 			return false;
 		}
 		if ( HeartbeatOutcome::GenerationMismatch === $outcome ) {
+			// The fence aborts without a terminal transition and the scheduler action still completes, so this record is the
+			// only evidence separating a superseded delivery from a handler that did nothing.
+			$this->logger->debug(
+				$handler->key() . ' delivery generation is superseded; the delivery aborts without a terminal transition.',
+				array(
+					'identity' => (string) $identity,
+					'run_id'   => $run_id,
+				)
+			);
+
 			return true;
 		}
 
@@ -528,6 +538,16 @@ final readonly class RunTransitions {
 			return false;
 		}
 		if ( HeartbeatOutcome::GenerationMismatch === $outcome ) {
+			// The fence aborts without a terminal transition and the scheduler action still completes, so this record is the
+			// only evidence separating a superseded delivery from a handler that did nothing.
+			$this->logger->debug(
+				$handler->key() . ' delivery generation is superseded; the delivery aborts without a terminal transition.',
+				array(
+					'identity' => $identity,
+					'run_id'   => $run_id,
+				)
+			);
+
 			return true;
 		}
 

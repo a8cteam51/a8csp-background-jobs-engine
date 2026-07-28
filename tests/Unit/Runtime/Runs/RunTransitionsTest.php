@@ -217,7 +217,7 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A terminal winner deleting the run during a live heartbeat CAS silences the stale delivery.
+	 * A terminal winner deleting the run during a live heartbeat CAS stops the stale delivery without acting on it.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -237,7 +237,19 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
-		self::assertSame( array(), $this->logger->records );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'job delivery generation is superseded; the delivery aborts without a terminal transition.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
 		self::assertSame(
 			array(
 				'a8csp_bgje/completed/' . self::IDENTITY,

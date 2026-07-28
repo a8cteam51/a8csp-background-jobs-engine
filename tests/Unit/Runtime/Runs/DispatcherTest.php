@@ -1073,6 +1073,52 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * A delivery fenced out by a superseded generation records why it stopped.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The generation fence aborts without a terminal transition and the scheduler action still completes, so a
+	 *                run that stops here is invisible until stale-state maintenance redelivers it. The record is the only
+	 *                evidence that the fence, rather than the handler, ended the delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_stale_delivery_generation_records_the_fence_that_stopped_it(): void {
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+
+		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$lock_raw    = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		$lock['heartbeat_at'] = self::NOW + 1;
+		$advanced             = \maybe_serialize( $lock );
+		self::assertIsString( $advanced );
+		$this->rig->wpdb()->put( $lock_option, $advanced );
+		$this->rig->logger()->records = array();
+
+		$this->rig->run_due();
+
+		self::assertSame( array(), $this->job->calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'job delivery generation is superseded; the delivery aborts without a terminal transition.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
 	 * A failed future-action heartbeat write releases the provisional lock and run.
 	 *
 	 * @load-bearing concurrency
