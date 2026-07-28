@@ -325,8 +325,10 @@ final class EngineComponentTest extends TestCase {
 
 		$result = $client->dispatch( 'preferred' );
 
+		$as_calls = $GLOBALS['a8csp_bgje_test_as_calls'] ?? null;
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $GLOBALS['a8csp_bgje_test_as_calls'], 'function' ) );
+		self::assertIsArray( $as_calls );
+		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $as_calls, 'function' ) );
 		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_cron_calls'] );
 	}
 

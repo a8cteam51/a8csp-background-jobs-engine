@@ -219,22 +219,23 @@ final class UninstallTest extends TestCase {
 		\define( 'WP_UNINSTALL_PLUGIN', true );
 		require \dirname( __DIR__, 2 ) . '/uninstall.php';
 
+		$retained = $this->retained_options();
 		foreach ( self::DYNAMIC_OPTIONS as $option ) {
-			self::assertArrayNotHasKey( $option, $GLOBALS['a8csp_bgje_test_options'] );
+			self::assertArrayNotHasKey( $option, $retained );
 		}
 		foreach ( self::UPDATE_TRANSIENTS as $transient ) {
-			self::assertArrayNotHasKey( '_transient_' . $transient, $GLOBALS['a8csp_bgje_test_options'] );
-			self::assertArrayNotHasKey( '_transient_timeout_' . $transient, $GLOBALS['a8csp_bgje_test_options'] );
+			self::assertArrayNotHasKey( '_transient_' . $transient, $retained );
+			self::assertArrayNotHasKey( '_transient_timeout_' . $transient, $retained );
 		}
 		self::assertSame( self::UPDATE_TRANSIENTS, $GLOBALS['a8csp_bgje_test_delete_transient_calls'] );
 		$option_calls      = $this->option_calls();
 		$first_option_call = $option_calls[0] ?? null;
 		self::assertIsArray( $first_option_call );
 		self::assertSame( array( 'a8csp_bgje_schedule_registrations_consumer-plugin' ), $first_option_call['args'] ?? null );
-		self::assertArrayHasKey( self::BYTE_NEAR_MISS, $GLOBALS['a8csp_bgje_test_options'] );
-		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgje_test_options'][ self::BYTE_NEAR_MISS ] );
-		self::assertArrayHasKey( self::LIKE_NEAR_MISS, $GLOBALS['a8csp_bgje_test_options'] );
-		self::assertSame( 'sentinel', $GLOBALS['a8csp_bgje_test_options'][ self::LIKE_NEAR_MISS ] );
+		self::assertArrayHasKey( self::BYTE_NEAR_MISS, $retained );
+		self::assertSame( 'sentinel', $retained[ self::BYTE_NEAR_MISS ] );
+		self::assertArrayHasKey( self::LIKE_NEAR_MISS, $retained );
+		self::assertSame( 'sentinel', $retained[ self::LIKE_NEAR_MISS ] );
 		foreach ( self::DELIVERY_HOOKS as $hook ) {
 			self::assertFalse( \wp_next_scheduled( $hook, array( $hook ) ) );
 		}
@@ -511,6 +512,21 @@ final class UninstallTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Returns the surviving option ledger after verifying its runtime representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private function retained_options(): array {
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
+		self::assertIsArray( $options );
+
+		return $options;
+	}
 
 	/**
 	 * Returns the option-call ledger after verifying its runtime representation.
