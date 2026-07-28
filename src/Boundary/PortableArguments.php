@@ -17,6 +17,25 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Boundary;
  * @version 1.0.0
  */
 final class PortableArguments {
+	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Maximum array depth accepted by the portable-arguments rule.
+	 *
+	 * The cross-layer portability rule applies before backend selection, and matching the JSON
+	 * encoder's default keeps recursive validation finite. `Schedule::MAX_ARGUMENTS_JSON_DEPTH` is the
+	 * one copy a change here must reach by hand, because a public model cannot import this constant;
+	 * `Runtime\Backends\SchedulerFacade::MAX_ARGUMENTS_JSON_DEPTH` aliases it and follows on its own.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	public const int MAX_ARGUMENTS_JSON_DEPTH = 512;
+
+	// endregion
+
 	// region METHODS
 
 	/**
@@ -32,7 +51,7 @@ final class PortableArguments {
 	 *
 	 * @return  bool
 	 */
-	public static function is_valid( array $values, int $remaining_depth = 512 ): bool {
+	public static function is_valid( array $values, int $remaining_depth = self::MAX_ARGUMENTS_JSON_DEPTH ): bool {
 		if ( 1 > $remaining_depth ) {
 			return false;
 		}

@@ -17,18 +17,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 final readonly class RunFailureStage {
 	// region FIELDS AND CONSTANTS
 
-	/**
-	 * Lexical grammar for persisted kind and lifecycle stage keys.
-	 *
-	 * The public-model copy mirrors `Runtime\Runs\Kinds\KindHandlerInterface::KEY_PATTERN` because
-	 * models do not import Runtime internals.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     string
-	 */
-	private const string PATTERN = '/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?\z/';
+	/** Mirrors `Runtime\Runs\Kinds\KindHandlerInterface::KEY_PATTERN`. */
+	private const string KEY_PATTERN = '/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?\z/';
 
 	// endregion
 
@@ -141,7 +131,7 @@ final readonly class RunFailureStage {
 	 * @return  self|null
 	 */
 	public static function tryFrom( string $value ): ?self {
-		if ( 1 !== \preg_match( self::PATTERN, $value ) ) {
+		if ( 1 !== \preg_match( self::KEY_PATTERN, $value ) ) {
 			return null;
 		}
 

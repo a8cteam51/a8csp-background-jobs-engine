@@ -26,7 +26,8 @@ final readonly class JobOptions {
 	 * @phpstan-param (\Closure(array<array-key, mixed>): ?string)|null $overlap_key
 	 *
 	 * @param   int|null           $max_runtime Positive seconds for one execution invocation, or null for the engine default.
-	 *                                          Effective credit is clamped to 21,600 seconds (6 hours); higher declarations are accepted.
+	 *                                          Effective credit is clamped to `Runtime\Locks\LockWindows::MAX_EXECUTION_LEASE`,
+	 *                                          21,600 seconds (6 hours); higher declarations are accepted.
 	 * @param   RetryPolicy|null   $retry       Retry policy, or null for the engine default.
 	 * @param   OverlapPolicy|null $overlap     Overlap policy, or null for the engine default.
 	 * @param   \Closure|null      $overlap_key Argument-aware overlap identity, or null for the canonical argument hash.

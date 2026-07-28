@@ -40,6 +40,9 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	/**
 	 * Persisted key owned by this handler.
 	 *
+	 * Handler resolution keys the registry by this value and looks it up by a declaration's
+	 * `JobKind`, so `JobKind::job()` carries a frozen public copy that must stay byte-equal.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

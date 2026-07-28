@@ -45,6 +45,9 @@ final readonly class LockWindows {
 	 *
 	 * A bounded ceiling prevents an accidental declaration from deferring recovery indefinitely.
 	 *
+	 * `JobOptions`'s frozen public `$max_runtime` docblock states this ceiling in seconds, so
+	 * lowering it here breaks a published promise unless that copy moves with it.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

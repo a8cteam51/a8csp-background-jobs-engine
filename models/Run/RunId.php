@@ -15,24 +15,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 final readonly class RunId implements \Stringable {
 	// region FIELDS AND CONSTANTS
 
-	/**
-	 * Fixed byte length of the canonical timestamp-randomness representation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
+	/** Mirrors `Runtime\Runs\RunIdentity::LENGTH`. */
 	private const int LENGTH = 40;
 
-	/**
-	 * Complete canonical timestamp-randomness representation.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     string
-	 */
+	/** Mirrors `Runtime\Runs\RunIdentity::TIME_DIGITS` and `Runtime\Runs\RunIdentity::RANDOM_DIGITS`. */
 	private const string PATTERN = '/\A[0-9]{20}-[0-9]{19}\z/D';
 
 	// endregion

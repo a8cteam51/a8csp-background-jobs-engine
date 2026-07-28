@@ -15,6 +15,9 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 final readonly class Schedule {
 	// region FIELDS AND CONSTANTS
 
+	/** Mirrors `Boundary\PortableArguments::MAX_ARGUMENTS_JSON_DEPTH`. */
+	private const int MAX_ARGUMENTS_JSON_DEPTH = 512;
+
 	/**
 	 * Target job arguments.
 	 *
@@ -156,7 +159,7 @@ final readonly class Schedule {
 	 *
 	 * @return  bool
 	 */
-	private static function has_portable_values( array $values, int $remaining_depth = 512 ): bool {
+	private static function has_portable_values( array $values, int $remaining_depth = self::MAX_ARGUMENTS_JSON_DEPTH ): bool {
 		if ( 1 > $remaining_depth ) {
 			return false;
 		}

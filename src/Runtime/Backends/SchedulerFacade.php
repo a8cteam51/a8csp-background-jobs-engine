@@ -2,12 +2,12 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -42,14 +42,17 @@ final readonly class SchedulerFacade implements BackendInterface {
 	private const int MAX_ARGUMENTS_JSON_LENGTH = 8_000;
 
 	/**
-	 * Matching the JSON encoder's depth keeps recursive shape validation finite.
+	 * Maximum portable-argument depth admitted at the backend boundary.
+	 *
+	 * `PortableArguments::MAX_ARGUMENTS_JSON_DEPTH` owns the cross-layer portability rule that this
+	 * payload guard enforces before JSON encoding.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     int
 	 */
-	private const int MAX_ARGUMENTS_JSON_DEPTH = 512;
+	private const int MAX_ARGUMENTS_JSON_DEPTH = PortableArguments::MAX_ARGUMENTS_JSON_DEPTH;
 
 	/**
 	 * Backends in declaration order for write preference, consultation, and failure precedence.
