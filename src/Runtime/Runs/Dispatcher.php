@@ -432,7 +432,7 @@ final readonly class Dispatcher {
 		}
 
 		$latest_pointer = $this->stores->latest_run_pointer( $identity );
-		$claim          = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ) );
+		$claim          = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ), $created_at );
 		if (
 			LockClaimOutcome::Malformed === $claim->outcome
 			|| LockClaimOutcome::Indeterminate === $claim->outcome
@@ -466,7 +466,7 @@ final readonly class Dispatcher {
 
 		$run_store     = $this->stores->run_store( $identity );
 		$admission_now = $this->clock->now()->getTimestamp();
-		$admission     = $this->create_run_state_and_take_over_if_contended( $handler, $identity, $run_id, $args, $args_hash, $claim, $run_store, $fire_at, $admission_now, $priority );
+		$admission     = $this->create_run_state_and_take_over_if_contended( $handler, $identity, $run_id, $args, $args_hash, $claim, $run_store, $fire_at, $admission_now, $priority, $created_at );
 		if ( $admission instanceof Failure ) {
 			return $admission;
 		}
@@ -660,14 +660,16 @@ final readonly class Dispatcher {
 	 * @param   LockClaimResult         $claim        Initial overlap-lock selection.
 	 * @param   RunStore                $run_store    Active-run store.
 	 * @param   int|null                $fire_at      Absolute first-delivery timestamp, or null for asynchronous admission.
-	 * @param   int                     $now          Admission timestamp.
+	 * @param   int                     $now          Post-claim admission timestamp deciding first-delivery lane selection.
 	 * @param   int                     $priority     Scheduler priority.
+	 * @param   int                     $admitted_at  Pre-claim admission timestamp already written to the overlap lock. The
+	 *                                                run row shares it so the first delivery's generation fence matches.
 	 *
 	 * @return  array{state: RunState, takeover: array{run_id: string, claimed: array{raw: string, state: RunState}}|null}|Failure<EngineError>
 	 */
-	private function create_run_state_and_take_over_if_contended( KindHandlerInterface $handler, Identity $identity, string $run_id, array $args, string $args_hash, LockClaimResult $claim, RunStore $run_store, ?int $fire_at, int $now, int $priority ): array|Failure {
+	private function create_run_state_and_take_over_if_contended( KindHandlerInterface $handler, Identity $identity, string $run_id, array $args, string $args_hash, LockClaimResult $claim, RunStore $run_store, ?int $fire_at, int $now, int $priority, int $admitted_at ): array|Failure {
 		$kind  = $handler->key();
-		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $fire_at, $now, $priority ), $priority );
+		$state = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), $handler->initial_pending( $fire_at, $now, $priority ), $priority, $admitted_at );
 		if ( $state instanceof Failure ) {
 			if ( LockClaimOutcome::Claimed === $claim->outcome ) {
 				$this->overlap_guard->release( $identity, $args_hash, $run_id );
@@ -790,7 +792,7 @@ final readonly class Dispatcher {
 		}
 
 		// This exact lock CAS is the second linearization point for a running incumbent; a terminal snapshot crossed its own exact terminal CAS before admission observed it.
-		$transfer = $this->overlap_guard->replace( $identity, $args_hash, $incumbent_run_id, $incumbent_raw, $run_id );
+		$transfer = $this->overlap_guard->replace( $identity, $args_hash, $incumbent_run_id, $incumbent_raw, $run_id, $admitted_at );
 		if ( LockTransferOutcome::Indeterminate === $transfer ) {
 			$run_store->delete_if_unchanged( $run_id, $state );
 

@@ -87,12 +87,16 @@ final readonly class OverlapGuard {
 	 * @param   string   $args_hash        Stable single-flight identity.
 	 * @param   string   $run_id           Claiming run identifier.
 	 * @param   int      $staleness_window Caller-resolved staleness window in seconds.
+	 * @param   int|null $at               Admission timestamp shared with the run row, or null to read the clock. The first
+	 *                                     delivery presents the run row's heartbeat as this lock's expected generation, so a
+	 *                                     second clock read here would fence that delivery out whenever the two straddle a
+	 *                                     second boundary.
 	 *
 	 * @return  LockClaimResult Typed selection with an exact snapshot when one was read.
 	 */
-	public function claim( Identity $identity, string $args_hash, string $run_id, int $staleness_window ): LockClaimResult {
+	public function claim( Identity $identity, string $args_hash, string $run_id, int $staleness_window, ?int $at = null ): LockClaimResult {
 		$key      = $this->option_name( $identity, $args_hash );
-		$now      = $this->clock->now()->getTimestamp();
+		$now      = $at ?? $this->clock->now()->getTimestamp();
 		$new_lock = self::new_lock( $run_id, $now );
 
 		if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
@@ -128,16 +132,19 @@ final readonly class OverlapGuard {
 	 * @param   string   $expected_owner_run_id Owner parsed from the selected row.
 	 * @param   string   $expected_raw          Exact selected row bytes.
 	 * @param   string   $replacement_run_id    Replacement owner.
+	 * @param   int|null $at                    Admission timestamp shared with the replacement run row, or null to read the
+	 *                                          clock. The successor's first delivery presents its run-row heartbeat as this
+	 *                                          lock's expected generation.
 	 *
 	 * @return  LockTransferOutcome Ownership classification after the transfer attempt.
 	 */
-	public function replace( Identity $identity, string $args_hash, string $expected_owner_run_id, string $expected_raw, string $replacement_run_id ): LockTransferOutcome {
+	public function replace( Identity $identity, string $args_hash, string $expected_owner_run_id, string $expected_raw, string $replacement_run_id, ?int $at = null ): LockTransferOutcome {
 		$expected_lock = self::parse( $expected_raw );
 		if ( null === $expected_lock || $expected_owner_run_id !== $expected_lock['run_id'] ) {
 			return LockTransferOutcome::Lost;
 		}
 
-		$now = $this->clock->now()->getTimestamp();
+		$now = $at ?? $this->clock->now()->getTimestamp();
 
 		return match ( $this->rows->compare_and_swap( $this->option_name( $identity, $args_hash ), $expected_raw, self::serialize( self::new_lock( $replacement_run_id, $now ) ) ) ) {
 			RowWriteOutcome::Won         => LockTransferOutcome::Transferred,

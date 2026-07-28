@@ -141,6 +141,9 @@ final readonly class RunStore {
 	 * @param   PendingAction|null      $pending    Durable successor delivery, or null when none exists.
 	 * @param   int|null                $priority   Admitted scheduler priority, or null to derive it from the pending descriptor
 	 *                                               or engine default.
+	 * @param   int|null                $at         Admission timestamp shared with the overlap lock, or null to read the clock.
+	 *                                               The first delivery presents this heartbeat as the lock's expected
+	 *                                               generation, so the two must be one admission instant.
 	 *
 	 * @throws  \InvalidArgumentException When the kind key or priority is invalid.
 	 * @throws  \LogicException           When the current site differs from the bound site or WordPress does not serialize
@@ -148,9 +151,9 @@ final readonly class RunStore {
 	 *
 	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, or null when the run option cannot be added.
 	 */
-	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null ): RunState|Failure|null {
+	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null, ?int $at = null ): RunState|Failure|null {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
-		$now   = $this->clock->now()->getTimestamp();
+		$now   = $at ?? $this->clock->now()->getTimestamp();
 		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, priority: $priority, );
 
 		$rejected = self::kind_state_failure( $state->kind_state );

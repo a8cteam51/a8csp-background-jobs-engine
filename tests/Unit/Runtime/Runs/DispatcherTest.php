@@ -1043,6 +1043,36 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Asynchronous admission still executes its first delivery when the clock crosses a second boundary mid-admission.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The overlap lock and the run row must carry one admission generation. A split generation fences the
+	 *                first delivery out through the silent GenerationMismatch branch, so the run sits dormant until stale-state
+	 *                maintenance redelivers it while reporting Running throughout.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_async_admission_delivers_when_the_clock_advances_between_the_lock_and_run_writes(): void {
+		$this->rig->wpdb()->before_next(
+			'insert',
+			function (): void {
+				$this->rig->clock()->timestamp = self::NOW + 1;
+			}
+		);
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+
+		$this->rig->run_due();
+
+		self::assertSame( array( self::ARGS ), $this->job->calls );
+	}
+
+	/**
 	 * A failed future-action heartbeat write releases the provisional lock and run.
 	 *
 	 * @load-bearing concurrency
