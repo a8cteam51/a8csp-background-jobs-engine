@@ -358,7 +358,7 @@ live in the CLI — see "WP-CLI".
 
 ### 5. Handling failures
 
-The identity-specific `a8csp_bgje/failed/{identity}` hook fires before the generic `a8csp_bgje/failed` hook; both receive the same `RunFailure` object. Crash-recovery replay can reconstruct an equivalent value. Throw `NonRetryableException` from `handle()`, `generate_queue()`, or `process_chunk()` to fail permanently without consuming the remaining automatic attempts.
+The identity-specific `a8csp_bgje/failed/{identity}` hook fires before the generic `a8csp_bgje/failed` hook; both receive the same `RunFailure` object. Crash-recovery replay can reconstruct an equivalent value. Throw `NonRetryableException` from `handle()`, `generate_queue()`, or `process_chunk()` to fail permanently without consuming the remaining automatic attempts. An uncaught portability or size rejection from the chunked run context, for a chunk or resulting queue, is also deterministic: the failing invocation counts once, the engine schedules no automatic retry, and the remaining allowance stays unused.
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
@@ -445,7 +445,7 @@ This table is the canonical public PHP type index. Every listed type is marked `
 | `Runs` | Scope-bound readonly manager for run inspection, retry, and cancellation. |
 | `JobDefinition` | Final readonly registration declaration with public `string $name`, `JobKind $kind`, `KindExecutionInterface $execution`, and `JobOptions $options`. Its non-public constructor is exposed through `job()`, `chunked_job()`, `closure()`, and `for_kind()`. The closure constructor always applies engine-default policy. |
 | `JobKind` | Final readonly kind key with public `string $value`, built-in `job()` and `chunked_job()` constructors, and `from( string $value )` for a grammar-valid key. It carries no execution contract. |
-| `JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?RetryPolicy $retry`, `?OverlapPolicy $overlap`, and `?\Closure $overlap_key`; each null selects the engine default. `max_runtime` accepts positive seconds, and declarations above 21,600 seconds (6 hours) remain valid while effective execution credit is clamped to that ceiling. |
+| `JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?RetryPolicy $retry`, `?OverlapPolicy $overlap`, `?\Closure $overlap_key`, and `?int $priority`. Null uses the documented default for each policy except priority, where it defers to the priority resolution ladder ending at engine default 10. `max_runtime` accepts positive seconds, and declarations above 21,600 seconds (6 hours) remain valid while effective execution credit is clamped to that ceiling. Priority accepts 0 through 255 inclusive and throws on construction outside that range, matching the `Schedule` contract. |
 | `KindExecutionInterface` | Empty marker shared by the standard and chunked execution roles so a kind-agnostic declaration can require execution membership while registration resolves the kind-specific role. |
 | `JobExecutionInterface` | Standard execution role extending `KindExecutionInterface` and requiring only `handle( array $start_args, RunContextInterface $context ): void`. |
 | `ChunkedJobExecutionInterface` | Standalone chunked execution role extending `KindExecutionInterface` and requiring only `generate_queue( array $start_args, RunContextInterface $context ): iterable` and `process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void`; it does not extend `JobExecutionInterface`. |
@@ -496,9 +496,9 @@ The `job()` and `chunked_job()` constructors bind the built-in kind to its typed
 
 ### Job execution and policy
 
-`JobExecutionInterface` requires exactly `handle( array $start_args, RunContextInterface $context ): void`. The definition supplies the name and policy, so the execution role carries no naming, policy, or lifecycle-reaction methods. A normal return succeeds. A throwable fails the attempt and follows the retry policy, except `NonRetryableException`, which fails permanently.
+`JobExecutionInterface` requires exactly `handle( array $start_args, RunContextInterface $context ): void`. The definition supplies the name and policy, so the execution role carries no naming, policy, or lifecycle-reaction methods. A normal return succeeds. A handler that catches its own failure and returns normally therefore records no failed attempt and leaves the retry budget untouched. Only a throwable that escapes the handler fails the attempt and follows the retry policy, except `NonRetryableException`, which fails permanently.
 
-`JobOptions` carries four independent optional policies: `max_runtime`, `retry`, `overlap`, and `overlap_key`. Null selects the engine default for that field. When set, `max_runtime` must be a positive number of seconds. Declarations above 21,600 seconds (6 hours) are accepted and clamped to that effective execution-credit ceiling rather than rejected. The defaults are a 300-second execution-invocation ceiling, a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
+`JobOptions` carries five independent optional policies: `max_runtime`, `retry`, `overlap`, `overlap_key`, and `priority`. Null uses the documented default for each policy except priority, where it leaves the other resolution rungs operative. When set, `max_runtime` must be a positive number of seconds. Declarations above 21,600 seconds (6 hours) are accepted and clamped to that effective execution-credit ceiling rather than rejected. Priority accepts 0 through 255 inclusive and throws on construction outside that range, matching the `Schedule` contract. The defaults are a 300-second execution-invocation ceiling, a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
 
 A handler that exceeds its credited window becomes eligible for crash reclamation, and a reclaimed run can overlap its replacement, so handlers remain idempotent.
 
@@ -509,13 +509,15 @@ A handler that exceeds its credited window becomes eligible for crash reclamatio
 - `generate_queue( array $start_args, RunContextInterface $context ): iterable`
 - `process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void`
 
-The effective `JobOptions::$max_runtime` ceiling, including its 21,600-second (6-hour) clamp, applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution; the complete queue is capped at 1,048,576 bytes and each chunk at 8,192 bytes.
+The effective `JobOptions::$max_runtime` ceiling, including its 21,600-second (6-hour) clamp, applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution. Each chunk accepts at most 8,192 JSON bytes. The persisted queue accepts at most 983,616 serialization bytes: the 1,000,000-byte complete active-run row ceiling minus a 16,384-byte row-envelope reserve. At admission, a complete active-run row above 1,000,000 persisted serialization bytes is refused with `payload_rejected`.
 
 Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `RunFailureStage::crash_reclamation()`, preserving the in-flight chunk in `RunFailure::$details['failed_chunk']`; `runs()->retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
 
 ### Schedule
 
 `schedules()->sync( Schedule ...$schedules )` receives the scope's complete declaration. Each `Schedule` combines a target job with a `Recurrence`, arguments, a `CatchUpPolicy`, and an advisory priority. Calling `sync()` without arguments removes every schedule declared by that scope.
+
+Each schedule chain has two stages. The recurring backend row is the tick on `a8csp_bgje/internal/schedule_due`, and it performs admission only. Each admitted occurrence creates a separate delivery row on `a8csp_bgje/internal/deliver`, which runs the job. The tick carries the engine-owned priority 0, while the consumer's priority reaches the delivery row alone. This applies the consumer's priority once and keeps admission ahead of the work it admits. Action Scheduler honors these priorities; WP-Cron ignores them.
 
 `Recurrence::every()` creates an unanchored fixed interval. `Recurrence::every_anchored()` creates an interval aligned to a non-negative UTC Unix-epoch phase. Both recurrence constructors require a positive interval in seconds. An unanchored schedule first runs one interval after synchronization. An anchored schedule first runs at the strictly future Unix timestamp whose phase matches `anchor mod interval`, then stays on that grid. The target work supplies overlap behavior for imperative and scheduled runs.
 
@@ -539,7 +541,9 @@ The key difference is partitioning: Action Scheduler's `$group` defaults to `''`
 
 ## Idempotency invariant
 
-Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guard reduces double-fire to the crash-and-reclaim residual; it cannot eliminate it. Backend redelivery, and a reclaimed run reviving after its stale lock is taken, can execute the same logical occurrence more than once. Terminal lifecycle hooks (`completed`, `failed`, `cancelled`, `superseded`) share the same at-least-once crash window between an external effect and its persisted completion marker — durable under Action Scheduler, best-effort under WP-Cron. The `started` hook is inline and non-durable, so a crash between admission and hook delivery can lose it.
+Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guard serializes concurrent runs rather than deduplicating an occurrence, so a job that finishes before its redelivery arrives runs twice for one occurrence under every overlap policy. Two paths redeliver a schedule occurrence: a delivery-state write that fails, and a process death between creating the delivery row and running its state-persistence callback. The process-death path is silent and unlabelled because nothing distinguishes its redelivery from a genuinely due occurrence.
+
+`OverlapPolicy::Allow` gives each dispatch its own overlap lane, so it removes even the concurrent protection: the overlap guard cannot suppress a duplicate occurrence admission at all. A reclaimed run reviving after its stale lock is taken can also execute the same logical work more than once. Terminal lifecycle hooks (`completed`, `failed`, `cancelled`, `superseded`) share the same crash window between an external effect and its persisted completion marker — durable under Action Scheduler, best-effort under WP-Cron. The `started` hook is inline and non-durable, so a crash between admission and hook delivery can lose it.
 
 ## Admission, overlap, and catch-up policies
 
@@ -606,24 +610,20 @@ Raw throwable values held directly in context arrays never reach listeners at an
 
 ## Priority is advisory
 
-**current beta behavior**
+Priority is an integer from 0 through 255. The resolution ladder is: explicit dispatch argument > schedule value > job default > engine default 10. The first two rungs belong to imperative and scheduled admission respectively, so one resolution evaluates only its applicable rung. Action Scheduler honors the resolved value; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
 
-Priority is an integer from 0 through 255. The implemented precedence is: explicit dispatch argument > schedule value > engine default 10. Action Scheduler honors the resolved value; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
-
-An omitted schedule priority is stored as `null`. It currently resolves to the same backend value as an explicit `10`, but the declarations have different fingerprints. Changing an existing declaration from omitted priority to explicit `10` therefore unschedules and recreates its backend occurrence.
-
-**reserved precedence contract**
-
-A reserved precedence contract is not implemented on this beta tree: specific priority filter > generic priority filter > explicit dispatch argument > schedule value > kind default > engine default 10. The two filter rungs and the kind-default rung do not exist yet.
+Priority is absent from the schedule fingerprint, so an omitted value and an explicit `10` hash identically. For an already-converged chain with exactly one tick, a priority-only declaration edit performs no scheduling-backend write and preserves the recurring chain, its next-due anchor, and its misfire and overlap counters. A successful sync independently resets inactive-declaration episode tracking. The recurring chain stores no priority; occurrence admission reads `Schedule::$priority` from the current request's declaration. Under the per-request declaration contract, the edited value governs the next admitted occurrence's delivery. The unchanged-fingerprint census still repairs a missing or duplicated chain.
 
 ## Scale ceilings
 
-The engine is designed for a handful of plugins with tens of jobs and schedules each. Stay within these ranges for beta; each has a documented path to raise later:
+The engine is designed for a handful of plugins with tens of jobs and schedules each. Its supported operating envelope is:
 
-- **Schedules per scope:** low tens. Each scope's registrations live in one option row that every occurrence rewrites, so co-firing hundreds of schedules for one scope adds contention. Schedule synchronization reads the backend occurrence census in one bulk query per sync; eliminating that census entirely for an unchanged declaration is planned for a later minor.
-- **Chunked Job chunk count:** thousands is fine; the queue is byte-capped (1 MiB) but chunk *count* is not, and admission serializes the growing queue, so tens of thousands of tiny chunks is expensive. Prefer fewer, larger chunks or paginate a parent chunked job.
+- **Schedules per scope:** low tens. Each scope's registrations live in one option row that every occurrence rewrites, so co-firing hundreds of schedules for one scope adds contention. For declarations whose fingerprints match, synchronization censuses every ready backend. Action Scheduler issues one identity-scoped, identifier-only occurrence query per declaration, while WP-Cron buckets the requested identities from one cron snapshot. The aggregate count lets the unchanged-declaration fast path distinguish exactly one tick from a missing or duplicated chain.
+- **Chunked Job chunk count:** thousands is fine; the queue is capped at 983,616 persisted serialization bytes, but chunk *count* is not. Queue generation serializes each growing candidate queue, and each context mutation serializes its candidate queue, so tens of thousands of tiny chunks is expensive. Prefer fewer, larger chunks or paginate a parent chunked job.
 - **`history_size` filter:** the default 30 is generous; there is no hard maximum, so a very large value grows the per-identity history row.
 - **Action Scheduler group rows:** the engine creates one AS group per run to enable per-run cancellation cleanup, and Action Scheduler does not garbage-collect groups. At millions of lifetime runs this table grows; plan periodic housekeeping for very high-volume, long-lived installs.
+
+Action Scheduler exposes the site-global `action_scheduler_queue_runner_batch_size`, `action_scheduler_queue_runner_concurrent_batches`, and `action_scheduler_queue_runner_time_limit` queue-runner filters. The engine filters none of them: every Action Scheduler consumer, including WooCommerce, shares those settings, so changing them also changes third-party throughput. Queue-runner tuning belongs to the site; use Action Scheduler's [performance guidance](https://actionscheduler.org/perf/) and [high-volume reference plugin](https://github.com/woocommerce/action-scheduler-high-volume) as references.
 
 ## Testing consumer code
 
