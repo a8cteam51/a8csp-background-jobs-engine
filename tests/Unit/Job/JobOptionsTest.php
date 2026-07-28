@@ -6,6 +6,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -55,6 +56,7 @@ final class JobOptionsTest extends TestCase {
 		self::assertNull( $options->retry );
 		self::assertNull( $options->overlap );
 		self::assertNull( $options->overlap_key );
+		self::assertNull( $options->priority );
 	}
 
 	/**
@@ -126,12 +128,57 @@ final class JobOptionsTest extends TestCase {
 	public function test_explicit_policy_values_are_retained_by_identity(): void {
 		$retry       = new RetryPolicy( max_attempts: 1, base_delay: 5, multiplier: 1, max_delay: 5 );
 		$overlap_key = static fn ( array $args ): ?string => \is_string( $args['tenant'] ?? null ) ? $args['tenant'] : null;
-		$options     = new JobOptions( max_runtime: 42, retry: $retry, overlap: OverlapPolicy::Replace, overlap_key: $overlap_key );
+		$options     = new JobOptions( max_runtime: 42, retry: $retry, overlap: OverlapPolicy::Replace, overlap_key: $overlap_key, priority: 23 );
 
 		self::assertSame( 42, $options->max_runtime );
 		self::assertSame( $retry, $options->retry );
 		self::assertSame( OverlapPolicy::Replace, $options->overlap );
 		self::assertSame( $overlap_key, $options->overlap_key );
+		self::assertSame( 23, $options->priority );
+	}
+
+	/**
+	 * Both inclusive job-default priority boundaries remain valid.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_priority_accepts_both_boundaries(): void {
+		self::assertSame( 0, ( new JobOptions( priority: 0 ) )->priority );
+		self::assertSame( 255, ( new JobOptions( priority: 255 ) )->priority );
+	}
+
+	/**
+	 * A job default outside the backend-supported range is rejected at construction.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $priority Invalid job-default priority.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'invalid_priority_provider' )]
+	public function test_priority_rejects_values_outside_the_supported_range( int $priority ): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( \sprintf( 'Job priority %d is invalid; pass a value from 0 through 255.', $priority ) );
+
+		new JobOptions( priority: $priority );
+	}
+
+	/**
+	 * Supplies values immediately outside both inclusive priority boundaries.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  iterable<string, array{priority: int}>
+	 */
+	public static function invalid_priority_provider(): iterable {
+		yield 'below minimum' => array( 'priority' => -1 );
+		yield 'above maximum' => array( 'priority' => 256 );
 	}
 
 	// endregion.

@@ -337,6 +337,21 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
+	 * Excludes deterministic chunk-context validation failures from retry policy.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable $throwable Execution failure.
+	 *
+	 * @return  bool
+	 */
+	#[\Override]
+	public function is_failure_retryable( \Throwable $throwable ): bool {
+		return ! ( $throwable instanceof InvalidChunkException );
+	}
+
+	/**
 	 * Returns diagnostic details for the authoritative queue head of a failed continuation.
 	 *
 	 * @since   1.0.0
@@ -474,7 +489,17 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		$pending      = PendingAction::async( 'continue', $priority );
 		$replacement  = $state->with_kind_state( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 		$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
-		if ( $transitioned instanceof Failure || null === $transitioned ) {
+		if ( $transitioned instanceof Failure ) {
+			// replace_if_state_matches(), replace_if_raw_matches(), and mark_executing_with_heartbeat()
+			// collapse lost CAS and SQL write failure to null, so Failure denotes payload rejection.
+			if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+				return;
+			}
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::queue_generation(), ErrorCode::PayloadRejected );
+
+			return;
+		}
+		if ( null === $transitioned ) {
 			return;
 		}
 		$state = $replacement;
@@ -531,7 +556,15 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			$pending      = PendingAction::async( 'cleanup', $priority );
 			$replacement  = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
-			if ( $transitioned instanceof Failure || null === $transitioned ) {
+			if ( $transitioned instanceof Failure ) {
+				if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
+					return;
+				}
+				$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), ErrorCode::PayloadRejected );
+
+				return;
+			}
+			if ( null === $transitioned ) {
 				return;
 			}
 
@@ -646,7 +679,15 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		$pending      = PendingAction::single( 'continue', $fire_at, $priority );
 		$replacement  = $state->with_kind_state( $context->get_queue() )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 		$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
-		if ( $transitioned instanceof Failure || null === $transitioned ) {
+		if ( $transitioned instanceof Failure ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+				return;
+			}
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), ErrorCode::PayloadRejected );
+
+			return;
+		}
+		if ( null === $transitioned ) {
 			return;
 		}
 
@@ -718,10 +759,19 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
-		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
-		if ( $state instanceof Failure || null === $state ) {
+		$marked = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
+		if ( $marked instanceof Failure ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+				return;
+			}
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $marked->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::queue_generation(), ErrorCode::PayloadRejected );
+
 			return;
 		}
+		if ( null === $marked ) {
+			return;
+		}
+		$state = $marked;
 
 		$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::queue_generation(), $code );
 	}
@@ -765,7 +815,15 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	private function fail_processed_chunk( Identity $identity, string $run_id, RunState $state, RunStore $run_store, array $queue, int $reset_at, EngineError $error, RunFailureStage $stage, ErrorCode $code ): void {
 		$replacement  = $state->with_kind_state( $queue )->with_failed_attempts( 0 )->with_heartbeat_at( $reset_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( null );
 		$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
-		if ( $transitioned instanceof Failure || null === $transitioned ) {
+		if ( $transitioned instanceof Failure ) {
+			if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+				return;
+			}
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), $stage, ErrorCode::PayloadRejected );
+
+			return;
+		}
+		if ( null === $transitioned ) {
 			return;
 		}
 
@@ -811,9 +869,9 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @return  list<array<array-key, mixed>>|EngineError
 	 */
 	private function queue_for_state( RunState $state ): array|EngineError {
-		// Hydration already guarantees a portable payload within the persistence ceilings, so the
-		// read path checks only the list-of-arrays shape this handler owns; full materialization
-		// (per-chunk encoding and byte ceilings) belongs to the write path.
+		// Hydration guarantees a portable payload, so the read path checks only the list-of-arrays
+		// shape this handler owns; full materialization (per-chunk encoding and byte ceilings)
+		// belongs to the write path.
 		if (
 			! \array_is_list( $state->kind_state )
 			|| \array_any( $state->kind_state, static fn ( mixed $chunk ): bool => ! \is_array( $chunk ) )

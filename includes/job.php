@@ -34,7 +34,7 @@ function a8csp_bgje_register_job( string $scope, JobDefinition $definition ): tr
  * @param   string                  $scope      Client plugin scope.
  * @param   string                  $name       Scope-local background-work name.
  * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
- * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
+ * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
  *
  * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *
@@ -59,7 +59,7 @@ function a8csp_bgje_dispatch_job( string $scope, string $name, array $start_args
  * @param   string                  $name       Scope-local background-work name.
  * @param   int                     $run_at     Absolute Unix timestamp for the first delivery.
  * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
- * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
+ * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
  *
  * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
  *

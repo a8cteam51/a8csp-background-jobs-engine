@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
@@ -419,9 +420,25 @@ final readonly class RunReconciliation {
 	private function supersede_transferred_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw ): AbstractResult {
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$claimed       = $this->terminal_transitions->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
-		if ( \is_array( $claimed ) ) {
-			$this->terminal_transitions->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
+		if ( $claimed instanceof Failure ) {
+			// A failing supersession write is a per-item outcome the sweep reports and steps over, so the lock, intent,
+			// and registry phases and the page cursor stay reachable behind a row whose write keeps failing.
+			$this->logger->error(
+				$claimed->error->message,
+				array(
+					'identity'     => (string) $identity,
+					'run_id'       => $run_id,
+					'error_class'  => $claimed->error::class,
+					'error_reason' => $claimed->error->reason?->value,
+				)
+			);
+
+			return new Success( null );
 		}
+		if ( null === $claimed ) {
+			return new Success( null );
+		}
+		$this->terminal_transitions->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
 
 		return new Success( null );
 	}

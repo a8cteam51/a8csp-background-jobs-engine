@@ -21,8 +21,9 @@ every surviving component is initialized before any hook can fire.
   PHP versions.
 - `functions.php` provides the scope-bound front door `a8csp_bgje( string $scope ): Engine`, the
   composition-root accessor `a8csp_bgje_plugin(): Plugin`, and a deterministic loader for the
-  procedural facade files; handle and manager construction is lazy, while capability readiness
-  starts at `init`.
+  procedural facade files. Handle and manager construction is lazy. The runtime graph is assembled
+  and published during the `plugins_loaded` boot; `init` is the supported consumer invocation
+  boundary.
 - `includes/` groups the procedural facade by concept: `job.php` provides background-work
   registration plus kind-agnostic immediate and absolute-time dispatch, `schedule.php` provides
   schedule synchronization and dispatch, and `run.php` provides run inspection, retry, and
@@ -43,22 +44,21 @@ every surviving component is initialized before any hook can fire.
   `ChunkedRunContextInterface`; `RunContext` is the final standard implementation. `Schedule`,
   `Recurrence`, and `CatchUpPolicy` form the typed schedule declaration consumed by the public
   `Schedules` service.
-- The root services, the README's public type index, `a8csp_bgje()`, and the verb-noun procedural
-  aliases form the SemVer-bound consumer surface: the per-scope `Engine` handle and capability
-  managers plus job definitions, execution roles, policy, contexts, and input and returned value
-  types.
+- The README's public type index is the PHP public/internal discriminator. Its listed types,
+  `a8csp_bgje()`, the verb-noun procedural aliases, and the documented consumer actions and filters
+  form the SemVer-bound consumer surface.
   `src/Boundary/` contains engine-owned values that cross layer boundaries; the rest of the engine
   graph is likewise `@internal`.
 - `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the
   request-local object graph, while `ScopeOperations.php` exposes its scope-bound verb surface to
   the public portals; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the root
-  collaborators. `JobRegistry.php` retains each definition's kind key, name, execution object, and
-  options. The single kind-handler registry resolves a definition's kind; the resolved
-  internal handler validates its execution role and owns invocation. Only engine-installed kinds are
-  accepted, and the handler SPI is internal. `Backends/` (Action Scheduler preferred, WP-Cron
-  fallback), `Schedules/`
+  collaborators. `JobRegistry.php` keys registrations by full identity and retains each
+  definition's kind key, execution object, and options. The single kind-handler registry resolves
+  a definition's kind; the resolved internal handler validates its execution role and owns
+  invocation. Only engine-installed kinds are accepted, and the handler SPI is internal.
+  `Backends/` (Action Scheduler preferred, WP-Cron fallback), `Schedules/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
-  `Locks/` (CAS-fenced execution-overlap storage, the single overlap-identity authority admission,
+  `Locks/` (CAS-fenced execution-overlap storage, the single overlap-identity authority that admission,
   retry, and inspection all resolve through, persisted-lane inspection, and explicit malformed-lane
   repair), `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
   on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.
@@ -97,14 +97,44 @@ The dispatch timing axis uses `_at` names for absolute Unix timestamps, includin
 vocabulary. Duration names including `Recurrence::every()`, `max_runtime`, `base_delay`, and
 `max_delay` remain unsuffixed.
 
+A scope is the consumer slug, a name is local to that scope, and their canonical identity is
+composed as `{scope}:{name}`.
+
 Every interface ends in `Interface`; every abstract class begins with `Abstract`.
 
 ## Delivery and degradation
 
-The engine writes through the first ready backend in preference order, with Action Scheduler
-before WP-Cron; WP-Cron provides the documented best-effort fallback. Delivery is at-least-once
-for terminal lifecycle hooks. Overlap locks, occurrence leases, and run generations use
-option-row compare-and-swap fences for concurrency control.
+The engine writes through the first ready backend in preference order and reads or clears across
+every ready backend. Action Scheduler becomes ready when its procedural API is available and
+`action_scheduler_init` has fired; writes before that point route to WP-Cron. Terminal
+lifecycle-hook delivery is at-least-once under Action Scheduler and best-effort under WP-Cron.
+
+A schedule chain is a recurring tick on `a8csp_bgje/internal/schedule_due`. The tick performs
+admission and carries the engine-owned priority 0. Each admitted occurrence creates a separate
+`a8csp_bgje/internal/deliver` row that runs the job, and the consumer's priority reaches that row
+alone. Action Scheduler honors these priorities; WP-Cron ignores them.
+
+Schedule synchronization is authoritative for one scope's complete declaration. A declaration
+whose fingerprint matches its registration enters the occurrence census. Priority is outside the
+fingerprint, so a priority-only declaration edit preserves an already-converged tick. The recurring
+chain stores no priority; occurrence admission reads the current request's declaration. Exactly
+one tick is the unchanged fast path, a missing tick is recreated, and duplicated ticks are cleared
+and recreated. Action Scheduler obtains the count with one identity-scoped identifier query per
+matching declaration; WP-Cron buckets the requested identities from one cron snapshot.
+
+Active-run rows admit at most 1,000,000 persisted serialization bytes. Kind-owned state, including
+a chunk queue, receives 983,616 bytes after the 16,384-byte row-envelope reserve; terminal rows are
+exempt from both byte ceilings so a byte-budget rejection does not wedge their overlap locks. An
+oversized complete row returns a payload rejection at admission. An uncaught chunk-context
+portability or size rejection counts the failing invocation once, terminalizes the run, and leaves
+the remaining retry allowance unused.
+
+Overlap locks, occurrence leases, and run generations use option-row compare-and-swap fences for
+concurrency control. The overlap guard serializes concurrent runs rather than deduplicating an
+occurrence. A delivery-state write failure, or a process death between creating the delivery row
+and persisting the occurrence state, leaves the occurrence due. A run that finishes before
+redelivery reaches admission executes twice for that occurrence under every overlap policy;
+`Allow` gives every dispatch a distinct overlap lane and removes cross-run exclusion.
 
 Maintenance reconciles stale parseable locks against retained run state. It preserves
 schema-invalid lock values and logs only their length and truncated SHA-256 correlation so repair

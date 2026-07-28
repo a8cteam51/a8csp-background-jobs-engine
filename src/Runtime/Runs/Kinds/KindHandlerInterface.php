@@ -212,6 +212,22 @@ interface KindHandlerInterface {
 	public function failure_error( \Throwable $throwable ): EngineError;
 
 	/**
+	 * Classifies an execution failure for this kind's retry policy.
+	 *
+	 * Declining retry is decisive; permitting it is one input rather than the verdict. The public
+	 * `NonRetryableException` marker and an exhausted attempt budget each terminalize a failure this
+	 * classification admits.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   \Throwable $throwable Execution failure.
+	 *
+	 * @return  bool
+	 */
+	public function is_failure_retryable( \Throwable $throwable ): bool;
+
+	/**
 	 * Returns kind-specific diagnostic details for the current failure state.
 	 *
 	 * @since   1.0.0

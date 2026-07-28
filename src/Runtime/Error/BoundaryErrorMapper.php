@@ -21,7 +21,17 @@ final class BoundaryErrorMapper {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Internal diagnostic fields whose values are constrained to redaction-safe primitives.
+	 * Diagnostic fields reciprocally shared by classified failures and public `WP_Error` data.
+	 *
+	 * A key belongs here only when its values are engine-authored primitives; a field carrying text or
+	 * payloads from outside the engine stays out however useful it reads. `storage_error` and
+	 * `wp_error` are excluded on exactly that ground — they relay a database driver and WordPress cron
+	 * verbatim, while the engine-authored message already states the remedy.
+	 *
+	 * Public verbs expose only these keys, and every key has a live producer on a mapped route. Failure
+	 * contexts also arrive through computed keys and variables built up before the call, so searching
+	 * for a literal key understates the live set. Logger context follows its own normalization and
+	 * never consults this list.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -32,22 +42,25 @@ final class BoundaryErrorMapper {
 		'action_scheduler_function'        => true,
 		'action_scheduler_functions_exist' => true,
 		'action_scheduler_init_fired'      => true,
+		'actual_bytes'                     => true,
 		'current_timestamp'                => true,
-		'delay'                            => true,
 		'first_run_timestamp'              => true,
 		'hook'                             => true,
 		'identity'                         => true,
 		'interval'                         => true,
 		'kind'                             => true,
+		'limit_bytes'                      => true,
 		'maximum_depth'                    => true,
 		'maximum_json_length'              => true,
 		'missing_function'                 => true,
 		'option_name'                      => true,
 		'priority'                         => true,
+		'run_at'                           => true,
 		'run_id'                           => true,
 		'schedule'                         => true,
 		'scope'                            => true,
 		'status'                           => true,
+		'storage_operation'                => true,
 		'timestamp'                        => true,
 		'wp_init_fired'                    => true,
 	);

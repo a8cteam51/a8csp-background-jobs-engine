@@ -117,6 +117,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Loads guarded WordPress functions before orchestration classes are instantiated.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	#[\Override]
@@ -134,6 +137,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Resets every observable boundary and constructs one job lifecycle graph.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -186,7 +192,12 @@ final class RunTransitionsTest extends TestCase {
 	// region TESTS.
 	// phpcs:disable Squiz.Commenting.FunctionComment.MissingParamTag -- Signatures and providers carry test parameter types.
 
-	/** A malformed wire identifier cannot reach consumer execution through context construction. */
+	/**
+	 * A malformed wire identifier cannot reach consumer execution through context construction.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	public function test_job_context_rejects_a_non_canonical_run_id_before_execution(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
@@ -205,7 +216,12 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array(), $this->job->calls );
 	}
 
-	/** A terminal winner deleting the run during a live heartbeat CAS silences the stale delivery. */
+	/**
+	 * A terminal winner deleting the run during a live heartbeat CAS silences the stale delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	public function test_handle_run_action_live_state_cas_cannot_resurrect_a_terminally_deleted_run(): void {
 		$this->prepare_run_action();
 		$this->wpdb->before_next( 'update', static function (): void {} );
@@ -232,7 +248,12 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_terminal_history( 'completed' );
 	}
 
-	/** A replacement fences an in-flight incumbent before its completion compare-and-swap. */
+	/**
+	 * A replacement fences an in-flight incumbent before its completion compare-and-swap.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	public function test_replace_supersedes_incumbent_before_inflight_completion_cas(): void {
 		$this->options = new JobOptions( overlap: OverlapPolicy::Replace );
 		$this->prepare_run_action();
@@ -270,7 +291,12 @@ final class RunTransitionsTest extends TestCase {
 		);
 	}
 
-	/** A claim-only supersession leaves its lock and every replayable effect untouched. */
+	/**
+	 * A claim-only supersession leaves its lock and every replayable effect untouched.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	public function test_claim_superseded_run_does_not_release_lock_or_execute_effects(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
@@ -306,6 +332,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * A stale job delivery exits after its authoritative read and before heartbeats, execution, or writes.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_drops_a_stale_sequence_before_every_side_effect(): void {
@@ -336,7 +365,113 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
+	 * A delivery claim uses the exact tolerated run bytes it observed as its ownership precondition.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A valid noncanonical field order decodes to the writer's canonical state but retains different compare-and-swap bytes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_anchors_on_the_exact_observed_run_bytes(): void {
+		$this->prepare_run_action();
+		$expected_raw = $this->install_reordered_run_row();
+		$run_store    = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+
+		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+
+		self::assertInstanceOf( RunState::class, $claimed );
+		self::assertTrue( $claimed->executing );
+		self::assertNotSame( $expected_raw, $this->wpdb->rows[ $this->run_option_name() ] ?? null );
+		self::assertEquals( $claimed, $run_store->get( self::RUN_ID ) );
+		self::assertSame( array(), $this->logger->records );
+	}
+
+	/**
+	 * A lost ownership fence supersedes the exact tolerated run bytes inspected by the delivery.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The ownership fence reaches terminal compare-and-swap before the execution marker, so it must retain the same raw precondition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_raw_anchors_supersession_after_lock_loss(): void {
+		$this->prepare_run_action();
+		$this->install_reordered_run_row();
+		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+
+		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+
+		self::assertNull( $claimed );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
+		self::assertSame(
+			array(
+				'a8csp_bgje/superseded/' . self::IDENTITY,
+				'a8csp_bgje/superseded',
+			),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+		$this->assert_terminal_history( 'superseded' );
+	}
+
+	/**
+	 * A mark rejection terminalizes the exact tolerated run bytes inspected by the delivery.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Reader-valid oversized state reaches failure terminalization before the execution marker and retains its raw precondition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_raw_anchors_payload_rejection_after_mark_failure(): void {
+		$this->prepare_run_action();
+		$this->install_reordered_run_row(
+			array(
+				'kind_state' => array(
+					'payload' => \str_repeat( 'x', RunStore::MAX_KIND_STATE_BYTES ),
+				),
+			)
+		);
+		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+
+		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+
+		self::assertNull( $claimed );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+		$history = $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY );
+		self::assertIsArray( $history );
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		$first_terminal = $terminal[0] ?? null;
+		self::assertIsArray( $first_terminal );
+		$expected_terminal = array(
+			'run_id' => self::RUN_ID,
+			'status' => 'failed',
+		);
+		self::assertSame( $expected_terminal, $first_terminal );
+		$by_hash = $history['by_hash'] ?? null;
+		self::assertIsArray( $by_hash );
+		$hashed_history = $by_hash[ self::ARGS_HASH ] ?? null;
+		self::assertIsArray( $hashed_history );
+		$by_hash_terminal = $hashed_history['terminal'] ?? null;
+		self::assertIsArray( $by_hash_terminal );
+		self::assertSame( $expected_terminal, $by_hash_terminal[0] ?? null );
+	}
+
+	/**
 	 * A fresh execution marker excludes a same-sequence delivery after its read and before another fence write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -373,6 +508,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * A stale execution marker re-enters the ownership fence and receives a fresh heartbeat.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_claim_delivery_ownership_admits_and_refences_a_stale_execution_marker(): void {
@@ -397,6 +535,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * A stale admission cannot orphan its lock credit after the incumbent advances the run row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -427,6 +568,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * An indeterminate ownership fence aborts without claiming a terminal transition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -492,6 +636,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * A throwing group-clear listener cannot strand cancellation state or suppress lifecycle hooks.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_cancel_run_finishes_terminal_state_when_group_clear_throws(): void {
@@ -552,6 +699,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * A successful retry clears the invocation's failed-attempt counter before completion.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_resets_the_counter_after_a_successful_retry(): void {
@@ -572,6 +722,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * A retry action that loses replacement-lock ownership exits as Superseded before re-execution.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -615,6 +768,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Moved replacement ownership fences the run before job execution and uses quiet cleanup.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -671,6 +827,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * The lock winner repairs a pointer overwritten by a losing concurrent starter and still executes.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_keeps_the_lock_winner_when_pointer_commit_lags(): void {
@@ -700,9 +859,16 @@ final class RunTransitionsTest extends TestCase {
 		$this->assert_terminal_history( 'completed' );
 	}
 
-	/** A latest-pointer write failure is logged without rejecting an otherwise accepted run. */
+	/**
+	 * A latest-pointer write failure is logged without rejecting an otherwise accepted run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	public function test_enqueue_logs_a_latest_pointer_write_failure_and_continues(): void {
 		$this->register_job();
+		// The lock and active-run inserts succeed before the latest-pointer retry sequence is forced to fail.
+		$this->wpdb->before_next( 'insert', static function (): void {} );
 		$this->wpdb->before_next( 'insert', static function (): void {} );
 		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
 			$this->wpdb->before_next(
@@ -726,6 +892,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Confirmed lock ownership keeps a valid run executable after its bounded pointer is evicted.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -767,6 +936,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Losing lock ownership fences a run even while its latest pointer has not moved.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_supersedes_after_lock_ownership_is_lost(): void {
@@ -799,6 +971,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * A confirmed foreign owner still claims and records the Superseded transition.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_enforce_delivery_fence_persists_superseded_after_confirmed_foreign_owner(): void {
@@ -826,6 +1001,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * A persisted terminal state never re-enters job execution before reconciliation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -858,6 +1036,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Supplies every terminal state accepted by persisted run data.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  array<string, array{status: string}>
 	 */
 	public static function terminal_statuses(): array {
@@ -871,6 +1052,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Only the winning failed-state compare-and-swap emits the permanent-failure event.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -921,6 +1105,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * An absent run is a benign survivor from a finished or cancelled delivery.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_drops_an_absent_run_as_stale(): void {
@@ -942,6 +1129,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * A corrupt run warns without creating another lifecycle transition.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_handle_run_action_warns_when_run_state_is_corrupt(): void {
@@ -961,6 +1151,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * An authoritative run read failure warns without claiming delivery ownership.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
@@ -995,6 +1188,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Returns the internal run option name for the deterministic enqueue.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  string
 	 */
 	private function run_option_name(): string {
@@ -1003,6 +1199,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Asserts that one delivery performed only the required authoritative run-state read.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Run identifier.
 	 *
@@ -1019,6 +1218,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Returns the newest scheduled lifecycle action sequence for one live run.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $run_id Run identifier.
 	 *
 	 * @return  int
@@ -1034,6 +1236,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Enqueues the deterministic run and clears enqueue observations before action handling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   int $priority Scheduler priority.
 	 *
@@ -1057,6 +1262,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Runs one job attempt through the terminal-transition product services.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $run_id          Run identifier.
 	 * @param   int    $action_sequence Received lifecycle action sequence.
 	 *
@@ -1076,6 +1284,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Registers the definition after each test has declared its immutable policy.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	private function register_job(): void {
@@ -1090,6 +1301,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Claims one job delivery and returns its fenced state.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string   $run_id          Run identifier.
 	 * @param   int|null $action_sequence Received lifecycle action sequence.
 	 * @param   RunStore $run_store       Active-run store.
@@ -1103,7 +1317,35 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
+	 * A reordered fixture exercises the reader/writer byte mismatch without invalidating the decoded state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<string, mixed> $overrides Top-level state overrides applied before reordering.
+	 *
+	 * @return  string Exact installed bytes.
+	 */
+	private function install_reordered_run_row( array $overrides = array() ): string {
+		$option_name = $this->run_option_name();
+		$current     = $this->wpdb->rows[ $option_name ] ?? null;
+		self::assertIsString( $current );
+		$stored = \maybe_unserialize( $current );
+		self::assertIsArray( $stored );
+		$stored    = \array_replace( $stored, $overrides );
+		$reordered = \maybe_serialize( \array_reverse( $stored, true ) );
+		self::assertIsString( $reordered );
+		self::assertNotSame( $current, $reordered );
+		$this->wpdb->put( $option_name, $reordered );
+
+		return $reordered;
+	}
+
+	/**
 	 * Asserts that the terminal buffer records the run outcome.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @phpstan-param 'completed'|'failed'|'cancelled'|'superseded' $status
 	 *
@@ -1141,6 +1383,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Returns the recorded run-state write for one lifecycle status.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $status Expected lifecycle status.
 	 *
@@ -1222,6 +1467,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Reduces the unified boundary ledger to lifecycle-significant labels.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  list<string>
 	 */
@@ -1306,6 +1554,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Returns a lifecycle label that includes monotonic terminal effect progress.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   array<array-key, mixed> $state Persisted run state.
 	 *
 	 * @return  string
@@ -1327,6 +1578,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Returns the argument-identity lock option name.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  string
 	 */
 	private function lock_option_name(): string {
@@ -1335,6 +1589,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Replaces the current lock with one foreign owner.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @param   string $run_id       Foreign run identifier.
 	 * @param   int    $heartbeat_at Foreign heartbeat timestamp.
@@ -1355,6 +1612,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Returns the decoded lock row for the deterministic argument identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
 	 */
@@ -1384,6 +1644,9 @@ final class RunTransitionsTest extends TestCase {
 	/**
 	 * Returns one persisted option value.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @param   string $name Option name.
 	 *
 	 * @return  mixed
@@ -1404,6 +1667,9 @@ final class RunTransitionsTest extends TestCase {
 
 	/**
 	 * Returns fired lifecycle actions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  list<array{hook_name: string, args: list<mixed>}>
 	 */

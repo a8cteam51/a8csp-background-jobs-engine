@@ -249,7 +249,7 @@ final class DeclarativeSyncTest extends AbstractIntegrationTestCase {
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $initial_action_id ) );
 		self::assertSame( array(), $this->pending_schedule_action_ids( self::DUPLICATE_IDENTITY ) );
 
-		$gap_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY, true, 37 );
+		$gap_action_id = \as_schedule_recurring_action( \time() - 1, 300, self::SCHEDULE_HOOK, array( self::DUPLICATE_IDENTITY ), self::DUPLICATE_IDENTITY, true, 0 );
 		self::assertGreaterThan( 0, $gap_action_id );
 		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
 		$gap_callback_calls  = 0;
@@ -291,7 +291,7 @@ final class DeclarativeSyncTest extends AbstractIntegrationTestCase {
 			self::assertSame( self::SCHEDULE_HOOK, $action->get_hook() );
 			self::assertSame( array( self::DUPLICATE_IDENTITY ), $action->get_args() );
 			self::assertSame( self::DUPLICATE_IDENTITY, $action->get_group() );
-			self::assertSame( 37, $action->get_priority() );
+			self::assertSame( 0, $action->get_priority() );
 			$action_schedule = $action->get_schedule();
 			self::assertInstanceOf( \ActionScheduler_Abstract_RecurringSchedule::class, $action_schedule );
 			self::assertSame( 300, $action_schedule->get_recurrence() );

@@ -132,7 +132,7 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( self::RUN_ID, (string) $result->value->id );
 		$call = $this->single_run_delivery_call();
 		self::assertSame( 23, $call['args']['priority'] ?? null );
-		$run = \get_option( $this->run_option_name() );
+		$run = $this->option( $this->run_option_name() );
 		self::assertIsArray( $run );
 		self::assertSame( 'job', $run['kind'] ?? null );
 		$this->rig->backend()->assert_scheduled( self::IDENTITY );
@@ -143,6 +143,28 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( array( array( $run_id, self::ARGS ) ), $started );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls );
+	}
+
+	/**
+	 * Imperative admission resolves an explicit priority before the job and engine defaults.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $job_priority      Registered job default.
+	 * @param   int|null $dispatch_priority Explicit dispatch priority.
+	 * @param   int      $expected          Resolved backend priority.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'priority_ladder_provider' )]
+	public function test_dispatch_resolves_the_priority_ladder_at_admission( ?int $job_priority, ?int $dispatch_priority, int $expected ): void {
+		$this->restart_with_job_priority( $job_priority );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS, priority: $dispatch_priority );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( $expected, $this->single_run_delivery_call()['args']['priority'] ?? null );
 	}
 
 	/**
@@ -352,28 +374,6 @@ final class DispatcherTest extends TestCase {
 			'value'  => &$value,
 			'mirror' => &$value,
 		);
-		$run_option = $this->run_option_name();
-		$wpdb       = $this->rig->wpdb();
-		$GLOBALS['a8csp_bgje_test_before_add_option'] = static function ( string $option, mixed $option_value, string $deprecated, bool|string|null $autoload ) use ( $run_option, $wpdb ): void {
-			if ( $run_option !== $option ) {
-				return;
-			}
-
-			$raw = \maybe_serialize( $option_value );
-			self::assertIsString( $raw );
-			$wpdb->put( $option, $raw );
-			$wpdb->before_next(
-				'update',
-				static function () use ( $option ): void {
-					$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
-					self::assertIsArray( $options );
-
-					// The option stub mirrors add_option() outside the authoritative wpdb row, so its shadow must not survive the raw-row fixture.
-					unset( $options[ $option ] );
-					$GLOBALS['a8csp_bgje_test_options'] = $options;
-				}
-			);
-		};
 
 		$callbacks = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
 		self::assertIsArray( $callbacks );
@@ -730,11 +730,15 @@ final class DispatcherTest extends TestCase {
 		$this->rig->backend()->before_next(
 			'enqueue_async',
 			function () use ( $run_option, $lock_option, &$advanced_state, &$lock_raw ): void {
-				$advanced = \get_option( $run_option );
+				$advanced_raw = $this->rig->wpdb()->rows[ $run_option ] ?? null;
+				self::assertIsString( $advanced_raw );
+				$advanced = \maybe_unserialize( $advanced_raw );
 				self::assertIsArray( $advanced );
 				$advanced['action_sequence'] = 2;
 				$advanced_state              = $advanced;
-				self::assertTrue( \update_option( $run_option, $advanced, false ) );
+				$replacement_raw             = \maybe_serialize( $advanced );
+				self::assertIsString( $replacement_raw );
+				$this->rig->wpdb()->put( $run_option, $replacement_raw );
 				$lock_raw = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
 				self::assertIsString( $lock_raw );
 			}
@@ -744,7 +748,7 @@ final class DispatcherTest extends TestCase {
 
 		$this->assert_failure_code( $result, ErrorCode::BackendRejected );
 		self::assertIsArray( $advanced_state );
-		self::assertSame( $advanced_state, \get_option( $run_option ) );
+		self::assertSame( $advanced_state, $this->option( $run_option ) );
 		self::assertIsString( $lock_raw );
 		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
 		self::assertFalse( \get_option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID ) );
@@ -1024,7 +1028,7 @@ final class DispatcherTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, self::ARGS, fire_at: self::NOW + 1, priority: 31 );
 
 		self::assertInstanceOf( Success::class, $result );
-		$run = \get_option( $this->run_option_name() );
+		$run = $this->option( $this->run_option_name() );
 		self::assertIsArray( $run );
 		self::assertSame(
 			array(
@@ -1368,6 +1372,25 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Manual retry preserves the priority admitted with the failed run when the job default differs.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retry_failed_reuses_the_persisted_priority_instead_of_the_current_job_default(): void {
+		$this->restart_with_job_priority( 73 );
+		$this->seed_failed_run( self::RUN_ID, self::ARGS, 2, 0 );
+		$this->rig->clock()->timestamp = self::NOW + 100;
+
+		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( 0, $this->single_run_delivery_call()['args']['priority'] ?? null );
+	}
+
+	/**
 	 * Failed-run retry preserves the established opaque overlap-identity bytes.
 	 *
 	 * @since   1.0.0
@@ -1675,6 +1698,42 @@ final class DispatcherTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Supplies each imperative priority-resolution rung.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  iterable<string, array{job_priority: int|null, dispatch_priority: int|null, expected: int}>
+	 */
+	public static function priority_ladder_provider(): iterable {
+		yield 'explicit dispatch argument beats the job default' => array(
+			'job_priority'      => 41,
+			'dispatch_priority' => 23,
+			'expected'          => 23,
+		);
+		yield 'job default beats the engine default' => array(
+			'job_priority'      => 41,
+			'dispatch_priority' => null,
+			'expected'          => 41,
+		);
+		yield 'engine default applies when both input rungs are unspecified' => array(
+			'job_priority'      => null,
+			'dispatch_priority' => null,
+			'expected'          => 10,
+		);
+		yield 'the most urgent job default survives resolution' => array(
+			'job_priority'      => 0,
+			'dispatch_priority' => null,
+			'expected'          => 0,
+		);
+		yield 'the most urgent dispatch argument beats a job default' => array(
+			'job_priority'      => 41,
+			'dispatch_priority' => 0,
+			'expected'          => 0,
+		);
+	}
+
 	// endregion.
 
 	// region HELPERS.
@@ -1685,11 +1744,12 @@ final class DispatcherTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OverlapPolicy|null $overlap Optional overlap policy.
+	 * @param   OverlapPolicy|null $overlap  Optional overlap policy.
+	 * @param   int|null           $priority Optional job-default priority.
 	 *
 	 * @return  void
 	 */
-	private function boot( ?OverlapPolicy $overlap = null ): void {
+	private function boot( ?OverlapPolicy $overlap = null, ?int $priority = null ): void {
 		$this->overlap_key_resolver = null;
 		$this->rig                  = EngineRig::set_up( self::NOW );
 		$this->client               = $this->rig->operations( self::SCOPE );
@@ -1707,7 +1767,7 @@ final class DispatcherTest extends TestCase {
 
 			return $resolved;
 		};
-		$this->client->register( $this->job->definition( new JobOptions( overlap: $overlap, overlap_key: $overlap_key ) ) );
+		$this->client->register( $this->job->definition( new JobOptions( overlap: $overlap, overlap_key: $overlap_key, priority: $priority ) ) );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 		$this->reset_observations();
 	}
@@ -1725,6 +1785,21 @@ final class DispatcherTest extends TestCase {
 	private function restart_with_overlap_policy( OverlapPolicy $overlap ): void {
 		$this->rig->tear_down();
 		$this->boot( $overlap );
+	}
+
+	/**
+	 * Rebuilds the request-local graph with one job-default priority.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int|null $priority Optional job-default priority.
+	 *
+	 * @return  void
+	 */
+	private function restart_with_job_priority( ?int $priority ): void {
+		$this->rig->tear_down();
+		$this->boot( priority: $priority );
 	}
 
 	/**
@@ -1795,12 +1870,13 @@ final class DispatcherTest extends TestCase {
 	 * @param   string                  $run_id     Failed run identifier.
 	 * @param   array<array-key, mixed> $start_args Original arguments.
 	 * @param   int                     $attempts   Attempts consumed.
+	 * @param   int                     $priority   Admitted scheduler priority.
 	 *
 	 * @return  void
 	 */
-	private function seed_failed_run( string $run_id, array $start_args, int $attempts ): void {
+	private function seed_failed_run( string $run_id, array $start_args, int $attempts, int $priority = 10 ): void {
 		$failure = new RunFailure( identity: self::IDENTITY, run_id: RunId::from( $run_id ), attempts: $attempts, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Database unavailable.', details: null );
-		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure ) );
+		$this->put_fixture( $this->fixtures->failed( self::NOW - 1, $start_args, $failure, priority: $priority ) );
 		$this->reset_observations();
 	}
 
@@ -1901,6 +1977,30 @@ final class DispatcherTest extends TestCase {
 	 */
 	private function run_option_name(): string {
 		return 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Returns one persisted option value from either modeled storage view.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name Option name.
+	 *
+	 * @return  mixed
+	 */
+	private function option( string $name ): mixed {
+		$raw = $this->rig->wpdb()->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return \maybe_unserialize( $raw );
+		}
+
+		$options = $GLOBALS['a8csp_bgje_test_options'] ?? null;
+		self::assertIsArray( $options );
+
+		return $options[ $name ] ?? null;
 	}
 
 	/**

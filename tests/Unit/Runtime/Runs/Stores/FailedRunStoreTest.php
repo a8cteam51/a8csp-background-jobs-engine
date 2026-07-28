@@ -481,6 +481,89 @@ final class FailedRunStoreTest extends TestCase {
 	}
 
 	/**
+	 * A retained failure remains readable when its error carries additive metadata of any shape.
+	 *
+	 * @load-bearing durability
+	 * @pin-rationale Required error fields stay authoritative, and named-field reconstruction drops every additive key before the
+	 *                next retention write, so an unreadable extension can neither hide an entry nor reach storage.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retained_failure_with_additive_error_metadata_hydrates(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		self::assertIsArray( $stored[0] ?? null );
+		self::assertIsArray( $stored[0]['error'] ?? null );
+		$expected_error                    = $stored[0]['error'];
+		$expected_error['details']         = array( 'attempt' => 3 );
+		$stored[0]['error']                = $expected_error;
+		$stored[0]['error']['diagnostics'] = array(
+			'provider'  => 'acme',
+			'retryable' => false,
+		);
+		$stored[0]['error']['unsafe']      = new \stdClass();
+		$raw                               = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->put_fixture( array( $fixture[0], $raw ) );
+
+		$result = $this->store()->all();
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertIsArray( $result->value );
+		$entry = $result->value[0] ?? null;
+		self::assertIsArray( $entry );
+		self::assertSame( self::RUN_ID, $entry['run_id'] ?? null );
+		$error = $entry['error'] ?? null;
+		self::assertIsArray( $error );
+		self::assertSame( $expected_error, $error );
+
+		self::assertTrue( $this->record_entry( self::fixture_entry( 'run-b', self::NOW + 1 ) ) );
+		$round_tripped = \maybe_unserialize( $this->raw_row() );
+		self::assertIsArray( $round_tripped );
+		self::assertIsArray( $round_tripped[0] ?? null );
+		$round_tripped_error = $round_tripped[0]['error'] ?? null;
+		self::assertIsArray( $round_tripped_error );
+		self::assertSame( $expected_error, $round_tripped_error );
+	}
+
+	/**
+	 * Retained failure errors require every field consumed by inspection and manual retry.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale Additive compatibility does not admit errors missing class, message, stage, or code.
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_retained_failure_errors_require_their_readable_fields(): void {
+		$fixture = $this->fixtures->failed_runs( array( self::fixture_entry( self::RUN_ID, self::NOW ) ) );
+
+		foreach ( array( 'class', 'message', 'stage', 'code' ) as $required_field ) {
+			$stored = \maybe_unserialize( $fixture[1] );
+			self::assertIsArray( $stored );
+			self::assertIsArray( $stored[0] ?? null );
+			self::assertIsArray( $stored[0]['error'] ?? null );
+			unset( $stored[0]['error'][ $required_field ] );
+			$raw = \maybe_serialize( $stored );
+			self::assertIsString( $raw );
+			$this->put_fixture( array( $fixture[0], $raw ) );
+
+			$result = $this->store()->all();
+
+			self::assertInstanceOf( Success::class, $result );
+			self::assertSame( array(), $result->value, $required_field );
+		}
+	}
+
+	/**
 	 * Open terminalization stages remain retained for inspection and retry.
 	 *
 	 * @load-bearing security

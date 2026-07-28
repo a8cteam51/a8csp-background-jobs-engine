@@ -37,6 +37,10 @@ final readonly class ScopeOperations {
 	 * `Schedule::MAX_ARGUMENTS_BYTES` mirrors this scope-boundary limit because the frozen
 	 * public model keeps its constant private.
 	 *
+	 * `Runs\Stores\RunStore::ROW_ENVELOPE_RESERVE_BYTES` budgets twice this limit for PHP-serialized
+	 * start arguments and fixed lifecycle metadata; its complete-row boundary remains authoritative
+	 * for higher-overhead shapes.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -98,7 +102,7 @@ final readonly class ScopeOperations {
 	 * @param   string                  $name       Scope-local background-work name.
 	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run starts.
 	 * @param   int|null                $fire_at    Absolute first-delivery timestamp, or null for asynchronous admission.
-	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null for the engine default.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
 	 *
 	 * @throws  \InvalidArgumentException When the scope/name identity or priority is invalid, or arguments are not portable.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.

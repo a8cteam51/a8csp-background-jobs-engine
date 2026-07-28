@@ -17,7 +17,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins attempt-local chunked job queue mutations and run metadata through real chunked job delivery.
- *
  */
 #[CoversClass( ChunkedRunContext::class )]
 #[UsesClass( PortableArguments::class )]

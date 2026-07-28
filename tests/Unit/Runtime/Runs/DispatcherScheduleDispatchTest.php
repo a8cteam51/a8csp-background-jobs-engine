@@ -426,7 +426,9 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 				$rival = $this->option( $run_option );
 				self::assertIsArray( $rival );
 				$rival['action_sequence'] = 2;
-				self::assertTrue( \update_option( $run_option, $rival, false ) );
+				$raw                      = \maybe_serialize( $rival );
+				self::assertIsString( $raw );
+				$this->rig->wpdb()->put( $run_option, $raw );
 			}
 		);
 
@@ -560,11 +562,20 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	}
 
 	/**
-	 * Returns one in-memory option value.
+	 * Returns one persisted option value from either modeled storage view.
 	 *
 	 * @param   string $name Option name.
+	 *
+	 * @return  mixed
 	 */
 	private function option( string $name ): mixed {
+		$raw = $this->rig->wpdb()->rows[ $name ] ?? null;
+		if ( null !== $raw ) {
+			self::assertIsString( $raw );
+
+			return \maybe_unserialize( $raw );
+		}
+
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );
 

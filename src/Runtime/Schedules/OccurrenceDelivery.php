@@ -12,8 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\SkippedJobDispatch;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\RegistrationUpdateOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -243,7 +241,7 @@ final readonly class OccurrenceDelivery {
 
 		$error = SchedulingError::registry_persist_failure( $scope );
 		$this->logger->error(
-			'Schedule occurrence state could not be persisted: {error}',
+			'Schedule delivery state could not be persisted: {error} The next-due advance and last-fired marker are lost, so the occurrence stays due and redelivers until an option write succeeds. The overlap guard serializes concurrent runs rather than deduplicating an occurrence, so a schedule job that finishes before its redelivery runs twice for one occurrence whatever its overlap policy.',
 			array(
 				'scope' => $scope,
 				'error' => $error->message,
@@ -470,7 +468,7 @@ final readonly class OccurrenceDelivery {
 				}
 			} catch ( \Throwable $throwable ) {
 				$this->logger->error(
-					'Misfire-skipped schedule listener failed after the occurrence state was persisted; fix the hook listener.',
+					'Misfire-skipped schedule listener failed after the delivery state was persisted; fix the hook listener.',
 					array(
 						'scope'             => $scope,
 						'schedule_identity' => $registration_key,
@@ -497,7 +495,7 @@ final readonly class OccurrenceDelivery {
 		$dispatched                          = $this->dispatcher->dispatch_scheduled_target(
 			$declaration['job'],
 			$schedule->args,
-			$schedule->priority ?? 10,
+			$schedule->priority,
 			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
 				try {
 					$this->persist_delivery_state( $identity, $scope, $accepted_registration );
@@ -606,7 +604,7 @@ final readonly class OccurrenceDelivery {
 		$dispatched                          = $this->dispatcher->dispatch_scheduled_target(
 			$declaration['job'],
 			$schedule->args,
-			$schedule->priority ?? 10,
+			$schedule->priority,
 			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
 				try {
 					$this->persist_delivery_state( $identity, $scope, $accepted_registration );

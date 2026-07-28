@@ -21,6 +21,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -408,6 +411,26 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * A failed-attempt count at the integer maximum saturates during terminalization.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_saturates_the_attempt_count_at_the_integer_maximum(): void {
+		$this->job->throwable = new NonRetryableException( 'The request is permanently invalid.' );
+		$this->enqueue_job();
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: \PHP_INT_MAX, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
+		self::assertSame( \PHP_INT_MAX, $failure->attempts );
+	}
+
+	/**
 	 * The identity-specific RetryPolicy replacement controls the terminal cap.
 	 *
 	 * @since   1.0.0
@@ -622,6 +645,27 @@ final class FailureLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * A retry-state construction error remains terminalizable after its ownership fence advances.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_handle_run_action_terminalizes_a_retry_state_construction_failure_after_fencing(): void {
+		$this->job->throwable           = new \RuntimeException( 'Database unavailable.' );
+		$this->rig->randomizer()->value = 7;
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
+		$state = new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: $this->args_hash(), kind_state: array(), failed_attempts: 0, action_sequence: \PHP_INT_MAX, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) );
+		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $state ) );
+
+		\do_action( 'a8csp_bgje/internal/deliver', self::IDENTITY, self::RUN_ID, \PHP_INT_MAX );
+
+		$this->assert_failure( ErrorCode::EngineUnavailable, RunFailureStage::scheduling() );
+		$this->rig->assert_failed( ErrorCode::EngineUnavailable );
+	}
+
+	/**
 	 * A one-attempt ordinary policy enters terminal failure immediately.
 	 *
 	 * @since   1.0.0
@@ -657,25 +701,30 @@ final class FailureLifecycleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_chunked_job_validation_exception_is_not_reclassified_on_the_job_path(): void {
-		$this->assert_terminal_job_failure(
-			InvalidChunkException::non_portable(),
-			new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) )
-		);
+		// The retry budget stays above one attempt so the scheduled retry evidences the job kind's own
+		// classification rather than policy exhaustion terminalizing every failure alike.
+		$this->job->throwable           = InvalidChunkException::non_portable();
+		$this->rig->randomizer()->value = 17;
+		$this->enqueue_job( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) );
+
+		$this->rig->run_due();
+
+		$this->rig->assert_retry_scheduled();
 	}
 
 	/**
-	 * A chunked job validation failure retains its engine-authored byte-limit diagnostic.
+	 * A deterministic chunk validation failure terminalizes without consuming retry policy.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_chunked_job_validation_exception_retains_its_engine_authored_diagnostic(): void {
+	public function test_chunked_job_validation_exception_terminalizes_without_consuming_retry_policy(): void {
 		$chunked_job                    = new RecordingChunkedJob( 'bounded-chunked-job' );
 		$chunked_job->queue             = array( array( 'chunk' => 'current' ) );
 		$chunked_job->process_throwable = InvalidChunkException::chunk_too_large( 8_193, 8_192 );
-		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) ) ) );
+		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) ) );
 		$result = $this->client->dispatch( 'bounded-chunked-job', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
@@ -685,6 +734,9 @@ final class FailureLifecycleTest extends TestCase {
 
 		$failure = $this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution() );
 		self::assertSame( 'Chunked Job chunk arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $failure->summary );
+		self::assertSame( 1, $failure->attempts );
+		self::assertCount( 1, $chunked_job->process_calls );
+		$this->rig->assert_no_retry();
 	}
 
 	// endregion.

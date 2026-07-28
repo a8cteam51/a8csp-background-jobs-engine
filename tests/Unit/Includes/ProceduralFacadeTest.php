@@ -250,33 +250,38 @@ final class ProceduralFacadeTest extends TestCase {
 
 		self::assertNotSame( '', (string) $run->id );
 		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );
-		self::assertSame( 41, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+		self::assertSame( 0, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
 		self::assertSame( 41, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
 	}
 
 	/**
-	 * An omitted procedural priority remains unspecified while both backend boundaries use today's default.
+	 * A priority-only schedule edit preserves the engine tick without backend churn.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_omitted_schedule_priority_defers_to_the_engine_default(): void {
+	public function test_priority_only_schedule_edit_does_not_recreate_the_tick(): void {
 		self::assertTrue( \a8csp_bgje_register_job( self::SCOPE, self::job( 'scheduled-job' ) ) );
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job' );
 
 		self::assertTrue( \a8csp_bgje_sync_schedules( self::SCOPE, $schedule ) );
-		self::assertSame( 10, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+		self::assertSame( 0, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
 		self::assert_run( \a8csp_bgje_dispatch_schedule( self::SCOPE, 'nightly' ), self::SCOPE . ':scheduled-job', RunStatus::Running );
 		self::assertSame( 10, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
 
 		$this->rig->backend()->calls = array();
-		$schedule                    = new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job', priority: 10 );
+		$schedule                    = new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job', priority: 41 );
 		self::assertTrue( \a8csp_bgje_sync_schedules( self::SCOPE, $schedule ) );
 		$writes = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'unschedule', 'schedule_recurring' ), true ) ) );
-		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $writes, 'verb' ) );
-		self::assertSame( 10, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
+		self::assertSame( array(), $writes );
+
+		$this->rig->clock()->timestamp = self::NOW + 300;
+		$this->rig->run_due();
+		$this->rig->run_due();
+		$this->rig->run_due();
+		self::assertSame( 41, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
 	}
 
 	/**

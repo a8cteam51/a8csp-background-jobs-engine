@@ -174,7 +174,7 @@ final readonly class StoreFixtureBuilder {
 				}
 
 				$raw = self::same_state( $created, $state )
-					? $this->raw_option( RunIdentity::option_name( $this->identity, $run_id ) )
+					? $this->row( $wpdb, RunIdentity::option_name( $this->identity, $run_id ) )[1]
 					: $store->replace_if_state_matches( $run_id, $created, $state );
 				if ( ! \is_string( $raw ) ) {
 					throw new \LogicException( 'Production RunStore could not serialize the requested active-run fixture.' );
@@ -601,7 +601,7 @@ final readonly class StoreFixtureBuilder {
 			);
 		}
 
-		// Production stores need a clean engine-row window: a caller-persisted row under the same option name makes add_option refuse the fixture write.
+		// Production stores need a clean engine-row window because the option-name unique key rejects a fixture write under an existing name.
 		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE `option_name` LIKE %s', $wpdb->options, $pattern ) ?? throw new \LogicException( 'Store fixtures could not prepare the real WordPress option cleanup.' ) );
 		\wp_cache_flush();
 
@@ -719,7 +719,7 @@ final readonly class StoreFixtureBuilder {
 	}
 
 	/**
-	 * Returns one exact raw option created through add_option().
+	 * Returns one exact raw option from the real WordPress database.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -731,15 +731,8 @@ final readonly class StoreFixtureBuilder {
 	 * @return  string
 	 */
 	private function raw_option( string $option_name ): string {
-		if ( \defined( 'WPINC' ) ) {
-			$wpdb = $this->wordpress_database();
-			$raw  = $wpdb->get_var( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s', $wpdb->options, $option_name ) );
-		} else {
-			$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
-			$raw     = \is_array( $options ) && \array_key_exists( $option_name, $options )
-				? \maybe_serialize( $options[ $option_name ] )
-				: null;
-		}
+		$wpdb = $this->wordpress_database();
+		$raw  = $wpdb->get_var( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s', $wpdb->options, $option_name ) );
 
 		if ( ! \is_string( $raw ) ) {
 			throw new \LogicException( 'The production run store did not emit the expected isolated option.' );

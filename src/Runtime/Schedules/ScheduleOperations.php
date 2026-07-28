@@ -6,15 +6,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -27,6 +25,26 @@ use Psr\Clock\ClockInterface;
  * @version 1.0.0
  */
 final readonly class ScheduleOperations {
+	// region FIELDS AND CONSTANTS
+
+	/**
+	 * Recurring ticks run admission machinery at the most urgent supported priority.
+	 *
+	 * A tick performs admission only; the work itself runs on the delivery row the tick creates.
+	 * Carrying the consumer's priority here would apply it twice — once delaying admission and again
+	 * delaying the delivery — so the tick is engine-owned and the consumer's value reaches only the
+	 * delivery row. Zero keeps admission ahead of the work it admits, so a queue saturated with
+	 * consumer jobs cannot starve the step that enqueues them.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int TICK_PRIORITY = 0;
+
+	// endregion
+
 	// region MAGIC METHODS
 
 	/**
@@ -36,15 +54,17 @@ final readonly class ScheduleOperations {
 	 * @version 1.0.0
 	 *
 	 * @param   ScheduleRegistry   $registry            Per-scope schedule registry.
-	 * @param   BackendInterface   $scheduler           Scheduling backend facade.
+	 * @param   SchedulerFacade    $scheduler           Scheduling backend facade.
 	 * @param   ClockInterface     $clock               Current-time source.
 	 * @param   OccurrenceDelivery $occurrence_delivery Schedule occurrence delivery service.
+	 * @param   LoggerInterface    $logger              Engine logger.
 	 */
 	public function __construct(
 		private ScheduleRegistry $registry,
-		private BackendInterface $scheduler,
+		private SchedulerFacade $scheduler,
 		private ClockInterface $clock,
 		private OccurrenceDelivery $occurrence_delivery,
+		private LoggerInterface $logger,
 	) {}
 
 	// endregion
@@ -77,7 +97,13 @@ final readonly class ScheduleOperations {
 	public function sync( string $scope, array $declarations ): AbstractResult {
 		Identity::validate_scope( $scope );
 
-		return $this->sync_scope( $scope, $declarations );
+		$has_dormant_candidate = $this->scheduler->has_dormant_candidate();
+		$result                = $this->sync_scope( $scope, $declarations );
+		if ( $result->is_success() && $has_dormant_candidate ) {
+			$this->logger->warning( 'Schedule synchronization ran while a scheduling backend was not ready; initialize it and synchronize this scope again to converge dormant recurring occurrences.', array( 'scope' => $scope ) );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -145,9 +171,10 @@ final readonly class ScheduleOperations {
 			return $this->registry_read_failure( $scope );
 		}
 
-		$existing             = $registrations->value;
-		$interval_by_identity = array();
-		$next_due_by_identity = array();
+		$existing                        = $registrations->value;
+		$fingerprint_matching_identities = array();
+		$interval_by_identity            = array();
+		$next_due_by_identity            = array();
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$interval = $schedule->recurrence->interval;
@@ -155,6 +182,7 @@ final readonly class ScheduleOperations {
 			$interval_by_identity[ $schedule_identity ] = $interval;
 			$current                                    = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
+				$fingerprint_matching_identities[] = $schedule_identity;
 				continue;
 			}
 
@@ -177,12 +205,12 @@ final readonly class ScheduleOperations {
 		}
 
 		$next             = $existing;
-		$scheduled_counts = $this->scheduler->scheduled_counts( OccurrenceDelivery::SCHEDULE_HOOK, \array_keys( $declared ) );
+		$scheduled_counts = $this->scheduler->scheduled_counts( OccurrenceDelivery::SCHEDULE_HOOK, $fingerprint_matching_identities );
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$current  = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
-				$scheduled_count = $scheduled_counts[ $schedule_identity ] ?? 0;
+				$scheduled_count = $scheduled_counts[ $schedule_identity ];
 				if ( 1 === $scheduled_count ) {
 					continue;
 				}
@@ -193,7 +221,7 @@ final readonly class ScheduleOperations {
 					}
 				}
 
-				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $schedule_identity ], array( $schedule_identity ), $current['next_due'], $schedule_identity, priority: $schedule->priority ?? 10 );
+				$recreated = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval_by_identity[ $schedule_identity ], array( $schedule_identity ), $current['next_due'], $schedule_identity, priority: self::TICK_PRIORITY );
 				if ( $recreated->is_failure() ) {
 					return $recreated;
 				}
@@ -225,7 +253,7 @@ final readonly class ScheduleOperations {
 				return $this->registry_replacement_failure( $scope, $replacement );
 			}
 
-			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: $schedule->priority ?? 10 );
+			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: self::TICK_PRIORITY );
 			if ( $scheduled->is_failure() ) {
 				// A scheduling failure leaves the benign registration-without-chain that the fingerprint-match fast path
 				// recreates; rolling back can race a delivery and manufacture chain-without-registration, the exact orphan

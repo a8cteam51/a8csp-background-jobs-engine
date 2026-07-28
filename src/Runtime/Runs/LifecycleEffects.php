@@ -263,7 +263,25 @@ final readonly class LifecycleEffects {
 			}
 
 			$updated = $run_store->append_terminal_effect( $run_id, $current, $snapshot['raw'], $effect );
-			if ( $updated instanceof Failure || null === $updated ) {
+			if ( $updated instanceof Failure ) {
+				$this->logger->error(
+					$updated->error->message,
+					array(
+						'identity'     => (string) $identity,
+						'run_id'       => $run_id,
+						'status'       => $current->status->value,
+						'effect'       => $effect,
+						'error_class'  => $updated->error::class,
+						'error_reason' => $updated->error->reason?->value,
+					)
+				);
+				if ( null !== $effect_failure ) {
+					throw $effect_failure;
+				}
+
+				return false;
+			}
+			if ( null === $updated ) {
 				if ( null !== $effect_failure ) {
 					throw $effect_failure;
 				}

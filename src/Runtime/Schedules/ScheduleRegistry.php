@@ -267,7 +267,7 @@ final class ScheduleRegistry {
 			foreach ( $replacement_registrations as $registration_key => $registration ) {
 				$stored_registration = $stored_registrations[ $registration_key ] ?? null;
 				if ( null !== $stored_registration && $registration['fingerprint'] === $stored_registration['fingerprint'] ) {
-					// An unchanged definition retains the selected generation while a completed declaration refresh ends its inactive episode.
+					// Matching recurring-chain fields retain the selected generation while a completed declaration refresh ends its inactive episode.
 					if ( $reset_undeclared_episodes ) {
 						$stored_registration['undeclared_occurrences'] = 0;
 						$stored_registration['undeclared_escalated']   = false;
@@ -367,7 +367,7 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Replaces one persisted registration while its observed definition fingerprint remains current.
+	 * Replaces one persisted registration while its observed recurring-chain fingerprint remains current.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -375,7 +375,7 @@ final class ScheduleRegistry {
 	 * @phpstan-param Registration $registration
 	 *
 	 * @param   Identity $identity             Complete scope-qualified schedule identity.
-	 * @param   string   $observed_fingerprint Definition fingerprint observed before the update.
+	 * @param   string   $observed_fingerprint Recurring-chain fingerprint observed before the update.
 	 * @param   array    $registration         Complete registration timing state.
 	 *
 	 * @return  RegistrationUpdateOutcome Fenced row-update outcome.

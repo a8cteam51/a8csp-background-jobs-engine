@@ -12,8 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -81,14 +79,25 @@ final readonly class FailureLifecycle {
 		if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $reset_at, $state->heartbeat_at ) ) {
 			return;
 		}
-		$state = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
-		if ( $state instanceof Failure || null === $state ) {
+		$marked = $run_store->mark_executing_with_heartbeat( $run_id, $state, $reset_at );
+		if ( $marked instanceof Failure ) {
+			// replace_if_state_matches(), replace_if_raw_matches(), and mark_executing_with_heartbeat()
+			// collapse lost CAS and SQL write failure to null, so Failure denotes payload rejection.
+			if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
+				return;
+			}
+			$this->fail_terminally( $handler, $identity, $run_id, $state, $run_store, $marked->error, RunState::increment_attempts_safely( $state->failed_attempts ), $terminal_stage, ErrorCode::PayloadRejected, $details );
+
 			return;
 		}
+		if ( null === $marked ) {
+			return;
+		}
+		$state = $marked;
 
-		$attempts_used = $state->failed_attempts + 1;
+		$attempts_used = RunState::increment_attempts_safely( $state->failed_attempts );
 		$error         = $handler->failure_error( $throwable );
-		if ( $throwable instanceof NonRetryableException ) {
+		if ( $throwable instanceof NonRetryableException || ! $handler->is_failure_retryable( $throwable ) ) {
 			$this->fail_terminally( $handler, $identity, $run_id, $state, $run_store, $error, $attempts_used, $terminal_stage, ErrorCode::ExecutionFailed, $details );
 
 			return;
@@ -118,8 +127,11 @@ final readonly class FailureLifecycle {
 
 		$retry_failure = $this->reschedule_retry( $handler, $identity, $run_id, $state, $run_store, $policy, $attempts_used, $error, $retry_stage );
 		if ( null !== $retry_failure ) {
-			$retry_state = $retry_failure['state'];
-			if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $retry_state, $run_store, $retry_state->heartbeat_at, $retry_state->heartbeat_at ) ) {
+			// Retry preparation can advance the overlap lock without persisting retry state, so terminalization
+			// fences against the returned lock generation rather than the state's own heartbeat.
+			$retry_state        = $retry_failure['state'];
+			$fence_heartbeat_at = $retry_failure['fence_heartbeat_at'];
+			if ( $this->terminal_transitions->enforce_delivery_fence( $handler, $identity, $run_id, $retry_state, $run_store, $fence_heartbeat_at, $fence_heartbeat_at ) ) {
 				return;
 			}
 
@@ -217,8 +229,9 @@ final readonly class FailureLifecycle {
 	 *
 	 * @throws  \LogicException When the claimed delivery has no durable pending-action descriptor.
 	 *
-	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ErrorCode}|null Exact failed state and
-	 *          detail, or null after successful scheduling, a lost live-state transition, or an aborting ownership fence.
+	 * @return  array{state: RunState, error: EngineError, stage: RunFailureStage, code: ErrorCode, fence_heartbeat_at: int}|null
+	 *          Exact failed state and detail plus the overlap-lock heartbeat expected by terminalization, or null after successful
+	 *          scheduling, a lost live-state transition, or an aborting ownership fence.
 	 */
 	private function reschedule_retry( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, RetryPolicy $policy, int $attempt, EngineError $error, string $retry_stage ): ?array {
 		$kind = $handler->key();
@@ -227,18 +240,20 @@ final readonly class FailureLifecycle {
 			$now   = $this->clock->now()->getTimestamp();
 			if ( $delay > \PHP_INT_MAX - $now ) {
 				return array(
-					'state' => $state,
-					'error' => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $kind, (string) $identity ) ),
-					'stage' => RunFailureStage::scheduling(),
-					'code'  => ErrorCode::BackendRejected,
+					'state'              => $state,
+					'error'              => new EngineError( \sprintf( '%1$s "%2$s" could not schedule the retry action because its delay exceeds supported Unix seconds; configure a smaller retry-policy delay.', $kind, (string) $identity ) ),
+					'stage'              => RunFailureStage::scheduling(),
+					'code'               => ErrorCode::BackendRejected,
+					'fence_heartbeat_at' => $state->heartbeat_at,
 				);
 			}
 		} catch ( \Throwable $throwable ) {
 			return array(
-				'state' => $state,
-				'error' => EngineError::retry_preparation( $kind, $identity, $throwable ),
-				'stage' => RunFailureStage::scheduling(),
-				'code'  => ErrorCode::EngineUnavailable,
+				'state'              => $state,
+				'error'              => EngineError::retry_preparation( $kind, $identity, $throwable ),
+				'stage'              => RunFailureStage::scheduling(),
+				'code'               => ErrorCode::EngineUnavailable,
+				'fence_heartbeat_at' => $state->heartbeat_at,
 			);
 		}
 
@@ -253,10 +268,11 @@ final readonly class FailureLifecycle {
 			$replacement = $state->with_failed_attempts( $attempt )->with_heartbeat_at( $fire_at )->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
 		} catch ( \Throwable $throwable ) {
 			return array(
-				'state' => $state,
-				'error' => EngineError::retry_state( $kind, $identity, $throwable ),
-				'stage' => RunFailureStage::scheduling(),
-				'code'  => ErrorCode::EngineUnavailable,
+				'state'              => $state,
+				'error'              => EngineError::retry_state( $kind, $identity, $throwable ),
+				'stage'              => RunFailureStage::scheduling(),
+				'code'               => ErrorCode::EngineUnavailable,
+				'fence_heartbeat_at' => $fire_at,
 			);
 		}
 
@@ -275,7 +291,16 @@ final readonly class FailureLifecycle {
 
 			return null;
 		}
-		if ( $transitioned instanceof Failure || null === $transitioned ) {
+		if ( $transitioned instanceof Failure ) {
+			return array(
+				'state'              => $state,
+				'error'              => $transitioned->error,
+				'stage'              => RunFailureStage::scheduling(),
+				'code'               => ErrorCode::PayloadRejected,
+				'fence_heartbeat_at' => $fire_at,
+			);
+		}
+		if ( null === $transitioned ) {
 			return null;
 		}
 		$state = $replacement;
@@ -284,10 +309,11 @@ final readonly class FailureLifecycle {
 			$this->lifecycle_effects->fire_retry_scheduled( $identity, $run_id, $state->start_args, $attempt, $delay );
 		} catch ( \Throwable $throwable ) {
 			return array(
-				'state' => $state,
-				'error' => EngineError::retry_preparation( $kind, $identity, $throwable ),
-				'stage' => RunFailureStage::execution(),
-				'code'  => ErrorCode::ExecutionFailed,
+				'state'              => $state,
+				'error'              => EngineError::retry_preparation( $kind, $identity, $throwable ),
+				'stage'              => RunFailureStage::execution(),
+				'code'               => ErrorCode::ExecutionFailed,
+				'fence_heartbeat_at' => $fire_at,
 			);
 		}
 
@@ -299,10 +325,11 @@ final readonly class FailureLifecycle {
 			$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 			if ( $scheduled->is_failure() ) {
 				return array(
-					'state' => $state,
-					'error' => EngineError::scheduling( $kind, $identity, 'retry', $scheduled->error ),
-					'stage' => RunFailureStage::scheduling(),
-					'code'  => $scheduled->error->reason->api_code(),
+					'state'              => $state,
+					'error'              => EngineError::scheduling( $kind, $identity, 'retry', $scheduled->error ),
+					'stage'              => RunFailureStage::scheduling(),
+					'code'               => $scheduled->error->reason->api_code(),
+					'fence_heartbeat_at' => $fire_at,
 				);
 			}
 
@@ -321,10 +348,11 @@ final readonly class FailureLifecycle {
 			return null;
 		} catch ( \Throwable $throwable ) {
 			return array(
-				'state' => $state,
-				'error' => EngineError::retry_preparation( $kind, $identity, $throwable ),
-				'stage' => RunFailureStage::scheduling(),
-				'code'  => ErrorCode::BackendUnavailable,
+				'state'              => $state,
+				'error'              => EngineError::retry_preparation( $kind, $identity, $throwable ),
+				'stage'              => RunFailureStage::scheduling(),
+				'code'               => ErrorCode::BackendUnavailable,
+				'fence_heartbeat_at' => $fire_at,
 			);
 		}
 	}

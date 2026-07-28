@@ -283,7 +283,7 @@ final class SchedulerFacadeTest extends TestCase {
 		self::assertCount( 1, $writes );
 		self::assertSame( 900, $writes[0]['args']['interval'] ?? null );
 		self::assertSame( $registration['next_due'], $writes[0]['args']['first_run_timestamp'] ?? null );
-		self::assertSame( 73, $writes[0]['args']['priority'] ?? null );
+		self::assertSame( 0, $writes[0]['args']['priority'] ?? null );
 		self::assertSame( array(), $this->calls( $this->fallback(), 'schedule_recurring' ) );
 	}
 
