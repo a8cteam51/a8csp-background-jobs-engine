@@ -191,7 +191,7 @@ final class JobRegistryTest extends TestCase {
 			$registry->register( $identity, $second['definition'] );
 			self::fail( 'A same-kind duplicate must be rejected.' );
 		} catch ( DuplicateRegistrationException $exception ) {
-			self::assertSame( $kind . ' name is already registered; register each background-work name exactly once.', $exception->getMessage() );
+			self::assertSame( 'Background-work identity "consumer:sync" is already registered as a ' . $kind . '; register each background-work name exactly once.', $exception->getMessage() );
 		}
 
 		self::assertSame( $first['execution'], $registry->execution( $identity ) );

@@ -343,6 +343,25 @@ final class ScopeOperationsTest extends TestCase {
 	}
 
 	/**
+	 * Sync names the repeated schedule when a declaration reuses a scope-local name.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_rejects_a_repeated_schedule_name_and_names_the_declaration(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$first  = new Schedule( 'nightly-rebuild', Recurrence::every( 300 ), 'refresh-index' );
+		$second = new Schedule( 'nightly-rebuild', Recurrence::every( 900 ), 'refresh-index' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Schedule "nightly-rebuild" is declared more than once; schedule sync accepts each scope-local schedule name exactly once.' );
+
+		(void) $client->sync( array( $first, $second ) );
+	}
+
+	/**
 	 * Sync applies the inclusive 64-byte schedule-name ceiling with declaration context.
 	 *
 	 * @since   1.0.0
