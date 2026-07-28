@@ -68,16 +68,16 @@ final readonly class RunStore {
 	 * Maximum persisted serialization bytes accepted for one complete active-run row.
 	 *
 	 * A decimal megabyte stays below Memcached's default 1 MiB item ceiling, leaving 48,576 bytes
-	 * for the cache key, item metadata, and object-cache serialization wrappers.
-	 *
-	 * `FailedRunStore::MAX_ROW_BYTES` mirrors this ceiling for its independent option row.
+	 * for the cache key, item metadata, and object-cache serialization wrappers. Every engine-owned
+	 * option row shares that substrate, so `MAX_KIND_STATE_BYTES` and `FailedRunStore::MAX_ROW_BYTES`
+	 * derive from this value and follow a change to it on their own.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     int
 	 */
-	private const int MAX_ROW_BYTES = 1_000_000;
+	public const int MAX_ROW_BYTES = 1_000_000;
 
 	/**
 	 * Bytes reserved for variable active-run fields outside the kind-owned state.

@@ -633,7 +633,7 @@ This table covers engine-enforced identity, payload, scheduling-admission, stora
 | Complete chunked-job queue | At most 983,616 PHP-serialized bytes. | `Runtime\Runs\Stores\RunStore::MAX_KIND_STATE_BYTES` | No; only the initial generated queue contents are filterable through `a8csp_bgje/queue` and its identity-specific form. |
 | Complete active-run row | At most 1,000,000 PHP-serialized bytes while active. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES` | No |
 | Failed-run retained count | At most 20 entries per scope-qualified work identity. | `Runtime\Runs\Stores\FailedRunStore::ENTRY_LIMIT` | No |
-| Complete failed-run retention row | At most 1,000,000 PHP-serialized bytes per scope-qualified work identity. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES`, mirrored and enforced by `Runtime\Runs\Stores\FailedRunStore::MAX_ROW_BYTES` | No |
+| Complete failed-run retention row | At most 1,000,000 PHP-serialized bytes per scope-qualified work identity. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES`, enforced for this row by `Runtime\Runs\Stores\FailedRunStore::MAX_ROW_BYTES`, which derives from it | No |
 | Run history | Default 30 entries in each history buffer; no hard maximum. | `Runtime\Runs\Stores\RunHistory::DEFAULT_SIZE` | Yes: `a8csp_bgje/history_size` accepts a positive integer. |
 
 ## Scale ceilings

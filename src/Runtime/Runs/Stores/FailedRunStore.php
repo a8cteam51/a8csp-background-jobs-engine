@@ -46,17 +46,17 @@ final readonly class FailedRunStore {
 	private const int ENTRY_LIMIT = 20;
 
 	/**
-	 * Maximum persisted serialization bytes accepted for one complete failed-run row.
+	 * Maximum persisted serialization bytes accepted for one complete failed-run retention row.
 	 *
-	 * `RunStore::MAX_ROW_BYTES` owns the shared substrate ceiling; this independent option row
-	 * mirrors its value.
+	 * Retention shares the active-run row's option-table and object-cache substrate, so it accepts
+	 * the same complete-row ceiling.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     int
 	 */
-	private const int MAX_ROW_BYTES = 1_000_000;
+	private const int MAX_ROW_BYTES = RunStore::MAX_ROW_BYTES;
 
 	/**
 	 * Prefix for failed-run option names.
