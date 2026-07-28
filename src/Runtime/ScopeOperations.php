@@ -32,10 +32,7 @@ final readonly class ScopeOperations {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Maximum encoded JSON bytes accepted for persisted start arguments.
-	 *
-	 * `Schedule::MAX_ARGUMENTS_BYTES` mirrors this scope-boundary limit because the frozen
-	 * public model keeps its constant private.
+	 * Maximum encoded JSON bytes accepted for persisted job start arguments and declared schedule arguments.
 	 *
 	 * `Runs\Stores\RunStore::ROW_ENVELOPE_RESERVE_BYTES` budgets twice this limit for PHP-serialized
 	 * start arguments and fixed lifecycle metadata; its complete-row boundary remains authoritative
@@ -144,7 +141,7 @@ final readonly class ScopeOperations {
 	 *
 	 * @param   array<Schedule> $schedules Complete schedule declaration for the bound scope.
 	 *
-	 * @throws  \InvalidArgumentException When an entry, scope/name identity, scope/target identity, declaration uniqueness, schedule priority, or schedule argument portability is invalid.
+	 * @throws  \InvalidArgumentException When an entry, scope/name identity, scope/target identity, declaration uniqueness, or schedule priority is invalid.
 	 *
 	 * @return  AbstractResult<true, BoundaryError>
 	 */

@@ -16,45 +16,6 @@ final readonly class Schedule {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Maximum encoded JSON bytes accepted for persisted arguments.
-	 *
-	 * The public-model copy mirrors `Runtime\ScopeOperations::MAX_ARGUMENTS_BYTES` because models do
-	 * not import `src/` internals.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_ARGUMENTS_BYTES = 8_192;
-
-	/**
-	 * Maximum bytes accepted for a scope-local name.
-	 *
-	 * The public-model copy mirrors `Boundary\Identity::NAME_MAX_BYTES` because models do not
-	 * import `src/` internals.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_NAME_BYTES = 64;
-
-	/**
-	 * Highest scheduler priority accepted by the schedule contract.
-	 *
-	 * The public-model copy mirrors `Runtime\Runs\Dispatcher::MAX_PRIORITY` because models do not
-	 * import `src/` internals.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     int
-	 */
-	private const int MAX_PRIORITY = 255;
-
-	/**
 	 * Target job arguments.
 	 *
 	 * @since   1.0.0
@@ -91,7 +52,7 @@ final readonly class Schedule {
 	 * @param   CatchUpPolicy           $catch_up   Missed-occurrence policy.
 	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
 	 *
-	 * @throws  \InvalidArgumentException When a schedule or target job name is invalid, or the definition is not portable or violates a boundary.
+	 * @throws  \InvalidArgumentException When the argument snapshot is not portable or the definition is not JSON-encodable.
 	 */
 	public function __construct(
 		public string $name,
@@ -101,13 +62,7 @@ final readonly class Schedule {
 		public CatchUpPolicy $catch_up = CatchUpPolicy::RunOnce,
 		public ?int $priority = null,
 	) {
-		self::validate_name( $this->name );
-		self::validate_name( $this->job );
 		$this->args = self::snapshot_arguments( $args, $this->name );
-		if ( null !== $this->priority ) {
-			self::assert_priority( $this->priority, $this->name );
-		}
-		self::assert_portable_args( $this->args, $this->name );
 
 		try {
 			$encoded = \wp_json_encode(
@@ -121,11 +76,13 @@ final readonly class Schedule {
 				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
 			);
 		} catch ( \JsonException ) {
-			throw new \InvalidArgumentException( 'Schedule definition must be JSON-encodable; pass valid UTF-8 job and recurrence strings.' );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( 'Schedule "%s" definition must be JSON-encodable; use valid UTF-8 in the name, target job, and arguments, and finite numbers in the arguments.', $this->name ) );
 		}
 
 		if ( ! \is_string( $encoded ) ) {
-			throw new \InvalidArgumentException( 'Schedule definition must be JSON-encodable; pass valid UTF-8 job and recurrence strings.' );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( 'Schedule "%s" definition must be JSON-encodable; use valid UTF-8 in the name, target job, and arguments, and finite numbers in the arguments.', $this->name ) );
 		}
 
 		$this->fingerprint = \hash( 'sha256', $encoded );
@@ -150,80 +107,6 @@ final readonly class Schedule {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Validates one scope-local job or schedule name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name Scope-local name.
-	 *
-	 * @throws  \InvalidArgumentException When the name violates the stable grammar.
-	 *
-	 * @return  void
-	 */
-	private static function validate_name( string $name ): void {
-		if ( 1 === \preg_match( '/\A[a-z0-9_-]+\z/D', $name ) && self::MAX_NAME_BYTES >= \strlen( $name ) ) {
-			return;
-		}
-
-		throw new \InvalidArgumentException( 'Background-work name is invalid; pass 1 to 64 bytes containing only lowercase letters, digits, underscores, and hyphens.' );
-	}
-
-	/**
-	 * Validates one schedule priority.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int    $priority Schedule priority.
-	 * @param   string $name     Schedule name for diagnostic context.
-	 *
-	 * @throws  \InvalidArgumentException When the priority is outside the supported range.
-	 *
-	 * @return  void
-	 */
-	private static function assert_priority( int $priority, string $name ): void {
-		if ( 0 <= $priority && self::MAX_PRIORITY >= $priority ) {
-			return;
-		}
-
-		// Exception values are diagnostic data, not rendered output.
-		throw new \InvalidArgumentException( \sprintf( 'Schedule "%1$s" priority %2$d is invalid; pass a value from 0 through %3$d.', $name, $priority, self::MAX_PRIORITY ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	}
-
-	/**
-	 * Validates the portable argument tree and its persisted byte boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $arguments Arguments to validate.
-	 * @param   string                  $name      Schedule name for diagnostic context.
-	 *
-	 * @throws  \InvalidArgumentException When the arguments are not portable or exceed the byte boundary.
-	 *
-	 * @return  void
-	 */
-	private static function assert_portable_args( array $arguments, string $name ): void {
-		try {
-			$encoded = \wp_json_encode( $arguments, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		} catch ( \JsonException ) {
-			$encoded = false;
-		}
-
-		if ( ! \is_string( $encoded ) || ! self::has_portable_values( $arguments ) ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( 'Schedule "%s" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $name ) );
-		}
-
-		$actual_bytes = \strlen( $encoded );
-		if ( self::MAX_ARGUMENTS_BYTES < $actual_bytes ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( 'Schedule "%1$s" arguments contain %2$d JSON bytes; the limit is %3$d bytes.', $name, $actual_bytes, self::MAX_ARGUMENTS_BYTES ) );
-		}
-	}
 
 	/**
 	 * Returns a portable argument snapshot without PHP reference containers.

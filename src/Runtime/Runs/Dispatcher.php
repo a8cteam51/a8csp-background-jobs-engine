@@ -46,10 +46,6 @@ final readonly class Dispatcher {
 	/**
 	 * Highest scheduler priority accepted by run admission.
 	 *
-	 * `Schedule::MAX_PRIORITY` and `JobOptions::MAX_PRIORITY` mirror this dispatch-owned limit
-	 * because the frozen public models keep their constants private. Lowering this ceiling without
-	 * lowering both leaves a model accepting an input that admission then rejects.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
