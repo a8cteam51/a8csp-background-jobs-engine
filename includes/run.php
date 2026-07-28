@@ -53,7 +53,10 @@ function a8csp_bgje_last_completed_run( string $scope, string $name ): Run|null|
 }
 
 /**
- * Starts a fresh run from one retained failed run's original arguments.
+ * Starts a fresh run from one retained failed run's arguments and priority.
+ *
+ * The retained priority is replayed directly without resolving the priority ladder.
+ * A retained entry without a priority field uses engine default 10.
  *
  * @api
  *

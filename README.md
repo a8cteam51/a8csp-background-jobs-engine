@@ -286,7 +286,7 @@ function my_plugin_dispatch_recount(): void {
 }
 ```
 
-Chunks run one at a time with a short pause between them. `ChunkedRunContextInterface` also exposes `prepend_chunk()`, `get_run_id()`, and `get_start_args()`. A failed chunked job starts a fresh run from its original arguments through `runs()->retry_failed()`.
+Chunks run one at a time with a short pause between them. `ChunkedRunContextInterface` also exposes `prepend_chunk()`, `get_run_id()`, and `get_start_args()`. A failed chunked job starts a fresh run from its retained arguments and retained priority through `runs()->retry_failed()`; the retry replays both values directly instead of resolving priority again. A retained entry without a priority field uses engine default 10.
 
 ### 4. Reacting to run lifecycles
 
@@ -321,7 +321,7 @@ add_action( 'init', static function (): void {
 		1
 	);
 
-	// Cancelled: an operator or scope code withdrew the run before execution.
+	// Cancelled: an operator or scope code withdrew the run while it was not executing.
 	add_action(
 		'a8csp_bgje/cancelled/my-plugin:email-digest',
 		static function ( RunId $run_id, array $start_args ): void {
@@ -401,7 +401,7 @@ add_action( 'init', static function (): void {
 
 The failure summary is engine-authored and redacted; it never contains raw exception text. Terminal hooks can replay across crash recovery, so listeners use the run ID to converge repeated delivery. Their delivery is durable under Action Scheduler and best-effort under WP-Cron. Completed, failed, cancelled, and superseded reactions use their lifecycle hooks exclusively.
 
-The engine retains up to 20 failed runs per scope-qualified identity for manual retry and evicts the oldest entry past that limit. A retry that successfully starts a fresh run attempts to remove its retained source entry; a failed removal is logged. Retention is best-effort: a retention write failure is logged rather than made fatal.
+The engine retains up to 20 failed runs per scope-qualified identity for manual retry, subject also to a 1,000,000-byte ceiling on the complete serialized retention row. It evicts oldest entries first until both bounds hold. If a new entry cannot fit even by itself, the engine rejects that entry instead of retaining it and leaves the existing row intact. A retry that successfully starts a fresh run attempts to remove its retained source entry; a failed removal is logged. Retention is best-effort: a retention write failure is logged rather than made fatal.
 
 ## The procedural functions
 
@@ -435,7 +435,7 @@ $run_id = \A8C\SpecialProjects\BackgroundJobsEngine\RunId::tryFrom( $persisted_r
 
 All public type names below are relative to the `A8C\SpecialProjects\BackgroundJobsEngine` namespace.
 
-This table is the canonical public PHP type index. Every listed type is marked `@api` and is part of the SemVer-bound public ABI; any other autoloadable engine type is internal unless this README explicitly documents it as public.
+This table is the public PHP type index. Every listed type is marked `@api` and belongs to the PHP API tier of the [canonical SemVer contract](#releasing); any other autoloadable engine type is internal unless this README explicitly documents it as public.
 
 | Type | Public shape |
 | --- | --- |
@@ -445,7 +445,7 @@ This table is the canonical public PHP type index. Every listed type is marked `
 | `Runs` | Scope-bound readonly manager for run inspection, retry, and cancellation. |
 | `JobDefinition` | Final readonly registration declaration with public `string $name`, `JobKind $kind`, `KindExecutionInterface $execution`, and `JobOptions $options`. Its non-public constructor is exposed through `job()`, `chunked_job()`, `closure()`, and `for_kind()`. The closure constructor always applies engine-default policy. |
 | `JobKind` | Final readonly kind key with public `string $value`, built-in `job()` and `chunked_job()` constructors, and `from( string $value )` for a grammar-valid key. It carries no execution contract. |
-| `JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?RetryPolicy $retry`, `?OverlapPolicy $overlap`, `?\Closure $overlap_key`, and `?int $priority`. Null uses the documented default for each policy except priority, where it defers to the priority resolution ladder ending at engine default 10. `max_runtime` accepts positive seconds, and declarations above 21,600 seconds (6 hours) remain valid while effective execution credit is clamped to that ceiling. Priority accepts 0 through 255 inclusive and throws on construction outside that range, matching the `Schedule` contract. |
+| `JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?RetryPolicy $retry`, `?OverlapPolicy $overlap`, `?\Closure $overlap_key`, and `?int $priority`. Null uses the documented default for each policy except priority, where it defers to the priority resolution ladder ending at engine default 10. `max_runtime` supplies per-invocation crash-reclamation credit, not an execution limit. Construction stores `max_runtime` and priority without validating their declared bounds: `jobs()->register()` rejects an invalid `max_runtime` or job-default priority, `schedules()->sync()` rejects an invalid schedule priority, and `jobs()->dispatch()` rejects an invalid explicit priority. The [consumer limits](#consumer-limits) give the exact bounds and effective clamp. |
 | `KindExecutionInterface` | Empty marker shared by the standard and chunked execution roles so a kind-agnostic declaration can require execution membership while registration resolves the kind-specific role. |
 | `JobExecutionInterface` | Standard execution role extending `KindExecutionInterface` and requiring only `handle( array $start_args, RunContextInterface $context ): void`. |
 | `ChunkedJobExecutionInterface` | Standalone chunked execution role extending `KindExecutionInterface` and requiring only `generate_queue( array $start_args, RunContextInterface $context ): iterable` and `process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void`; it does not extend `JobExecutionInterface`. |
@@ -473,7 +473,7 @@ The backed enums are:
 | `CatchUpPolicy` | `RunOnce = 'run_once'`, `Skip = 'skip'` |
 | `ErrorCode` | `InvalidArgument = 'invalid_argument'`, `AlreadyRegistered = 'already_registered'`, `EngineUnavailable = 'engine_unavailable'`, `UnknownJob = 'unknown_job'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailed = 'storage_failed'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
 
-Minor releases may add cases; consumers treat unknown backing values as generic failures for `ErrorCode` and as generic non-terminal or terminal states, as appropriate, for `RunStatus`.
+Consumers treat unknown backing values as generic failures for `ErrorCode` and as generic non-terminal or terminal states, as appropriate, for `RunStatus`.
 
 `RunFailureStage` is a final, interned, open string-backed value. `from( string )` wraps a lowercase snake key with at most one dot qualifier and throws `\ValueError` for malformed input; `tryFrom( string )` returns null instead. Engine stages are available through `execution()`, `queue_generation()`, `crash_reclamation()`, and `scheduling()`. Grammar-valid third-party stages such as `acme.export_sync` remain intact.
 
@@ -498,9 +498,11 @@ The `job()` and `chunked_job()` constructors bind the built-in kind to its typed
 
 `JobExecutionInterface` requires exactly `handle( array $start_args, RunContextInterface $context ): void`. The definition supplies the name and policy, so the execution role carries no naming, policy, or lifecycle-reaction methods. A normal return succeeds. A handler that catches its own failure and returns normally therefore records no failed attempt and leaves the retry budget untouched. Only a throwable that escapes the handler fails the attempt and follows the retry policy, except `NonRetryableException`, which fails permanently.
 
-`JobOptions` carries five independent optional policies: `max_runtime`, `retry`, `overlap`, `overlap_key`, and `priority`. Null uses the documented default for each policy except priority, where it leaves the other resolution rungs operative. When set, `max_runtime` must be a positive number of seconds. Declarations above 21,600 seconds (6 hours) are accepted and clamped to that effective execution-credit ceiling rather than rejected. Priority accepts 0 through 255 inclusive and throws on construction outside that range, matching the `Schedule` contract. The defaults are a 300-second execution-invocation ceiling, a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
+`JobOptions` carries five independent optional policies: `max_runtime`, `retry`, `overlap`, `overlap_key`, and `priority`. Null uses the documented default for each policy except priority, where it leaves the other resolution rungs operative. `max_runtime` supplies the per-invocation crash-reclamation credit: the engine credits the handler for this duration before its heartbeat begins aging through a separately resolved lock-staleness window. It never interrupts the handler. `jobs()->register()` rejects a non-null value below one second, so `0` is invalid rather than unlimited. Null selects 300 seconds, and declarations above 21,600 seconds (6 hours) remain valid but clamp to that effective credit. An unlimited credit would leave a crashed run's valid lock unreclaimable: under the default `OverlapPolicy::Reject`, every later matching dispatch would be refused, and `locks repair` could not clear the lock because it repairs malformed locks only.
 
-A handler that exceeds its credited window becomes eligible for crash reclamation, and a reclaimed run can overlap its replacement, so handlers remain idempotent.
+Neither `JobOptions` nor `Schedule` validates priority during construction. `jobs()->register()` rejects an out-of-range job default, `schedules()->sync()` rejects an out-of-range schedule value, and `jobs()->dispatch()` rejects an out-of-range explicit argument. The remaining defaults are a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
+
+Expiry of the credit and lock-staleness window does not interrupt a handler. Crash reconciliation can then reclaim the run and admit replacement work that overlaps it, so handlers remain idempotent.
 
 ### Chunked Job and chunked run context
 
@@ -511,7 +513,7 @@ A handler that exceeds its credited window becomes eligible for crash reclamatio
 
 The effective `JobOptions::$max_runtime` ceiling, including its 21,600-second (6-hour) clamp, applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution. Each chunk accepts at most 8,192 JSON bytes. The persisted queue accepts at most 983,616 serialization bytes: the 1,000,000-byte complete active-run row ceiling minus a 16,384-byte row-envelope reserve. At admission, a complete active-run row above 1,000,000 persisted serialization bytes is refused with `payload_rejected`.
 
-Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `RunFailureStage::crash_reclamation()`, preserving the in-flight chunk in `RunFailure::$details['failed_chunk']`; `runs()->retry_failed()` starts a fresh run from the original arguments. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
+Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `RunFailureStage::crash_reclamation()`, preserving the in-flight chunk in `RunFailure::$details['failed_chunk']`; `runs()->retry_failed()` starts a fresh run from the retained arguments and retained priority without resolving priority again. A retained entry without a priority field uses engine default 10. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
 
 ### Schedule
 
@@ -547,7 +549,7 @@ Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guar
 
 ## Admission, overlap, and catch-up policies
 
-Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a non-string fails the run through the ordinary failure path (`failed` hook, retention, and log) instead of escaping, and surfaces as `execution_failed` at the imperative boundary. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
+Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
 
 | Overlap | `run_once` catch-up (default) | `skip` catch-up |
 | --- | --- | --- |
@@ -610,9 +612,29 @@ Raw throwable values held directly in context arrays never reach listeners at an
 
 ## Priority is advisory
 
-Priority is an integer from 0 through 255. The resolution ladder is: explicit dispatch argument > schedule value > job default > engine default 10. The first two rungs belong to imperative and scheduled admission respectively, so one resolution evaluates only its applicable rung. Action Scheduler honors the resolved value; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
+Priority uses the range in [Consumer limits](#consumer-limits). The resolution ladder is: explicit dispatch argument > schedule value > job default > engine default 10. The first two rungs belong to imperative and scheduled admission respectively, so one resolution evaluates only its applicable rung. Manual `retry_failed()` is the exception: it replays the retained failed run's admitted priority without resolving the ladder again; a retained entry without a priority field uses engine default 10. Action Scheduler honors the resolved value; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
 
 Priority is absent from the schedule fingerprint, so an omitted value and an explicit `10` hash identically. For an already-converged chain with exactly one tick, a priority-only declaration edit performs no scheduling-backend write and preserves the recurring chain, its next-due anchor, and its misfire and overlap counters. A successful sync independently resets inactive-declaration episode tracking. The recurring chain stores no priority; occurrence admission reads `Schedule::$priority` from the current request's declaration. Under the per-request declaration contract, the edited value governs the next admitted occurrence's delivery. The unchanged-fingerprint census still repairs a missing or duplicated chain.
+
+## Consumer limits
+
+This table covers engine-enforced identity, payload, scheduling-admission, storage, and retention ceilings that consumers can hit, plus filterable history retention. Constructor grammars and configurable policy budgets remain with their public model documentation. The values and behavior in this table are part of the [SemVer-bound consumer surface](#releasing). The owning symbols are implementation sources of truth, not additional public PHP API.
+
+| Consumer contract | Limit | Source of truth | Filterable |
+| --- | --- | --- | --- |
+| Scope | 1–32 bytes matching `[a-z0-9][a-z0-9-]*`; the `a8csp-bgje` prefix is reserved for the engine. | `Boundary\Identity::SCOPE_MAX_BYTES` and `Boundary\Identity::ENGINE_SCOPE` | No |
+| Job, Chunked Job, and Schedule local name | 1–64 bytes matching `[a-z0-9_-]+`. | `Boundary\Identity::NAME_MAX_BYTES` | No |
+| Dispatched start arguments and declared schedule arguments | A portable tree of scalars, null, and arrays, at most 512 array levels and 8,192 encoded JSON bytes. `jobs()->dispatch()`, `jobs()->dispatch_at()`, or `schedules()->sync()` returns `WP_Error` with `payload_rejected` for byte overflow; `Schedule` construction still rejects a snapshot that is not portable or JSON-encodable. | `Boundary\PortableArguments::MAX_ARGUMENTS_JSON_DEPTH` and `Runtime\ScopeOperations::MAX_ARGUMENTS_BYTES` | No |
+| Priority | 0–255 inclusive. Null exists only on input surfaces and defers resolution; a backend always receives a resolved integer. | `Runtime\Runs\Dispatcher::MAX_PRIORITY`; the minimum is the admission invariant `0`. | No |
+| `max_runtime` crash-reclamation credit | A non-null declaration is at least 1 second; null selects 300 seconds; declarations above 21,600 seconds remain valid but clamp to 21,600 seconds. Actual reclamation also waits for the separately resolved lock-staleness window and a reconciliation or admission check. | `Runtime\ScopeOperations::register()` owns the literal minimum; `Runtime\Locks\LockWindows::DEFAULT_EXECUTION_LEASE` and `Runtime\Locks\LockWindows::MAX_EXECUTION_LEASE` own the default and clamp. | No. The credit itself is not filterable; the later staleness window is. `a8csp_bgje/lock_staleness` sets that window, and `a8csp_bgje/continue_delay` floors it at twice the delay, so either one moves the reclamation deadline. |
+| Custom overlap key | 1–64 bytes when the resolver returns a non-null key. | `Runtime\Locks\OverlapIdentity::MAX_OVERLAP_KEY_BYTES` | No |
+| Absolute `dispatch_at()` timestamp | At most 253,402,300,799. | `Runtime\Runs\Dispatcher::MAX_RUN_AT` | No |
+| One chunk's arguments | A portable tree of scalars, null, and arrays, at most 512 array levels and 8,192 encoded JSON bytes. | `Boundary\PortableArguments::MAX_ARGUMENTS_JSON_DEPTH` and `Runtime\Runs\ChunkedRunContext::MAX_CHUNK_BYTES` | No |
+| Complete chunked-job queue | At most 983,616 PHP-serialized bytes. | `Runtime\Runs\Stores\RunStore::MAX_KIND_STATE_BYTES` | No; only the initial generated queue contents are filterable through `a8csp_bgje/queue` and its identity-specific form. |
+| Complete active-run row | At most 1,000,000 PHP-serialized bytes while active. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES` | No |
+| Failed-run retained count | At most 20 entries per scope-qualified work identity. | `Runtime\Runs\Stores\FailedRunStore::ENTRY_LIMIT` | No |
+| Complete failed-run retention row | At most 1,000,000 PHP-serialized bytes per scope-qualified work identity. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES`, mirrored and enforced by `Runtime\Runs\Stores\FailedRunStore::MAX_ROW_BYTES` | No |
+| Run history | Default 30 entries in each history buffer; no hard maximum. | `Runtime\Runs\Stores\RunHistory::DEFAULT_SIZE` | Yes: `a8csp_bgje/history_size` accepts a positive integer. |
 
 ## Scale ceilings
 
@@ -658,6 +680,17 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. `failed-runs list`, `runs list`, and `schedules list` accept `table`, `csv`, `json`, `count`, or `yaml`; `locks list` accepts `table`, `json`, `csv`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Maintenance preserves malformed lock rows and logs redacted correlation for review; `locks repair` fences matching Running rows before exact-deleting the reviewed malformed generation and prompts unless `--yes`. `reset` permanently deletes every engine option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
 
 ## Releasing
+
+The canonical SemVer contract is tiered:
+
+| Tier | Contract |
+| --- | --- |
+| PHP API | The types in the [public type index](#public-models-roles-and-contexts), `a8csp_bgje()`, and the verb-noun procedural aliases form the bound PHP surface. An incompatible change to an existing name, signature, or documented behavior is breaking, subject to an explicitly documented additive exception such as `ChunkedRunContextInterface`. |
+| Hooks and filters | The documented consumer actions and filters form the bound event surface. Minor releases may add hooks and filters. Changing an existing hook's arguments, or a filter's required return, is breaking. |
+| Enums | Public enum cases form an additive vocabulary. Minor releases may add enum cases. Consumers must treat an unknown enum case as a generic value rather than assume the listed cases are exhaustive: a generic failure for `ErrorCode`, and a generic terminal or non-terminal state, as appropriate, for `RunStatus`. |
+| Consumer limits | The values and behaviors in [Consumer limits](#consumer-limits) form the bound limit surface. An incompatible change is breaking. |
+
+Everything else is internal unless this README explicitly documents it as public.
 
 Releases are cut by pushing a version tag. The release workflow fails closed unless the plugin header, `package.json`, and the newest `CHANGELOG.md` entry all agree with the tag, then builds and smoke-tests the distribution ZIP; prereleases publish outside the stable update channel. Publication also requires green trunk-push Quality and Tests runs at the exact tagged commit.
 

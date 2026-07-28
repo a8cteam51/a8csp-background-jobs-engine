@@ -44,9 +44,8 @@ every surviving component is initialized before any hook can fire.
   `ChunkedRunContextInterface`; `RunContext` is the final standard implementation. `Schedule`,
   `Recurrence`, and `CatchUpPolicy` form the typed schedule declaration consumed by the public
   `Schedules` service.
-- The README's public type index is the PHP public/internal discriminator. Its listed types,
-  `a8csp_bgje()`, the verb-noun procedural aliases, and the documented consumer actions and filters
-  form the SemVer-bound consumer surface.
+- The README's [Releasing](../README.md#releasing) section is the canonical SemVer contract for the
+  consumer surface; this document does not redefine it.
   `src/Boundary/` contains engine-owned values that cross layer boundaries; the rest of the engine
   graph is likewise `@internal`.
 - `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the

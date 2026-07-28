@@ -78,7 +78,10 @@ final readonly class Runs extends AbstractPortal {
 	}
 
 	/**
-	 * Starts a fresh run from one retained failed run's original arguments.
+	 * Starts a fresh run from one retained failed run's arguments and priority.
+	 *
+	 * The retained priority is replayed directly without resolving the priority ladder.
+	 * A retained entry without a priority field uses engine default 10.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
