@@ -454,6 +454,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `Run` | Readonly snapshot with `string $identity`, `RunId $id`, and `RunStatus $status`. |
 | `RunId` | Final readonly stringable wrapper for a canonical run identifier; `from( string )` requires canonical input, `tryFrom( string )` returns null for another shape, and string casting returns the wire value. |
 | `RunFailure` | Readonly value with `string $identity`, `RunId $run_id`, `int $attempts`, `RunFailureStage $stage`, `ErrorCode $code`, `string $summary`, and generic diagnostic payload `?array $details`. |
+| `RunFailureStage` | Final readonly interned open string-backed stage carried by `RunFailure::$stage`; its grammar, engine stages, and third-party keys are described below this table. |
 | `RetryPolicy` | Readonly value constructed from `max_attempts`, `base_delay`, `multiplier`, and `max_delay`; defaults are 3, `MINUTE_IN_SECONDS`, 2, and `HOUR_IN_SECONDS`. `max_attempts` includes the initial attempt. Attempts, base delay, and multiplier are at least 1, and maximum delay is at least the base delay. It exposes `delay_ceiling_for_attempt( int $attempt ): int`. |
 | `RunContextInterface` | `get_run_id(): RunId` and `get_start_args(): array`. |
 | `RunContext` | Final context constructed with `RunId $run_id` and `array $start_args`; implements `RunContextInterface`. |
