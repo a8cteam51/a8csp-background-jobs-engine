@@ -41,7 +41,7 @@ cd a8csp-background-jobs-engine
 composer install --no-dev
 ```
 
-Action Scheduler is optional and preferred when ready; when absent, the engine runs on WP-Cron alone.
+Action Scheduler is optional and preferred when ready; when absent, the engine runs on WP-Cron alone. **Action Scheduler 4.0.0 is the supported floor.** Chunked Jobs schedule each successor as a unique action that differs from the running one only in its sequence argument, and Action Scheduler made unique scheduling args-aware in 4.0.0. An older initialized copy is treated as unusable rather than trusted: the engine runs on WP-Cron and reports the unsupported version in its scheduling diagnostics. Action Scheduler elects the highest version among every bundled copy on the site, so the deciding version is not necessarily the one shipped beside any single plugin.
 
 ## When to call the engine
 

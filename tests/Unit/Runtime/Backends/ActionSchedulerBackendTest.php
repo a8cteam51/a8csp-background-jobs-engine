@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBac
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -42,6 +43,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/as-function-stubs.php';
+		require_once \dirname( __DIR__, 2 ) . '/as-class-stubs.php';
 	}
 
 	/**
@@ -58,6 +60,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$GLOBALS['a8csp_bgje_test_as_calls']    = array();
 		$GLOBALS['a8csp_bgje_test_as_results']  = array();
+		$GLOBALS['a8csp_bgje_test_as_version']  = '4.0.0';
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
@@ -84,6 +87,44 @@ final class ActionSchedulerBackendTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'init' => 1 );
 		self::assertFalse( $backend->is_ready() );
 		self::assertFalse( $backend->is_absent() );
+	}
+
+	/**
+	 * An Action Scheduler below the supported floor is present but unusable for scheduling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $version Elected Action Scheduler version.
+	 * @param   bool   $ready   Whether the adapter accepts writes at that version.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'elected_versions' )]
+	public function test_readiness_requires_the_supported_action_scheduler_floor( string $version, bool $ready ): void {
+		$GLOBALS['a8csp_bgje_test_as_version'] = $version;
+		$backend                               = new ActionSchedulerBackend();
+
+		self::assertSame( $ready, $backend->is_ready() );
+		self::assertFalse( $backend->is_absent() );
+	}
+
+	/**
+	 * Elected Action Scheduler versions around the supported floor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{string, bool}>
+	 */
+	public static function elected_versions(): array {
+		return array(
+			'below the floor'   => array( '3.9.3', false ),
+			'one patch below'   => array( '3.99.99', false ),
+			'exactly the floor' => array( '4.0.0', true ),
+			'above the floor'   => array( '4.1.0', true ),
+			'a later major'     => array( '5.0.0', true ),
+		);
 	}
 
 	/**

@@ -189,6 +189,7 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 		require_once __DIR__ . '/as-function-stubs.php';
+		require_once __DIR__ . '/as-class-stubs.php';
 
 		$options = array_fill_keys( self::DYNAMIC_OPTIONS, 'sentinel' );
 		foreach ( self::UPDATE_TRANSIENTS as $transient ) {
@@ -270,6 +271,7 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 		require_once __DIR__ . '/as-function-stubs.php';
+		require_once __DIR__ . '/as-class-stubs.php';
 
 		$diagnostic_options = array(
 			'a8csp_bgje_run_history_consumer-plugin:email-digest' => 'sentinel',
@@ -310,6 +312,7 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 		require_once __DIR__ . '/as-function-stubs.php';
+		require_once __DIR__ . '/as-class-stubs.php';
 
 		$diagnostic_options = array(
 			'a8csp_bgje_run_history_consumer-plugin:email-digest' => 'sentinel',
@@ -350,6 +353,7 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 		require_once __DIR__ . '/as-function-stubs.php';
+		require_once __DIR__ . '/as-class-stubs.php';
 
 		$GLOBALS['a8csp_bgje_test_options']                  = array();
 		$GLOBALS['a8csp_bgje_test_option_calls']             = array();
@@ -384,6 +388,7 @@ final class UninstallTest extends TestCase {
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-cron-stubs.php';
 		require_once __DIR__ . '/as-function-stubs.php';
+		require_once __DIR__ . '/as-class-stubs.php';
 
 		$GLOBALS['a8csp_bgje_test_options']            = array( self::DYNAMIC_OPTIONS[0] => 'sentinel' );
 		$GLOBALS['a8csp_bgje_test_option_calls']       = array();

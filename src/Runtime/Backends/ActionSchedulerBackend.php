@@ -45,6 +45,22 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		'as_next_scheduled_action',
 	);
 
+	/**
+	 * Lowest Action Scheduler version this backend accepts.
+	 *
+	 * Chunked work schedules each successor as a unique action carrying the running action's hook and
+	 * group and differing only in its sequence argument. Action Scheduler made unique scheduling
+	 * args-aware in 4.0.0; before that the running row blocks the successor's insert, and the run
+	 * fails terminally at its first continuation. Action Scheduler publishes no version constant, so
+	 * `ActionScheduler_Versions` is the only surface this can read.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     non-empty-string
+	 */
+	private const string MINIMUM_VERSION = '4.0.0';
+
 	// endregion
 
 	// region INHERITED METHODS
@@ -406,16 +422,37 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool}
+	 * @return  array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool}
 	 */
 	private function readiness_facts(): array {
 		$functions_exist = \array_all( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => \function_exists( $function_name ) );
 
 		return array(
-			'action_scheduler_functions_exist' => $functions_exist,
-			'action_scheduler_init_fired'      => 0 < \did_action( 'action_scheduler_init' ),
-			'wp_init_fired'                    => 0 < \did_action( 'init' ),
+			'action_scheduler_functions_exist'   => $functions_exist,
+			'action_scheduler_init_fired'        => 0 < \did_action( 'action_scheduler_init' ),
+			'action_scheduler_version_supported' => self::version_is_supported(),
+			'wp_init_fired'                      => 0 < \did_action( 'init' ),
 		);
+	}
+
+	/**
+	 * Returns whether the elected Action Scheduler reaches the supported floor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	private static function version_is_supported(): bool {
+		if ( ! \class_exists( '\ActionScheduler_Versions' ) ) {
+			return false;
+		}
+
+		// Action Scheduler elects the highest registered version across every bundled copy, so the registry reports the
+		// version that actually initialized rather than whichever copy this plugin sits beside.
+		$elected = \ActionScheduler_Versions::instance()->latest_version();
+
+		return \is_string( $elected ) && 0 <= \version_compare( $elected, self::MINIMUM_VERSION );
 	}
 
 	/**
@@ -424,12 +461,12 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool} $facts Readiness facts.
+	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool} $facts Readiness facts.
 	 *
 	 * @return  bool
 	 */
 	private static function facts_are_ready( array $facts ): bool {
-		return $facts['action_scheduler_functions_exist'] && $facts['action_scheduler_init_fired'];
+		return $facts['action_scheduler_functions_exist'] && $facts['action_scheduler_init_fired'] && $facts['action_scheduler_version_supported'];
 	}
 
 	/**
@@ -460,8 +497,8 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool} $facts            Readiness facts.
-	 * @param   non-empty-string|null                                                                                 $missing_function Missing function.
+	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool} $facts            Readiness facts.
+	 * @param   non-empty-string|null                                                                                                                           $missing_function Missing function.
 	 *
 	 * @return  Failure<SchedulingError>
 	 */
@@ -516,11 +553,11 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int                                                                                                        $action_id     Positive action ID, or a non-positive rejection value.
-	 * @param   string                                                                                                     $hook          Hook being scheduled.
-	 * @param   non-empty-string                                                                                           $function_name Procedural function called.
-	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool}|null $facts         Known diagnostic facts.
-	 * @param   non-empty-string|null                                                                                      $failure_cause Known rejection cause.
+	 * @param   int                                                                                                                                                  $action_id     Positive action ID, or a non-positive rejection value.
+	 * @param   string                                                                                                                                               $hook          Hook being scheduled.
+	 * @param   non-empty-string                                                                                                                                     $function_name Procedural function called.
+	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool}|null $facts         Known diagnostic facts.
+	 * @param   non-empty-string|null                                                                                                                                $failure_cause Known rejection cause.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
@@ -541,6 +578,8 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			$cause = 'WordPress init has not fired; call the scheduling operation after action_scheduler_init instead of before init.';
 		} elseif ( ! $facts['action_scheduler_init_fired'] ) {
 			$cause = 'action_scheduler_init has not fired; load Action Scheduler early enough to initialize, then retry after that action.';
+		} elseif ( ! $facts['action_scheduler_version_supported'] ) {
+			$cause = \sprintf( 'the initialized Action Scheduler is older than %s, which chunked work requires for args-aware unique scheduling; upgrade the copy that wins version election.', self::MINIMUM_VERSION );
 		} else {
 			$cause = \sprintf( 'the Action Scheduler store rejected the action; inspect the PHP error log for a store or database exception, or a %s filter returning zero.', 'pre_' . $function_name );
 		}
@@ -550,11 +589,12 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 				SchedulingErrorReason::ScheduleFailed,
 				\sprintf( 'Action Scheduler could not schedule hook "%1$s": %2$s', $hook, $cause ),
 				array(
-					'hook'                             => $hook,
-					'action_scheduler_function'        => $function_name,
-					'action_scheduler_functions_exist' => $facts['action_scheduler_functions_exist'],
-					'action_scheduler_init_fired'      => $facts['action_scheduler_init_fired'],
-					'wp_init_fired'                    => $facts['wp_init_fired'],
+					'hook'                               => $hook,
+					'action_scheduler_function'          => $function_name,
+					'action_scheduler_functions_exist'   => $facts['action_scheduler_functions_exist'],
+					'action_scheduler_init_fired'        => $facts['action_scheduler_init_fired'],
+					'action_scheduler_version_supported' => $facts['action_scheduler_version_supported'],
+					'wp_init_fired'                      => $facts['wp_init_fired'],
 				),
 			)
 		);

@@ -309,6 +309,7 @@ final class EngineComponentTest extends TestCase {
 	 */
 	public function test_live_graph_prefers_action_scheduler_before_wp_cron(): void {
 		require_once \dirname( __DIR__ ) . '/as-function-stubs.php';
+		require_once \dirname( __DIR__ ) . '/as-class-stubs.php';
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'plugins_loaded'        => 1,
 			'init'                  => 1,
