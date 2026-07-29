@@ -103,22 +103,22 @@ jobs:
       - name: Install production dependencies
         run: composer install --no-dev --optimize-autoloader --no-interaction
       # Regenerating the committed POT prevents source changes from shipping stale strings.
-      - name: Generate translation template
-        # wp-cli installs its packages as composer VCS repositories, which read the GitHub API and so need a
-        # credential composer accepts. Supplying it here rather than inheriting whatever setup-php wrote.
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
+      # wp-cli's own package installer resolves through a composer VCS repository, so it reads the GitHub API and
+      # needs a credential composer accepts -- and composer rejects some of the tokens Actions mints, which made
+      # the release fail on roughly one run in three. Installing the commands from Packagist into their own
+      # directory needs no credential, and lets composer pick versions its wp-cli can actually run.
+      - name: Install the release tooling
         run: |
-          wp package install wp-cli/i18n-command:2.7.0
-          wp i18n make-pot ./ --slug=a8csp-background-jobs-engine
+          mkdir -p "$RUNNER_TEMP/release-tools"
+          printf '%s' '{"name":"a8csp/release-tools","require":{}}' > "$RUNNER_TEMP/release-tools/composer.json"
+          composer require --no-interaction --working-dir="$RUNNER_TEMP/release-tools" \
+            wp-cli/i18n-command:2.7.0 wp-cli/dist-archive-command:3.1.0
+      - name: Generate translation template
+        run: |
+          wp --require="$RUNNER_TEMP/release-tools/vendor/autoload.php" i18n make-pot ./ --slug=a8csp-background-jobs-engine
           test -f languages/a8csp-background-jobs-engine.pot
-      - name: Install dist-archive command
-        # The 3.2.x line requires wp-cli ^2.13, which has no release; 2.12.0 is the newest wp-cli there is.
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
-        run: wp package install wp-cli/dist-archive-command:3.1.0
       - name: Create plugin archive
-        run: wp dist-archive . ./a8csp-background-jobs-engine.zip --plugin-dirname=a8csp-background-jobs-engine
+        run: wp --require="$RUNNER_TEMP/release-tools/vendor/autoload.php" dist-archive . ./a8csp-background-jobs-engine.zip --plugin-dirname=a8csp-background-jobs-engine
       - name: Upload the archive for the smoke and publish jobs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
