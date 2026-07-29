@@ -149,18 +149,34 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Checked out for CHANGELOG.md alone; the artifact is downloaded afterwards so ./*.zip is only ever it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Download the smoke-tested archive
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-zip
+      # The release describes what changed, which the changelog already states. Generated notes replace that with
+      # every merged pull request since the repository began, dependency bumps included.
+      - name: Collect the release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## " v " " { capture = 1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          # An unreleased version has no section, and empty notes would ship as a release describing nothing.
+          test -s "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The job takes only the artifact, so it has no checkout and gh cannot infer the repository from git.
           # Hyphenated SemVer tags must stay off the stable updater's latest-release endpoint.
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            gh release create "$GITHUB_REF_NAME" ./*.zip --repo "$GITHUB_REPOSITORY" --generate-notes --prerelease --latest=false
+            gh release create "$GITHUB_REF_NAME" ./*.zip --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease --latest=false
           else
-            gh release create "$GITHUB_REF_NAME" ./*.zip --repo "$GITHUB_REPOSITORY" --generate-notes
+            gh release create "$GITHUB_REF_NAME" ./*.zip --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
