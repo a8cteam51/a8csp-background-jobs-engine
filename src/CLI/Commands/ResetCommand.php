@@ -71,11 +71,15 @@ final readonly class ResetCommand {
 	// region METHODS
 
 	/**
-	 * Permanently deletes every engine-owned option row and pending backend action.
+	 * Permanently deletes every engine runtime option row and pending backend action.
 	 *
 	 * This is a development reset tool, not an operational cancellation workflow. It destroys
 	 * in-flight work irrecoverably, including the engine maintenance registration and occurrence;
 	 * the maintenance schedule is recreated by the next boot synchronization.
+	 *
+	 * The prefixes below are the engine's runtime state. The release updater's cached lookup is
+	 * deliberately outside them: it belongs to the update mechanism rather than to background work,
+	 * expires on its own, and uninstall clears it from the persisted footprint manifest.
 	 *
 	 * ## OPTIONS
 	 *

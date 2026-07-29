@@ -123,6 +123,11 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * The identity precheck spans every timestamp, which is broader than the window WordPress scans for
+	 * a duplicate, so a duplicate error means another writer landed the identical event after that
+	 * check. Accepting it matches the asynchronous write: the delivery exists either way, and reporting
+	 * a failure would terminalize a run whose next delivery is already scheduled.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -137,6 +142,9 @@ final class WPCronBackend implements BackendInterface {
 		}
 
 		$result = \wp_schedule_single_event( $timestamp, $hook, $args, true );
+		if ( $result instanceof \WP_Error && 'duplicate_event' === $result->get_error_code() ) {
+			return new Success( true );
+		}
 
 		return $this->result_for_wp_write( $result, $hook, 'schedule' );
 	}

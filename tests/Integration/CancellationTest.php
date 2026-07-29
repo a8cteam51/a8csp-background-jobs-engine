@@ -146,7 +146,9 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$args           = array( 'account_id' => 42 );
 		$job            = new RecordingJob( self::BACKOFF_NAME );
 		$job->throwable = new \RuntimeException( 'Retry after the upstream recovers.' );
-		$options        = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 ) );
+		// A priority that is neither zero nor the engine default distinguishes a resolved value from both a coerced null
+		// and a scheduler-supplied default, which is what makes the stored action's priority evidence.
+		$options = new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 300, multiplier: 1, max_delay: 300 ), priority: 37 );
 
 		$client = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE );
 		$client->register( $job->definition( $options ) );
@@ -157,7 +159,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Run::class, $enqueued->value );
 		$run_id            = (string) $enqueued->value->id;
 		$group             = self::BACKOFF_IDENTITY . '|' . $run_id;
-		$initial_action_id = $this->assert_pending_job_action( self::BACKOFF_IDENTITY, $run_id, $group );
+		$initial_action_id = $this->assert_pending_job_action( self::BACKOFF_IDENTITY, $run_id, $group, 37 );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute only the first failed attempt' );
 

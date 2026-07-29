@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -165,6 +166,36 @@ final class WPCronBackendTest extends TestCase {
 	}
 
 	/**
+	 * An event carrying no usable recurrence reports cardinality without a cadence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_an_event_without_a_usable_recurrence_reports_no_cadence(): void {
+		// WordPress omits the interval entirely for a one-off event, and a replacement cron store can persist any shape.
+		a8csp_bgje_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'one-off' ), false );
+		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'zero' ), 'a8csp_bgje_every_300s', 0 );
+
+		$chains = ( new WPCronBackend() )->scheduled_chains( self::HOOK, array( 'one-off', 'zero' ) );
+
+		self::assertSame(
+			array(
+				'one-off' => array(
+					'count'    => 1,
+					'interval' => null,
+				),
+				'zero'    => array(
+					'count'    => 1,
+					'interval' => null,
+				),
+			),
+			$chains
+		);
+	}
+
+	/**
 	 * Events created during a clear do not expand the finite deletion snapshot.
 	 *
 	 * @load-bearing concurrency
@@ -199,6 +230,51 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertSame( 2, $insertions );
 		self::assertCount( 2, $this->calls( 'wp_unschedule_event' ) );
+	}
+
+	/**
+	 * A duplicate event accepts the pending delivery on both single-event write paths.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Both paths precheck the identity across every timestamp, which is broader than the window WordPress
+	 *                scans, so a duplicate error means a rival landed the identical event after the precheck. The delivery
+	 *                exists either way, and treating that as a failure terminalizes a run whose next delivery will fire.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $verb Backend write accepting a pending duplicate.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'single_event_writes' )]
+	public function test_a_duplicate_event_accepts_the_pending_delivery( string $verb ): void {
+		$GLOBALS['a8csp_bgje_test_cron_results'] = array(
+			'wp_schedule_single_event' => array( new \WP_Error( 'duplicate_event', 'A duplicate event already exists.' ) ),
+		);
+		$backend                                 = new WPCronBackend();
+
+		$result = 'schedule_single' === $verb
+			? $backend->schedule_single( self::HOOK, 1_700_000_300 )
+			: $backend->enqueue_async( self::HOOK );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result->value );
+	}
+
+	/**
+	 * Backend writes that place one single event.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{string}>
+	 */
+	public static function single_event_writes(): array {
+		return array(
+			'timed delivery'        => array( 'schedule_single' ),
+			'asynchronous delivery' => array( 'enqueue_async' ),
+		);
 	}
 
 	/**
