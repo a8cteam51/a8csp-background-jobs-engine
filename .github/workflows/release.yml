@@ -3,6 +3,14 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Exercises the release path without publishing, which is the only way to test it before a tag exists.
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create the GitHub release'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -11,172 +19,17 @@ concurrency:
 permissions: {}
 
 jobs:
-  version-check:
-    name: Verify release version
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # Tagging before composer changelog:write leaves the materialized release version out of sync.
-      - name: Verify release version
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          tag_version=${TAG#v}
-          plugin_version=$(grep -m 1 '^[[:space:]]*\*[[:space:]]*Version:' a8csp-background-jobs-engine.php | sed -E 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*([^[:space:]]+).*/\1/' || true)
-          package_version=$(jq -r .version package.json)
-          changelog_version=$(grep -m 1 '^## ' CHANGELOG.md | sed -E 's/^## \[?([^] ]+)\]? - .*/\1/' || true)
-
-          if [ -z "$plugin_version" ] || [ -z "$package_version" ] || [ -z "$changelog_version" ] || [ "$tag_version" != "$plugin_version" ] || [ "$tag_version" != "$package_version" ] || [ "$tag_version" != "$changelog_version" ]; then
-            echo "::error::release versions disagree: tag=$tag_version plugin=${plugin_version:-missing} package=${package_version:-missing} changelog=${changelog_version:-missing}" >&2
-            exit 1
-          fi
-
-  # Releases reuse the full-matrix results proven at the exact tagged commit.
-  provenance:
-    name: Verify release provenance
-    needs: version-check
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  release:
+    name: Release
     permissions:
       actions: read
-    steps:
-      - name: Verify required workflows passed
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-
-          required_workflows=(.github/workflows/quality.yml .github/workflows/tests.yml)
-          if ! successful_workflows=$(gh api --paginate --method GET \
-            --header "Accept: application/vnd.github+json" \
-            --header "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/${REPOSITORY}/actions/runs" \
-            --raw-field "head_sha=${SHA}" \
-            --raw-field status=success \
-            --field per_page=100 \
-            --jq '.workflow_runs[] | select(.event == "push" and .conclusion == "success") | .path'); then
-            echo "::error::Unable to verify workflow runs for ${SHA}; rerun the release after the Actions API is available." >&2
-            exit 1
-          fi
-
-          missing_workflows=()
-          for workflow in "${required_workflows[@]}"; do
-            if ! grep -Fqx -- "$workflow" <<<"$successful_workflows"; then
-              missing_workflows+=("$workflow")
-            fi
-          done
-
-          if (( ${#missing_workflows[@]} > 0 )); then
-            echo "::error::Missing successful workflow run(s) for ${SHA}: ${missing_workflows[*]}. The tagged SHA must be a trunk commit whose Quality and Tests runs are green; re-tag after they pass." >&2
-            exit 1
-          fi
-
-  build:
-    name: Build the release artifact
-    needs: version-check
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
-        with:
-          php-version: '8.5'
-          coverage: none
-          tools: composer:v2, wp-cli
-      - name: Validate changelog
-        run: |
-          composer install --no-interaction
-          composer changelog:validate
-      - name: Install production dependencies
-        run: composer install --no-dev --optimize-autoloader --no-interaction
-      # Regenerating the committed POT prevents source changes from shipping stale strings.
-      # wp-cli's own package installer resolves through a composer VCS repository, so it reads the GitHub API and
-      # needs a credential composer accepts -- and composer rejects some of the tokens Actions mints, which made
-      # the release fail on roughly one run in three. Installing the commands from Packagist into their own
-      # directory needs no credential, and lets composer pick versions its wp-cli can actually run.
-      - name: Install the release tooling
-        run: |
-          mkdir -p "$RUNNER_TEMP/release-tools"
-          printf '%s' '{"name":"a8csp/release-tools","require":{}}' > "$RUNNER_TEMP/release-tools/composer.json"
-          composer require --no-interaction --working-dir="$RUNNER_TEMP/release-tools" \
-            wp-cli/i18n-command:2.7.0 wp-cli/dist-archive-command:3.1.0
-      - name: Generate translation template
-        run: |
-          wp --require="$RUNNER_TEMP/release-tools/vendor/autoload.php" i18n make-pot ./ --slug=a8csp-background-jobs-engine
-          test -f languages/a8csp-background-jobs-engine.pot
-      - name: Create plugin archive
-        run: wp --require="$RUNNER_TEMP/release-tools/vendor/autoload.php" dist-archive . ./a8csp-background-jobs-engine.zip --plugin-dirname=a8csp-background-jobs-engine
-      - name: Upload the archive for the smoke and publish jobs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-zip
-          path: ./*.zip
-          retention-days: 1
-
-  smoke:
-    name: Smoke test the artifact
-    needs: build
-    permissions:
-      actions: read
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-release-smoke.yml@trunk
+      contents: write
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-release.yml@trunk
     with:
-      zip-artifact: release-zip
       plugin-slug: a8csp-background-jobs-engine
       # Matches the plugin header's Requires PHP; below it WordPress refuses to activate the artifact.
       php-version: '8.5'
       # The artifact smokes without Action Scheduler on purpose: the engine activates and
       # registers its CLI surface in the documented WP-Cron-only degraded posture.
       extra-smoke-commands: '["help a8csp-bgje"]'
-
-  publish:
-    name: Publish the release
-    needs: [smoke, provenance]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    steps:
-      # Checked out for CHANGELOG.md alone; the artifact is downloaded afterwards so ./*.zip is only ever it.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Download the smoke-tested archive
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: release-zip
-      # The release describes what changed, which the changelog already states. Generated notes replace that with
-      # every merged pull request since the repository began, dependency bumps included.
-      - name: Collect the release notes
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '
-            $0 ~ "^## " v " " { capture = 1; next }
-            capture && /^## / { exit }
-            capture { print }
-          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
-          # An unreleased version has no section, and empty notes would ship as a release describing nothing.
-          test -s "$RUNNER_TEMP/release-notes.md"
-          cat "$RUNNER_TEMP/release-notes.md"
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Hyphenated SemVer tags must stay off the stable updater's latest-release endpoint.
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            gh release create "$GITHUB_REF_NAME" ./*.zip --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease --latest=false
-          else
-            gh release create "$GITHUB_REF_NAME" ./*.zip --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/release-notes.md"
-          fi
+      publish: ${{ github.event_name == 'push' || inputs.publish }}
