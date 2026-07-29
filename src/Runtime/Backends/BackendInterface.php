@@ -142,11 +142,17 @@ interface BackendInterface {
 	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int;
 
 	/**
-	 * Returns one pending-occurrence count for every requested canonical schedule identity.
+	 * Returns the pending occurrence count and cadence of every requested canonical schedule identity.
 	 *
 	 * Each identity is matched as the hook plus arguments containing only that identity, plus the
 	 * identity as its group where the backend supports groups. Every requested identity is present in
 	 * the result, including identities with no matching occurrences.
+	 *
+	 * The cadence reports the recurrence a persisted chain actually carries, which scheduling cannot
+	 * report: an existing chain is retained rather than rewritten, so a chain created against a
+	 * superseded declaration keeps firing at its own cadence while every fingerprint and count agrees.
+	 * It is null when no chain exists, when several do, or when the backend cannot read a recurrence,
+	 * so a caller treats null as "no cadence claim" rather than as disagreement.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -154,9 +160,9 @@ interface BackendInterface {
 	 * @param   string       $hook       Hook to query.
 	 * @param   list<string> $identities Canonical schedule identities to query.
 	 *
-	 * @return  array<string, int<0, max>>
+	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
-	public function scheduled_counts( string $hook, array $identities ): array;
+	public function scheduled_chains( string $hook, array $identities ): array;
 
 	/**
 	 * Returns whether a matching hook is scheduled.

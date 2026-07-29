@@ -190,39 +190,51 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_scheduled_counts_keep_declared_identity_totals_separate(): void {
+	public function test_scheduled_chains_keep_declared_identity_totals_separate(): void {
 		$GLOBALS['a8csp_bgje_test_as_results'] = array(
 			'as_get_scheduled_actions' => array(
-				array( 41 ),
+				array( 41 => new \A8CSP_BGJE_Test_AS_Action( array( 'single' ), 'single', new \A8CSP_BGJE_Test_AS_Schedule( 300 ) ) ),
 				array(),
-				array( 42, 43 ),
+				array(
+					42 => new \A8CSP_BGJE_Test_AS_Action( array( 'many' ), 'many', new \A8CSP_BGJE_Test_AS_Schedule( 300 ) ),
+					43 => new \A8CSP_BGJE_Test_AS_Action( array( 'many' ), 'many', new \A8CSP_BGJE_Test_AS_Schedule( 900 ) ),
+				),
 			),
 		);
 
-		$counts = ( new ActionSchedulerBackend() )->scheduled_counts( self::HOOK, array( 'single', 'missing', 'many' ) );
+		$counts = ( new ActionSchedulerBackend() )->scheduled_chains( self::HOOK, array( 'single', 'missing', 'many' ) );
 
 		self::assertSame(
 			array(
-				'single'  => 1,
-				'missing' => 0,
-				'many'    => 2,
+				'single'  => array(
+					'count'    => 1,
+					'interval' => 300,
+				),
+				'missing' => array(
+					'count'    => 0,
+					'interval' => null,
+				),
+				'many'    => array(
+					'count'    => 2,
+					'interval' => null,
+				),
 			),
 			$counts
 		);
 	}
 
 	/**
-	 * The census asks Action Scheduler for IDs through one exact query per declared identity.
+	 * The census asks Action Scheduler one exact query per declared identity.
 	 *
 	 * @load-bearing performance
-	 * @pin-rationale The IDs return format bypasses per-row action hydration, while args and group retain the engine's complete schedule identity.
+	 * @pin-rationale Args and group retain the engine's complete schedule identity, so each query matches only its own chain and hydration stays proportional to the chains a scope declares rather than to every pending action sharing the hook. The return format is objects because a chain's cadence is readable only from the action, and a retained chain's cadence is the one disagreement no fingerprint or count reveals.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_scheduled_counts_use_identity_scoped_id_queries_without_hydration(): void {
+	public function test_scheduled_chains_use_identity_scoped_queries(): void {
 		$GLOBALS['a8csp_bgje_test_as_results'] = array(
 			'as_get_scheduled_actions' => array(
 				array(),
@@ -230,7 +242,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 			),
 		);
 
-		( new ActionSchedulerBackend() )->scheduled_counts( self::HOOK, array( 'single', 'many' ) );
+		( new ActionSchedulerBackend() )->scheduled_chains( self::HOOK, array( 'single', 'many' ) );
 
 		self::assertSame(
 			array(
@@ -245,7 +257,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 							'per_page' => -1,
 							'orderby'  => 'none',
 						),
-						'ids',
+						'OBJECT',
 					),
 				),
 				array(
@@ -259,7 +271,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 							'per_page' => -1,
 							'orderby'  => 'none',
 						),
-						'ids',
+						'OBJECT',
 					),
 				),
 			),
@@ -275,14 +287,14 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_scheduled_counts_preserve_numeric_string_identity_query_types(): void {
+	public function test_scheduled_chains_preserve_numeric_string_identity_query_types(): void {
 		$GLOBALS['a8csp_bgje_test_as_results'] = array(
 			'as_get_scheduled_actions' => array(
 				array(),
 			),
 		);
 
-		( new ActionSchedulerBackend() )->scheduled_counts( self::HOOK, array( '123' ) );
+		( new ActionSchedulerBackend() )->scheduled_chains( self::HOOK, array( '123' ) );
 
 		$calls = $this->calls( 'as_get_scheduled_actions' );
 		self::assertCount( 1, $calls );

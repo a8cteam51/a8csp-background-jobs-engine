@@ -125,7 +125,7 @@ if ( ! \function_exists( 'a8csp_bgje_test_store_cron_event' ) ) {
 	 *
 	 * @return  void
 	 */
-	function a8csp_bgje_test_store_cron_event( int $timestamp, string $hook, array $args, string|false $schedule ): void {
+	function a8csp_bgje_test_store_cron_event( int $timestamp, string $hook, array $args, string|false $schedule, ?int $interval = null ): void {
 		/** @var array<int, array<string, array<int, array{schedule: string|false, args: list<mixed>}>>> $cron */
 		$cron     = $GLOBALS['a8csp_bgje_test_cron_array'] ?? array();
 		$sequence = $GLOBALS['a8csp_bgje_test_cron_event_sequence'] ?? 0;
@@ -133,10 +133,16 @@ if ( ! \function_exists( 'a8csp_bgje_test_store_cron_event' ) ) {
 			throw new \UnexpectedValueException( 'Initialize the fake cron event sequence as an integer before scheduling.' );
 		}
 
-		$cron[ $timestamp ][ $hook ][ $sequence ] = array(
+		$event = array(
 			'schedule' => $schedule,
 			'args'     => $args,
 		);
+		// WordPress stores the recurrence alongside a recurring event; one-off events carry no interval at all.
+		if ( null !== $interval ) {
+			$event['interval'] = $interval;
+		}
+
+		$cron[ $timestamp ][ $hook ][ $sequence ] = $event;
 
 		$GLOBALS['a8csp_bgje_test_cron_array']          = $cron;
 		$GLOBALS['a8csp_bgje_test_cron_event_sequence'] = $sequence + 1;

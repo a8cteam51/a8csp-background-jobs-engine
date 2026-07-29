@@ -39,3 +39,73 @@ if ( ! \class_exists( 'ActionScheduler_Versions' ) ) {
 		}
 	}
 }
+
+if ( ! \class_exists( 'A8CSP_BGJE_Test_AS_Schedule' ) ) {
+	/**
+	 * Fixed-recurrence stand-in for an Action Scheduler schedule.
+	 */
+	class A8CSP_BGJE_Test_AS_Schedule {
+		/**
+		 * Builds a schedule reporting one recurrence.
+		 *
+		 * @param   int|string|null $recurrence Recurrence reported to callers. A cron expression is a string.
+		 */
+		public function __construct( private readonly int|string|null $recurrence ) {}
+
+		/**
+		 * Returns the recurrence this schedule reports.
+		 *
+		 * @return  int|string|null
+		 */
+		public function get_recurrence(): int|string|null {
+			return $this->recurrence;
+		}
+	}
+}
+
+if ( ! \class_exists( 'A8CSP_BGJE_Test_AS_Action' ) ) {
+	/**
+	 * Stand-in for one hydrated Action Scheduler action.
+	 */
+	class A8CSP_BGJE_Test_AS_Action {
+		/**
+		 * Builds an action carrying an identity and a schedule.
+		 *
+		 * @param   list<mixed>                     $args     Hook arguments.
+		 * @param   string                          $group    Action group.
+		 * @param   A8CSP_BGJE_Test_AS_Schedule|null $schedule Schedule, or null when the action carries none.
+		 */
+		public function __construct(
+			private readonly array $args,
+			private readonly string $group,
+			private readonly ?A8CSP_BGJE_Test_AS_Schedule $schedule = null,
+		) {}
+
+		/**
+		 * Returns the hook arguments.
+		 *
+		 * @return  list<mixed>
+		 */
+		public function get_args(): array {
+			return $this->args;
+		}
+
+		/**
+		 * Returns the action group.
+		 *
+		 * @return  string
+		 */
+		public function get_group(): string {
+			return $this->group;
+		}
+
+		/**
+		 * Returns the action's schedule.
+		 *
+		 * @return  A8CSP_BGJE_Test_AS_Schedule|null
+		 */
+		public function get_schedule(): ?A8CSP_BGJE_Test_AS_Schedule {
+			return $this->schedule;
+		}
+	}
+}

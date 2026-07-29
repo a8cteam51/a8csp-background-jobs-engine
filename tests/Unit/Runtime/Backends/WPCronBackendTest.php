@@ -124,12 +124,12 @@ final class WPCronBackendTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_scheduled_counts_buckets_multiple_identities_from_one_cron_read(): void {
-		a8csp_bgje_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'single' ), 'a8csp_bgje_every_300s' );
-		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'many' ), 'a8csp_bgje_every_300s' );
-		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'many' ), 'a8csp_bgje_every_300s' );
-		a8csp_bgje_test_store_cron_event( 1_700_001_200, self::HOOK, array( 'many', 'extra' ), 'a8csp_bgje_every_300s' );
-		a8csp_bgje_test_store_cron_event( 1_700_001_500, 'other-hook', array( 'many' ), 'a8csp_bgje_every_300s' );
+	public function test_scheduled_chains_bucket_multiple_identities_from_one_cron_read(): void {
+		a8csp_bgje_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'single' ), 'a8csp_bgje_every_300s', 300 );
+		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'many' ), 'a8csp_bgje_every_300s', 300 );
+		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'many' ), 'a8csp_bgje_every_300s', 300 );
+		a8csp_bgje_test_store_cron_event( 1_700_001_200, self::HOOK, array( 'many', 'extra' ), 'a8csp_bgje_every_300s', 300 );
+		a8csp_bgje_test_store_cron_event( 1_700_001_500, 'other-hook', array( 'many' ), 'a8csp_bgje_every_300s', 300 );
 		$cron_reads = 0;
 
 		$GLOBALS['a8csp_bgje_test_get_option'] = static function ( string $option, mixed $default_value ) use ( &$cron_reads ): mixed {
@@ -142,13 +142,22 @@ final class WPCronBackendTest extends TestCase {
 			return $GLOBALS['a8csp_bgje_test_cron_array'];
 		};
 
-		$counts = ( new WPCronBackend() )->scheduled_counts( self::HOOK, array( 'single', 'missing', 'many' ) );
+		$counts = ( new WPCronBackend() )->scheduled_chains( self::HOOK, array( 'single', 'missing', 'many' ) );
 
 		self::assertSame(
 			array(
-				'single'  => 1,
-				'missing' => 0,
-				'many'    => 2,
+				'single'  => array(
+					'count'    => 1,
+					'interval' => 300,
+				),
+				'missing' => array(
+					'count'    => 0,
+					'interval' => null,
+				),
+				'many'    => array(
+					'count'    => 2,
+					'interval' => null,
+				),
 			),
 			$counts
 		);

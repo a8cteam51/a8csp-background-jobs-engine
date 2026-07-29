@@ -317,26 +317,24 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * Action Scheduler cannot query multiple exact argument-and-group pairs together. ID-only results
-	 * preserve exact cardinality without hydrating every pending action that shares the hook.
+	 * Action Scheduler cannot query multiple exact argument-and-group pairs together, so each identity
+	 * costs one exact query either way. Reading a cadence needs the action itself rather than its ID,
+	 * and an identity's own query matches only its own chain, so hydration stays proportional to the
+	 * chains a scope declares instead of every pending action sharing the hook.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, int<0, max>>
+	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
 	#[\Override]
-	public function scheduled_counts( string $hook, array $identities ): array {
-		$counts = array();
+	public function scheduled_chains( string $hook, array $identities ): array {
+		$chains = array();
 		foreach ( $identities as $schedule_identity ) {
-			$counts[ $schedule_identity ] = $this->scheduled_count(
-				$hook,
-				array( $schedule_identity ),
-				$schedule_identity
-			);
+			$chains[ $schedule_identity ] = $this->scheduled_chain( $hook, $schedule_identity );
 		}
 
-		return $counts;
+		return $chains;
 	}
 
 	/**
@@ -433,6 +431,71 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			'action_scheduler_version_supported' => self::version_is_supported(),
 			'wp_init_fired'                      => 0 < \did_action( 'init' ),
 		);
+	}
+
+	/**
+	 * Returns one identity's pending chain cardinality and cadence from a single exact query.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook              Hook to query.
+	 * @param   string $schedule_identity Canonical schedule identity.
+	 *
+	 * @return  array{count: int<0, max>, interval: positive-int|null}
+	 */
+	private function scheduled_chain( string $hook, string $schedule_identity ): array {
+		if ( ! $this->is_ready() || ! \function_exists( 'as_get_scheduled_actions' ) ) {
+			return array(
+				'count'    => 0,
+				'interval' => null,
+			);
+		}
+
+		$actions = \as_get_scheduled_actions(
+			array(
+				'hook'     => $hook,
+				'args'     => array( $schedule_identity ),
+				'group'    => $schedule_identity,
+				'status'   => 'pending',
+				'per_page' => -1,
+				'orderby'  => 'none',
+			),
+			'OBJECT'
+		);
+		$count   = \count( $actions );
+
+		return array(
+			'count'    => $count,
+			// Several chains are the surplus the caller already replaces, so no single cadence represents the identity.
+			'interval' => 1 === $count ? self::recurrence_of( \reset( $actions ) ) : null,
+		);
+	}
+
+	/**
+	 * Returns a pending action's fixed recurrence in seconds when it carries one.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $action Hydrated Action Scheduler action.
+	 *
+	 * @return  positive-int|null
+	 */
+	private static function recurrence_of( mixed $action ): ?int {
+		if ( ! \is_object( $action ) || ! \method_exists( $action, 'get_schedule' ) ) {
+			return null;
+		}
+
+		$schedule = $action->get_schedule();
+		// Cron schedules answer get_recurrence() with an expression rather than a number of seconds.
+		if ( ! \is_object( $schedule ) || ! \method_exists( $schedule, 'get_recurrence' ) ) {
+			return null;
+		}
+
+		$recurrence = $schedule->get_recurrence();
+
+		return \is_numeric( $recurrence ) && 0 < (int) $recurrence ? (int) $recurrence : null;
 	}
 
 	/**

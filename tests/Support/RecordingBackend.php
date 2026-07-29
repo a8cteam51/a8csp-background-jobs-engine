@@ -337,21 +337,23 @@ final class RecordingBackend implements BackendInterface {
 	 * @param   string       $hook       Hook to query.
 	 * @param   list<string> $identities Schedule identities to query.
 	 *
-	 * @return  array<string, int<0, max>>
+	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
 	#[\Override]
-	public function scheduled_counts( string $hook, array $identities ): array {
+	public function scheduled_chains( string $hook, array $identities ): array {
 		$this->calls[] = array(
-			'verb' => 'scheduled_counts',
+			'verb' => 'scheduled_chains',
 			'args' => array(
 				'hook'       => $hook,
 				'identities' => $identities,
 			),
 		);
 
-		$counts = array();
+		$counts    = array();
+		$intervals = array();
 		foreach ( $identities as $identity ) {
-			$counts[ $identity ] = 0;
+			$counts[ $identity ]    = 0;
+			$intervals[ $identity ] = null;
 		}
 
 		foreach ( $this->deliveries as $delivery ) {
@@ -366,9 +368,19 @@ final class RecordingBackend implements BackendInterface {
 			}
 
 			++$counts[ $identity ];
+			$interval               = $delivery['interval'];
+			$intervals[ $identity ] = \is_int( $interval ) && 0 < $interval ? $interval : null;
 		}
 
-		return $counts;
+		$chains = array();
+		foreach ( $counts as $identity => $count ) {
+			$chains[ $identity ] = array(
+				'count'    => $count,
+				'interval' => 1 === $count ? $intervals[ $identity ] : null,
+			);
+		}
+
+		return $chains;
 	}
 
 	/**

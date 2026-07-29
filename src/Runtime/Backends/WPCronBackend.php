@@ -274,22 +274,24 @@ final class WPCronBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, int<0, max>>
+	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
 	#[\Override]
-	public function scheduled_counts( string $hook, array $identities ): array {
+	public function scheduled_chains( string $hook, array $identities ): array {
 		$counts                      = array();
+		$intervals                   = array();
 		$identity_by_serialized_args = array();
 		foreach ( $identities as $identity ) {
-			$counts[ $identity ] = 0;
-			$serialized_args     = \maybe_serialize( array( $identity ) );
+			$counts[ $identity ]    = 0;
+			$intervals[ $identity ] = null;
+			$serialized_args        = \maybe_serialize( array( $identity ) );
 			if ( \is_string( $serialized_args ) ) {
 				$identity_by_serialized_args[ $serialized_args ] = $identity;
 			}
 		}
 
 		if ( array() === $counts ) {
-			return $counts;
+			return array();
 		}
 
 		foreach ( $this->cron_array() as $timestamp => $hooks ) {
@@ -317,11 +319,24 @@ final class WPCronBackend implements BackendInterface {
 					continue;
 				}
 
-				++$counts[ $identity_by_serialized_args[ $serialized_args ] ];
+				$identity = $identity_by_serialized_args[ $serialized_args ];
+				++$counts[ $identity ];
+
+				$interval               = $event['interval'] ?? null;
+				$intervals[ $identity ] = \is_int( $interval ) && 0 < $interval ? $interval : null;
 			}
 		}
 
-		return $counts;
+		$chains = array();
+		foreach ( $counts as $counted_identity => $count ) {
+			$chains[ $counted_identity ] = array(
+				'count'    => $count,
+				// Several events are the surplus the caller already replaces, so no single cadence represents the identity.
+				'interval' => 1 === $count ? $intervals[ $counted_identity ] : null,
+			);
+		}
+
+		return $chains;
 	}
 
 	/**

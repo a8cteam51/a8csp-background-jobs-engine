@@ -292,27 +292,40 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, int<0, max>>
+	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
 	#[\Override]
-	public function scheduled_counts( string $hook, array $identities ): array {
-		$counts = array();
+	public function scheduled_chains( string $hook, array $identities ): array {
+		$chains = array();
 		foreach ( $identities as $requested_identity ) {
-			$counts[ $requested_identity ] = 0;
+			$chains[ $requested_identity ] = array(
+				'count'    => 0,
+				'interval' => null,
+			);
 		}
 
-		if ( array() === $counts ) {
-			return $counts;
+		if ( array() === $chains ) {
+			return $chains;
 		}
 
 		foreach ( $this->ready_backends() as $backend ) {
-			$backend_counts = $backend->scheduled_counts( $hook, $identities );
-			foreach ( $counts as $identity => $count ) {
-				$counts[ $identity ] = $count + ( $backend_counts[ $identity ] ?? 0 );
+			$backend_chains = $backend->scheduled_chains( $hook, $identities );
+			foreach ( $chains as $identity => $chain ) {
+				$backend_chain = $backend_chains[ $identity ] ?? null;
+				if ( null === $backend_chain ) {
+					continue;
+				}
+
+				$chains[ $identity ] = array(
+					'count'    => $chain['count'] + $backend_chain['count'],
+					// One backend holding the identity's only chain owns the cadence claim; a chain on a second backend is
+					// surplus the caller replaces, and the summed count already says so.
+					'interval' => $chain['interval'] ?? $backend_chain['interval'],
+				);
 			}
 		}
 
-		return $counts;
+		return $chains;
 	}
 
 	/**
