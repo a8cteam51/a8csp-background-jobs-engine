@@ -76,7 +76,8 @@ final readonly class Schedule {
 					'args'       => $this->args,
 					'catch_up'   => $this->catch_up->value,
 				),
-				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION
+				\JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION,
+				self::MAX_ARGUMENTS_JSON_DEPTH + 1
 			);
 		} catch ( \JsonException ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
