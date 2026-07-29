@@ -31,6 +31,9 @@ final class PluginBootTest extends AbstractIntegrationTestCase {
 		self::assertTrue( \function_exists( 'a8csp_bgje_plugin' ) );
 		self::assertSame( 10, has_action( 'plugins_loaded', array( \a8csp_bgje_plugin(), 'boot' ) ) );
 		self::assertTrue( \a8csp_bgje_plugin()->is_booted() );
+		$result = \a8csp_bgje( 'plugin-boot-test' )->jobs()->dispatch( 'unregistered' );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( 'unknown_job', $result->get_error_code() );
 	}
 
 	/**

@@ -123,6 +123,11 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
+	 * The identity precheck spans every timestamp, which is broader than the window WordPress scans for
+	 * a duplicate, so a duplicate error means another writer landed the identical event after that
+	 * check. Accepting it matches the asynchronous write: the delivery exists either way, and reporting
+	 * a failure would terminalize a run whose next delivery is already scheduled.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -137,6 +142,9 @@ final class WPCronBackend implements BackendInterface {
 		}
 
 		$result = \wp_schedule_single_event( $timestamp, $hook, $args, true );
+		if ( $result instanceof \WP_Error && 'duplicate_event' === $result->get_error_code() ) {
+			return new Success( true );
+		}
 
 		return $this->result_for_wp_write( $result, $hook, 'schedule' );
 	}
@@ -208,18 +216,48 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * WP-Cron stores no groups, so group-wide clearance has the same no-op semantics as a group-only
-	 * unschedule identity.
+	 * WP-Cron stores no groups, so the work identity and run ID are selected from each delivery's
+	 * persisted arguments.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function unschedule_group( string $group ): AbstractResult {
-		return $this->unschedule( '', array(), $group );
+	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
+		$wp_error = null;
+		foreach ( $this->matching_run_events( $hook, $identity, $run_id ) as $event ) {
+			$result = \wp_unschedule_event( $event['timestamp'], $hook, $event['args'], true );
+			if ( $result instanceof \WP_Error ) {
+				$wp_error ??= $result;
+			}
+		}
+
+		if ( array() === $this->matching_run_events( $hook, $identity, $run_id ) ) {
+			return new Success( true );
+		}
+
+		if ( null !== $wp_error ) {
+			return $this->result_for_wp_write( $wp_error, $hook, 'unschedule' );
+		}
+
+		return new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				\sprintf( 'WP-Cron still has a pending delivery for run "%1$s" on hook "%2$s"; repair the WordPress cron event and retry unscheduling.', $run_id, $hook ),
+				array(
+					'hook'     => $hook,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+				),
+			)
+		);
 	}
 
 	/**
@@ -274,22 +312,24 @@ final class WPCronBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, int<0, max>>
+	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
 	#[\Override]
-	public function scheduled_counts( string $hook, array $identities ): array {
+	public function scheduled_chains( string $hook, array $identities ): array {
 		$counts                      = array();
+		$intervals                   = array();
 		$identity_by_serialized_args = array();
 		foreach ( $identities as $identity ) {
-			$counts[ $identity ] = 0;
-			$serialized_args     = \maybe_serialize( array( $identity ) );
+			$counts[ $identity ]    = 0;
+			$intervals[ $identity ] = null;
+			$serialized_args        = \maybe_serialize( array( $identity ) );
 			if ( \is_string( $serialized_args ) ) {
 				$identity_by_serialized_args[ $serialized_args ] = $identity;
 			}
 		}
 
 		if ( array() === $counts ) {
-			return $counts;
+			return array();
 		}
 
 		foreach ( $this->cron_array() as $timestamp => $hooks ) {
@@ -317,11 +357,24 @@ final class WPCronBackend implements BackendInterface {
 					continue;
 				}
 
-				++$counts[ $identity_by_serialized_args[ $serialized_args ] ];
+				$identity = $identity_by_serialized_args[ $serialized_args ];
+				++$counts[ $identity ];
+
+				$interval               = $event['interval'] ?? null;
+				$intervals[ $identity ] = \is_int( $interval ) && 0 < $interval ? $interval : null;
 			}
 		}
 
-		return $counts;
+		$chains = array();
+		foreach ( $counts as $counted_identity => $count ) {
+			$chains[ $counted_identity ] = array(
+				'count'    => $count,
+				// Several events are the surplus the caller already replaces, so no single cadence represents the identity.
+				'interval' => 1 === $count ? $intervals[ $counted_identity ] : null,
+			);
+		}
+
+		return $chains;
 	}
 
 	/**
@@ -514,6 +567,58 @@ final class WPCronBackend implements BackendInterface {
 		$cron_array = \get_option( 'cron', array() );
 
 		return \is_array( $cron_array ) ? $cron_array : array();
+	}
+
+	/**
+	 * Returns stored delivery events belonging to one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
+	 *
+	 * @return  list<array{timestamp: int, args: list<mixed>}>
+	 */
+	private function matching_run_events( string $hook, string $identity, string $run_id ): array {
+		$matching = array();
+		foreach ( $this->cron_array() as $timestamp => $hooks ) {
+			if ( ! \is_int( $timestamp ) || ! \is_array( $hooks ) ) {
+				continue;
+			}
+
+			$events = $hooks[ $hook ] ?? null;
+			if ( ! \is_array( $events ) ) {
+				continue;
+			}
+
+			foreach ( $events as $event ) {
+				if ( ! \is_array( $event ) ) {
+					continue;
+				}
+
+				$args = $event['args'] ?? null;
+				if ( ! \is_array( $args ) || ! \array_is_list( $args ) ) {
+					continue;
+				}
+
+				$delivery_identity = $args[0] ?? null;
+				$delivery_run_id   = $args[1] ?? null;
+				if ( $identity !== $delivery_identity || $run_id !== $delivery_run_id ) {
+					continue;
+				}
+
+				$matching[] = array(
+					'timestamp' => $timestamp,
+					'args'      => $args,
+				);
+			}
+		}
+
+		\usort( $matching, static fn ( array $left, array $right ): int => $left['timestamp'] <=> $right['timestamp'] );
+
+		return $matching;
 	}
 
 	/**

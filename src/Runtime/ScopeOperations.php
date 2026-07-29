@@ -152,7 +152,7 @@ final readonly class ScopeOperations {
 			$context  = \sprintf( 'Schedule "%s"', $schedule->name );
 			$identity = self::compose_declared( $this->scope, $schedule->name, $context );
 			if ( isset( $declarations[ (string) $identity ] ) ) {
-				throw new \InvalidArgumentException( 'Schedule sync accepts each scope-local schedule name exactly once.' );
+				throw new \InvalidArgumentException( \sprintf( '%s is declared more than once; schedule sync accepts each scope-local schedule name exactly once.', $context ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			}
 
 			// Both identities resolve before any policy check so a declaration reports every naming defect first.

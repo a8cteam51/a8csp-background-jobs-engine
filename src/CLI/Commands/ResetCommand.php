@@ -5,15 +5,16 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 
@@ -49,7 +50,7 @@ final readonly class ResetCommand {
 		OccurrenceLease::OPTION_PREFIX,
 		CleanupIntents::OPTION_PREFIX,
 		CleanupIntents::SWEEP_CURSOR_OPTION,
-		'a8csp_bgje_maintenance_sweep',
+		MaintenanceJob::SWEEP_CURSOR_OPTION,
 	);
 
 	/**
@@ -70,11 +71,15 @@ final readonly class ResetCommand {
 	// region METHODS
 
 	/**
-	 * Permanently deletes every engine-owned option row and pending backend action.
+	 * Permanently deletes every engine runtime option row and pending backend action.
 	 *
 	 * This is a development reset tool, not an operational cancellation workflow. It destroys
 	 * in-flight work irrecoverably, including the engine maintenance registration and occurrence;
 	 * the maintenance schedule is recreated by the next boot synchronization.
+	 *
+	 * The prefixes below are the engine's runtime state. The release updater's cached lookup is
+	 * deliberately outside them: it belongs to the update mechanism rather than to background work,
+	 * expires on its own, and uninstall clears it from the persisted footprint manifest.
 	 *
 	 * ## OPTIONS
 	 *

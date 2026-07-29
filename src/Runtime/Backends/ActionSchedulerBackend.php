@@ -45,6 +45,22 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 		'as_next_scheduled_action',
 	);
 
+	/**
+	 * Lowest Action Scheduler version this backend accepts.
+	 *
+	 * Chunked work schedules each successor with delivery arguments containing its identity, run ID,
+	 * and sequence. Action Scheduler made unique scheduling args-aware in 4.0.0; before that the
+	 * running row blocks the successor's insert, and the run fails terminally at its first
+	 * continuation. Action Scheduler publishes no version constant, so `ActionScheduler_Versions`
+	 * is the only surface this can read.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     non-empty-string
+	 */
+	private const string MINIMUM_VERSION = '4.0.0';
+
 	// endregion
 
 	// region INHERITED METHODS
@@ -128,8 +144,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * Action Scheduler uses zero for both duplicate suppression and store failures. A non-empty group
-	 * makes the follow-up identity specific enough to distinguish the duplicate safely.
+	 * Action Scheduler uses zero for both duplicate suppression and store failures. Exact arguments
+	 * in a non-empty group make the follow-up identity specific enough to distinguish the duplicate
+	 * safely.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -194,18 +211,51 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * Action Scheduler treats an empty hook and argument list with a non-empty group as a group-wide
-	 * identity.
+	 * Group and arguments remain independent predicates: the identity group bounds the query, while
+	 * the run ID in the second argument selects deliveries belonging to the cancelled run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function unschedule_group( string $group ): AbstractResult {
-		return $this->unschedule( '', array(), $group );
+	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
+		if ( ! $this->is_ready() ) {
+			return $this->backend_not_ready( $this->readiness_facts() );
+		}
+
+		foreach ( array( 'as_get_scheduled_actions', 'as_unschedule_all_actions' ) as $function_name ) {
+			$function_failure = $this->missing_function_failure( $function_name );
+			if ( null !== $function_failure ) {
+				return $function_failure;
+			}
+		}
+
+		foreach ( $this->pending_run_args( $hook, $identity, $run_id ) as $args ) {
+			\as_unschedule_all_actions( $hook, $args, $identity );
+		}
+
+		if ( array() !== $this->pending_run_args( $hook, $identity, $run_id ) ) {
+			return new Failure(
+				new SchedulingError(
+					SchedulingErrorReason::ScheduleFailed,
+					\sprintf( 'Action Scheduler still reports a pending delivery for run "%1$s" on hook "%2$s"; retry after the queue store accepts cancellation.', $run_id, $hook ),
+					array(
+						'hook'     => $hook,
+						'identity' => $identity,
+						'run_id'   => $run_id,
+					),
+				)
+			);
+		}
+
+		return new Success( true );
 	}
 
 	/**
@@ -301,26 +351,24 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * Action Scheduler cannot query multiple exact argument-and-group pairs together. ID-only results
-	 * preserve exact cardinality without hydrating every pending action that shares the hook.
+	 * Action Scheduler cannot query multiple exact argument-and-group pairs together, so each identity
+	 * costs one exact query either way. Reading a cadence needs the action itself rather than its ID,
+	 * and an identity's own query matches only its own chain, so hydration stays proportional to the
+	 * chains a scope declares instead of every pending action sharing the hook.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, int<0, max>>
+	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
 	#[\Override]
-	public function scheduled_counts( string $hook, array $identities ): array {
-		$counts = array();
+	public function scheduled_chains( string $hook, array $identities ): array {
+		$chains = array();
 		foreach ( $identities as $schedule_identity ) {
-			$counts[ $schedule_identity ] = $this->scheduled_count(
-				$hook,
-				array( $schedule_identity ),
-				$schedule_identity
-			);
+			$chains[ $schedule_identity ] = $this->scheduled_chain( $hook, $schedule_identity );
 		}
 
-		return $counts;
+		return $chains;
 	}
 
 	/**
@@ -406,16 +454,146 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool}
+	 * @return  array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool}
 	 */
 	private function readiness_facts(): array {
 		$functions_exist = \array_all( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => \function_exists( $function_name ) );
 
 		return array(
-			'action_scheduler_functions_exist' => $functions_exist,
-			'action_scheduler_init_fired'      => 0 < \did_action( 'action_scheduler_init' ),
-			'wp_init_fired'                    => 0 < \did_action( 'init' ),
+			'action_scheduler_functions_exist'   => $functions_exist,
+			'action_scheduler_init_fired'        => 0 < \did_action( 'action_scheduler_init' ),
+			'action_scheduler_version_supported' => self::version_is_supported(),
+			'wp_init_fired'                      => 0 < \did_action( 'init' ),
 		);
+	}
+
+	/**
+	 * Returns exact arguments for pending deliveries belonging to one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
+	 *
+	 * @return  list<list<mixed>>
+	 */
+	private function pending_run_args( string $hook, string $identity, string $run_id ): array {
+		$actions = \as_get_scheduled_actions(
+			array(
+				'hook'     => $hook,
+				'group'    => $identity,
+				'status'   => 'pending',
+				'per_page' => -1,
+				'orderby'  => 'none',
+			),
+			'OBJECT'
+		);
+
+		$matching_args = array();
+		foreach ( $actions as $action ) {
+			if ( ! \is_object( $action ) || ! \method_exists( $action, 'get_args' ) ) {
+				continue;
+			}
+
+			$args = $action->get_args();
+			if ( ! \is_array( $args ) || ! \array_is_list( $args ) ) {
+				continue;
+			}
+
+			$delivery_run_id = $args[1] ?? null;
+			if ( $run_id === $delivery_run_id ) {
+				$matching_args[] = $args;
+			}
+		}
+
+		return $matching_args;
+	}
+
+	/**
+	 * Returns one identity's pending chain cardinality and cadence from a single exact query.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook              Hook to query.
+	 * @param   string $schedule_identity Canonical schedule identity.
+	 *
+	 * @return  array{count: int<0, max>, interval: positive-int|null}
+	 */
+	private function scheduled_chain( string $hook, string $schedule_identity ): array {
+		if ( ! $this->is_ready() || ! \function_exists( 'as_get_scheduled_actions' ) ) {
+			return array(
+				'count'    => 0,
+				'interval' => null,
+			);
+		}
+
+		$actions = \as_get_scheduled_actions(
+			array(
+				'hook'     => $hook,
+				'args'     => array( $schedule_identity ),
+				'group'    => $schedule_identity,
+				'status'   => 'pending',
+				'per_page' => -1,
+				'orderby'  => 'none',
+			),
+			'OBJECT'
+		);
+		$count   = \count( $actions );
+
+		return array(
+			'count'    => $count,
+			// Several chains are the surplus the caller already replaces, so no single cadence represents the identity.
+			'interval' => 1 === $count ? self::recurrence_of( \reset( $actions ) ) : null,
+		);
+	}
+
+	/**
+	 * Returns a pending action's fixed recurrence in seconds when it carries one.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $action Hydrated Action Scheduler action.
+	 *
+	 * @return  positive-int|null
+	 */
+	private static function recurrence_of( mixed $action ): ?int {
+		if ( ! \is_object( $action ) || ! \method_exists( $action, 'get_schedule' ) ) {
+			return null;
+		}
+
+		$schedule = $action->get_schedule();
+		// Cron schedules answer get_recurrence() with an expression rather than a number of seconds.
+		if ( ! \is_object( $schedule ) || ! \method_exists( $schedule, 'get_recurrence' ) ) {
+			return null;
+		}
+
+		$recurrence = $schedule->get_recurrence();
+
+		return \is_numeric( $recurrence ) && 0 < (int) $recurrence ? (int) $recurrence : null;
+	}
+
+	/**
+	 * Returns whether the elected Action Scheduler reaches the supported floor.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 */
+	private static function version_is_supported(): bool {
+		if ( ! \class_exists( '\ActionScheduler_Versions' ) ) {
+			return false;
+		}
+
+		// Action Scheduler elects the highest registered version across every bundled copy, so the registry reports the
+		// version that actually initialized rather than whichever copy this plugin sits beside.
+		$elected = \ActionScheduler_Versions::instance()->latest_version();
+
+		return \is_string( $elected ) && 0 <= \version_compare( $elected, self::MINIMUM_VERSION );
 	}
 
 	/**
@@ -424,12 +602,12 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool} $facts Readiness facts.
+	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool} $facts Readiness facts.
 	 *
 	 * @return  bool
 	 */
 	private static function facts_are_ready( array $facts ): bool {
-		return $facts['action_scheduler_functions_exist'] && $facts['action_scheduler_init_fired'];
+		return $facts['action_scheduler_functions_exist'] && $facts['action_scheduler_init_fired'] && $facts['action_scheduler_version_supported'];
 	}
 
 	/**
@@ -460,8 +638,8 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool} $facts            Readiness facts.
-	 * @param   non-empty-string|null                                                                                 $missing_function Missing function.
+	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool} $facts            Readiness facts.
+	 * @param   non-empty-string|null                                                                                                                           $missing_function Missing function.
 	 *
 	 * @return  Failure<SchedulingError>
 	 */
@@ -516,11 +694,11 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int                                                                                                        $action_id     Positive action ID, or a non-positive rejection value.
-	 * @param   string                                                                                                     $hook          Hook being scheduled.
-	 * @param   non-empty-string                                                                                           $function_name Procedural function called.
-	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, wp_init_fired: bool}|null $facts         Known diagnostic facts.
-	 * @param   non-empty-string|null                                                                                      $failure_cause Known rejection cause.
+	 * @param   int                                                                                                                                                  $action_id     Positive action ID, or a non-positive rejection value.
+	 * @param   string                                                                                                                                               $hook          Hook being scheduled.
+	 * @param   non-empty-string                                                                                                                                     $function_name Procedural function called.
+	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool}|null $facts         Known diagnostic facts.
+	 * @param   non-empty-string|null                                                                                                                                $failure_cause Known rejection cause.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
@@ -541,6 +719,8 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			$cause = 'WordPress init has not fired; call the scheduling operation after action_scheduler_init instead of before init.';
 		} elseif ( ! $facts['action_scheduler_init_fired'] ) {
 			$cause = 'action_scheduler_init has not fired; load Action Scheduler early enough to initialize, then retry after that action.';
+		} elseif ( ! $facts['action_scheduler_version_supported'] ) {
+			$cause = \sprintf( 'the initialized Action Scheduler is older than %s, which chunked work requires for args-aware unique scheduling; upgrade the copy that wins version election.', self::MINIMUM_VERSION );
 		} else {
 			$cause = \sprintf( 'the Action Scheduler store rejected the action; inspect the PHP error log for a store or database exception, or a %s filter returning zero.', 'pre_' . $function_name );
 		}
@@ -550,11 +730,12 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 				SchedulingErrorReason::ScheduleFailed,
 				\sprintf( 'Action Scheduler could not schedule hook "%1$s": %2$s', $hook, $cause ),
 				array(
-					'hook'                             => $hook,
-					'action_scheduler_function'        => $function_name,
-					'action_scheduler_functions_exist' => $facts['action_scheduler_functions_exist'],
-					'action_scheduler_init_fired'      => $facts['action_scheduler_init_fired'],
-					'wp_init_fired'                    => $facts['wp_init_fired'],
+					'hook'                               => $hook,
+					'action_scheduler_function'          => $function_name,
+					'action_scheduler_functions_exist'   => $facts['action_scheduler_functions_exist'],
+					'action_scheduler_init_fired'        => $facts['action_scheduler_init_fired'],
+					'action_scheduler_version_supported' => $facts['action_scheduler_version_supported'],
+					'wp_init_fired'                      => $facts['wp_init_fired'],
 				),
 			)
 		);

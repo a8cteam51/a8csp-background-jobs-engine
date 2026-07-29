@@ -203,7 +203,9 @@ final readonly class LockWindows {
 		 *
 		 * @param   int    $delay    Default continuation delay in seconds.
 		 * @param   string $identity Complete scope-qualified job or chunked job identity.
-		 * @param   string $run_id   Run identifier.
+		 * @param   string $run_id   Run identifier. Admission resolves this window for a lock it does not own yet, so
+		 *                           this is the candidate run there and the lock's owner everywhere else. A filter that
+		 *                           varies the delay per run therefore cannot assume it is grading the incumbent.
 		 */
 		$delay = \apply_filters( 'a8csp_bgje/continue_delay', self::CONTINUE_DELAY, $identity, $run_id );
 

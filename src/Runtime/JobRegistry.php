@@ -71,7 +71,7 @@ final class JobRegistry {
 		}
 
 		if ( $kind === $existing['kind'] ) {
-			throw new DuplicateRegistrationException( \sprintf( '%s name is already registered; register each background-work name exactly once.', $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
+			throw new DuplicateRegistrationException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; register each background-work name exactly once.', (string) $identity, $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
 
 		// Exception values are diagnostic data, not rendered output.

@@ -223,7 +223,7 @@ final readonly class RunTransitions {
 		$latest_run_id      = $latest_pointer->get_latest_for_hash( $state->args_hash );
 
 		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
-		if ( $run_id !== $latest_run_id && ! $latest_pointer->repair_for_hash( $run_id, $state->args_hash ) ) {
+		if ( $run_id !== $latest_run_id && ! $latest_pointer->record( $run_id, $state->args_hash ) ) {
 			$this->logger->warning(
 				'Latest-run pointer repair failed; discovery metadata may remain stale.',
 				array(
@@ -260,10 +260,10 @@ final readonly class RunTransitions {
 	}
 
 	/**
-	 * Claims a retained run as Cancelled before clearing its pending scheduler group and firing hooks.
+	 * Claims a retained run as Cancelled before clearing its pending deliveries and firing hooks.
 	 *
-	 * The scheduler-group clear is best-effort. The cancelled state fences later delivery, so any
-	 * leftover action is dropped when it observes the terminal run.
+	 * The scheduler clear is best-effort. The cancelled state fences later delivery, so any leftover
+	 * action is dropped when it observes the terminal run.
 	 *
 	 * @internal Engine product service.
 	 *
@@ -278,7 +278,7 @@ final readonly class RunTransitions {
 	 * @param   RunState             $state                 Running state from the exact inspected snapshot.
 	 * @param   RunStore             $run_store             Active-run store.
 	 * @param   string               $expected_raw          Exact pre-cancel snapshot.
-	 * @param   \Closure             $clear_pending_actions Winner-only scheduler-group clear.
+	 * @param   \Closure             $clear_pending_actions Winner-only pending-delivery clear.
 	 *
 	 * @return  bool|Failure<EngineError> True when the cancellation transition is claimed, false after a lost fence, or the classified write failure.
 	 */
@@ -400,6 +400,16 @@ final readonly class RunTransitions {
 			return false;
 		}
 		if ( HeartbeatOutcome::GenerationMismatch === $outcome ) {
+			// The fence aborts without a terminal transition and the scheduler action still completes, so this record is the
+			// only evidence separating a superseded delivery from a handler that did nothing.
+			$this->logger->debug(
+				$handler->key() . ' delivery generation is superseded; the delivery aborts without a terminal transition.',
+				array(
+					'identity' => (string) $identity,
+					'run_id'   => $run_id,
+				)
+			);
+
 			return true;
 		}
 
@@ -528,6 +538,16 @@ final readonly class RunTransitions {
 			return false;
 		}
 		if ( HeartbeatOutcome::GenerationMismatch === $outcome ) {
+			// The fence aborts without a terminal transition and the scheduler action still completes, so this record is the
+			// only evidence separating a superseded delivery from a handler that did nothing.
+			$this->logger->debug(
+				$handler->key() . ' delivery generation is superseded; the delivery aborts without a terminal transition.',
+				array(
+					'identity' => $identity,
+					'run_id'   => $run_id,
+				)
+			);
+
 			return true;
 		}
 

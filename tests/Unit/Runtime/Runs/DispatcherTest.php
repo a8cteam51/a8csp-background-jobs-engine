@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -311,23 +312,30 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Cancellation clears only the accepted run's scheduler group.
+	 * Cancellation clears only the accepted run's pending deliveries.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_clears_the_run_scheduler_group(): void {
+	public function test_cancel_clears_the_run_deliveries(): void {
 		$run_id = $this->dispatch_job();
 		$this->reset_observations();
 
 		$result = $this->client->cancel( self::NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $result );
-		$unschedule = $this->backend_calls( 'unschedule' );
+		$unschedule = $this->backend_calls( 'unschedule_run' );
 		self::assertCount( 1, $unschedule );
-		self::assertSame( self::IDENTITY . '|' . $run_id, $unschedule[0]['args']['group'] ?? null );
+		self::assertSame(
+			array(
+				'hook'     => ActionDeliveries::DELIVER_HOOK,
+				'identity' => self::IDENTITY,
+				'run_id'   => $run_id,
+			),
+			$unschedule[0]['args']
+		);
 	}
 
 	/**
@@ -358,6 +366,31 @@ final class DispatcherTest extends TestCase {
 			),
 			$this->rig->hooks()->sequence()
 		);
+	}
+
+	/**
+	 * A started-listener failure whose terminalization is unconfirmed reports storage rather than the listener.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The run keeps its pending descriptor when the terminal write is not confirmed, and stale-state
+	 *                maintenance redelivers a run in that shape rather than terminalizing it. Reporting the listener
+	 *                failure as definite would tell a caller the work is finished with while it is still scheduled to run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_reports_storage_when_a_started_listener_failure_cannot_terminalize(): void {
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_bgje/started/' . self::IDENTITY => new \RuntimeException( 'Started listener exploded.' ) );
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		self::assertStringContainsString( 'could not be terminalized', $error->message );
+		self::assertSame( self::IDENTITY, $error->context['identity'] ?? null );
+		self::assertSame( self::RUN_ID, $error->context['run_id'] ?? null );
 	}
 
 	/**
@@ -659,7 +692,6 @@ final class DispatcherTest extends TestCase {
 		self::assertIsString( $latest_raw );
 		$latest = \maybe_unserialize( $latest_raw );
 		self::assertIsArray( $latest );
-		self::assertSame( self::OTHER_RUN_ID, $latest['all'] ?? null );
 		$latest_by_hash = $latest['by_hash'] ?? null;
 		self::assertIsArray( $latest_by_hash );
 		self::assertSame( self::OTHER_RUN_ID, $latest_by_hash[ $this->args_hash() ] ?? null );
@@ -1040,6 +1072,82 @@ final class DispatcherTest extends TestCase {
 			$run['pending'] ?? null
 		);
 		self::assertSame( array( 'enqueue_async' ), \array_column( $this->run_delivery_calls(), 'verb' ) );
+	}
+
+	/**
+	 * Asynchronous admission still executes its first delivery when the clock crosses a second boundary mid-admission.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The overlap lock and the run row must carry one admission generation. A split generation fences the
+	 *                first delivery out through the silent GenerationMismatch branch, so the run sits dormant until stale-state
+	 *                maintenance redelivers it while reporting Running throughout.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_async_admission_delivers_when_the_clock_advances_between_the_lock_and_run_writes(): void {
+		$this->rig->wpdb()->before_next(
+			'insert',
+			function (): void {
+				$this->rig->clock()->timestamp = self::NOW + 1;
+			}
+		);
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+
+		$this->rig->run_due();
+
+		self::assertSame( array( self::ARGS ), $this->job->calls );
+	}
+
+	/**
+	 * A delivery fenced out by a superseded generation records why it stopped.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The generation fence aborts without a terminal transition and the scheduler action still completes, so a
+	 *                run that stops here is invisible until stale-state maintenance redelivers it. The record is the only
+	 *                evidence that the fence, rather than the handler, ended the delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_stale_delivery_generation_records_the_fence_that_stopped_it(): void {
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $result );
+
+		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
+		$lock_raw    = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
+		self::assertIsString( $lock_raw );
+		$lock = \maybe_unserialize( $lock_raw );
+		self::assertIsArray( $lock );
+		$lock['heartbeat_at'] = self::NOW + 1;
+		$advanced             = \maybe_serialize( $lock );
+		self::assertIsString( $advanced );
+		$this->rig->wpdb()->put( $lock_option, $advanced );
+		$this->rig->logger()->records = array();
+
+		$this->rig->run_due();
+
+		self::assertSame( array(), $this->job->calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'job delivery generation is superseded; the delivery aborts without a terminal transition.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
 	}
 
 	/**

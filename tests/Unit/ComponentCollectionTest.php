@@ -56,6 +56,12 @@ final class ComponentCollectionTest extends TestCase {
 		self::assertFalse( $components->has( CollectionClosedComponent::class ) );
 		self::assertSame( array( 'construct:open' ), CollectionOpenComponent::$events );
 		self::assertSame( array(), CollectionClosedComponent::$events );
+
+		$components->initialize();
+		$components->register_hooks();
+
+		self::assertSame( array( 'construct:open', 'initialize:open', 'hooks:open' ), CollectionOpenComponent::$events );
+		self::assertSame( array(), CollectionClosedComponent::$events );
 	}
 
 	/**

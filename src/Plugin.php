@@ -2,9 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\CLI;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
-
 \defined( 'ABSPATH' ) || exit;
 
 /**

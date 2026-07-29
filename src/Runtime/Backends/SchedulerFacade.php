@@ -20,8 +20,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason
  * Action Scheduler is installed because routing follows per-request readiness.
  *
  * Action Scheduler treats an empty group as unconstrained in queries but exact in unique inserts.
- * For unscheduling, empty arguments plus only a hook clear that hook, while empty arguments plus
- * only a group clear that group. This facade preserves those native empty-value semantics.
+ * Generic unscheduling preserves backend-native empty-value semantics, while run clearance delegates
+ * the explicit hook, work identity, and run ID each backend needs for exact selection.
  *
  * @internal
  *
@@ -76,11 +76,17 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 *
 	 * @param   array<BackendInterface> $backends Backends in preference order; values are reindexed and keys are ignored.
 	 *
-	 * @throws  \InvalidArgumentException When no scheduling backend is supplied.
+	 * @throws  \InvalidArgumentException When no scheduling backend is supplied or one does not implement the backend contract.
 	 */
 	public function __construct( array $backends ) {
 		if ( array() === $backends ) {
 			throw new \InvalidArgumentException( 'SchedulerFacade requires at least one backend; pass the WP-Cron backend as the final fallback.' );
+		}
+
+		foreach ( $backends as $backend ) {
+			if ( ! $backend instanceof BackendInterface ) {
+				throw new \InvalidArgumentException( 'SchedulerFacade backends must implement BackendInterface.' );
+			}
 		}
 
 		$this->backends = \array_values( $backends );
@@ -112,21 +118,36 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * Unschedules every pending action in one backend group.
+	 * Unschedules every pending delivery for one run.
 	 *
 	 * @internal Engine run cancellation only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $group Backend grouping label.
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function unschedule_group( string $group ): AbstractResult {
-		return $this->unschedule_snapshot( $this->ready_backends(), '', array(), $group );
+	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
+		$ready_backends = $this->ready_backends();
+		if ( array() === $ready_backends ) {
+			return $this->fallback_backend()->unschedule_run( $hook, $identity, $run_id );
+		}
+
+		$first_failure = null;
+		foreach ( $ready_backends as $backend ) {
+			$result = $backend->unschedule_run( $hook, $identity, $run_id );
+			if ( $result->is_failure() ) {
+				$first_failure ??= $result;
+			}
+		}
+
+		return $first_failure ?? new Success( true );
 	}
 
 	/**
@@ -292,27 +313,40 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, int<0, max>>
+	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
 	#[\Override]
-	public function scheduled_counts( string $hook, array $identities ): array {
-		$counts = array();
+	public function scheduled_chains( string $hook, array $identities ): array {
+		$chains = array();
 		foreach ( $identities as $requested_identity ) {
-			$counts[ $requested_identity ] = 0;
+			$chains[ $requested_identity ] = array(
+				'count'    => 0,
+				'interval' => null,
+			);
 		}
 
-		if ( array() === $counts ) {
-			return $counts;
+		if ( array() === $chains ) {
+			return $chains;
 		}
 
 		foreach ( $this->ready_backends() as $backend ) {
-			$backend_counts = $backend->scheduled_counts( $hook, $identities );
-			foreach ( $counts as $identity => $count ) {
-				$counts[ $identity ] = $count + ( $backend_counts[ $identity ] ?? 0 );
+			$backend_chains = $backend->scheduled_chains( $hook, $identities );
+			foreach ( $chains as $identity => $chain ) {
+				$backend_chain = $backend_chains[ $identity ] ?? null;
+				if ( null === $backend_chain ) {
+					continue;
+				}
+
+				$chains[ $identity ] = array(
+					'count'    => $chain['count'] + $backend_chain['count'],
+					// One backend holding the identity's only chain owns the cadence claim; a chain on a second backend is
+					// surplus the caller replaces, and the summed count already says so.
+					'interval' => $chain['interval'] ?? $backend_chain['interval'],
+				);
 			}
 		}
 
-		return $counts;
+		return $chains;
 	}
 
 	/**

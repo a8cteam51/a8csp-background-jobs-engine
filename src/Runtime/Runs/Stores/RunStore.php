@@ -141,6 +141,9 @@ final readonly class RunStore {
 	 * @param   PendingAction|null      $pending    Durable successor delivery, or null when none exists.
 	 * @param   int|null                $priority   Admitted scheduler priority, or null to derive it from the pending descriptor
 	 *                                               or engine default.
+	 * @param   int|null                $at         Admission timestamp shared with the overlap lock, or null to read the clock.
+	 *                                               The first delivery presents this heartbeat as the lock's expected
+	 *                                               generation, so the two must be one admission instant.
 	 *
 	 * @throws  \InvalidArgumentException When the kind key or priority is invalid.
 	 * @throws  \LogicException           When the current site differs from the bound site or WordPress does not serialize
@@ -148,9 +151,9 @@ final readonly class RunStore {
 	 *
 	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, or null when the run option cannot be added.
 	 */
-	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null ): RunState|Failure|null {
+	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null, ?int $at = null ): RunState|Failure|null {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
-		$now   = $this->clock->now()->getTimestamp();
+		$now   = $at ?? $this->clock->now()->getTimestamp();
 		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, priority: $priority, );
 
 		$rejected = self::kind_state_failure( $state->kind_state );
@@ -165,36 +168,6 @@ final readonly class RunStore {
 		}
 
 		if ( RowWriteOutcome::Won !== $this->rows->insert_if_absent( RunIdentity::raw_option_name( $this->identity, $run_id ), $raw ) ) {
-			return null;
-		}
-
-		return $state;
-	}
-
-	/**
-	 * Returns the typed state for a recoverable run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $run_id Run identifier.
-	 *
-	 * @return  RunState|null
-	 */
-	public function get( string $run_id ): ?RunState {
-		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
-		if ( $selected->is_failure() ) {
-			return null;
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return null;
-		}
-
-		$state = self::from_option( RawOptionDecoder::decode( $raw ) );
-		if ( null === $state ) {
-			// A vanished or corrupted run is unrecoverable, so callers treat it as no run.
 			return null;
 		}
 
@@ -896,7 +869,7 @@ final readonly class RunStore {
 			|| ( $has_details && ! \is_array( $value['details'] ) )
 			// Verbatim pass-through persists additive metadata, so the whole record is portable. The record occupies one array level
 			// itself, so its budget runs one deeper than the payload default to leave details their full depth.
-			|| ! PortableArguments::is_valid( $value, 513 )
+			|| ! PortableArguments::is_valid( $value, PortableArguments::MAX_ARGUMENTS_JSON_DEPTH + 1 )
 		) {
 			return false;
 		}

@@ -431,7 +431,13 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		if ( $misfired && CatchUpPolicy::Skip === $schedule->catch_up ) {
+		// This is the only site that reads the policy, so an equality test would let a future case inherit the run-once
+		// path by omission. The match makes static analysis demand a decision for every case instead.
+		$drops_beyond_grace = match ( $schedule->catch_up ) {
+			CatchUpPolicy::Skip    => true,
+			CatchUpPolicy::RunOnce => false,
+		};
+		if ( $misfired && $drops_beyond_grace ) {
 			$misfired_due                  = $registration['next_due'];
 			$registration['next_due']      = $next_due;
 			$registration['misfire_skips'] = self::increment_counter( $registration['misfire_skips'] );

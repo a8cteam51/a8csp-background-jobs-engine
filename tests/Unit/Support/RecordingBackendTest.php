@@ -46,6 +46,7 @@ final class RecordingBackendTest extends TestCase {
 			$backend->schedule_single( 'single', 1_700_000_100, array( 'b' ), 'imports', 30 ),
 			$backend->enqueue_async( 'async', array( 'c' ), 'exports', 40 ),
 			$backend->unschedule( 'clear', array( 'd' ), 'cleanup' ),
+			$backend->unschedule_run( 'deliver', 'reports:refresh', 'run-42' ),
 		);
 
 		foreach ( $results as $result ) {
@@ -93,6 +94,14 @@ final class RecordingBackendTest extends TestCase {
 						'group' => 'cleanup',
 					),
 				),
+				array(
+					'verb' => 'unschedule_run',
+					'args' => array(
+						'hook'     => 'deliver',
+						'identity' => 'reports:refresh',
+						'run_id'   => 'run-42',
+					),
+				),
 			),
 			$backend->calls
 		);
@@ -109,18 +118,49 @@ final class RecordingBackendTest extends TestCase {
 		$single    = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the single schedule and retry.' ) );
 		$async     = new Success( true );
 		$clear     = new Failure( new SchedulingError( SchedulingErrorReason::UnsupportedGroup, 'Drop the unsupported group.' ) );
+		$run_clear = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair run clearance.' ) );
 
 		$backend->results = array(
 			'schedule_recurring' => $recurring,
 			'schedule_single'    => $single,
 			'enqueue_async'      => $async,
 			'unschedule'         => $clear,
+			'unschedule_run'     => $run_clear,
 		);
 
 		self::assertSame( $recurring, $backend->schedule_recurring( 'recurring', 0 ) );
 		self::assertSame( $single, $backend->schedule_single( 'single', 1_700_000_000 ) );
 		self::assertSame( $async, $backend->enqueue_async( 'async' ) );
 		self::assertSame( $clear, $backend->unschedule( 'clear' ) );
+		self::assertSame( $run_clear, $backend->unschedule_run( 'deliver', 'reports:refresh', 'run-42' ) );
+	}
+
+	/**
+	 * Run clearance removes only matching deliveries from one identity group.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_run_preserves_sibling_deliveries(): void {
+		$backend          = new RecordingBackend();
+		$identity         = 'reports:refresh';
+		$run_id           = 'run-42';
+		$sibling_run_id   = 'run-43';
+		$target_args      = array( $identity, $run_id, 1 );
+		$sibling_args     = array( $identity, $sibling_run_id, 1 );
+		$other_group_args = array( $identity, $run_id, 2 );
+		self::assertInstanceOf( Success::class, $backend->enqueue_async( 'deliver', $target_args, $identity ) );
+		self::assertInstanceOf( Success::class, $backend->enqueue_async( 'deliver', $sibling_args, $identity ) );
+		self::assertInstanceOf( Success::class, $backend->enqueue_async( 'deliver', $other_group_args, 'reports:other' ) );
+
+		$result = $backend->unschedule_run( 'deliver', $identity, $run_id );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( 0, $backend->scheduled_count( 'deliver', $target_args, $identity ) );
+		self::assertSame( 1, $backend->scheduled_count( 'deliver', $sibling_args, $identity ) );
+		self::assertSame( 1, $backend->scheduled_count( 'deliver', $other_group_args, 'reports:other' ) );
 	}
 
 	/**
@@ -156,10 +196,16 @@ final class RecordingBackendTest extends TestCase {
 		self::assertSame( 0, $backend->scheduled_count( 'count', array( 'pending' ), 'reports' ) );
 		self::assertSame(
 			array(
-				'first'  => 0,
-				'second' => 0,
+				'first'  => array(
+					'count'    => 0,
+					'interval' => null,
+				),
+				'second' => array(
+					'count'    => 0,
+					'interval' => null,
+				),
 			),
-			$backend->scheduled_counts( 'counts', array( 'first', 'second' ) )
+			$backend->scheduled_chains( 'counts', array( 'first', 'second' ) )
 		);
 		self::assertTrue( $backend->is_scheduled( 'query', array( 'a' ), 'reports' ) );
 		self::assertSame( 1_700_000_000, $backend->get_next_scheduled( 'next', array( 'b' ), 'imports' ) );
@@ -177,7 +223,7 @@ final class RecordingBackendTest extends TestCase {
 					),
 				),
 				array(
-					'verb' => 'scheduled_counts',
+					'verb' => 'scheduled_chains',
 					'args' => array(
 						'hook'       => 'counts',
 						'identities' => array( 'first', 'second' ),

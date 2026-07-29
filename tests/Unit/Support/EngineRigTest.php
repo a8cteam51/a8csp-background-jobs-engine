@@ -218,7 +218,9 @@ final class EngineRigTest extends TestCase {
 			)
 		);
 		self::assertSame( 'a8csp_bgje_latest_run_' . self::IDENTITY, $latest_name );
-		self::assertSame( self::RUN_ID, self::decoded( $latest_raw )['all'] ?? null );
+		$latest_by_hash = self::decoded( $latest_raw )['by_hash'] ?? null;
+		self::assertIsArray( $latest_by_hash );
+		self::assertSame( self::RUN_ID, $latest_by_hash[ $args_hash ] ?? null );
 	}
 
 	// endregion.

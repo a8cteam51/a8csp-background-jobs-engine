@@ -114,7 +114,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 			$chunked_job,
 			self::FILTER_IDENTITY,
 			$run_id,
-			self::FILTER_IDENTITY . '|' . $run_id,
+			self::FILTER_IDENTITY,
 			array( array( 'chunk' => 'only' ) )
 		);
 	}
@@ -161,7 +161,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		);
 
 		$run_a     = $this->start( self::REJECT_NAME, $start_args );
-		$group_a   = self::REJECT_IDENTITY . '|' . $run_a;
+		$group_a   = self::REJECT_IDENTITY;
 		$args_hash = self::args_hash( $start_args );
 		$lock_name = 'a8csp_bgje_overlap_lock_' . self::REJECT_IDENTITY . '_' . $args_hash;
 
@@ -183,7 +183,6 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		self::assertSame( $run_a, $lock['run_id'] ?? null, 'A rejected start must preserve the incumbent lock owner' );
 		self::assertSame(
 			array(
-				'all'     => $run_a,
 				'by_hash' => array( $args_hash => $run_a ),
 			),
 			\get_option( 'a8csp_bgje_latest_run_' . self::REJECT_IDENTITY, null ),
@@ -315,7 +314,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		);
 
 		$run_a     = $this->start( self::RECLAIM_NAME, $start_args );
-		$group_a   = self::RECLAIM_IDENTITY . '|' . $run_a;
+		$group_a   = self::RECLAIM_IDENTITY;
 		$args_hash = self::args_hash( $start_args );
 		$lock_name = 'a8csp_bgje_overlap_lock_' . self::RECLAIM_IDENTITY . '_' . $args_hash;
 
@@ -328,7 +327,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		self::assertTrue( \update_option( $lock_name, $aged_lock, false ), 'The crash simulation must age the persisted heartbeat beyond the default stale window' );
 
 		$run_b   = $this->start( self::RECLAIM_NAME, $start_args );
-		$group_b = self::RECLAIM_IDENTITY . '|' . $run_b;
+		$group_b = self::RECLAIM_IDENTITY;
 		self::assertNotSame( $run_a, $run_b, 'Stale reclaim must allocate a fresh run identifier' );
 		self::assertCount( 1, $log_records );
 		self::assertSame( 'info', $log_records[0][0] ?? null );
@@ -498,7 +497,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 	 * @param   RecordingChunkedJob                $chunked_job     Chunked Job fixture.
 	 * @param   string                             $name            Stable chunked job name.
 	 * @param   string                             $run_id          Run identifier.
-	 * @param   string                             $group           Per-run Action Scheduler group.
+	 * @param   string                             $group           Identity Action Scheduler group.
 	 * @param   list<array<array-key, mixed>>      $expected_chunks Expected chunks in processing order.
 	 *
 	 * @return  void

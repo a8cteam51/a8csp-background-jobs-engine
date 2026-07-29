@@ -92,17 +92,15 @@ final class LatestRunPointerTest extends TestCase {
 	public function test_discovery_and_repair_preserve_global_and_per_argument_meaning(): void {
 		$pointer = $this->pointer();
 
-		self::assertNull( $pointer->get_latest() );
 		self::assertNull( $pointer->get_latest_for_hash( 'hash-a' ) );
 		self::assertTrue( $pointer->record( 'run-a', 'hash-a' ) );
 		self::assertTrue( $pointer->record( 'run-b', 'hash-b' ) );
-		self::assertSame( 'run-b', $pointer->get_latest() );
 		self::assertSame( 'run-a', $pointer->get_latest_for_hash( 'hash-a' ) );
-		self::assertTrue( $pointer->repair_for_hash( 'run-a-repaired', 'hash-a' ) );
-		self::assertSame( 'run-b', $pointer->get_latest() );
+		self::assertTrue( $pointer->record( 'run-a-repaired', 'hash-a' ) );
 		self::assertSame( 'run-a-repaired', $pointer->get_latest_for_hash( 'hash-a' ) );
-		self::assertTrue( $pointer->repair_for_hash( 'run-b-repaired', 'hash-b' ) );
-		self::assertSame( 'run-b-repaired', $pointer->get_latest() );
+		self::assertSame( 'run-b', $pointer->get_latest_for_hash( 'hash-b' ) );
+		self::assertTrue( $pointer->record( 'run-b-repaired', 'hash-b' ) );
+		self::assertSame( 'run-b-repaired', $pointer->get_latest_for_hash( 'hash-b' ) );
 	}
 
 	/**
@@ -126,7 +124,6 @@ final class LatestRunPointerTest extends TestCase {
 		self::assertNull( $pointer->get_latest_for_hash( self::hash( 1 ) ) );
 		self::assertSame( self::run_id( 2 ), $pointer->get_latest_for_hash( self::hash( 2 ) ) );
 		self::assertSame( self::run_id( 20 ), $pointer->get_latest_for_hash( self::hash( 20 ) ) );
-		self::assertSame( self::run_id( 20 ), $pointer->get_latest() );
 	}
 
 	/**
@@ -141,10 +138,8 @@ final class LatestRunPointerTest extends TestCase {
 		$this->rig->wpdb()->put( LatestRunPointer::OPTION_PREFIX . self::IDENTITY, 'not-a-pointer' );
 		$pointer = $this->pointer();
 
-		self::assertNull( $pointer->get_latest() );
 		self::assertNull( $pointer->get_latest_for_hash( 'hash-a' ) );
 		self::assertTrue( $pointer->record( 'run-a', 'hash-a' ) );
-		self::assertSame( 'run-a', $pointer->get_latest() );
 		self::assertSame( 'run-a', $pointer->get_latest_for_hash( 'hash-a' ) );
 	}
 

@@ -121,33 +121,32 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
-	 * Re-boot retains the published graph and never duplicates callback registration.
-	 *
-	 * @load-bearing concurrency
-	 * @pin-rationale A second composition-root instance proves the published latch retains the same graph and registrations after initialization completes.
+	 * A completed component lifecycle permits a later lifecycle to publish a fresh graph.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_reboot_is_idempotent_across_component_instances(): void {
+	public function test_completed_component_lifecycle_can_publish_a_fresh_graph(): void {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
 		$engine     = Component::get_engine();
 		$inspection = Component::get_inspection();
-		$actions    = $this->action_registrations();
-		$filters    = $this->filter_registrations();
+
+		$GLOBALS['a8csp_bgje_test_hooks']                = array();
+		$GLOBALS['a8csp_bgje_test_action_registrations'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations'] = array();
 
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
 
-		self::assertSame( $engine, Component::get_engine() );
-		self::assertSame( $inspection, Component::get_inspection() );
-		self::assertSame( $actions, $this->action_registrations() );
-		self::assertSame( $filters, $this->filter_registrations() );
+		self::assertNotSame( $engine, Component::get_engine() );
+		self::assertNotSame( $inspection, Component::get_inspection() );
+		self::assertCount( 3, $this->action_registrations() );
+		self::assertCount( 1, $this->filter_registrations() );
 	}
 
 	/**
@@ -162,25 +161,32 @@ final class EngineComponentTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_scheduler_filter_reentry_during_hook_registration_has_one_effect(): void {
-		$reentered = false;
-		$callbacks = $GLOBALS['a8csp_bgje_test_filter_registration_callbacks'] ?? null;
-		self::assertIsArray( $callbacks );
+		$reentered                              = false;
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
+			'plugins_loaded' => 1,
+			'init'           => 1,
+		);
+		\add_filter(
+			'cron_schedules',
+			static function ( array $schedules ) use ( &$reentered ): array {
+				$reentered = true;
+				( new Component() )->initialize();
 
-		$callbacks['cron_schedules'] = static function () use ( &$reentered ): void {
-			$reentered = true;
-			( new Component() )->initialize();
-		};
-
-		$GLOBALS['a8csp_bgje_test_filter_registration_callbacks'] = $callbacks;
+				return $schedules;
+			},
+			5,
+			1
+		);
 
 		$component = new Component();
 		$component->initialize();
+		$engine = Component::get_engine();
 		$component->register_hooks();
 
 		self::assertTrue( $reentered );
-		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
-		self::assertCount( 3, $this->action_registrations() );
-		self::assertCount( 1, $this->filter_registrations() );
+		self::assertSame( $engine, Component::get_engine() );
+		self::assertCount( 2, $this->action_registrations() );
+		self::assertCount( 2, $this->filter_registrations() );
 	}
 
 	/**
@@ -309,6 +315,7 @@ final class EngineComponentTest extends TestCase {
 	 */
 	public function test_live_graph_prefers_action_scheduler_before_wp_cron(): void {
 		require_once \dirname( __DIR__ ) . '/as-function-stubs.php';
+		require_once \dirname( __DIR__ ) . '/as-class-stubs.php';
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'plugins_loaded'        => 1,
 			'init'                  => 1,

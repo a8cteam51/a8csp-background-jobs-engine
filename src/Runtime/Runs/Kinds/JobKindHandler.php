@@ -228,7 +228,21 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 					'run_id'   => $run_id,
 				),
 			);
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+			$terminalized   = $this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed );
+			if ( ! $terminalized ) {
+				// The run keeps its pending descriptor when the terminal write is unconfirmed, and stale-state maintenance
+				// redelivers a run in that shape rather than terminalizing it. Reporting the listener failure as definite
+				// would tell a caller the work is finished with while it is still scheduled to run.
+				return new EngineError(
+					\sprintf( '%1$s "%2$s" started listener failed and the run could not be terminalized; authoritative storage did not confirm the terminal write, so this run may still be delivered. Repair option writes and inspect the run before compensating for it.', self::KIND, (string) $identity ),
+					$exception_type,
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'identity' => (string) $identity,
+						'run_id'   => $run_id,
+					),
+				);
+			}
 
 			return $error;
 		}

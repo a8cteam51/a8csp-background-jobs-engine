@@ -4,9 +4,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\AbstractComponent;
 use A8C\SpecialProjects\BackgroundJobsEngine\ComponentCollection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
-use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
@@ -83,6 +84,23 @@ final class PluginBootGateTest extends TestCase {
 	// region TESTS.
 
 	/**
+	 * Public portal operations remain unavailable before the retained plugin boots.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_public_portal_operations_are_unavailable_before_boot(): void {
+		$error = \a8csp_bgje( 'plugin-boot-gate' )->jobs()->dispatch( 'job' );
+
+		self::assertInstanceOf( \WP_Error::class, $error );
+		self::assertSame( 'engine_unavailable', $error->get_error_code() );
+		self::assertSame( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully; invoke engine operations from init or a later hook.', $error->get_error_message() );
+		self::assertNull( $error->get_error_data() );
+	}
+
+	/**
 	 * Plugin boot makes public portal operations reach the published graph.
 	 *
 	 * @return  void
@@ -100,6 +118,33 @@ final class PluginBootGateTest extends TestCase {
 		self::assertSame( 'unknown_job', $error->get_error_code() );
 		self::assertSame( 'Background-work "plugin-boot-gate:job" is not registered; register it before dispatching.', $error->get_error_message() );
 		self::assertSame( array( 'identity' => 'plugin-boot-gate:job' ), $error->get_error_data() );
+	}
+
+	/**
+	 * The retained plugin ignores a second boot without rebuilding registrations or hooks.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_second_boot_retains_the_graph_and_hook_registrations(): void {
+		$plugin = \a8csp_bgje_plugin();
+		$plugin->boot();
+		$jobs = \a8csp_bgje( 'plugin-double-boot' )->jobs();
+		self::assertTrue( $jobs->register( ( new RecordingJob( 'retained' ) )->definition() ) );
+		$actions = $GLOBALS['a8csp_bgje_test_action_registrations'] ?? null;
+		$filters = $GLOBALS['a8csp_bgje_test_filter_registrations'] ?? null;
+		self::assertIsArray( $actions );
+		self::assertIsArray( $filters );
+
+		$plugin->boot();
+
+		$duplicate = $jobs->register( ( new RecordingJob( 'retained' ) )->definition() );
+		self::assertInstanceOf( \WP_Error::class, $duplicate );
+		self::assertSame( 'already_registered', $duplicate->get_error_code() );
+		self::assertSame( $actions, $GLOBALS['a8csp_bgje_test_action_registrations'] );
+		self::assertSame( $filters, $GLOBALS['a8csp_bgje_test_filter_registrations'] );
 	}
 
 	/**
@@ -128,7 +173,7 @@ final class PluginBootGateTest extends TestCase {
 		$error = \a8csp_bgje( 'plugin-boot-gate' )->jobs()->dispatch( 'job' );
 		self::assertInstanceOf( \WP_Error::class, $error );
 		self::assertSame( 'engine_unavailable', $error->get_error_code() );
-		self::assertSame( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully or after teardown; invoke engine operations from init or a later hook.', $error->get_error_message() );
+		self::assertSame( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully; invoke engine operations from init or a later hook.', $error->get_error_message() );
 		self::assertNull( $error->get_error_data() );
 	}
 

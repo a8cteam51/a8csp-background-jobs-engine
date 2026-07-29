@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use PHPUnit\Framework\TestCase;
@@ -212,17 +212,19 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $name   Stable job name.
-	 * @param   string $run_id Run identifier.
-	 * @param   string $group  Per-run Action Scheduler group.
+	 * @param   string   $name     Stable job name.
+	 * @param   string   $run_id   Run identifier.
+	 * @param   string   $group    Identity Action Scheduler group.
+	 * @param   int|null $priority Resolved priority the stored action must carry, or null to leave it unasserted.
 	 *
 	 * @return  string
 	 */
-	protected function assert_pending_job_action( string $name, string $run_id, string $group ): string {
+	protected function assert_pending_job_action( string $name, string $run_id, string $group, ?int $priority = null ): string {
 		$store      = $this->action_scheduler_store();
 		$action_ids = $store->query_actions(
 			array(
 				'hook'     => 'a8csp_bgje/internal/deliver',
+				'args'     => array( $name, $run_id, 1 ),
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -241,6 +243,11 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 		self::assertSame( array( $name, $run_id, 1 ), $action->get_args() );
 		self::assertSame( $group, $action->get_group() );
 		self::assertSame( \ActionScheduler_Store::STATUS_PENDING, $store->get_status( $action_id ) );
+		if ( null !== $priority ) {
+			// Only the stored action proves the resolved priority survived the backend call: Action Scheduler supplies its
+			// own default when a caller omits one, so an engine-side assertion cannot tell a resolved value from a default.
+			self::assertSame( $priority, $action->get_priority(), 'The resolved priority must reach the stored action' );
+		}
 
 		return $action_id;
 	}
@@ -253,7 +260,7 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 	 *
 	 * @param   string                  $name           Stable chunked job name.
 	 * @param   string                  $run_id         Run identifier.
-	 * @param   string                  $group          Per-run Action Scheduler group.
+	 * @param   string                  $group          Identity Action Scheduler group.
 	 * @param   array<array-key, mixed> $expected_chunk Expected chunk arguments.
 	 *
 	 * @return  string
@@ -271,6 +278,7 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 		$action_ids = $store->query_actions(
 			array(
 				'hook'     => 'a8csp_bgje/internal/deliver',
+				'args'     => array( $name, $run_id, $action_sequence ),
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,

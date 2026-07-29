@@ -33,36 +33,41 @@ final class BoundaryErrorMapper {
 	 * for a literal key understates the live set. Logger context follows its own normalization and
 	 * never consults this list.
 	 *
+	 * Adding a diagnostic field anywhere upstream means adding it here too. Nothing forces the pair:
+	 * an unlisted key is dropped silently, the failure still reaches the consumer, and no gate reports
+	 * the missing detail.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     array<string, true>
 	 */
 	private const array SAFE_CONTEXT_KEYS = array(
-		'action_scheduler_function'        => true,
-		'action_scheduler_functions_exist' => true,
-		'action_scheduler_init_fired'      => true,
-		'actual_bytes'                     => true,
-		'current_timestamp'                => true,
-		'first_run_timestamp'              => true,
-		'hook'                             => true,
-		'identity'                         => true,
-		'interval'                         => true,
-		'kind'                             => true,
-		'limit_bytes'                      => true,
-		'maximum_depth'                    => true,
-		'maximum_json_length'              => true,
-		'missing_function'                 => true,
-		'option_name'                      => true,
-		'priority'                         => true,
-		'run_at'                           => true,
-		'run_id'                           => true,
-		'schedule'                         => true,
-		'scope'                            => true,
-		'status'                           => true,
-		'storage_operation'                => true,
-		'timestamp'                        => true,
-		'wp_init_fired'                    => true,
+		'action_scheduler_function'          => true,
+		'action_scheduler_functions_exist'   => true,
+		'action_scheduler_init_fired'        => true,
+		'action_scheduler_version_supported' => true,
+		'actual_bytes'                       => true,
+		'current_timestamp'                  => true,
+		'first_run_timestamp'                => true,
+		'hook'                               => true,
+		'identity'                           => true,
+		'interval'                           => true,
+		'kind'                               => true,
+		'limit_bytes'                        => true,
+		'maximum_depth'                      => true,
+		'maximum_json_length'                => true,
+		'missing_function'                   => true,
+		'option_name'                        => true,
+		'priority'                           => true,
+		'run_at'                             => true,
+		'run_id'                             => true,
+		'schedule'                           => true,
+		'scope'                              => true,
+		'status'                             => true,
+		'storage_operation'                  => true,
+		'timestamp'                          => true,
+		'wp_init_fired'                      => true,
 	);
 
 	// endregion

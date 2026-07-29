@@ -274,7 +274,6 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, $raw );
 		$guard = $this->guard_at( 1_000, $logger );
 
-		self::assertFalse( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 		$result = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
 
 		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
@@ -532,42 +531,60 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
-	/** Held-state reads distinguish fresh, stale, absent, and malformed rows without writing. */
-	public function test_is_held_reports_only_parseable_fresh_locks(): void {
-		$guard = $this->guard_at( 1_000 );
-		$this->store_fixture_lock( 'run-owner', 100, 901 );
-		self::assertTrue( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
+	/** Claim outcomes distinguish fresh, stale, absent, and malformed rows with exact bytes. */
+	public function test_claim_distinguishes_fresh_stale_absent_and_malformed_locks(): void {
+		$guard     = $this->guard_at( 1_000 );
+		$fresh_raw = self::fixture_lock_raw( 'run-owner', 100, 901 );
+		$this->wpdb->put( self::KEY, $fresh_raw );
+		$fresh = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		self::assertSame( LockClaimOutcome::Contended, $fresh->outcome );
+		self::assertFalse( $fresh->stale );
+		self::assertSame( $fresh_raw, $this->wpdb->rows[ self::KEY ] );
 
-		$this->store_fixture_lock( 'run-owner', 100, 899 );
-		self::assertFalse( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
+		$stale_raw = self::fixture_lock_raw( 'run-owner', 100, 899 );
+		$this->wpdb->put( self::KEY, $stale_raw );
+		$stale = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		self::assertSame( LockClaimOutcome::Contended, $stale->outcome );
+		self::assertTrue( $stale->stale );
+		self::assertSame( $stale_raw, $this->wpdb->rows[ self::KEY ] );
 
 		unset( $this->wpdb->rows[ self::KEY ], $this->wpdb->autoload[ self::KEY ] );
-		self::assertFalse( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
+		$absent = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		self::assertSame( LockClaimOutcome::Claimed, $absent->outcome );
+		self::assertSame( self::fixture_lock_raw( 'run-new', 1_000, 1_000 ), $this->wpdb->rows[ self::KEY ] );
 
-		$this->wpdb->put( self::KEY, 'not-a-lock-row' );
-		self::assertFalse( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
-		self::assertSame( array( 'select', 'select', 'select', 'select' ), $this->operations() );
+		$malformed_raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $malformed_raw );
+		$malformed = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		self::assertSame( LockClaimOutcome::Malformed, $malformed->outcome );
+		self::assertSame( $malformed_raw, $malformed->raw );
+		self::assertSame( $malformed_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'insert', 'select', 'insert', 'select', 'insert', 'insert', 'select' ), $this->operations() );
 	}
 
-	/** Held-state reads reject a deserializable row outside the exact three-field schema. */
-	public function test_is_held_rejects_a_lock_row_with_extra_fields(): void {
-		$this->wpdb->put(
-			self::KEY,
-			StoreFixtureBuilder::corrupt_row(
-				array(
-					'run_id'       => 'run-owner',
-					'claimed_at'   => 100,
-					'heartbeat_at' => 200,
-					'extra'        => true,
-				)
+	/** Claim classifies a deserializable row outside the exact three-field schema as malformed. */
+	public function test_claim_rejects_a_lock_row_with_extra_fields(): void {
+		$raw = StoreFixtureBuilder::corrupt_row(
+			array(
+				'run_id'       => 'run-owner',
+				'claimed_at'   => 100,
+				'heartbeat_at' => 200,
+				'extra'        => true,
 			)
 		);
+		$this->wpdb->put( self::KEY, $raw );
 
-		self::assertFalse( $this->guard_at( 200 )->is_held( $this->identity, self::ARGS_HASH, 100 ) );
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+
+		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
+		self::assertSame( $raw, $result->raw );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
-	/** A failed authoritative held-state read fails closed without writing. */
-	public function test_is_held_reports_held_after_read_failure(): void {
+	/** A failed authoritative claim read fails closed without changing incumbent bytes. */
+	public function test_claim_reports_indeterminate_after_read_failure(): void {
+		$raw = self::fixture_lock_raw( 'run-owner', 100, 120 );
+		$this->wpdb->put( self::KEY, $raw );
 		$this->wpdb->before_next(
 			'select',
 			static function ( WpdbLockSpy $wpdb ): void {
@@ -575,8 +592,11 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		self::assertTrue( $this->guard_at( 200 )->is_held( $this->identity, self::ARGS_HASH, 100 ) );
-		self::assertSame( array( 'select' ), $this->operations() );
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
 
 	/** A maintenance lock sweep preserves a malformed row and returns only redacted correlation. */
@@ -756,12 +776,14 @@ final class OverlapGuardTest extends TestCase {
 		$this->store_fixture_lock( 'run-owner', 100, 900 );
 		$guard = $this->guard_at( 1_000 );
 
-		self::assertTrue( $guard->is_held( $this->identity, self::ARGS_HASH, 100 ) );
 		$selection = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
 		self::assertSame( LockClaimOutcome::Contended, $selection->outcome );
 		self::assertFalse( $selection->stale );
 		self::assertSame( $boundary, $this->lock() );
-		self::assertFalse( $this->guard_at( 1_001 )->is_held( $this->identity, self::ARGS_HASH, 100 ) );
+		$stale = $this->guard_at( 1_001 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		self::assertSame( LockClaimOutcome::Contended, $stale->outcome );
+		self::assertTrue( $stale->stale );
+		self::assertSame( $boundary, $this->lock() );
 	}
 
 	// endregion.

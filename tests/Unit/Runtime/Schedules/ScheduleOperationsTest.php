@@ -162,7 +162,7 @@ final class ScheduleOperationsTest extends TestCase {
 		);
 
 		self::assertInstanceOf( Success::class, $result );
-		$calls = $this->calls( 'scheduled_counts' );
+		$calls = $this->calls( 'scheduled_chains' );
 		self::assertCount( 1, $calls );
 		self::assertSame( OccurrenceDelivery::SCHEDULE_HOOK, $calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( 'scope-a:nightly' ), $calls[0]['args']['identities'] ?? null );
@@ -217,6 +217,8 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		$calls = $this->calls( 'schedule_recurring' );
 		self::assertCount( 1, $calls );
+		// An absent chain is recreated outright; clearing first would be a write against nothing.
+		self::assertSame( array( 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( self::NOW - 60, $calls[0]['args']['first_run_timestamp'] ?? null );
 		self::assertSame( 'scope-a:nightly', $calls[0]['args']['group'] ?? null );
 		self::assertSame( $fixture[1], $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'scope-a' ) ] ?? null );
@@ -265,6 +267,39 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::PayloadRejected, $result->error->code );
 		self::assertSame( array(), $this->write_calls() );
+	}
+
+	/**
+	 * One sync replaces a chain whose cadence no longer matches its unchanged declaration.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Scheduling retains an existing chain rather than rewriting it, so a chain recreated at a superseded
+	 *                cadence during a concurrent replacement survives every later synchronization: the fingerprint still
+	 *                matches, the census still counts one chain, and the tick derives next_due from the declaration rather
+	 *                than from the chain. Reading the chain's own cadence is what makes that disagreement observable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_replaces_a_chain_whose_cadence_drifted_from_its_declaration(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
+		$registration = $this->scope_entries( 'scope-a' )[0];
+		$next_due     = $registration['next_due'] ?? null;
+		self::assertIsInt( $next_due );
+		self::assertInstanceOf( Success::class, $this->rig->backend()->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( 'scope-a:nightly' ), 'scope-a:nightly' ) );
+		self::assertInstanceOf( Success::class, $this->rig->backend()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 900, array( 'scope-a:nightly' ), $next_due, 'scope-a:nightly', priority: 0 ) );
+		$this->reset_backend_observations();
+
+		$repaired = $this->client_a->sync( array( $schedule ) );
+
+		self::assertInstanceOf( Success::class, $repaired );
+		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
+		self::assertSame( 300, $this->calls( 'schedule_recurring' )[0]['args']['interval'] ?? null );
+		self::assertSame( $next_due, $this->calls( 'schedule_recurring' )[0]['args']['first_run_timestamp'] ?? null );
+		self::assertSame( $registration, $this->scope_entries( 'scope-a' )[0] );
 	}
 
 	/**

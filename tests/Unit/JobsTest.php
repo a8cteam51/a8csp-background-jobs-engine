@@ -33,7 +33,7 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 	// region TESTS.
 
 	/**
-	 * Handle and manager construction defer malformed-scope and unavailable-graph failures to the first verb.
+	 * Handle and manager construction defer malformed-scope failures to the first verb.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -44,12 +44,6 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 		$malformed = \a8csp_bgje( 'Invalid Scope' );
 		self::assertInstanceOf( Engine::class, $malformed );
 		self::assert_wp_error( $malformed->jobs()->dispatch( 'job' ), 'invalid_argument' );
-
-		$this->rig->tear_down();
-		$not_ready = \a8csp_bgje( self::SCOPE );
-		self::assertInstanceOf( Engine::class, $not_ready );
-		$error = self::assert_wp_error( $not_ready->jobs()->dispatch( 'job' ), ErrorCode::EngineUnavailable->value );
-		self::assertSame( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully or after teardown; invoke engine operations from init or a later hook.', $error->get_error_message() );
 	}
 
 	/**

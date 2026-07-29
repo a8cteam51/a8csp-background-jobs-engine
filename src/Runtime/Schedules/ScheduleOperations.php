@@ -205,16 +205,20 @@ final readonly class ScheduleOperations {
 		}
 
 		$next             = $existing;
-		$scheduled_counts = $this->scheduler->scheduled_counts( OccurrenceDelivery::SCHEDULE_HOOK, $fingerprint_matching_identities );
+		$scheduled_chains = $this->scheduler->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, $fingerprint_matching_identities );
 		foreach ( $declared as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$current  = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
-				$scheduled_count = $scheduled_counts[ $schedule_identity ];
-				if ( 1 === $scheduled_count ) {
+				$scheduled_count    = $scheduled_chains[ $schedule_identity ]['count'];
+				$scheduled_interval = $scheduled_chains[ $schedule_identity ]['interval'];
+				// Scheduling retains an existing chain, so a chain created against a superseded declaration keeps its own
+				// cadence while fingerprint and count both agree. Recreating it is the only way that disagreement converges.
+				$cadence_drifted = 1 === $scheduled_count && null !== $scheduled_interval && $interval_by_identity[ $schedule_identity ] !== $scheduled_interval;
+				if ( 1 === $scheduled_count && ! $cadence_drifted ) {
 					continue;
 				}
-				if ( 1 < $scheduled_count ) {
+				if ( 1 < $scheduled_count || $cadence_drifted ) {
 					$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
 					if ( $removed->is_failure() ) {
 						return $this->replacement_clear_failure( $schedule );

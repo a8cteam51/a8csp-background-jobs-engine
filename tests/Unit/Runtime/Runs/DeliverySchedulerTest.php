@@ -89,7 +89,7 @@ final class DeliverySchedulerTest extends TestCase {
 					'args' => array(
 						'hook'     => ActionDeliveries::DELIVER_HOOK,
 						'args'     => array( self::IDENTITY, self::RUN_ID, 7 ),
-						'group'    => self::IDENTITY . '|' . self::RUN_ID,
+						'group'    => self::IDENTITY,
 						'priority' => 42,
 					),
 				),
@@ -118,7 +118,7 @@ final class DeliverySchedulerTest extends TestCase {
 						'hook'      => ActionDeliveries::DELIVER_HOOK,
 						'timestamp' => self::NOW + 75,
 						'args'      => array( self::IDENTITY, self::RUN_ID, 11 ),
-						'group'     => self::IDENTITY . '|' . self::RUN_ID,
+						'group'     => self::IDENTITY,
 						'priority'  => 31,
 					),
 				),

@@ -39,6 +39,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RunStoreInspector;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -201,7 +202,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_job_context_rejects_a_non_canonical_run_id_before_execution(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
+		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		$caught = null;
 
@@ -217,7 +218,7 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A terminal winner deleting the run during a live heartbeat CAS silences the stale delivery.
+	 * A terminal winner deleting the run during a live heartbeat CAS stops the stale delivery without acting on it.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -237,7 +238,19 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		self::assertNull( $this->option( $this->run_option_name() ) );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
-		self::assertSame( array(), $this->logger->records );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'job delivery generation is superseded; the delivery aborts without a terminal transition.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
 		self::assertSame(
 			array(
 				'a8csp_bgje/completed/' . self::IDENTITY,
@@ -277,7 +290,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertIsString( $replacement_run_id );
 		self::assertSame( $replacement_run_id, $this->lock()['run_id'] ?? null );
 		$replacement_action_args = array( self::IDENTITY, $replacement_run_id, $this->action_sequence( $replacement_run_id ) );
-		self::assertSame( 1, $this->backend->scheduled_count( ActionDeliveries::DELIVER_HOOK, $replacement_action_args, self::IDENTITY . '|' . $replacement_run_id ) );
+		self::assertSame( 1, $this->backend->scheduled_count( ActionDeliveries::DELIVER_HOOK, $replacement_action_args, self::IDENTITY ) );
 		$history = $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY );
 		self::assertIsArray( $history );
 		self::assertSame(
@@ -340,7 +353,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_handle_run_action_drops_a_stale_sequence_before_every_side_effect(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
+		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_action_sequence( 2 ) ) );
 		$expected = $this->option( $this->run_option_name() );
@@ -385,7 +398,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertInstanceOf( RunState::class, $claimed );
 		self::assertTrue( $claimed->executing );
 		self::assertNotSame( $expected_raw, $this->wpdb->rows[ $this->run_option_name() ] ?? null );
-		self::assertEquals( $claimed, $run_store->get( self::RUN_ID ) );
+		self::assertEquals( $claimed, RunStoreInspector::state( $run_store, self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
 	}
 
@@ -529,7 +542,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertTrue( $reclaimed->executing );
 		self::assertSame( self::NOW + 1_591, $reclaimed->heartbeat_at );
 		self::assertSame( self::NOW + 1_591, $this->lock()['heartbeat_at'] ?? null );
-		self::assertEquals( $reclaimed, $run_store->get( self::RUN_ID ) );
+		self::assertEquals( $reclaimed, RunStoreInspector::state( $run_store, self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
 	}
 
@@ -563,7 +576,7 @@ final class RunTransitionsTest extends TestCase {
 
 		self::assertNull( $reclaimed );
 		self::assertSame( $reset_at, $this->lock()['heartbeat_at'] ?? null );
-		self::assertEquals( $advanced, $run_store->get( self::RUN_ID ) );
+		self::assertEquals( $advanced, RunStoreInspector::state( $run_store, self::RUN_ID ) );
 	}
 
 	/**
@@ -848,7 +861,6 @@ final class RunTransitionsTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
 			$this->option( 'a8csp_bgje_latest_run_' . self::IDENTITY )
@@ -930,7 +942,11 @@ final class RunTransitionsTest extends TestCase {
 			),
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
-		self::assertSame( $run_ids[20], ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->get_latest(), 'Repairing the evicted scope identity must preserve the globally newest run' );
+		$latest = $this->option( LatestRunPointer::OPTION_PREFIX . self::IDENTITY );
+		self::assertIsArray( $latest );
+		$by_hash = $latest['by_hash'] ?? null;
+		self::assertIsArray( $by_hash );
+		self::assertContains( $first_run_id, $by_hash, 'Executing the evicted lane must re-record its pointer' );
 	}
 
 	/**
@@ -979,7 +995,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_enforce_delivery_fence_persists_superseded_after_confirmed_foreign_owner(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
+		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 
@@ -1011,7 +1027,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_handle_run_action_does_not_execute_a_persisted_terminal_state( string $status ): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
+		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_status( RunStatus::from( $status ) ) ) );
 
@@ -1061,7 +1077,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_terminal_failure_logs_once_for_the_winning_transition(): void {
 		$this->prepare_run_action( 42 );
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
+		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		self::assertNotNull( $state->pending );
 		$error = EngineError::from_throwable( new \RuntimeException( 'Permanent database failure.' ) );

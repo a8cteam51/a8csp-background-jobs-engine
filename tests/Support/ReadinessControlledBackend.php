@@ -73,8 +73,8 @@ final class ReadinessControlledBackend implements BackendInterface {
 	/** {@inheritDoc} */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function unschedule_group( string $group ): AbstractResult {
-		return $this->backend->unschedule_group( $group );
+	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
+		return $this->backend->unschedule_run( $hook, $identity, $run_id );
 	}
 
 	/** {@inheritDoc} */
@@ -92,8 +92,8 @@ final class ReadinessControlledBackend implements BackendInterface {
 
 	/** {@inheritDoc} */
 	#[\Override]
-	public function scheduled_counts( string $hook, array $identities ): array {
-		return $this->backend->scheduled_counts( $hook, $identities );
+	public function scheduled_chains( string $hook, array $identities ): array {
+		return $this->backend->scheduled_chains( $hook, $identities );
 	}
 
 	/** {@inheritDoc} */
