@@ -113,7 +113,10 @@ jobs:
           wp i18n make-pot ./ --slug=a8csp-background-jobs-engine
           test -f languages/a8csp-background-jobs-engine.pot
       - name: Install dist-archive command
-        run: wp package install wp-cli/dist-archive-command:3.2.2
+        # The 3.2.x line requires wp-cli ^2.13, which has no release; 2.12.0 is the newest wp-cli there is.
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
+        run: wp package install wp-cli/dist-archive-command:3.1.0
       - name: Create plugin archive
         run: wp dist-archive . ./a8csp-background-jobs-engine.zip --plugin-dirname=a8csp-background-jobs-engine
       - name: Upload the archive for the smoke and publish jobs
