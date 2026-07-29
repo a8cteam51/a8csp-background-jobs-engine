@@ -235,38 +235,6 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Returns whether a complete lock exists without exceeding the supplied staleness window.
-	 *
-	 * A heartbeat exactly one window old remains fresh; only a greater age is stale. Malformed rows
-	 * are not held, but admission classifies them without mutation. An authoritative read failure
-	 * reports held so callers fail closed.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity         Complete scope-qualified job or chunked job identity.
-	 * @param   string   $args_hash        Stable single-flight identity.
-	 * @param   int      $staleness_window Caller-resolved staleness window in seconds.
-	 *
-	 * @return  bool
-	 */
-	public function is_held( Identity $identity, string $args_hash, int $staleness_window ): bool {
-		$selected = $this->rows->read( $this->option_name( $identity, $args_hash ) );
-		if ( $selected->is_failure() ) {
-			return true;
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return false;
-		}
-
-		$lock = self::parse( $raw );
-
-		return null !== $lock && ! self::is_stale( $lock, $this->clock->now()->getTimestamp(), $staleness_window );
-	}
-
-	/**
 	 * Returns one exact raw lock snapshot and its validated schema for maintenance.
 	 *
 	 * @internal Engine maintenance only.

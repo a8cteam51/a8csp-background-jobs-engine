@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Store
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -92,17 +93,17 @@ final class LatestRunPointerTest extends TestCase {
 	public function test_discovery_and_repair_preserve_global_and_per_argument_meaning(): void {
 		$pointer = $this->pointer();
 
-		self::assertNull( $pointer->get_latest() );
+		self::assertNull( $this->global_pointer() );
 		self::assertNull( $pointer->get_latest_for_hash( 'hash-a' ) );
 		self::assertTrue( $pointer->record( 'run-a', 'hash-a' ) );
 		self::assertTrue( $pointer->record( 'run-b', 'hash-b' ) );
-		self::assertSame( 'run-b', $pointer->get_latest() );
+		self::assertSame( 'run-b', $this->global_pointer() );
 		self::assertSame( 'run-a', $pointer->get_latest_for_hash( 'hash-a' ) );
 		self::assertTrue( $pointer->repair_for_hash( 'run-a-repaired', 'hash-a' ) );
-		self::assertSame( 'run-b', $pointer->get_latest() );
+		self::assertSame( 'run-b', $this->global_pointer() );
 		self::assertSame( 'run-a-repaired', $pointer->get_latest_for_hash( 'hash-a' ) );
 		self::assertTrue( $pointer->repair_for_hash( 'run-b-repaired', 'hash-b' ) );
-		self::assertSame( 'run-b-repaired', $pointer->get_latest() );
+		self::assertSame( 'run-b-repaired', $this->global_pointer() );
 	}
 
 	/**
@@ -126,7 +127,7 @@ final class LatestRunPointerTest extends TestCase {
 		self::assertNull( $pointer->get_latest_for_hash( self::hash( 1 ) ) );
 		self::assertSame( self::run_id( 2 ), $pointer->get_latest_for_hash( self::hash( 2 ) ) );
 		self::assertSame( self::run_id( 20 ), $pointer->get_latest_for_hash( self::hash( 20 ) ) );
-		self::assertSame( self::run_id( 20 ), $pointer->get_latest() );
+		self::assertSame( self::run_id( 20 ), $this->global_pointer() );
 	}
 
 	/**
@@ -141,10 +142,10 @@ final class LatestRunPointerTest extends TestCase {
 		$this->rig->wpdb()->put( LatestRunPointer::OPTION_PREFIX . self::IDENTITY, 'not-a-pointer' );
 		$pointer = $this->pointer();
 
-		self::assertNull( $pointer->get_latest() );
+		self::assertNull( $this->global_pointer() );
 		self::assertNull( $pointer->get_latest_for_hash( 'hash-a' ) );
 		self::assertTrue( $pointer->record( 'run-a', 'hash-a' ) );
-		self::assertSame( 'run-a', $pointer->get_latest() );
+		self::assertSame( 'run-a', $this->global_pointer() );
 		self::assertSame( 'run-a', $pointer->get_latest_for_hash( 'hash-a' ) );
 	}
 
@@ -324,6 +325,25 @@ final class LatestRunPointerTest extends TestCase {
 		self::assertIsString( $raw );
 
 		return $raw;
+	}
+
+	/**
+	 * Returns the persisted global pointer wire field.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  string|null
+	 */
+	private function global_pointer(): ?string {
+		$raw = $this->rig->wpdb()->rows[ LatestRunPointer::OPTION_PREFIX . self::IDENTITY ] ?? null;
+		if ( ! \is_string( $raw ) ) {
+			return null;
+		}
+
+		$pointer = RawOptionDecoder::decode( $raw );
+
+		return \is_array( $pointer ) && \is_string( $pointer['all'] ?? null ) ? $pointer['all'] : null;
 	}
 
 	/**

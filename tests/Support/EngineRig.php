@@ -5,39 +5,14 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceSchedule;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -55,7 +30,8 @@ final class EngineRig {
 	/** @var non-empty-list<RecordingBackend> */
 	private array $backends;
 
-	private MaintenanceJob $maintenance_job;
+	private EngineFacade $engine;
+	private Inspection $inspection;
 
 	// endregion.
 
@@ -72,7 +48,9 @@ final class EngineRig {
 	 * @param   RecordingBackend    $backend    Primary scheduler boundary.
 	 * @param   array               $backends   Every scheduler boundary.
 	 * @param   FixedClock          $clock      Clock boundary.
+	 * @param   EngineFacade        $engine     Published engine facade.
 	 * @param   HookRecorder        $hooks      Lifecycle observer.
+	 * @param   Inspection          $inspection Published inspection service.
 	 * @param   RecordingLogger     $logger     Logger boundary.
 	 * @param   RecordingRandomizer $randomizer Randomizer boundary.
 	 * @param   WpdbLockSpy         $wpdb       Database boundary.
@@ -81,7 +59,9 @@ final class EngineRig {
 		private RecordingBackend $backend,
 		array $backends,
 		private FixedClock $clock,
+		EngineFacade $engine,
 		private HookRecorder $hooks,
+		Inspection $inspection,
 		private RecordingLogger $logger,
 		private RecordingRandomizer $randomizer,
 		private WpdbLockSpy $wpdb,
@@ -90,7 +70,9 @@ final class EngineRig {
 			throw new \InvalidArgumentException( 'EngineRig requires at least one recording backend.' );
 		}
 
-		$this->backends = \array_values( $backends );
+		$this->backends   = \array_values( $backends );
+		$this->engine     = $engine;
+		$this->inspection = $inspection;
 	}
 
 	// endregion.
@@ -131,7 +113,6 @@ final class EngineRig {
 	 */
 	public static function set_up( int $now = 1_700_000_000, int $backend_count = 1 ): self {
 		self::bootstrap();
-		self::reset_component();
 		self::reset_wordpress_state();
 		if ( 1 > $backend_count ) {
 			throw new \InvalidArgumentException( 'EngineRig requires at least one recording backend.' );
@@ -149,14 +130,22 @@ final class EngineRig {
 		$wpdb            = new WpdbLockSpy();
 		$GLOBALS['wpdb'] = $wpdb;
 
-		$rig = new self( $backend, $backends, $clock, $hooks, $logger, $randomizer, $wpdb );
-		$rig->build_graph();
+		$component = new Component();
+		$component->initialize( clock: $clock, randomizer: $randomizer, logger: $logger, wpdb: $wpdb, backends: $backends );
+		$component->register_hooks();
+		$engine     = Component::get_engine();
+		$inspection = Component::get_inspection();
+		if ( null === $engine || null === $inspection ) {
+			throw new \LogicException( 'EngineRig requires the Component graph it boots to publish its facades.' );
+		}
 
+		$rig = new self( $backend, $backends, $clock, $engine, $hooks, $inspection, $logger, $randomizer, $wpdb );
+		$rig->activate_registered_hooks();
 		return $rig;
 	}
 
 	/**
-	 * Clears component publication and all rig-owned WordPress test state.
+	 * Clears all rig-owned WordPress test state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -164,7 +153,6 @@ final class EngineRig {
 	 * @return  void
 	 */
 	public function tear_down(): void {
-		self::reset_component();
 		self::reset_wordpress_state();
 		unset( $GLOBALS['wpdb'] );
 	}
@@ -259,12 +247,7 @@ final class EngineRig {
 	 * @return  Inspection
 	 */
 	public function inspection(): Inspection {
-		$inspection = Component::get_inspection();
-		if ( null === $inspection ) {
-			throw new \LogicException( 'EngineRig inspection is unavailable before graph publication or after teardown.' );
-		}
-
-		return $inspection;
+		return $this->inspection;
 	}
 
 	// endregion.
@@ -388,63 +371,14 @@ final class EngineRig {
 	 * @return  void
 	 */
 	public function run_maintenance(): void {
-		$this->maintenance_job->handle( array(), new RunContext( RunId::from( '00000000000000000000-0000000000000000002' ), array() ) );
+		$result = $this->engine->schedules->dispatch_now( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ) );
+		Assert::assertInstanceOf( Success::class, $result, 'Expected the maintenance schedule to accept a manual dispatch.' );
+		$this->run_due();
 	}
 
 	// endregion.
 
 	// region HELPERS.
-
-	/**
-	 * Builds the production graph with replacements only at interface boundaries.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	private function build_graph(): void {
-		// This graph mirrors Component's two phases because the component has no injection seam; wiring changes require lockstep updates here.
-		$rows                 = new OptionRows( $this->wpdb );
-		$registry             = new JobRegistry();
-		$schedules            = new ScheduleRegistry( $rows, $this->logger );
-		$guard                = new OverlapGuard( $this->clock, $this->logger, $rows );
-		$overlap_identity     = new OverlapIdentity();
-		$stores               = new StoreFactory( $this->clock, $rows, $this->logger );
-		$lock_windows         = new LockWindows( $this->clock, $this->logger );
-		$terminal_effects     = new LifecycleEffects( $guard, $stores, $this->logger );
-		$terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
-		$lock_repair          = new LockRepair( $rows, $guard, $stores, $lock_windows, $terminal_transitions );
-		$scheduler            = new SchedulerFacade( $this->backends );
-		$delivery_scheduler   = new DeliveryScheduler( $scheduler, $this->clock );
-		$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $this->clock, $this->randomizer, $this->logger, $terminal_transitions, $terminal_effects );
-		$job_handler          = new JobKindHandler( $registry, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $delivery_scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
-		$handlers             = array(
-			$job_handler->key()         => $job_handler,
-			$chunked_job_handler->key() => $chunked_job_handler,
-		);
-		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $terminal_transitions );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $this->clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
-		$occurrence_lease     = new OccurrenceLease( $rows, $this->clock, $this->randomizer );
-		$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $rows, $this->clock, $this->logger );
-		$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $this->clock, $this->logger );
-
-		$this->maintenance_job = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
-		$dispatcher->register( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $this->maintenance_job ) );
-		$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $this->clock, $occurrence_delivery, $this->logger );
-		$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $this->logger );
-		$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $this->clock );
-		$engine               = new EngineFacade( $schedule_api, $dispatcher );
-
-		self::publish_component( $engine, $inspection, $lock_repair, $scheduler, $registry, $schedule_api, $dispatcher );
-		$scheduler->register_hooks();
-		$action_deliveries->register_hooks();
-		$occurrence_delivery->register_hooks();
-		$maintenance_schedule->register_hooks();
-		$this->activate_registered_hooks();
-	}
 
 	/**
 	 * Makes do_action() invoke callbacks registered by the production graph.
@@ -511,68 +445,6 @@ final class EngineRig {
 		}
 
 		return $validated;
-	}
-
-	/**
-	 * Publishes the graph through the real component front door.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   EngineFacade       $engine      Engine facade.
-	 * @param   Inspection         $inspection  Inspection facade.
-	 * @param   LockRepair         $lock_repair Explicit malformed-lock repair.
-	 * @param   SchedulerFacade    $scheduler   Scheduler facade.
-	 * @param   JobRegistry        $registry    Registered job and chunked job instances.
-	 * @param   ScheduleOperations $schedules   Schedule engine operations.
-	 * @param   Dispatcher         $dispatcher  Background-work admission coordinator.
-	 *
-	 * @return  void
-	 */
-	private static function publish_component( EngineFacade $engine, Inspection $inspection, LockRepair $lock_repair, SchedulerFacade $scheduler, JobRegistry $registry, ScheduleOperations $schedules, Dispatcher $dispatcher ): void {
-		self::set_component_property( 'engine', $engine );
-		self::set_component_property( 'inspection', $inspection );
-		self::set_component_property( 'lock_repair', $lock_repair );
-		self::set_component_property( 'scheduler', $scheduler );
-		self::set_component_property( 'registry', $registry );
-		self::set_component_property( 'schedules', $schedules );
-		self::set_component_property( 'dispatcher', $dispatcher );
-		self::set_component_property( 'booting', false );
-	}
-
-	/**
-	 * Clears all request-local component state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	private static function reset_component(): void {
-		self::set_component_property( 'engine', null );
-		self::set_component_property( 'inspection', null );
-		self::set_component_property( 'lock_repair', null );
-		self::set_component_property( 'scheduler', null );
-		self::set_component_property( 'registry', null );
-		self::set_component_property( 'schedules', null );
-		self::set_component_property( 'dispatcher', null );
-		self::set_component_property( 'booting', false );
-	}
-
-	/**
-	 * Writes one private static composition-root field.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $name  Component property name.
-	 * @param   mixed  $value Component property value.
-	 *
-	 * @return  void
-	 */
-	private static function set_component_property( string $name, mixed $value ): void {
-		$property = new \ReflectionProperty( Component::class, $name );
-		$property->setValue( null, $value );
 	}
 
 	/**

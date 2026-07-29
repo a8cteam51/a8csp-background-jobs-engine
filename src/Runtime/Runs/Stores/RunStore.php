@@ -175,36 +175,6 @@ final readonly class RunStore {
 	}
 
 	/**
-	 * Returns the typed state for a recoverable run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $run_id Run identifier.
-	 *
-	 * @return  RunState|null
-	 */
-	public function get( string $run_id ): ?RunState {
-		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
-		if ( $selected->is_failure() ) {
-			return null;
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return null;
-		}
-
-		$state = self::from_option( RawOptionDecoder::decode( $raw ) );
-		if ( null === $state ) {
-			// A vanished or corrupted run is unrecoverable, so callers treat it as no run.
-			return null;
-		}
-
-		return $state;
-	}
-
-	/**
 	 * Returns one authoritative raw run snapshot with its optional typed state.
 	 *
 	 * @internal Engine fencing and maintenance only.

@@ -117,20 +117,6 @@ final readonly class LatestRunPointer {
 	}
 
 	/**
-	 * Returns the latest run across all single-flight identities.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  string|null
-	 */
-	public function get_latest(): ?string {
-		$value = $this->stored_pointer();
-
-		return \is_string( $value['all'] ?? null ) ? $value['all'] : null;
-	}
-
-	/**
 	 * Returns the latest run for one single-flight identity.
 	 *
 	 * @since   1.0.0

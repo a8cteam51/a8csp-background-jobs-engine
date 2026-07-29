@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RunStoreInspector;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -105,7 +106,7 @@ final class KindDeliveryTest extends TestCase {
 		$run_id = $this->enqueue_job();
 		$this->replace_run_field( $run_id, 'kind', 'acme.export' );
 
-		$state = $this->run_store()->get( $run_id );
+		$state = RunStoreInspector::state( $this->run_store(), $run_id );
 		self::assertNotNull( $state );
 		self::assertSame( 'acme.export', $state->kind );
 		$inspection = $this->rig->inspection()->runs( $this->identity );
@@ -146,7 +147,7 @@ final class KindDeliveryTest extends TestCase {
 		$run_id = $this->enqueue_job();
 		$this->replace_run_field( $run_id, 'kind', 'acme.export' );
 		$run_store = $this->run_store();
-		$running   = $run_store->get( $run_id );
+		$running   = RunStoreInspector::state( $run_store, $run_id );
 		self::assertNotNull( $running );
 		$terminal_raw = $run_store->replace_if_state_matches( $run_id, $running, $running->with_status( RunStatus::Superseded )->with_pending( null ) );
 		self::assertIsString( $terminal_raw );
@@ -186,7 +187,7 @@ final class KindDeliveryTest extends TestCase {
 		$run_id = $this->enqueue_job();
 		$this->replace_run_field( $run_id, 'kind', $kind );
 
-		self::assertNull( $this->run_store()->get( $run_id ) );
+		self::assertNull( RunStoreInspector::state( $this->run_store(), $run_id ) );
 		$inspection = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( array(), $inspection['live'] );
 		self::assertSame( 1, $inspection['live_unreadable'] );
@@ -210,7 +211,7 @@ final class KindDeliveryTest extends TestCase {
 	public function test_handler_unowned_stage_drops_without_mutating_state(): void {
 		$run_id = $this->enqueue_job();
 		$this->replace_pending_stage( $run_id, 'continue' );
-		$state = $this->run_store()->get( $run_id );
+		$state = RunStoreInspector::state( $this->run_store(), $run_id );
 		self::assertNotNull( $state );
 
 		$before                       = $this->raw_run( $run_id );

@@ -74,7 +74,7 @@ final class ProceduralFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Clears request-local engine and WordPress state.
+	 * Clears the rig-owned WordPress state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

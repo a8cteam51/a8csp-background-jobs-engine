@@ -76,11 +76,17 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 *
 	 * @param   array<BackendInterface> $backends Backends in preference order; values are reindexed and keys are ignored.
 	 *
-	 * @throws  \InvalidArgumentException When no scheduling backend is supplied.
+	 * @throws  \InvalidArgumentException When no scheduling backend is supplied or one does not implement the backend contract.
 	 */
 	public function __construct( array $backends ) {
 		if ( array() === $backends ) {
 			throw new \InvalidArgumentException( 'SchedulerFacade requires at least one backend; pass the WP-Cron backend as the final fallback.' );
+		}
+
+		foreach ( $backends as $backend ) {
+			if ( ! $backend instanceof BackendInterface ) {
+				throw new \InvalidArgumentException( 'SchedulerFacade backends must implement BackendInterface.' );
+			}
 		}
 
 		$this->backends = \array_values( $backends );

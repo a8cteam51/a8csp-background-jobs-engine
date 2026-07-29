@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RunStoreInspector;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -366,7 +367,7 @@ final class ApiTest extends TestCase {
 		$this->rig->run_due();
 
 		$run_store = new RunStore( $identity, $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
-		$terminal  = $run_store->get( $target_run_id );
+		$terminal  = RunStoreInspector::state( $run_store, $target_run_id );
 		self::assertNotNull( $terminal );
 		self::assertSame( $seed_run_id, $terminal->previous_completed_run_id );
 		self::assertSame( array(), $terminal->effects );
@@ -384,7 +385,7 @@ final class ApiTest extends TestCase {
 		$intervening_hooks = \array_values( \array_filter( $completed_calls, static fn ( array $call ): bool => $intervening_run_id === $call['run_id'] ) );
 		self::assertCount( 1, $intervening_hooks );
 		self::assertSame( $seed_run_id, $intervening_hooks[0]['previous_completed_run_id'] );
-		self::assertNull( $run_store->get( $target_run_id ) );
+		self::assertNull( RunStoreInspector::state( $run_store, $target_run_id ) );
 	}
 
 	/**

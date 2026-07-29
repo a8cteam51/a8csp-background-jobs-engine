@@ -21,6 +21,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RunStoreInspector;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -142,7 +143,7 @@ final class LifecycleEffectsTest extends TestCase {
 	public function test_execute_claimed_transition_replays_non_failed_effects_without_failure_detail(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$running   = $run_store->get( self::RUN_ID );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal     = $running->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
@@ -150,7 +151,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$finished = $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
 
 		self::assertTrue( $finished );
-		self::assertNull( $run_store->get( self::RUN_ID ) );
+		self::assertNull( RunStoreInspector::state( $run_store, self::RUN_ID ) );
 		self::assertNull( $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY ) );
 		self::assertSame(
 			array(
@@ -166,7 +167,7 @@ final class LifecycleEffectsTest extends TestCase {
 	public function test_execute_claimed_transition_replays_failed_retention_with_resolved_failure_detail(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$running   = $run_store->get( self::RUN_ID );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal       = $running->with_status( RunStatus::Failed )->with_failed_attempts( 2 )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error(
 			array(
@@ -183,7 +184,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$finished = $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail );
 
 		self::assertTrue( $finished );
-		self::assertNull( $run_store->get( self::RUN_ID ) );
+		self::assertNull( RunStoreInspector::state( $run_store, self::RUN_ID ) );
 		$failed = $this->option( FailedRunStore::OPTION_PREFIX . self::IDENTITY );
 		self::assertIsArray( $failed );
 		$failed_entry = $failed[0] ?? null;
@@ -203,7 +204,7 @@ final class LifecycleEffectsTest extends TestCase {
 	public function test_failed_run_retention_failure_is_logged_and_later_effects_continue(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
+		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
 			$this->wpdb->before_next(
@@ -228,7 +229,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$finished = $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, $failure_detail );
 
 		self::assertFalse( $finished );
-		$remaining = $run_store->get( self::RUN_ID );
+		$remaining = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $remaining );
 		self::assertSame( RunStatus::Failed, $remaining->status );
 		self::assertSame( array( 'hooks', 'history' ), $remaining->effects );
@@ -255,7 +256,7 @@ final class LifecycleEffectsTest extends TestCase {
 	public function test_terminal_history_failure_keeps_the_claim_for_replay(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$state     = $run_store->get( self::RUN_ID );
+		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		$this->wpdb->before_next( 'update', static function (): void {} );
 		$this->wpdb->before_next( 'update', static function (): void {} );
@@ -275,7 +276,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$finished = $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal_state, $terminal_raw, $run_store, null );
 
 		self::assertFalse( $finished );
-		$remaining = $run_store->get( self::RUN_ID );
+		$remaining = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $remaining );
 		self::assertSame( RunStatus::Completed, $remaining->status );
 		self::assertSame( array( 'hooks' ), $remaining->effects );
@@ -306,14 +307,14 @@ final class LifecycleEffectsTest extends TestCase {
 	public function test_finish_claimed_transition_requires_every_effect_and_the_exact_latest_raw(): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$running   = $run_store->get( self::RUN_ID );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal  = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$claim_raw = $run_store->replace_if_state_matches( self::RUN_ID, $running, $terminal );
 		self::assertIsString( $claim_raw );
 
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( $this->identity, self::RUN_ID, $terminal, $claim_raw, $run_store ) );
-		self::assertEquals( $terminal, $run_store->get( self::RUN_ID ) );
+		self::assertEquals( $terminal, RunStoreInspector::state( $run_store, self::RUN_ID ) );
 		self::assertNull( $this->lock() );
 
 		$hooks = $run_store->append_terminal_effect( self::RUN_ID, $terminal, $claim_raw, 'hooks' );
@@ -323,9 +324,9 @@ final class LifecycleEffectsTest extends TestCase {
 		$complete = $run_store->append_terminal_effect( self::RUN_ID, $hooks['state'], $hooks['raw'], 'history' );
 		self::assertIsArray( $complete );
 		self::assertFalse( $this->terminal_effects->finish_claimed_transition( $this->identity, self::RUN_ID, $complete['state'], $hooks['raw'], $run_store ) );
-		self::assertEquals( $complete['state'], $run_store->get( self::RUN_ID ) );
+		self::assertEquals( $complete['state'], RunStoreInspector::state( $run_store, self::RUN_ID ) );
 		self::assertTrue( $this->terminal_effects->finish_claimed_transition( $this->identity, self::RUN_ID, $complete['state'], $complete['raw'], $run_store ) );
-		self::assertNull( $run_store->get( self::RUN_ID ) );
+		self::assertNull( RunStoreInspector::state( $run_store, self::RUN_ID ) );
 		self::assertSame( array(), $this->logger->records );
 	}
 
@@ -344,7 +345,7 @@ final class LifecycleEffectsTest extends TestCase {
 	public function test_terminal_states_fire_unchanged_hook_payloads( string $status ): void {
 		$this->prepare_run_action();
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$running   = $run_store->get( self::RUN_ID );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal = $running
 			->with_status( RunStatus::from( $status ) )
@@ -410,7 +411,7 @@ final class LifecycleEffectsTest extends TestCase {
 		);
 		$this->prepare_run_action( $start_args );
 		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
-		$running   = $run_store->get( self::RUN_ID );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );

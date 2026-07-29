@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
@@ -32,6 +33,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
+use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -161,36 +164,51 @@ final class Component extends AbstractComponent {
 	// region INHERITED METHODS
 
 	/**
-	 * Builds the engine graph and publishes its supported facades once.
+	 * Builds the engine graph and publishes its supported facades.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @phpstan-param array<BackendInterface>|null $backends
+	 *
+	 * @param   ClockInterface|null      $clock      Clock boundary, or null for the system clock.
+	 * @param   RandomizerInterface|null $randomizer Randomness boundary, or null for secure randomness.
+	 * @param   LoggerInterface|null     $logger     Log boundary, or null for the engine logger.
+	 * @param   \wpdb|null               $wpdb       Database boundary, or null for the WordPress global.
+	 * @param   array|null               $backends   Scheduler boundaries, or null for production backends.
+	 *
+	 * @throws  \InvalidArgumentException When the scheduler backend list is empty or contains an invalid backend.
+	 * @throws  \Throwable                When wiring fails; the in-flight guard is cleared before the failure escapes.
+	 *
 	 * @return  void
 	 */
 	#[\Override]
-	public function initialize(): void {
-		// The in-flight flag keeps a re-entrant resolve during wiring from building a second graph.
-		if ( null !== self::$engine || self::$booting ) {
+	public function initialize( ?ClockInterface $clock = null, ?RandomizerInterface $randomizer = null, ?LoggerInterface $logger = null, ?\wpdb $wpdb = null, ?array $backends = null ): void {
+		// Late maintenance synchronization reaches cron_schedules while hooks attach; re-entrant
+		// composition must retain the graph whose hook phase is still in flight.
+		if ( self::$booting ) {
 			return;
 		}
 
 		self::$booting = true;
 
 		try {
-			global $wpdb;
+			if ( null === $wpdb ) {
+				global $wpdb;
 
-			/**
-			 * WordPress database connection for the current site.
-			 *
-			 * @var \wpdb $wpdb
-			 */
+				/**
+				 * WordPress database connection for the current site.
+				 *
+				 * @var \wpdb $wpdb
+				 */
+			}
+
 			$option_rows          = new OptionRows( $wpdb );
 			$registry             = new JobRegistry();
-			$logger               = new EngineLogger();
+			$logger             ??= new EngineLogger();
 			$schedules            = new ScheduleRegistry( $option_rows, $logger );
-			$clock                = new SystemClock();
-			$randomizer           = new Randomizer();
+			$clock              ??= new SystemClock();
+			$randomizer         ??= new Randomizer();
 			$guard                = new OverlapGuard( $clock, $logger, $option_rows );
 			$overlap_identity     = new OverlapIdentity();
 			$stores               = new StoreFactory( $clock, $option_rows, $logger );
@@ -198,12 +216,11 @@ final class Component extends AbstractComponent {
 			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
 			$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 			$lock_repair          = new LockRepair( $option_rows, $guard, $stores, $lock_windows, $terminal_transitions );
-			$scheduler            = new SchedulerFacade(
-				array(
-					new ActionSchedulerBackend(),
-					new WPCronBackend(),
-				)
+			$backends           ??= array(
+				new ActionSchedulerBackend(),
+				new WPCronBackend(),
 			);
+			$scheduler            = new SchedulerFacade( $backends );
 			$delivery_scheduler   = new DeliveryScheduler( $scheduler, $clock );
 			$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 			$job_handler          = new JobKindHandler( $registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
@@ -218,10 +235,8 @@ final class Component extends AbstractComponent {
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
-			$dispatcher->register(
-				Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ),
-				JobDefinition::job( MaintenanceJob::NAME, new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger ) )
-			);
+			$maintenance_job      = new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger );
+			$dispatcher->register( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $maintenance_job ) );
 			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery, $logger );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
 			$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $option_rows, $lock_windows, $clock );
@@ -238,8 +253,10 @@ final class Component extends AbstractComponent {
 			self::$registry    = $registry;
 			self::$schedules   = $schedule_api;
 			self::$dispatcher  = $dispatcher;
-		} finally {
+		} catch ( \Throwable $throwable ) {
 			self::$booting = false;
+
+			throw $throwable;
 		}
 	}
 
@@ -261,13 +278,14 @@ final class Component extends AbstractComponent {
 			return;
 		}
 
-		$scheduler->register_hooks();
-		$action_deliveries->register_hooks();
-		$occurrence_delivery->register_hooks();
-
-		// Late maintenance synchronization invokes scheduler filters; publication keeps a client
-		// resolving from one of those filters on this same graph instead of rebuilding it recursively.
-		$maintenance_schedule->register_hooks();
+		try {
+			$scheduler->register_hooks();
+			$action_deliveries->register_hooks();
+			$occurrence_delivery->register_hooks();
+			$maintenance_schedule->register_hooks();
+		} finally {
+			self::$booting = false;
+		}
 	}
 
 	// endregion
@@ -294,7 +312,7 @@ final class Component extends AbstractComponent {
 		$dispatcher = self::$dispatcher;
 		$inspection = self::$inspection;
 		if ( null === self::$engine || null === $registry || null === $schedules || null === $dispatcher || null === $inspection ) {
-			throw new EngineUnavailableException( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully or after teardown; invoke engine operations from init or a later hook.' );
+			throw new EngineUnavailableException( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully; invoke engine operations from init or a later hook.' );
 		}
 
 		return new ScopeOperations( $scope, $schedules, $dispatcher, $inspection );
