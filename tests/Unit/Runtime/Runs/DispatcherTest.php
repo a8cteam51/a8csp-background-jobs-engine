@@ -1971,6 +1971,42 @@ final class DispatcherTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A takeover that loses the lock transfer restores the incumbent it had already superseded.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_lost_lock_transfer_restores_the_incumbent_it_superseded(): void {
+		$this->boot( OverlapPolicy::Replace );
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
+
+		// Let the incumbent supersession commit, then take the lock transfer away from the replacement.
+		$wpdb = $this->rig->wpdb();
+		$wpdb->before_next( 'update', static function (): void {} );
+		$wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $spy ): void {
+				$spy->script_result( 'update', 0 );
+			}
+		);
+		$this->rig->randomizer()->value = 43;
+
+		$replacement = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $replacement, ErrorCode::OverlapHeld );
+		$incumbent = $this->option( $this->run_option_name() );
+		self::assertIsArray( $incumbent );
+		// A takeover that lost may not leave the run it superseded terminal and unrunnable.
+		self::assertSame( 'running', $incumbent['status'] ?? null );
+		self::assertNotNull( $incumbent['pending'] ?? null );
+
+		$this->rig->run_due();
+		self::assertSame( array( self::ARGS ), $this->job->calls, 'The restored incumbent must still execute.' );
+	}
+
 	// endregion.
 
 	// region HELPERS.

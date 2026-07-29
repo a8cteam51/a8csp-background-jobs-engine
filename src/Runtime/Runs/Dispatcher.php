@@ -774,6 +774,7 @@ final readonly class Dispatcher {
 		}
 
 		$claimed_incumbent = null;
+		$superseded_here   = false;
 		if ( null !== $incumbent_snapshot && RunStatus::Running === $incumbent_snapshot['state']->status ) {
 			// This exact run-state CAS is the first linearization point: once it wins, the incumbent's in-flight completion CAS cannot commit after takeover.
 			$claimed_incumbent = $this->terminal_transitions->claim_superseded_run( $incumbent_run_id, $incumbent_snapshot['state'], $run_store, $incumbent_snapshot['raw'] );
@@ -807,6 +808,8 @@ final readonly class Dispatcher {
 					)
 				);
 			}
+
+			$superseded_here = true;
 		} elseif ( null !== $incumbent_snapshot && RunStatus::Superseded === $incumbent_snapshot['state']->status ) {
 			// An unresolved lock transfer leaves Superseded effects pending; a retry with a definite transfer owns their replay.
 			$claimed_incumbent = array(
@@ -837,6 +840,20 @@ final readonly class Dispatcher {
 			// A rival may advance the provisional state while the overlap transfer is in flight.
 			$run_store->delete_if_unchanged( $run_id, $state );
 			// The exact lock-transfer winner owns replay; competing snapshots cannot safely fire the same unmarked effects.
+			// Losing the transfer means the incumbent never left its lane, so the supersession written above is undone
+			// against the exact bytes it wrote. A row that moved since belongs to whoever moved it.
+			$restored = $superseded_here && null !== $incumbent_snapshot && null !== $claimed_incumbent
+				? $run_store->replace_if_raw_matches( $incumbent_run_id, $claimed_incumbent['raw'], $incumbent_snapshot['state'] )
+				: '';
+			if ( ! \is_string( $restored ) ) {
+				$this->logger->warning(
+					'A lost overlap transfer could not restore the run it superseded; maintenance owns its terminal effects.',
+					array(
+						'identity' => (string) $identity,
+						'run_id'   => $incumbent_run_id,
+					)
+				);
+			}
 
 			return new Failure(
 				new EngineError(
