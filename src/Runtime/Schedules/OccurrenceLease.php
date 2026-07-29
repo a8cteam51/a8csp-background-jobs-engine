@@ -14,7 +14,10 @@ use Psr\Clock\ClockInterface;
  * Serializes one schedule occurrence's read-decide-persist critical section.
  *
  * The sixty-second stale window bounds crash recovery around scheduler acceptance and the registry
- * CAS; accepted dispatches release before client hooks, and asynchronous job execution is never leased.
+ * CAS. Asynchronous job execution is never leased, but the section is not free of consumer code: the
+ * misfire-grace filters, the misfire-skipped actions on the skip path, and a declared overlap-key
+ * resolver all run inside it, so a consumer callback that outlives the window is what makes the
+ * occurrence reclaimable early.
  * A claim timestamped more than that window ahead of now is equally implausible under a sane clock and
  * is reclaimed too, so a forward clock jump inside the claim window cannot strand the schedule.
  *

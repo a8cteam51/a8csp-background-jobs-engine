@@ -17,7 +17,7 @@ A **Job** is one named unit of background work. A `JobDefinition` composes its n
 
 Consumers use four connected surfaces:
 
-- **The Engine handle** — `a8csp_bgje( $scope )` returns a scope-bound `Engine` with `jobs()`, `schedules()`, and `runs()` portals to capability managers.
+- **The Engine handle** — `a8csp_bgje( $scope )` returns a scope-bound `Engine` with `jobs()`, `schedules()`, and `runs()` capability managers.
 - **The public models and execution roles** — compose work with `JobDefinition`, `JobKind`, and `JobOptions`; implement `JobExecutionInterface` or `ChunkedJobExecutionInterface`; declare schedules with `Schedule`, `Recurrence`, and `CatchUpPolicy`; callbacks depend on `RunContextInterface` or `ChunkedRunContextInterface`; run-producing commands return `Run` snapshots, terminal failures use `RunFailure`, and verb failures return `WP_Error`.
 - **The procedural aliases** — nine verb-noun `a8csp_bgje_*()` functions take `$scope` first, accept the same `JobDefinition` registration value as the Jobs manager and the same variadic `Schedule` values as the Schedules manager, and invoke the capability-manager verbs.
 - **The lifecycle hooks** — observe runs through the `a8csp_bgje/*` actions.
@@ -43,11 +43,34 @@ composer install --no-dev
 
 Action Scheduler is optional and preferred when ready; when absent, the engine runs on WP-Cron alone. **Action Scheduler 4.0.0 is the supported floor.** Chunked Jobs schedule each successor as a unique action that differs from the running one only in its sequence argument, and Action Scheduler made unique scheduling args-aware in 4.0.0. An older initialized copy is treated as unusable rather than trusted: the engine runs on WP-Cron and reports the unsupported version in its scheduling diagnostics. Action Scheduler elects the highest version among every bundled copy on the site, so the deciding version is not necessarily the one shipped beside any single plugin.
 
+## Depending on the engine
+
+The engine is a separate plugin, and `a8csp_bgje()` is a plain function: if the engine is deactivated, every consumer call is a fatal error on `init`. Declare the dependency in your plugin header so WordPress enforces it:
+
+```php
+/**
+ * Plugin Name: My Plugin
+ * Requires Plugins: a8csp-background-jobs-engine
+ */
+```
+
+WordPress refuses to activate your plugin without the engine and blocks deactivating the engine while you depend on it. If the dependency is genuinely optional, guard instead of declaring it:
+
+```php
+if ( function_exists( 'a8csp_bgje' ) ) {
+	a8csp_bgje( 'my-plugin' )->jobs()->register( $definition );
+}
+```
+
+Never define `a8csp_bgje()` yourself as a fallback; a second definition of the same name is a fatal error the moment both plugins load.
+
 ## When to call the engine
 
 `a8csp_bgje( $scope )` constructs a handle lazily and infallibly. Capability-manager verb calls belong on the WordPress `init` hook or later. Invalid scopes and unavailable engine state return `WP_Error` from the first verb instead of failing handle construction. The request that activates the engine stays dormant until the next request.
 
 Register work and synchronize schedules from `init` **on every request**: registration is per-request, and schedule synchronization treats the supplied schedules as the scope's complete declaration. Prefer `init` priority `2` or later so Action Scheduler's `init:1` store initialization has run; synchronizing before it routes that request's occurrences to WP-Cron.
+
+Register unconditionally. A delivery that arrives on a request where its definition was never registered fails that run terminally with `unknown_job` and consumes no automatic attempt, because the engine cannot distinguish work you removed from work you forgot to declare. Guarding registration behind `is_admin()`, a page check, or a capability check is the usual way this happens, and it fails intermittently rather than consistently: background deliveries run in whichever request context the backend chooses, including admin-ajax.
 
 Pass your plugin's lowercase slug as the scope (matching `[a-z0-9][a-z0-9-]*`, at most 32 bytes, never starting with the reserved `a8csp-bgje` prefix). Job, Chunked Job, and Schedule names match `[a-z0-9_-]+` and are at most 64 bytes.
 
@@ -152,7 +175,7 @@ register_deactivation_hook( __FILE__, static function (): void {
 } );
 ```
 
-An unanchored schedule first runs one interval after synchronization. An anchored schedule uses the first strictly future point on its UTC phase grid. There is no first-run timestamp field. Omitting a schedule from the next complete declaration removes it; synchronizing with no schedules removes all schedules for the scope without cancelling admitted runs. If the plugin is inactive, `wp a8csp-bgje schedules remove my-plugin --yes` performs the same schedule convergence.
+An unanchored schedule first runs one interval after synchronization. An anchored schedule uses the first strictly future point on its UTC phase grid. There is no first-run timestamp field. Omitting a schedule from the next complete declaration removes it; synchronizing with no schedules removes all schedules for the scope without cancelling admitted runs. Under WP-Cron, removal reaches events in WordPress's own `cron` option; a replacement cron store installed through the `pre_*` cron filters keeps its own events, and the engine reports removal as complete without seeing them. If the plugin is inactive, `wp a8csp-bgje schedules remove my-plugin --yes` performs the same schedule convergence.
 
 ### 2. A one-shot callable, dispatched asynchronously
 
@@ -439,7 +462,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 
 | Type | Public shape |
 | --- | --- |
-| `Engine` | Scope-bound readonly handle returned by `a8csp_bgje()` with `jobs()`, `schedules()`, and `runs()` portals. |
+| `Engine` | Scope-bound readonly handle returned by `a8csp_bgje()` with its `jobs()`, `schedules()`, and `runs()` capability managers. |
 | `Jobs` | Scope-bound readonly manager for registration, immediate dispatch, and absolute-time dispatch. |
 | `Schedules` | Scope-bound readonly manager for schedule synchronization and immediate dispatch. |
 | `Runs` | Scope-bound readonly manager for run inspection, retry, and cancellation. |
@@ -455,7 +478,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `RunId` | Final readonly stringable wrapper for a canonical run identifier; `from( string )` requires canonical input, `tryFrom( string )` returns null for another shape, and string casting returns the wire value. |
 | `RunFailure` | Readonly value with `string $identity`, `RunId $run_id`, `int $attempts`, `RunFailureStage $stage`, `ErrorCode $code`, `string $summary`, and generic diagnostic payload `?array $details`. |
 | `RunFailureStage` | Final readonly interned open string-backed stage carried by `RunFailure::$stage`; its grammar, engine stages, and third-party keys are described below this table. |
-| `RetryPolicy` | Readonly value constructed from `max_attempts`, `base_delay`, `multiplier`, and `max_delay`; defaults are 3, `MINUTE_IN_SECONDS`, 2, and `HOUR_IN_SECONDS`. `max_attempts` includes the initial attempt. Attempts, base delay, and multiplier are at least 1, and maximum delay is at least the base delay. It exposes `delay_ceiling_for_attempt( int $attempt ): int`. |
+| `RetryPolicy` | Readonly value constructed from `max_attempts`, `base_delay`, `multiplier`, and `max_delay`; defaults are 3, `MINUTE_IN_SECONDS`, 2, and `HOUR_IN_SECONDS`. `max_attempts` includes the initial attempt. It bounds consecutive failures at one point of a run rather than failures across the whole run: a successful chunk or queue generation clears the consumed attempts, so a chunked job allows this many consecutive failures at each chunk. Attempts, base delay, and multiplier are at least 1, and maximum delay is at least the base delay. It exposes `delay_ceiling_for_attempt( int $attempt ): int`. |
 | `RunContextInterface` | `get_run_id(): RunId` and `get_start_args(): array`. |
 | `RunContext` | Final context constructed with `RunId $run_id` and `array $start_args`; implements `RunContextInterface`. |
 | `ChunkedRunContextInterface` | Extends `RunContextInterface` with `append_chunk( array $chunk_args ): void` and `prepend_chunk( array $chunk_args ): void`. |
@@ -475,6 +498,8 @@ The backed enums are:
 | `ErrorCode` | `InvalidArgument = 'invalid_argument'`, `AlreadyRegistered = 'already_registered'`, `EngineUnavailable = 'engine_unavailable'`, `UnknownJob = 'unknown_job'`, `UnknownSchedule = 'unknown_schedule'`, `OverlapHeld = 'overlap_held'`, `PayloadRejected = 'payload_rejected'`, `BackendUnavailable = 'backend_unavailable'`, `BackendRejected = 'backend_rejected'`, `StorageFailed = 'storage_failed'`, `RunNotRetained = 'run_not_retained'`, `RunNotCancellable = 'run_not_cancellable'`, `UnsupportedOperation = 'unsupported_operation'`, `ExecutionFailed = 'execution_failed'` |
 
 Consumers treat unknown backing values as generic failures for `ErrorCode` and as generic non-terminal or terminal states, as appropriate, for `RunStatus`.
+
+`RunStatus` has no pending case. `Running` means admitted and not yet terminal, so a run dispatched for a future time reports `running` from admission onward, including while it waits for that time to arrive.
 
 `RunFailureStage` is a final, interned, open string-backed value. `from( string )` wraps a lowercase snake key with at most one dot qualifier and throws `\ValueError` for malformed input; `tryFrom( string )` returns null instead. Engine stages are available through `execution()`, `queue_generation()`, `crash_reclamation()`, and `scheduling()`. Grammar-valid third-party stages such as `acme.export_sync` remain intact.
 
@@ -512,7 +537,7 @@ Expiry of the credit and lock-staleness window does not interrupt a handler. Cra
 - `generate_queue( array $start_args, RunContextInterface $context ): iterable`
 - `process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void`
 
-The effective `JobOptions::$max_runtime` ceiling, including its 21,600-second (6-hour) clamp, applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution. Each chunk accepts at most 8,192 JSON bytes. The persisted queue accepts at most 983,616 serialization bytes: the 1,000,000-byte complete active-run row ceiling minus a 16,384-byte row-envelope reserve. At admission, a complete active-run row above 1,000,000 persisted serialization bytes is refused with `payload_rejected`.
+The effective `JobOptions::$max_runtime` ceiling, including its 21,600-second (6-hour) clamp, applies independently to one `generate_queue()` or `process_chunk()` invocation, not the whole run. The engine materializes the initial iterable before execution. Each chunk accepts at most 8,192 JSON bytes. The persisted queue accepts at most 983,616 serialization bytes: the 1,000,000-byte complete active-run row ceiling minus a 16,384-byte row-envelope reserve. A complete active-run row above 1,000,000 persisted serialization bytes is refused with `payload_rejected`. That check covers every write while the run is active, not admission alone, so a queue within its own ceiling can still be refused once the rest of the row is counted with it.
 
 Queue mutations commit only after a normal `process_chunk()` return and are discarded when it throws. An executing-state process death terminally fails the run as `RunFailureStage::crash_reclamation()`, preserving the in-flight chunk in `RunFailure::$details['failed_chunk']`; `runs()->retry_failed()` starts a fresh run from the retained arguments and retained priority without resolving priority again. A retained entry without a priority field uses engine default 10. Automatic redelivery covers non-executing pending, scheduled-retry, and continuation states.
 
@@ -550,7 +575,7 @@ Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guar
 
 ## Admission, overlap, and catch-up policies
 
-Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
+Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. A `Replace` dispatch that loses its lock transfer returns `overlap_held` after the incumbent is already superseded, so treat that failure as "retry this dispatch" rather than as "nothing happened"; if nothing retries, maintenance replays the supersession and releases the lock. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
 
 | Overlap | `run_once` catch-up (default) | `skip` catch-up |
 | --- | --- | --- |
@@ -615,7 +640,7 @@ Raw throwable values held directly in context arrays never reach listeners at an
 
 Priority uses the range in [Consumer limits](#consumer-limits). The resolution ladder is: explicit dispatch argument > schedule value > job default > engine default 10. The first two rungs belong to imperative and scheduled admission respectively, so one resolution evaluates only its applicable rung. Manual `retry_failed()` is the exception: it replays the retained failed run's admitted priority without resolving the ladder again; a retained entry without a priority field uses engine default 10. Action Scheduler honors the resolved value; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
 
-Priority is absent from the schedule fingerprint, so an omitted value and an explicit `10` hash identically. For an already-converged chain with exactly one tick, a priority-only declaration edit performs no scheduling-backend write and preserves the recurring chain, its next-due anchor, and its misfire and overlap counters. A successful sync independently resets inactive-declaration episode tracking. The recurring chain stores no priority; occurrence admission reads `Schedule::$priority` from the current request's declaration. Under the per-request declaration contract, the edited value governs the next admitted occurrence's delivery. The unchanged-fingerprint census still repairs a missing or duplicated chain, and a chain firing at a cadence the declaration no longer asks for: scheduling retains an existing chain rather than rewriting it, so a chain created against a superseded declaration would otherwise keep its own cadence while every fingerprint and count agreed.
+Priority is absent from the schedule fingerprint, so an omitted value and an explicit `10` hash identically. For an already-converged chain with exactly one tick, a priority-only declaration edit performs no scheduling-backend write and preserves the recurring chain, its next-due anchor, and its misfire and overlap counters. A successful sync also resets the undeclared-occurrence counters the engine keeps for registrations that earlier syncs stopped declaring. The recurring chain stores no priority; occurrence admission reads `Schedule::$priority` from the current request's declaration. Under the per-request declaration contract, the edited value governs the next admitted occurrence's delivery. The unchanged-fingerprint census still repairs a missing or duplicated chain, and a chain firing at a cadence the declaration no longer asks for: scheduling retains an existing chain rather than rewriting it, so a chain created against a superseded declaration would otherwise keep its own cadence while every fingerprint and count agreed.
 
 ## Consumer limits
 

@@ -8,7 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Scope-bound public service for supported job operations.
+ * Scope-bound capability manager for supported job operations.
  *
  * Scope validation and engine resolution remain lazy until a verb is invoked. Every expected
  * validation, registration, readiness, or engine failure crosses this boundary as a `WP_Error`.

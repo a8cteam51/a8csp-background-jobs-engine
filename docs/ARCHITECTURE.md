@@ -59,8 +59,17 @@ every surviving component is initialized before any hook can fire.
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
   `Locks/` (CAS-fenced execution-overlap storage, the single overlap-identity authority that admission,
   retry, and inspection all resolve through, persisted-lane inspection, and explicit malformed-lane
-  repair), `Runs/`, `Storage/` (option-row stores with CAS fencing), `Maintenance/` (bounded sweeps
-  on an hourly recurrence), `Logging/`, and `Error/` each own one sub-capability.
+  repair), `Runs/` (admission, delivery claiming, kind handlers, the run and failed-run stores, and
+  the terminal transitions and effects that follow them), `Storage/` (option-row stores with CAS
+  fencing), `Maintenance/` (bounded sweeps on an hourly recurrence), `Logging/`, and `Error/` each
+  own one sub-capability.
+- `src/Runtime/Runs/` is the largest subtree, and one run's fate crosses five of its files in a fixed
+  order: `Dispatcher.php` admits work and resolves overlap, `RunTransitions.php` owns every terminal
+  compare-and-swap, `FailureLifecycle.php` classifies a failure and chooses retry or terminalization,
+  `LifecycleEffects.php` publishes the hooks and history a terminal state owes, and
+  `RunReconciliation.php` repairs runs whose delivery or liveness stopped. Admission, delivery,
+  terminalization, and effects are separate because each is a distinct compare-and-swap that can lose
+  to a rival independently.
 - `src/CLI/` registers the `wp a8csp-bgje` command surface, including the operator-only
   malformed-lock repair boundary, gated on WP-CLI.
 - `languages/` contains the POT generated from the plugin's strings; the release workflow

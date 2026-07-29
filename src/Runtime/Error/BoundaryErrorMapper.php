@@ -33,6 +33,10 @@ final class BoundaryErrorMapper {
 	 * for a literal key understates the live set. Logger context follows its own normalization and
 	 * never consults this list.
 	 *
+	 * Adding a diagnostic field anywhere upstream means adding it here too. Nothing forces the pair:
+	 * an unlisted key is dropped silently, the failure still reaches the consumer, and no gate reports
+	 * the missing detail.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

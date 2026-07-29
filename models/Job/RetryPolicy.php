@@ -21,7 +21,9 @@ final readonly class RetryPolicy {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $max_attempts Total permitted attempts, including the initial attempt.
+	 * @param   int $max_attempts Permitted consecutive attempts at one point of a run, including the initial attempt. A
+	 *                            success clears the attempts consumed so far, so a chunked job allows this many
+	 *                            consecutive failures at each chunk rather than across the whole run.
 	 * @param   int $base_delay   First retry's maximum delay in seconds.
 	 * @param   int $multiplier   Exponential delay multiplier.
 	 * @param   int $max_delay    Maximum delay in seconds.
