@@ -96,7 +96,7 @@ final class LockRepairTest extends TestCase {
 		$this->rig      = EngineRig::set_up( self::NOW );
 		$this->identity = Identity::compose( 'repair-tests', 'reports' );
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
-		$guard          = new OverlapGuard( $this->rig->clock(), $this->rig->logger(), $this->rows );
+		$guard          = new OverlapGuard( $this->rig->clock(), $this->rig->logger(), $this->rows, new LockWindows( $this->rig->clock(), $this->rig->logger() ) );
 		$this->stores   = new StoreFactory( $this->rig->clock(), $this->rows, $this->rig->logger() );
 		$lock_windows   = new LockWindows( $this->rig->clock(), $this->rig->logger() );
 		$effects        = new LifecycleEffects( $guard, $this->stores, $this->rig->logger() );

@@ -174,7 +174,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->registry             = new JobRegistry();
 		$this->wpdb                 = new WpdbLockSpy();
 		$this->rows                 = new OptionRows( $this->wpdb );
-		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows );
+		$guard                      = new OverlapGuard( $this->clock, $this->logger, $this->rows, new LockWindows( $this->clock, $this->logger ) );
 		$overlap_identity           = new OverlapIdentity();
 		$stores                     = new StoreFactory( $this->clock, $this->rows, $this->logger );
 		$lock_windows               = new LockWindows( $this->clock, $this->logger );
@@ -185,7 +185,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->handler              = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
 		$this->handlers             = array( $this->handler->key() => $this->handler );
 
-		$this->dispatcher = new Dispatcher( $this->registry, $this->handlers, $this->backend, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $this->randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
+		$this->dispatcher = new Dispatcher( $this->registry, $this->handlers, $this->backend, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 	}
 
 	// endregion.

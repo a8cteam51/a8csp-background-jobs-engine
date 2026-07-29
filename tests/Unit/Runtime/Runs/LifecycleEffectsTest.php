@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -128,7 +129,7 @@ final class LifecycleEffectsTest extends TestCase {
 		$this->logger   = new RecordingLogger();
 		$this->wpdb     = new WpdbLockSpy();
 		$rows           = new OptionRows( $this->wpdb );
-		$this->guard    = new OverlapGuard( $this->clock, $this->logger, $rows );
+		$this->guard    = new OverlapGuard( $this->clock, $this->logger, $rows, new LockWindows( $this->clock, $this->logger ) );
 
 		$this->stores           = new StoreFactory( $this->clock, $rows, $this->logger );
 		$this->terminal_effects = new LifecycleEffects( $this->guard, $this->stores, $this->logger );
@@ -511,7 +512,7 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @return  void
 	 */
 	private function prepare_run_action( array $start_args = self::ARGS ): void {
-		$claim = $this->guard->claim( $this->identity, self::ARGS_HASH, self::RUN_ID, 900 );
+		$claim = $this->guard->claim( $this->identity, self::ARGS_HASH, self::RUN_ID );
 		self::assertSame( LockClaimOutcome::Claimed, $claim->outcome );
 
 		$run_store = $this->stores->run_store( $this->identity );

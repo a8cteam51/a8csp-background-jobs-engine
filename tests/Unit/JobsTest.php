@@ -57,6 +57,8 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 	public function test_dispatch_propagates_unexpected_logic_exceptions(): void {
 		$jobs = \a8csp_bgje( self::SCOPE )->jobs();
 		self::assertTrue( $jobs->register( self::job( 'job' ) ) );
+		// The window is only resolved to grade an incumbent, so the lane must already be held.
+		self::assertNotInstanceOf( \WP_Error::class, $jobs->dispatch( 'job' ) );
 
 		$filter = static function ( int $staleness ): int {
 			if ( 0 < $staleness ) {

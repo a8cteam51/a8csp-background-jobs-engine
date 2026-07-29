@@ -666,7 +666,7 @@ final class CleanupIntentsTest extends TestCase {
 	private function new_delivery( ScheduleRegistry $registry, ?SchedulerFacade $scheduler = null ): OccurrenceDelivery {
 		$job_registry = new JobRegistry();
 		$job_registry->register( Identity::compose( self::SCOPE, self::JOB ), ( new RecordingJob( self::JOB ) )->definition() );
-		$guard                 = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
+		$guard                 = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ), new LockWindows( $this->clock, $this->logger ) );
 		$overlap_identity      = new OverlapIdentity();
 		$stores                = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
 		$randomizer            = new RecordingRandomizer( 42 );
@@ -682,7 +682,7 @@ final class CleanupIntentsTest extends TestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher            = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $randomizer, $this->logger, $lock_windows, $terminal_transitions );
+		$dispatcher            = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $randomizer, $this->logger, $terminal_transitions );
 		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
 
 		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $this->cleanup_intents, $this->clock, $this->logger );

@@ -166,7 +166,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->registry->register( $this->identity, $this->job->definition() );
 		$this->backend              = new RecordingBackend();
 		$option_rows                = new OptionRows( $this->wpdb );
-		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ) );
+		$guard                      = new OverlapGuard( $this->clock, $this->logger, new OptionRows( $this->wpdb ), new LockWindows( $this->clock, $this->logger ) );
 		$overlap_identity           = new OverlapIdentity();
 		$this->stores               = new StoreFactory( $this->clock, $option_rows, $this->logger );
 		$randomizer                 = new RecordingRandomizer( 42 );
@@ -182,7 +182,7 @@ final class RunReconciliationTest extends TestCase {
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$this->lifecycle_deliveries = new ActionDeliveries( $this->handlers, $this->stores, $this->terminal_transitions );
-		$this->dispatcher           = new Dispatcher( $this->registry, $this->handlers, $this->backend, $delivery_scheduler, $guard, $overlap_identity, $this->stores, $this->clock, $randomizer, $this->logger, $lock_windows, $this->terminal_transitions );
+		$this->dispatcher           = new Dispatcher( $this->registry, $this->handlers, $this->backend, $delivery_scheduler, $guard, $overlap_identity, $this->stores, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
 		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->handlers, $delivery_scheduler );
 		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
 		$this->maintenance          = new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );

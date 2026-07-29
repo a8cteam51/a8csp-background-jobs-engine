@@ -236,7 +236,7 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * A slow staleness filter must not admit a run whose liveness generation already predates its own window.
+	 * A slow staleness filter must not stamp a superseding run with a generation that predates it.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -244,6 +244,10 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_dispatch_stamps_liveness_after_the_admission_filters_run(): void {
+		$this->boot( OverlapPolicy::Replace );
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
+
+		// Grading the incumbent applies consumer filters, and the successor must be stamped after they run.
 		$clock = $this->rig->clock();
 		\add_filter(
 			'a8csp_bgje/lock_staleness',
@@ -253,10 +257,10 @@ final class DispatcherTest extends TestCase {
 				return $staleness;
 			}
 		);
+		$this->rig->randomizer()->value = 43;
 
-		$result = $this->client->dispatch( self::NAME, self::ARGS );
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
 
-		self::assertInstanceOf( Success::class, $result );
 		$lock = null;
 		foreach ( $this->rig->wpdb()->rows as $name => $raw ) {
 			if ( \str_contains( $name, 'overlap_lock' ) ) {
@@ -265,11 +269,7 @@ final class DispatcherTest extends TestCase {
 			}
 		}
 		self::assertIsArray( $lock );
-		// The filter advanced the clock, so the admitted lock carries the post-filter generation.
 		self::assertSame( self::NOW + 10, $lock['heartbeat_at'] ?? null );
-		$run = $this->option( $this->run_option_name() );
-		self::assertIsArray( $run );
-		self::assertSame( self::NOW + 10, $run['heartbeat_at'] ?? null );
 	}
 
 	/**
@@ -1117,6 +1117,8 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_dispatch_passes_the_documented_lock_staleness_filter_arguments(): void {
+		// The window is only resolved to grade an incumbent, so the lane must already be held.
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
 		$filter_args = null;
 		$this->set_filter_value(
 			'a8csp_bgje/lock_staleness/' . self::IDENTITY,
@@ -1132,7 +1134,8 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		self::assertInstanceOf( Success::class, $result );
+		// The incumbent holds the lane, which is the state that consults the window.
+		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame(
 			array(
 				'arity' => 1,

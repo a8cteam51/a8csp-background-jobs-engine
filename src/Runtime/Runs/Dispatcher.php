@@ -20,7 +20,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
@@ -85,7 +84,6 @@ final readonly class Dispatcher {
 	 * @param   ClockInterface      $clock                  Timestamp source.
 	 * @param   RandomizerInterface $randomizer             Run identifier randomness.
 	 * @param   LoggerInterface     $logger                 Log event sink.
-	 * @param   LockWindows         $lock_windows           Filterable run-lock timing policy.
 	 * @param   RunTransitions      $terminal_transitions   Fenced terminal-write coordinator.
 	 */
 	public function __construct(
@@ -99,7 +97,6 @@ final readonly class Dispatcher {
 		private ClockInterface $clock,
 		private RandomizerInterface $randomizer,
 		private LoggerInterface $logger,
-		private LockWindows $lock_windows,
 		private RunTransitions $terminal_transitions,
 	) {}
 
@@ -432,11 +429,10 @@ final readonly class Dispatcher {
 		}
 
 		$latest_pointer = $this->stores->latest_run_pointer( $identity );
-		// Resolving the window runs consumer filters of unbounded duration. Reading the clock afterwards keeps the
-		// admitted run from being born older than its own staleness window.
-		$staleness  = $this->lock_windows->lock_staleness( $identity, $run_id );
-		$created_at = $this->clock->now()->getTimestamp();
-		$claim      = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $staleness, $created_at );
+		// The guard decides liveness against the incumbent's own window and reports the generation it decided
+		// under, which is what the admitted run is stamped with.
+		$claim      = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
+		$created_at = $claim->claimed_at ?? $created_at;
 		if (
 			LockClaimOutcome::Malformed === $claim->outcome
 			|| LockClaimOutcome::Indeterminate === $claim->outcome
@@ -618,9 +614,8 @@ final readonly class Dispatcher {
 		$run_id = RunIdentity::generate( $now, $this->randomizer );
 		// A resolver failure has no trustworthy client overlap lane, so its diagnostic run cannot contend with working admissions.
 		$args_hash = $this->salted_args_hash( $args_hash, $run_id );
-		$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
-		$now       = $this->clock->now()->getTimestamp();
-		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $staleness, $now );
+		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
+		$now       = $claim->claimed_at ?? $now;
 		if (
 			LockClaimOutcome::Malformed === $claim->outcome
 			|| LockClaimOutcome::Indeterminate === $claim->outcome
