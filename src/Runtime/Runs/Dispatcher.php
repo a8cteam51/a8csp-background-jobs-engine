@@ -432,7 +432,11 @@ final readonly class Dispatcher {
 		}
 
 		$latest_pointer = $this->stores->latest_run_pointer( $identity );
-		$claim          = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ), $created_at );
+		// Resolving the window runs consumer filters of unbounded duration. Reading the clock afterwards keeps the
+		// admitted run from being born older than its own staleness window.
+		$staleness  = $this->lock_windows->lock_staleness( $identity, $run_id );
+		$created_at = $this->clock->now()->getTimestamp();
+		$claim      = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $staleness, $created_at );
 		if (
 			LockClaimOutcome::Malformed === $claim->outcome
 			|| LockClaimOutcome::Indeterminate === $claim->outcome
@@ -614,7 +618,9 @@ final readonly class Dispatcher {
 		$run_id = RunIdentity::generate( $now, $this->randomizer );
 		// A resolver failure has no trustworthy client overlap lane, so its diagnostic run cannot contend with working admissions.
 		$args_hash = $this->salted_args_hash( $args_hash, $run_id );
-		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ) );
+		$staleness = $this->lock_windows->lock_staleness( $identity, $run_id );
+		$now       = $this->clock->now()->getTimestamp();
+		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $staleness, $now );
 		if (
 			LockClaimOutcome::Malformed === $claim->outcome
 			|| LockClaimOutcome::Indeterminate === $claim->outcome
@@ -626,7 +632,7 @@ final readonly class Dispatcher {
 		}
 
 		$run_store = $this->stores->run_store( $identity );
-		$state     = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), priority: $priority );
+		$state     = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), priority: $priority, at: $now );
 		if ( $state instanceof Failure ) {
 			$this->overlap_guard->release( $identity, $args_hash, $run_id );
 

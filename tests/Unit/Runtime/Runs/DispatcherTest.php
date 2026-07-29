@@ -236,6 +236,43 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * A slow staleness filter must not admit a run whose liveness generation already predates its own window.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_stamps_liveness_after_the_admission_filters_run(): void {
+		$clock = $this->rig->clock();
+		\add_filter(
+			'a8csp_bgje/lock_staleness',
+			static function ( mixed $staleness ) use ( $clock ): mixed {
+				$clock->timestamp += 10;
+
+				return $staleness;
+			}
+		);
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		$lock = null;
+		foreach ( $this->rig->wpdb()->rows as $name => $raw ) {
+			if ( \str_contains( $name, 'overlap_lock' ) ) {
+				$lock = \maybe_unserialize( $raw );
+				break;
+			}
+		}
+		self::assertIsArray( $lock );
+		// The filter advanced the clock, so the admitted lock carries the post-filter generation.
+		self::assertSame( self::NOW + 10, $lock['heartbeat_at'] ?? null );
+		$run = $this->option( $this->run_option_name() );
+		self::assertIsArray( $run );
+		self::assertSame( self::NOW + 10, $run['heartbeat_at'] ?? null );
+	}
+
+	/**
 	 * Imperative admission resolves an explicit priority before the job and engine defaults.
 	 *
 	 * @since   1.0.0
