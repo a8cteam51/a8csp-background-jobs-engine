@@ -343,7 +343,7 @@ final readonly class Dispatcher {
 			return new Failure( $cancellation_error );
 		}
 
-		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->scheduler->unschedule_group( (string) $identity . '|' . $run_id ) );
+		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->scheduler->unschedule_run( ActionDeliveries::DELIVER_HOOK, (string) $identity, $run_id ) );
 		if ( $cancelled instanceof Failure ) {
 			return $cancelled;
 		}

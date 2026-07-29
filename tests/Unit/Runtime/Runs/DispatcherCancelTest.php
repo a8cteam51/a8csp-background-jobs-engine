@@ -112,14 +112,14 @@ final class DispatcherCancelTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * A pending job cancels through public Results, hooks, and one group clear.
+	 * A pending job cancels through public Results, hooks, and one run clear.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_pending_job_records_the_outcome_hooks_and_group_clear(): void {
+	public function test_cancel_pending_job_records_the_outcome_hooks_and_run_clear(): void {
 		$run_id = $this->enqueue_job();
 		$this->reset_backend_observations();
 
@@ -136,10 +136,10 @@ final class DispatcherCancelTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_finishes_after_a_group_clear_failure(): void {
+	public function test_cancel_finishes_after_a_run_clear_failure(): void {
 		$run_id = $this->enqueue_job();
 		$this->reset_backend_observations();
-		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair scheduling.' ) );
+		$this->rig->backend()->results['unschedule_run'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair scheduling.' ) );
 
 		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
@@ -177,7 +177,7 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertCount( 1, $records );
 		$record = $records[0];
 		self::assertSame( 'error', $record['level'] ?? null );
-		$this->assert_group_clear( self::JOB_IDENTITY . '|' . $run_id );
+		$this->assert_run_clear( self::JOB_IDENTITY, $run_id );
 	}
 
 	/**
@@ -273,7 +273,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
-		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ) );
 	}
 
@@ -303,7 +303,7 @@ final class DispatcherCancelTest extends TestCase {
 		$error = $this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertStringContainsString( 're-inspect the run before retrying', $error->message );
 		self::assertSame( self::NOW + 1, $this->decoded_job_state()['heartbeat_at'] ?? null );
-		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 	}
 
 	/**
@@ -373,7 +373,7 @@ final class DispatcherCancelTest extends TestCase {
 		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		self::assertTrue( $this->decoded_job_state()['executing'] ?? false );
 		self::assertSame( array(), $this->job->calls );
-		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 	}
 
 	/**
@@ -443,7 +443,7 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertSame( 'job', $error->context['kind'] ?? null );
 		self::assertStringContainsString( 'is not registered', $error->message );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
-		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ) );
 	}
 
@@ -467,7 +467,7 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertSame( 'chunked_job', $error->context['kind'] ?? null );
 		self::assertStringContainsString( 'persisted as "chunked_job"', $error->message );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
-		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ) );
 	}
 
@@ -505,7 +505,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
 		$this->rig->backend()->assert_scheduled( self::CHUNKED_JOB_IDENTITY );
-		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 	}
 
 	/**
@@ -564,7 +564,7 @@ final class DispatcherCancelTest extends TestCase {
 		$second = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_failure_code( $second, ErrorCode::RunNotRetained );
-		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 		$this->rig->assert_cancelled();
 	}
 
@@ -593,7 +593,7 @@ final class DispatcherCancelTest extends TestCase {
 
 		$this->assert_failure_code( $result, ErrorCode::StorageFailed );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
-		self::assertSame( array(), $this->backend_calls( 'unschedule' ) );
+		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 	}
 
 	// endregion.
@@ -681,25 +681,33 @@ final class DispatcherCancelTest extends TestCase {
 		self::assertSame( $run_id, (string) $public_run_id );
 		self::assertSame( array( array( $public_run_id, self::ARGS ) ), $named_cancelled );
 		self::assertSame( array( array( $identity, $public_run_id, self::ARGS ) ), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled' ) );
-		$this->assert_group_clear( $identity . '|' . $run_id );
+		$this->assert_run_clear( $identity, $run_id );
 		$this->rig->assert_cancelled();
 	}
 
 	/**
-	 * Asserts every ready backend received the same group-only clear.
+	 * Asserts every ready backend received the same run clear.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $group Per-run scheduler group.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  void
 	 */
-	private function assert_group_clear( string $group ): void {
+	private function assert_run_clear( string $identity, string $run_id ): void {
 		foreach ( $this->rig->backends() as $backend ) {
-			$calls = \array_values( \array_filter( $backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
+			$calls = \array_values( \array_filter( $backend->calls, static fn ( array $call ): bool => 'unschedule_run' === $call['verb'] ) );
 			self::assertCount( 1, $calls );
-			self::assertSame( $group, $calls[0]['args']['group'] ?? null );
+			self::assertSame(
+				array(
+					'hook'     => 'a8csp_bgje/internal/deliver',
+					'identity' => $identity,
+					'run_id'   => $run_id,
+				),
+				$calls[0]['args']
+			);
 		}
 	}
 

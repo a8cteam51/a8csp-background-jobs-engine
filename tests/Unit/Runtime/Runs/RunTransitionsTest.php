@@ -289,7 +289,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertIsString( $replacement_run_id );
 		self::assertSame( $replacement_run_id, $this->lock()['run_id'] ?? null );
 		$replacement_action_args = array( self::IDENTITY, $replacement_run_id, $this->action_sequence( $replacement_run_id ) );
-		self::assertSame( 1, $this->backend->scheduled_count( ActionDeliveries::DELIVER_HOOK, $replacement_action_args, self::IDENTITY . '|' . $replacement_run_id ) );
+		self::assertSame( 1, $this->backend->scheduled_count( ActionDeliveries::DELIVER_HOOK, $replacement_action_args, self::IDENTITY ) );
 		$history = $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY );
 		self::assertIsArray( $history );
 		self::assertSame(

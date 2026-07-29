@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -311,23 +312,30 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * Cancellation clears only the accepted run's scheduler group.
+	 * Cancellation clears only the accepted run's pending deliveries.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_clears_the_run_scheduler_group(): void {
+	public function test_cancel_clears_the_run_deliveries(): void {
 		$run_id = $this->dispatch_job();
 		$this->reset_observations();
 
 		$result = $this->client->cancel( self::NAME, $run_id );
 
 		self::assertInstanceOf( Success::class, $result );
-		$unschedule = $this->backend_calls( 'unschedule' );
+		$unschedule = $this->backend_calls( 'unschedule_run' );
 		self::assertCount( 1, $unschedule );
-		self::assertSame( self::IDENTITY . '|' . $run_id, $unschedule[0]['args']['group'] ?? null );
+		self::assertSame(
+			array(
+				'hook'     => ActionDeliveries::DELIVER_HOOK,
+				'identity' => self::IDENTITY,
+				'run_id'   => $run_id,
+			),
+			$unschedule[0]['args']
+		);
 	}
 
 	/**

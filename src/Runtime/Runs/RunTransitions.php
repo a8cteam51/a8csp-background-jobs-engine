@@ -260,10 +260,10 @@ final readonly class RunTransitions {
 	}
 
 	/**
-	 * Claims a retained run as Cancelled before clearing its pending scheduler group and firing hooks.
+	 * Claims a retained run as Cancelled before clearing its pending deliveries and firing hooks.
 	 *
-	 * The scheduler-group clear is best-effort. The cancelled state fences later delivery, so any
-	 * leftover action is dropped when it observes the terminal run.
+	 * The scheduler clear is best-effort. The cancelled state fences later delivery, so any leftover
+	 * action is dropped when it observes the terminal run.
 	 *
 	 * @internal Engine product service.
 	 *
@@ -278,7 +278,7 @@ final readonly class RunTransitions {
 	 * @param   RunState             $state                 Running state from the exact inspected snapshot.
 	 * @param   RunStore             $run_store             Active-run store.
 	 * @param   string               $expected_raw          Exact pre-cancel snapshot.
-	 * @param   \Closure             $clear_pending_actions Winner-only scheduler-group clear.
+	 * @param   \Closure             $clear_pending_actions Winner-only pending-delivery clear.
 	 *
 	 * @return  bool|Failure<EngineError> True when the cancellation transition is claimed, false after a lost fence, or the classified write failure.
 	 */

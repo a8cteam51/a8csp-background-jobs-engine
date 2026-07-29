@@ -14,10 +14,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTe
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use PHPUnit\Framework\Attributes\Group;
-use Psr\Log\LogLevel;
 
 /**
- * Verifies cancellation fences live deliveries and isolates per-run scheduler groups.
+ * Verifies cancellation fences live deliveries and isolates runs sharing a scheduler group.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -46,16 +45,16 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 	/** Scope-qualified chunked job identity isolated to between-chunks cancellation. */
 	private const string CHUNKED_JOB_IDENTITY = self::SCOPE . ':' . self::CHUNKED_JOB_NAME;
 
-	/** Job identity isolated to sibling-group cancellation. */
+	/** Job identity isolated to sibling-run cancellation. */
 	private const string SIBLING_NAME = 'integration-cancel-sibling-isolation';
 
-	/** Scope-qualified job identity isolated to sibling-group cancellation. */
+	/** Scope-qualified job identity isolated to sibling-run cancellation. */
 	private const string SIBLING_IDENTITY = self::SCOPE . ':' . self::SIBLING_NAME;
 
-	/** Job identity isolated to the degraded WP-Cron survivor. */
-	private const string DEGRADED_NAME = 'integration-cancel-wp-cron-survivor';
+	/** Job identity isolated to degraded-backend cancellation. */
+	private const string DEGRADED_NAME = 'integration-cancel-degraded-backend';
 
-	/** Scope-qualified job identity isolated to the degraded WP-Cron survivor. */
+	/** Scope-qualified job identity isolated to degraded-backend cancellation. */
 	private const string DEGRADED_IDENTITY = self::SCOPE . ':' . self::DEGRADED_NAME;
 
 	// endregion.
@@ -85,7 +84,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertInstanceOf( Run::class, $enqueued->value );
 		$run_id    = (string) $enqueued->value->id;
-		$group     = self::EXECUTING_IDENTITY . '|' . $run_id;
+		$group     = self::EXECUTING_IDENTITY;
 		$action_id = $this->assert_pending_job_action( self::EXECUTING_IDENTITY, $run_id, $group );
 		$store     = $this->action_scheduler_store();
 
@@ -158,7 +157,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertInstanceOf( Run::class, $enqueued->value );
 		$run_id            = (string) $enqueued->value->id;
-		$group             = self::BACKOFF_IDENTITY . '|' . $run_id;
+		$group             = self::BACKOFF_IDENTITY;
 		$initial_action_id = $this->assert_pending_job_action( self::BACKOFF_IDENTITY, $run_id, $group, 37 );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute only the first failed attempt' );
@@ -189,7 +188,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 					'per_page' => -1,
 				)
 			),
-			'The per-run group clear must remove the pending retry'
+			'The run clear must remove the pending retry'
 		);
 		self::assertSame(
 			array(
@@ -267,7 +266,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $started );
 		self::assertInstanceOf( Run::class, $started->value );
 		$run_id = (string) $started->value->id;
-		$group  = self::CHUNKED_JOB_IDENTITY . '|' . $run_id;
+		$group  = self::CHUNKED_JOB_IDENTITY;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the chunked job queue' );
 
@@ -327,17 +326,17 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * Clearing one run group leaves a sibling run of the same job executable.
+	 * Cancelling one run leaves a sibling sharing its identity group executable.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Two sibling deliveries are pending concurrently and cancellation must clear only one real scheduler group; public terminal outcomes cannot prove the sibling row survived the group clear.
+	 * @pin-rationale Two sibling deliveries share one real scheduler group, so their persisted arguments are the only cancellation discriminator proving the sibling row survived.
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_clears_only_the_target_run_group(): void {
+	public function test_cancel_clears_only_the_target_run_from_a_shared_identity_group(): void {
 		$args_a = array( 'account_id' => 44 );
 		$args_b = array( 'account_id' => 45 );
 		$job    = new RecordingJob( self::SIBLING_NAME );
@@ -354,10 +353,9 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Run::class, $enqueued_b->value );
 		$run_a    = (string) $enqueued_a->value->id;
 		$run_b    = (string) $enqueued_b->value->id;
-		$group_a  = self::SIBLING_IDENTITY . '|' . $run_a;
-		$group_b  = self::SIBLING_IDENTITY . '|' . $run_b;
-		$action_a = $this->assert_pending_job_action( self::SIBLING_IDENTITY, $run_a, $group_a );
-		$action_b = $this->assert_pending_job_action( self::SIBLING_IDENTITY, $run_b, $group_b );
+		$group    = self::SIBLING_IDENTITY;
+		$action_a = $this->assert_pending_job_action( self::SIBLING_IDENTITY, $run_a, $group );
+		$action_b = $this->assert_pending_job_action( self::SIBLING_IDENTITY, $run_b, $group );
 
 		$cancelled = $client->cancel( self::SIBLING_NAME, $run_a );
 
@@ -371,12 +369,13 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 			array( $action_b ),
 			$store->query_actions(
 				array(
-					'group'    => $group_b,
+					'group'    => $group,
+					'args'     => array( self::SIBLING_IDENTITY, $run_b, 1 ),
 					'status'   => \ActionScheduler_Store::STATUS_PENDING,
 					'per_page' => -1,
 				)
 			),
-			'The sibling group must retain its pending action'
+			'The shared identity group must retain only the sibling run action'
 		);
 		self::assertSame( 1, $this->run_matching_due_action( static fn ( string $hook, array $action_args ): bool => 'a8csp_bgje/internal/deliver' === $hook && ( $action_args[1] ?? null ) === $run_b ), 'Action Scheduler must execute the surviving sibling' );
 
@@ -413,26 +412,18 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * WP-Cron's group-clear no-op leaves one delivery that the run-admission gate drops.
+	 * Cancellation removes the named run's pending delivery from the active backend.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale WP-Cron cannot express per-run groups, leaving a staged cancelled-run delivery for the admission fence; public cancellation results cannot prove that survivor existed before it was dropped.
+	 * @pin-rationale The real backend row is observed before and after cancellation because the public terminal result cannot prove scheduler clearance.
 	 *
 	 * @return  void
 	 */
 	#[Group( 'degraded' )]
-	public function test_wp_cron_group_clear_survivor_dies_at_the_run_admission_gate(): void {
-		// A WP-Cron single survives the group-clear no-op only where Action Scheduler is absent;
-		// its delivery for the deleted run is then dropped as a stale delivery for a finished run.
-		if ( ! \function_exists( 'as_schedule_single_action' ) ) {
-			// The drop is recorded at debug, below the default sink floor, and the host log is the
-			// only place this survivor is observable.
-			\add_filter( 'a8csp_bgje/error_log_level', static fn (): string => LogLevel::DEBUG );
-			$this->expectOutputRegex( '/Stale delivery for a finished or cancelled run was dropped/' );
-		}
+	public function test_cancel_removes_the_pending_delivery_on_each_backend(): void {
 		$args = array( 'account_id' => 46 );
 		$job  = new RecordingJob( self::DEGRADED_NAME );
 
@@ -456,10 +447,9 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $enqueued );
 		self::assertInstanceOf( Run::class, $enqueued->value );
 		$run_id      = (string) $enqueued->value->id;
-		$group       = self::DEGRADED_IDENTITY . '|' . $run_id;
+		$group       = self::DEGRADED_IDENTITY;
 		$action_args = array( self::DEGRADED_IDENTITY, $run_id, 1 );
 		$action_id   = null;
-		$cron_before = array();
 		if ( \class_exists( \ActionScheduler::class ) ) {
 			$action_id = $this->assert_pending_job_action( self::DEGRADED_IDENTITY, $run_id, $group );
 		} else {
@@ -475,15 +465,12 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 
 		if ( null !== $action_id ) {
 			self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $this->action_scheduler_store()->get_status( $action_id ) );
-			self::assertSame( array(), $raw_deliveries );
 		} else {
-			self::assertSame( $cron_before, $this->wordpress_cron_events( 'a8csp_bgje/internal/deliver', $action_args ), 'WP-Cron cannot identify a per-run group, so its pending single must survive cancellation' );
-			self::assertSame( 1, $this->run_matching_due_cron_event( static fn ( string $hook, array $event_args ): bool => 'a8csp_bgje/internal/deliver' === $hook && $event_args === $action_args ), 'The surviving WP-Cron single must reach the job run-admission hook once' );
-			self::assertSame( array( $action_args ), $raw_deliveries );
 			self::assertSame( array(), $this->wordpress_cron_events( 'a8csp_bgje/internal/deliver', $action_args ) );
 		}
 
-		self::assertSame( array(), $job->calls, 'A surviving backend delivery must not invoke cancelled user work' );
+		self::assertSame( array(), $raw_deliveries );
+		self::assertSame( array(), $job->calls, 'Cancellation must prevent the pending backend delivery from invoking user work' );
 		self::assertSame(
 			array(
 				array(
@@ -509,13 +496,13 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 	// region HELPERS.
 
 	/**
-	 * Asserts and returns the sole pending Action Scheduler row for one exact hook and group.
+	 * Asserts and returns the sole pending Action Scheduler row for one exact hook, group, and argument list.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $hook          Action hook.
-	 * @param   string                  $group         Per-run action group.
+	 * @param   string                  $group         Identity action group.
 	 * @param   array<array-key, mixed> $expected_args Expected action arguments.
 	 *
 	 * @return  string
@@ -525,6 +512,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		$action_ids = $store->query_actions(
 			array(
 				'hook'     => $hook,
+				'args'     => $expected_args,
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,

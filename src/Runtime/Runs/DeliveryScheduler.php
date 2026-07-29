@@ -58,7 +58,7 @@ final readonly class DeliveryScheduler {
 	public function schedule( Identity $identity, string $run_id, int $action_sequence, PendingAction $pending ): AbstractResult {
 		$wire_identity = (string) $identity;
 		$args          = array( $wire_identity, $run_id, $action_sequence );
-		$group         = $wire_identity . '|' . $run_id;
+		$group         = $wire_identity;
 		if ( 'async' === $pending->mode ) {
 			return $this->scheduler->enqueue_async( ActionDeliveries::DELIVER_HOOK, $args, $group, $pending->priority );
 		}

@@ -327,7 +327,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 			'Continue-delay filters must chain the generic value into the identity-specific filter'
 		);
 		self::assertSame( array( array( 'chunk' => 'one' ) ), \array_column( $chunked_job->process_calls, 'chunk_args' ) );
-		$this->assert_pending_chunk_continuation( self::CONTINUE_DELAY_FILTER_IDENTITY, $run_id, self::CONTINUE_DELAY_FILTER_IDENTITY . '|' . $run_id, array( 'chunk' => 'two' ) );
+		$this->assert_pending_chunk_continuation( self::CONTINUE_DELAY_FILTER_IDENTITY, $run_id, self::CONTINUE_DELAY_FILTER_IDENTITY, array( 'chunk' => 'two' ) );
 
 		$filter_calls = array();
 		self::assertSame( 1, $this->run_next_due_action(), 'The identity-specific zero delay must make the second chunk immediately due' );
@@ -391,7 +391,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertInstanceOf( Run::class, $result->value );
 		$run_id = (string) $result->value->id;
-		$group  = self::FIDELITY_IDENTITY . '|' . $run_id;
+		$group  = self::FIDELITY_IDENTITY;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the float chunk' );
 		$run_state = \get_option( 'a8csp_bgje_active_run_' . self::FIDELITY_IDENTITY . '_' . $run_id, null );

@@ -190,6 +190,57 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
+	 * Run cancellation reaches every ready backend with the same discriminator.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_run_clears_every_ready_backend(): void {
+		$run_id    = '00000000001700000000-0000000000000000042';
+		$scheduler = new SchedulerFacade( $this->rig->backends() );
+
+		$result = $scheduler->unschedule_run( 'a8csp_bgje/internal/deliver', self::IDENTITY, $run_id );
+
+		self::assertInstanceOf( Success::class, $result );
+		foreach ( $this->rig->backends() as $backend ) {
+			$calls = $this->calls( $backend, 'unschedule_run' );
+			self::assertCount( 1, $calls );
+			self::assertSame(
+				array(
+					'hook'     => 'a8csp_bgje/internal/deliver',
+					'identity' => self::IDENTITY,
+					'run_id'   => $run_id,
+				),
+				$calls[0]['args']
+			);
+		}
+	}
+
+	/**
+	 * Run cancellation preserves the first failure after clearing every ready backend.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_run_continues_after_failure_and_returns_the_first_one(): void {
+		$first_failure                                = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'The preferred backend could not confirm clearance.' ) );
+		$second_failure                               = new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'The fallback backend became unavailable.' ) );
+		$this->preferred()->results['unschedule_run'] = $first_failure;
+		$this->fallback()->results['unschedule_run']  = $second_failure;
+		$scheduler                                    = new SchedulerFacade( $this->rig->backends() );
+
+		$result = $scheduler->unschedule_run( 'a8csp_bgje/internal/deliver', self::IDENTITY, '00000000001700000000-0000000000000000042' );
+
+		self::assertSame( $first_failure, $result );
+		self::assertCount( 1, $this->calls( $this->preferred(), 'unschedule_run' ) );
+		self::assertCount( 1, $this->calls( $this->fallback(), 'unschedule_run' ) );
+	}
+
+	/**
 	 * Bulk scheduled counts preserve zero, one, and surplus totals across ready backends.
 	 *
 	 * @since   1.0.0

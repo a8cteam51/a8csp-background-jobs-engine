@@ -214,7 +214,7 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 	 *
 	 * @param   string   $name     Stable job name.
 	 * @param   string   $run_id   Run identifier.
-	 * @param   string   $group    Per-run Action Scheduler group.
+	 * @param   string   $group    Identity Action Scheduler group.
 	 * @param   int|null $priority Resolved priority the stored action must carry, or null to leave it unasserted.
 	 *
 	 * @return  string
@@ -224,6 +224,7 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 		$action_ids = $store->query_actions(
 			array(
 				'hook'     => 'a8csp_bgje/internal/deliver',
+				'args'     => array( $name, $run_id, 1 ),
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
@@ -259,7 +260,7 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 	 *
 	 * @param   string                  $name           Stable chunked job name.
 	 * @param   string                  $run_id         Run identifier.
-	 * @param   string                  $group          Per-run Action Scheduler group.
+	 * @param   string                  $group          Identity Action Scheduler group.
 	 * @param   array<array-key, mixed> $expected_chunk Expected chunk arguments.
 	 *
 	 * @return  string
@@ -277,6 +278,7 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 		$action_ids = $store->query_actions(
 			array(
 				'hook'     => 'a8csp_bgje/internal/deliver',
+				'args'     => array( $name, $run_id, $action_sequence ),
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,

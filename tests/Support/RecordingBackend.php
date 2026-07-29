@@ -51,7 +51,7 @@ final class RecordingBackend implements BackendInterface {
 	 *     schedule_single?: AbstractResult<true, SchedulingError>,
 	 *     enqueue_async?: AbstractResult<true, SchedulingError>,
 	 *     unschedule?: AbstractResult<true, SchedulingError>,
-	 *     unschedule_group?: AbstractResult<true, SchedulingError>,
+	 *     unschedule_run?: AbstractResult<true, SchedulingError>,
 	 *     unschedule_hooks?: AbstractResult<int, SchedulingError>
 	 * }
 	 */
@@ -232,26 +232,44 @@ final class RecordingBackend implements BackendInterface {
 	}
 
 	/**
-	 * Records group-wide clearance and removes every matching accepted delivery.
+	 * Records run clearance and removes every matching accepted delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @phpstan-return AbstractResult<true, SchedulingError>
 	 *
-	 * @param   string $group Group name.
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  AbstractResult
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function unschedule_group( string $group ): AbstractResult {
+	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
 		$this->calls[] = array(
-			'verb' => 'unschedule_group',
-			'args' => array( 'group' => $group ),
+			'verb' => 'unschedule_run',
+			'args' => array(
+				'hook'     => $hook,
+				'identity' => $identity,
+				'run_id'   => $run_id,
+			),
 		);
-		$this->run_before( 'unschedule_group' );
+		$this->run_before( 'unschedule_run' );
 
-		$result = $this->result_for( 'unschedule_group' );
+		$result = $this->result_for( 'unschedule_run' );
 		if ( $result->is_success() ) {
-			$this->deliveries = \array_values( \array_filter( $this->deliveries, static fn ( array $delivery ): bool => $group !== $delivery['group'] ) );
+			$this->deliveries = \array_values(
+				\array_filter(
+					$this->deliveries,
+					static function ( array $delivery ) use ( $hook, $identity, $run_id ): bool {
+						$delivery_run_id = $delivery['args'][1] ?? null;
+
+						return $hook !== $delivery['hook'] || $identity !== $delivery['group'] || $run_id !== $delivery_run_id;
+					}
+				)
+			);
 		}
 
 		return $result;
@@ -292,7 +310,7 @@ final class RecordingBackend implements BackendInterface {
 	/**
 	 * Registers an interleaving before the next matching write result resolves.
 	 *
-	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_group'|'unschedule_hooks' $verb
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_run'|'unschedule_hooks' $verb
 	 *
 	 * @param   string               $verb     Write verb.
 	 * @param   callable(self): void $callback Interleaving callback.
@@ -518,7 +536,7 @@ final class RecordingBackend implements BackendInterface {
 	 */
 	public function assert_scheduled( string $identity ): void {
 		Assert::assertNotEmpty(
-			\array_filter( $this->deliveries, static fn ( array $delivery ): bool => $identity === $delivery['group'] || \str_starts_with( $delivery['group'], $identity . '|' ) ),
+			\array_filter( $this->deliveries, static fn ( array $delivery ): bool => $identity === $delivery['group'] ),
 			\sprintf( 'Expected an accepted backend delivery for identity "%s".', $identity )
 		);
 	}
@@ -536,7 +554,7 @@ final class RecordingBackend implements BackendInterface {
 	public function assert_not_scheduled( string $identity ): void {
 		Assert::assertSame(
 			array(),
-			\array_values( \array_filter( $this->deliveries, static fn ( array $delivery ): bool => $identity === $delivery['group'] || \str_starts_with( $delivery['group'], $identity . '|' ) ) ),
+			\array_values( \array_filter( $this->deliveries, static fn ( array $delivery ): bool => $identity === $delivery['group'] ) ),
 			\sprintf( 'Expected no accepted backend delivery for identity "%s".', $identity )
 		);
 	}
@@ -564,7 +582,7 @@ final class RecordingBackend implements BackendInterface {
 	/**
 	 * Returns the scripted result for a write verb.
 	 *
-	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_group' $verb
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_run' $verb
 	 *
 	 * @param   string $verb Write verb.
 	 *
@@ -610,7 +628,7 @@ final class RecordingBackend implements BackendInterface {
 	/**
 	 * Runs and consumes the next matching interleaving callback.
 	 *
-	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_group'|'unschedule_hooks' $verb
+	 * @phpstan-param 'schedule_recurring'|'schedule_single'|'enqueue_async'|'unschedule'|'unschedule_run'|'unschedule_hooks' $verb
 	 *
 	 * @param   string $verb Write verb.
 	 *

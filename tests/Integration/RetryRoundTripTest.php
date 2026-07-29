@@ -231,7 +231,7 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $result, 'The retryable job must enqueue before its handler fails' );
 		self::assertInstanceOf( Run::class, $result->value );
 		$failed_run_id     = (string) $result->value->id;
-		$failed_group      = self::IDENTITY . '|' . $failed_run_id;
+		$failed_group      = self::IDENTITY;
 		$initial_action_id = $this->assert_pending_job_action( self::IDENTITY, $failed_run_id, $failed_group );
 
 		$first_attempt_before = \time();
@@ -354,7 +354,7 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 		self::assertIsArray( $remaining_failed_entries );
 		self::assertSame( array(), $remaining_failed_entries, 'Manual retry must remove the consumed failed entry after fresh enqueue succeeds' );
 
-		$successful_group     = self::IDENTITY . '|' . $successful_run_id;
+		$successful_group     = self::IDENTITY;
 		$successful_action_id = $this->assert_pending_job_action( self::IDENTITY, $successful_run_id, $successful_group );
 		$job->throwable       = null;
 
@@ -445,7 +445,7 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Run identifier.
-	 * @param   string $group  Per-run Action Scheduler group.
+	 * @param   string $group  Identity Action Scheduler group.
 	 *
 	 * @return  string
 	 */
@@ -454,6 +454,7 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 		$action_ids = $store->query_actions(
 			array(
 				'hook'     => 'a8csp_bgje/internal/deliver',
+				'args'     => array( self::IDENTITY, $run_id, 2 ),
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,

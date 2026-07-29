@@ -48,11 +48,11 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * Lowest Action Scheduler version this backend accepts.
 	 *
-	 * Chunked work schedules each successor as a unique action carrying the running action's hook and
-	 * group and differing only in its sequence argument. Action Scheduler made unique scheduling
-	 * args-aware in 4.0.0; before that the running row blocks the successor's insert, and the run
-	 * fails terminally at its first continuation. Action Scheduler publishes no version constant, so
-	 * `ActionScheduler_Versions` is the only surface this can read.
+	 * Chunked work schedules each successor with delivery arguments containing its identity, run ID,
+	 * and sequence. Action Scheduler made unique scheduling args-aware in 4.0.0; before that the
+	 * running row blocks the successor's insert, and the run fails terminally at its first
+	 * continuation. Action Scheduler publishes no version constant, so `ActionScheduler_Versions`
+	 * is the only surface this can read.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -144,8 +144,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * Action Scheduler uses zero for both duplicate suppression and store failures. A non-empty group
-	 * makes the follow-up identity specific enough to distinguish the duplicate safely.
+	 * Action Scheduler uses zero for both duplicate suppression and store failures. Exact arguments
+	 * in a non-empty group make the follow-up identity specific enough to distinguish the duplicate
+	 * safely.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -210,18 +211,51 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * Action Scheduler treats an empty hook and argument list with a non-empty group as a group-wide
-	 * identity.
+	 * Group and arguments remain independent predicates: the identity group bounds the query, while
+	 * the run ID in the second argument selects deliveries belonging to the cancelled run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function unschedule_group( string $group ): AbstractResult {
-		return $this->unschedule( '', array(), $group );
+	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
+		if ( ! $this->is_ready() ) {
+			return $this->backend_not_ready( $this->readiness_facts() );
+		}
+
+		foreach ( array( 'as_get_scheduled_actions', 'as_unschedule_all_actions' ) as $function_name ) {
+			$function_failure = $this->missing_function_failure( $function_name );
+			if ( null !== $function_failure ) {
+				return $function_failure;
+			}
+		}
+
+		foreach ( $this->pending_run_args( $hook, $identity, $run_id ) as $args ) {
+			\as_unschedule_all_actions( $hook, $args, $identity );
+		}
+
+		if ( array() !== $this->pending_run_args( $hook, $identity, $run_id ) ) {
+			return new Failure(
+				new SchedulingError(
+					SchedulingErrorReason::ScheduleFailed,
+					\sprintf( 'Action Scheduler still reports a pending delivery for run "%1$s" on hook "%2$s"; retry after the queue store accepts cancellation.', $run_id, $hook ),
+					array(
+						'hook'     => $hook,
+						'identity' => $identity,
+						'run_id'   => $run_id,
+					),
+				)
+			);
+		}
+
+		return new Success( true );
 	}
 
 	/**
@@ -431,6 +465,50 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 			'action_scheduler_version_supported' => self::version_is_supported(),
 			'wp_init_fired'                      => 0 < \did_action( 'init' ),
 		);
+	}
+
+	/**
+	 * Returns exact arguments for pending deliveries belonging to one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
+	 *
+	 * @return  list<list<mixed>>
+	 */
+	private function pending_run_args( string $hook, string $identity, string $run_id ): array {
+		$actions = \as_get_scheduled_actions(
+			array(
+				'hook'     => $hook,
+				'group'    => $identity,
+				'status'   => 'pending',
+				'per_page' => -1,
+				'orderby'  => 'none',
+			),
+			'OBJECT'
+		);
+
+		$matching_args = array();
+		foreach ( $actions as $action ) {
+			if ( ! \is_object( $action ) || ! \method_exists( $action, 'get_args' ) ) {
+				continue;
+			}
+
+			$args = $action->get_args();
+			if ( ! \is_array( $args ) || ! \array_is_list( $args ) ) {
+				continue;
+			}
+
+			$delivery_run_id = $args[1] ?? null;
+			if ( $run_id === $delivery_run_id ) {
+				$matching_args[] = $args;
+			}
+		}
+
+		return $matching_args;
 	}
 
 	/**

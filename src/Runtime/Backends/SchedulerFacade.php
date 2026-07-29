@@ -20,8 +20,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason
  * Action Scheduler is installed because routing follows per-request readiness.
  *
  * Action Scheduler treats an empty group as unconstrained in queries but exact in unique inserts.
- * For unscheduling, empty arguments plus only a hook clear that hook, while empty arguments plus
- * only a group clear that group. This facade preserves those native empty-value semantics.
+ * Generic unscheduling preserves backend-native empty-value semantics, while run clearance delegates
+ * the explicit hook, work identity, and run ID each backend needs for exact selection.
  *
  * @internal
  *
@@ -112,21 +112,36 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * Unschedules every pending action in one backend group.
+	 * Unschedules every pending delivery for one run.
 	 *
 	 * @internal Engine run cancellation only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $group Backend grouping label.
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function unschedule_group( string $group ): AbstractResult {
-		return $this->unschedule_snapshot( $this->ready_backends(), '', array(), $group );
+	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
+		$ready_backends = $this->ready_backends();
+		if ( array() === $ready_backends ) {
+			return $this->fallback_backend()->unschedule_run( $hook, $identity, $run_id );
+		}
+
+		$first_failure = null;
+		foreach ( $ready_backends as $backend ) {
+			$result = $backend->unschedule_run( $hook, $identity, $run_id );
+			if ( $result->is_failure() ) {
+				$first_failure ??= $result;
+			}
+		}
+
+		return $first_failure ?? new Success( true );
 	}
 
 	/**

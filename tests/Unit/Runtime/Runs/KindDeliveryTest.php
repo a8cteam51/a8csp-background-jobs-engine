@@ -229,7 +229,7 @@ final class KindDeliveryTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_one_deliver_hook_is_registered_and_enqueued_with_the_run_group(): void {
+	public function test_one_deliver_hook_is_registered_and_enqueued_with_the_identity_group(): void {
 		$registrations = $GLOBALS['a8csp_bgje_test_action_registrations'] ?? null;
 		self::assertIsArray( $registrations );
 		$lifecycle_hooks = array( self::DELIVER_HOOK, 'a8csp_bgje/run_job', 'a8csp_bgje/start_chunked_job', 'a8csp_bgje/continue_chunked_job', 'a8csp_bgje/cleanup_chunked_job' );
@@ -247,7 +247,7 @@ final class KindDeliveryTest extends TestCase {
 		$calls  = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => self::DELIVER_HOOK === ( $call['args']['hook'] ?? null ) ) );
 		self::assertCount( 1, $calls );
 		self::assertSame( array( self::IDENTITY, $run_id, 1 ), $calls[0]['args']['args'] ?? null );
-		self::assertSame( self::IDENTITY . '|' . $run_id, $calls[0]['args']['group'] ?? null );
+		self::assertSame( self::IDENTITY, $calls[0]['args']['group'] ?? null );
 	}
 
 	// endregion.

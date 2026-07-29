@@ -130,7 +130,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $run_a_result, 'The incumbent chunked job must start through the public API' );
 		self::assertInstanceOf( Run::class, $run_a_result->value );
 		$run_a      = (string) $run_a_result->value->id;
-		$group_a    = self::IDENTITY . '|' . $run_a;
+		$group_a    = self::IDENTITY;
 		$start_a_id = $this->assert_pending_start_action( $run_a, $group_a );
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate the incumbent queue' );
@@ -144,7 +144,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
 		self::assertInstanceOf( Run::class, $run_b_result->value );
 		$run_b      = (string) $run_b_result->value->id;
-		$group_b    = self::IDENTITY . '|' . $run_b;
+		$group_b    = self::IDENTITY;
 		$start_b_id = $this->assert_pending_start_action( $run_b, $group_b );
 		self::assertNotSame( $run_a, $run_b, 'Replacement must allocate a fresh run identifier' );
 
@@ -308,7 +308,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Run identifier.
-	 * @param   string $group  Per-run Action Scheduler group.
+	 * @param   string $group  Identity Action Scheduler group.
 	 *
 	 * @return  string
 	 */
@@ -317,6 +317,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		$action_ids = $store->query_actions(
 			array(
 				'hook'     => 'a8csp_bgje/internal/deliver',
+				'args'     => array( self::IDENTITY, $run_id, 1 ),
 				'group'    => $group,
 				'status'   => \ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,

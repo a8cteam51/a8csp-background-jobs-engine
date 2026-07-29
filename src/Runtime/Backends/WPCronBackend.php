@@ -216,18 +216,48 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * WP-Cron stores no groups, so group-wide clearance has the same no-op semantics as a group-only
-	 * unschedule identity.
+	 * WP-Cron stores no groups, so the work identity and run ID are selected from each delivery's
+	 * persisted arguments.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
-	public function unschedule_group( string $group ): AbstractResult {
-		return $this->unschedule( '', array(), $group );
+	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
+		$wp_error = null;
+		foreach ( $this->matching_run_events( $hook, $identity, $run_id ) as $event ) {
+			$result = \wp_unschedule_event( $event['timestamp'], $hook, $event['args'], true );
+			if ( $result instanceof \WP_Error ) {
+				$wp_error ??= $result;
+			}
+		}
+
+		if ( array() === $this->matching_run_events( $hook, $identity, $run_id ) ) {
+			return new Success( true );
+		}
+
+		if ( null !== $wp_error ) {
+			return $this->result_for_wp_write( $wp_error, $hook, 'unschedule' );
+		}
+
+		return new Failure(
+			new SchedulingError(
+				SchedulingErrorReason::ScheduleFailed,
+				\sprintf( 'WP-Cron still has a pending delivery for run "%1$s" on hook "%2$s"; repair the WordPress cron event and retry unscheduling.', $run_id, $hook ),
+				array(
+					'hook'     => $hook,
+					'identity' => $identity,
+					'run_id'   => $run_id,
+				),
+			)
+		);
 	}
 
 	/**
@@ -537,6 +567,58 @@ final class WPCronBackend implements BackendInterface {
 		$cron_array = \get_option( 'cron', array() );
 
 		return \is_array( $cron_array ) ? $cron_array : array();
+	}
+
+	/**
+	 * Returns stored delivery events belonging to one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
+	 *
+	 * @return  list<array{timestamp: int, args: list<mixed>}>
+	 */
+	private function matching_run_events( string $hook, string $identity, string $run_id ): array {
+		$matching = array();
+		foreach ( $this->cron_array() as $timestamp => $hooks ) {
+			if ( ! \is_int( $timestamp ) || ! \is_array( $hooks ) ) {
+				continue;
+			}
+
+			$events = $hooks[ $hook ] ?? null;
+			if ( ! \is_array( $events ) ) {
+				continue;
+			}
+
+			foreach ( $events as $event ) {
+				if ( ! \is_array( $event ) ) {
+					continue;
+				}
+
+				$args = $event['args'] ?? null;
+				if ( ! \is_array( $args ) || ! \array_is_list( $args ) ) {
+					continue;
+				}
+
+				$delivery_identity = $args[0] ?? null;
+				$delivery_run_id   = $args[1] ?? null;
+				if ( $identity !== $delivery_identity || $run_id !== $delivery_run_id ) {
+					continue;
+				}
+
+				$matching[] = array(
+					'timestamp' => $timestamp,
+					'args'      => $args,
+				);
+			}
+		}
+
+		\usort( $matching, static fn ( array $left, array $right ): int => $left['timestamp'] <=> $right['timestamp'] );
+
+		return $matching;
 	}
 
 	/**

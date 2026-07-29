@@ -148,6 +148,84 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * Run cancellation clears only matching pending actions from an identity group.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_run_selects_the_run_inside_its_identity_group(): void {
+		$identity                              = 'reports:refresh';
+		$run_id                                = '00000000001700000000-0000000000000000042';
+		$sibling_run_id                        = '00000000001700000000-0000000000000000043';
+		$first_args                            = array( $identity, $run_id, 1 );
+		$second_args                           = array( $identity, $run_id, 2 );
+		$GLOBALS['a8csp_bgje_test_as_results'] = array(
+			'as_get_scheduled_actions' => array(
+				array(
+					41 => new \A8CSP_BGJE_Test_AS_Action( $first_args, $identity ),
+					42 => new \A8CSP_BGJE_Test_AS_Action( array( $identity, $sibling_run_id, 1 ), $identity ),
+					43 => new \A8CSP_BGJE_Test_AS_Action( $second_args, $identity ),
+				),
+			),
+		);
+
+		$result = ( new ActionSchedulerBackend() )->unschedule_run( self::HOOK, $identity, $run_id );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame(
+			array(
+				array(
+					'hook'     => self::HOOK,
+					'group'    => $identity,
+					'status'   => 'pending',
+					'per_page' => -1,
+					'orderby'  => 'none',
+				),
+				'OBJECT',
+			),
+			$this->calls( 'as_get_scheduled_actions' )[0]['args']
+		);
+		self::assertSame(
+			array(
+				array( self::HOOK, $first_args, $identity ),
+				array( self::HOOK, $second_args, $identity ),
+			),
+			\array_column( $this->calls( 'as_unschedule_all_actions' ), 'args' )
+		);
+	}
+
+	/**
+	 * Run cancellation reports a store that still exposes the target delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_run_fails_when_the_target_remains_pending(): void {
+		$identity                              = 'reports:refresh';
+		$run_id                                = '00000000001700000000-0000000000000000042';
+		$args                                  = array( $identity, $run_id, 1 );
+		$action                                = new \A8CSP_BGJE_Test_AS_Action( $args, $identity );
+		$GLOBALS['a8csp_bgje_test_as_results'] = array(
+			'as_get_scheduled_actions' => array(
+				array( 41 => $action ),
+				array( 41 => $action ),
+			),
+		);
+
+		$result = ( new ActionSchedulerBackend() )->unschedule_run( self::HOOK, $identity, $run_id );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
+		self::assertCount( 2, $this->calls( 'as_get_scheduled_actions' ) );
+		self::assertSame( array( array( self::HOOK, $args, $identity ) ), \array_column( $this->calls( 'as_unschedule_all_actions' ), 'args' ) );
+	}
+
+	/**
 	 * Pending occurrences are counted without fetching Action Scheduler objects.
 	 *
 	 * @load-bearing concurrency
