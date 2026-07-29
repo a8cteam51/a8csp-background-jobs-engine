@@ -538,6 +538,29 @@ final readonly class Dispatcher {
 			return new Failure( $after_dispatch_error );
 		}
 
+		// Started listeners are consumer code and can dispatch into this same lane, superseding this run and
+		// removing its row. Scheduling the descriptor below would then report a run that can never execute.
+		// An unreadable row proves nothing, so it keeps the scheduling path rather than turning a storage
+		// fault into a lost dispatch.
+		$confirmed = $run_store->inspect( $run_id );
+		if ( ! $confirmed->is_failure() ) {
+			$snapshot = $confirmed->value;
+			if ( null === $snapshot || null === $snapshot['state'] ) {
+				$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
+
+				return new Failure(
+					new EngineError(
+						\sprintf( '%1$s "%2$s" lost its admitted run state while its started listeners ran; dispatch it again against the current lock state.', $kind, (string) $identity ),
+						reason: EngineErrorReason::OverlapHeld,
+						context: array(
+							'identity' => (string) $identity,
+							'run_id'   => $run_id,
+						),
+					)
+				);
+			}
+		}
+
 		$pending   = $state->pending ?? throw new \LogicException( 'Admitted run delivery requires a durable pending-action descriptor.' );
 		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {

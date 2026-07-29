@@ -883,6 +883,8 @@ final class DispatcherChunkedJobTest extends TestCase {
 	 */
 	private function script_scheduling_rollback_failure( string $failure ): void {
 		if ( 'lock_release' === $failure ) {
+			// The admitted-state confirmation reads once before scheduling, so the scripted failure targets the read after it.
+			$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 			$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 			$this->rig->wpdb()->before_next(
 				'select',

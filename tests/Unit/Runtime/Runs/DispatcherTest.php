@@ -147,6 +147,95 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * A started listener that supersedes the admitted run must not leave the caller holding a running run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_refuses_to_report_running_when_a_started_listener_supersedes_the_run(): void {
+		$this->boot( OverlapPolicy::Replace );
+		$this->overlap_key_resolver = static fn ( array $args ): string => 'one-lane';
+
+		$rig       = $this->rig;
+		$client    = $this->client;
+		$reentered = false;
+		$nested    = null;
+		$started   = 'a8csp_bgje/started/' . self::IDENTITY;
+
+		$GLOBALS['a8csp_bgje_test_action_observers'] = array(
+			static function ( string $hook_name, array $args ) use ( $rig, $client, $started, &$reentered, &$nested ): void {
+				if ( $started !== $hook_name || $reentered ) {
+					return;
+				}
+				$reentered                = true;
+				$rig->randomizer()->value = 43;
+				$nested                   = $client->dispatch( self::NAME, self::ARGS );
+			},
+		);
+
+		try {
+			$outer = $client->dispatch( self::NAME, self::ARGS );
+		} finally {
+			$GLOBALS['a8csp_bgje_test_action_observers'] = array();
+		}
+
+		self::assertTrue( $reentered, 'The started listener must have re-entered dispatch for this scenario to mean anything.' );
+		self::assertInstanceOf( Success::class, $nested, 'The re-entrant dispatch is the one that wins the lane.' );
+
+		// The outer run lost its lane before its delivery was scheduled, so it must not be reported as running.
+		self::assertInstanceOf( Failure::class, $outer );
+		$this->assert_failure_code( $outer, ErrorCode::OverlapHeld );
+
+		$this->rig->run_due();
+		self::assertSame( array( self::ARGS ), $this->job->calls, 'Only the surviving run may execute.' );
+	}
+
+	/**
+	 * A started listener that cancels its own run must not leave the caller holding a running run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_refuses_to_report_running_when_a_started_listener_cancels_the_run(): void {
+		$client    = $this->client;
+		$cancelled = null;
+		$started   = 'a8csp_bgje/started/' . self::IDENTITY;
+
+		$GLOBALS['a8csp_bgje_test_action_observers'] = array(
+			static function ( string $hook_name, array $args ) use ( $client, $started, &$cancelled ): void {
+				if ( $started !== $hook_name || null !== $cancelled ) {
+					return;
+				}
+				$run_id = $args[0] ?? null;
+				if ( ! $run_id instanceof RunId ) {
+					return;
+				}
+
+				$cancelled = $client->cancel( self::NAME, (string) $run_id );
+			},
+		);
+
+		try {
+			$result = $client->dispatch( self::NAME, self::ARGS );
+		} finally {
+			$GLOBALS['a8csp_bgje_test_action_observers'] = array();
+		}
+
+		self::assertInstanceOf( Success::class, $cancelled, 'The listener must have cancelled the admitted run.' );
+
+		// The row is terminal rather than absent, so the fence must read its status, not merely its presence.
+		self::assertInstanceOf( Failure::class, $result );
+		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+
+		$this->rig->run_due();
+		self::assertSame( array(), $this->job->calls, 'A cancelled run must not execute.' );
+	}
+
+	/**
 	 * Imperative admission resolves an explicit priority before the job and engine defaults.
 	 *
 	 * @since   1.0.0
@@ -2057,6 +2146,8 @@ final class DispatcherTest extends TestCase {
 	 */
 	private function script_scheduling_rollback_failure( string $failure ): void {
 		if ( 'lock_release' === $failure ) {
+			// The admitted-state confirmation reads once before scheduling, so the scripted failure targets the read after it.
+			$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 			$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 			$this->rig->wpdb()->before_next(
 				'select',
