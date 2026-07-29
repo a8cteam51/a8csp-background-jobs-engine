@@ -135,6 +135,8 @@ jobs:
     with:
       zip-artifact: release-zip
       plugin-slug: a8csp-background-jobs-engine
+      # Matches the plugin header's Requires PHP; below it WordPress refuses to activate the artifact.
+      php-version: '8.5'
       # The artifact smokes without Action Scheduler on purpose: the engine activates and
       # registers its CLI surface in the documented WP-Cron-only degraded posture.
       extra-smoke-commands: '["help a8csp-bgje"]'
