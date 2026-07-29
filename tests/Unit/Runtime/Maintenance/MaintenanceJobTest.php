@@ -133,7 +133,7 @@ final class MaintenanceJobTest extends TestCase {
 		$backend              = new RecordingBackend();
 		$registry             = new JobRegistry();
 		$rows                 = new OptionRows( $this->wpdb );
-		$guard                = new OverlapGuard( $clock, $this->logger, new OptionRows( $this->wpdb ) );
+		$guard                = new OverlapGuard( $clock, $this->logger, new OptionRows( $this->wpdb ), new LockWindows( $clock, $this->logger ) );
 		$stores               = new StoreFactory( $clock, $rows, $this->logger );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$lock_windows         = new LockWindows( $clock, $this->logger );

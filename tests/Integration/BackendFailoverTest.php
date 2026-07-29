@@ -192,7 +192,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$logger               = new EngineLogger();
 		$registry             = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new Randomizer();
-		$guard                = new OverlapGuard( $clock, $logger, $rows );
+		$guard                = new OverlapGuard( $clock, $logger, $rows, new LockWindows( $clock, $logger ) );
 		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock, $logger );
@@ -206,7 +206,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 		$occurrence_lease     = new OccurrenceLease( $rows, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $clock, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );

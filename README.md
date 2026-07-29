@@ -13,7 +13,7 @@ A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs 
 
 ## What it is
 
-A **Job** is one named unit of background work. A `JobDefinition` composes its name, kind, execution object, and policy declaration. Standard execution objects implement `JobExecutionInterface`; Chunked Job execution objects implement the standalone `ChunkedJobExecutionInterface` role to split work into independently processed chunks. `JobDefinition::closure()` provides a closure-backed standard Job with engine-default policy. A **Schedule** dispatches registered work on a fixed recurrence. Every piece of work belongs to a **scope** (your plugin slug); the engine composes `{scope}:{name}` into one identity so plugins using distinct scopes do not collide. A scope is a single-writer partition: exactly one plugin declares the schedules for a given scope, and a sync call for that scope is authoritative over every registration inside it.
+A **Job** is one named unit of background work. A `JobDefinition` composes its name, kind, execution object, and policy declaration. Standard execution objects implement `JobExecutionInterface`; Chunked Job execution objects implement the standalone `ChunkedJobExecutionInterface` role to split work into independently processed chunks. `JobDefinition::closure()` provides a closure-backed standard Job, with an optional `JobOptions` declaration. A **Schedule** dispatches registered work on a fixed recurrence. Every piece of work belongs to a **scope** (your plugin slug); the engine composes `{scope}:{name}` into one identity so plugins using distinct scopes do not collide. A scope is a single-writer partition: exactly one plugin declares the schedules for a given scope, and a sync call for that scope is authoritative over every registration inside it.
 
 Consumers use four connected surfaces:
 
@@ -223,7 +223,7 @@ function my_plugin_queue_digest( int $user_id ): void {
 }
 ```
 
-`JobDefinition::closure()` deliberately accepts no options and uses every engine default. Use a `JobExecutionInterface` object with `JobDefinition::job()` when the work needs explicit `JobOptions`. `a8csp_bgje_dispatch_job()` dispatches immediately; `a8csp_bgje_dispatch_job_at()` accepts an absolute Unix timestamp. A successful return proves admission, not completion. Keep arguments small and portable: pass identifying keys rather than bulk data.
+`JobDefinition::closure()` accepts the same optional `JobOptions` as `JobDefinition::job()`, so a closure-backed Job declares retry, overlap and runtime policy without an execution class. `a8csp_bgje_dispatch_job()` dispatches immediately; `a8csp_bgje_dispatch_job_at()` accepts an absolute Unix timestamp. A successful return proves admission, not completion. Keep arguments small and portable: pass identifying keys rather than bulk data.
 
 ### 3. A chunked job over a chunk queue
 
@@ -466,7 +466,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `Jobs` | Scope-bound readonly manager for registration, immediate dispatch, and absolute-time dispatch. |
 | `Schedules` | Scope-bound readonly manager for schedule synchronization and immediate dispatch. |
 | `Runs` | Scope-bound readonly manager for run inspection, retry, and cancellation. |
-| `JobDefinition` | Final readonly registration declaration with public `string $name`, `JobKind $kind`, `KindExecutionInterface $execution`, and `JobOptions $options`. Its non-public constructor is exposed through `job()`, `chunked_job()`, `closure()`, and `for_kind()`. The closure constructor always applies engine-default policy. |
+| `JobDefinition` | Final readonly registration declaration with public `string $name`, `JobKind $kind`, `KindExecutionInterface $execution`, and `JobOptions $options`. Its non-public constructor is exposed through `job()`, `chunked_job()`, `closure()`, and `for_kind()`, each taking an optional `JobOptions`. |
 | `JobKind` | Final readonly kind key with public `string $value`, built-in `job()` and `chunked_job()` constructors, and `from( string $value )` for a grammar-valid key. It carries no execution contract. |
 | `JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?RetryPolicy $retry`, `?OverlapPolicy $overlap`, `?\Closure $overlap_key`, and `?int $priority`. Null uses the documented default for each policy except priority, where it defers to the priority resolution ladder ending at engine default 10. `max_runtime` supplies per-invocation crash-reclamation credit, not an execution limit. Construction stores `max_runtime` and priority without validating their declared bounds: `jobs()->register()` rejects an invalid `max_runtime` or job-default priority, `schedules()->sync()` rejects an invalid schedule priority, and `jobs()->dispatch()` rejects an invalid explicit priority. The [consumer limits](#consumer-limits) give the exact bounds and effective clamp. |
 | `KindExecutionInterface` | Empty marker shared by the standard and chunked execution roles so a kind-agnostic declaration can require execution membership while registration resolves the kind-specific role. |
@@ -513,10 +513,10 @@ Every registration supplies one immutable `JobDefinition`. The typed constructor
 
 - `JobDefinition::job( string $name, JobExecutionInterface $execution, ?JobOptions $options = null )`
 - `JobDefinition::chunked_job( string $name, ChunkedJobExecutionInterface $execution, ?JobOptions $options = null )`
-- `JobDefinition::closure( string $name, \Closure $handler )`
+- `JobDefinition::closure( string $name, \Closure $handler, ?JobOptions $options = null )`
 - `JobDefinition::for_kind( string $name, JobKind $kind, KindExecutionInterface $execution, ?JobOptions $options = null )`
 
-The `job()` and `chunked_job()` constructors bind the built-in kind to its typed execution role. The closure handler receives `(array $start_args, RunContextInterface $context)` and always uses engine defaults; the adapter that implements its execution role is internal. `for_kind()` is the generic registration-data primitive. Only engine-installed kinds register successfully, and consumer code cannot install or implement kind handlers.
+The `job()` and `chunked_job()` constructors bind the built-in kind to its typed execution role. The closure handler receives `(array $start_args, RunContextInterface $context)`; the adapter that implements its execution role is internal. `for_kind()` is the generic registration-data primitive. Only engine-installed kinds register successfully, and consumer code cannot install or implement kind handlers.
 
 `JobKind::job()` and `JobKind::chunked_job()` return the installed built-in keys. `JobKind::from()` wraps a grammar-valid key matching `[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?`; it does not prove that a handler is installed. Passing an object that does not implement `KindExecutionInterface` to `for_kind()` fails definition construction with `\TypeError`. Registration of an uninstalled kind returns `WP_Error` with `invalid_argument` and names the kind. A marker-implementing object of the wrong role reaches registration, where the resolved handler returns `WP_Error` with `invalid_argument` and names both the kind and its expected execution interface.
 
@@ -610,7 +610,7 @@ Filters with an identity apply the generic hook first and the identity-specific 
 | `a8csp_bgje/queue` · `a8csp_bgje/queue/{identity}` | Generic: `(array $queue, string $identity, array $start_args, string $run_id)` · specific: `(array $queue, array $start_args, string $run_id)`; return an array list containing the complete set of chunk argument arrays. |
 | `a8csp_bgje/misfire_grace` · `a8csp_bgje/misfire_grace/{schedule_identity}` | Both: `(int $grace, string $scope, string $schedule_identity)`; return a non-negative grace in seconds, defaulting to one interval. |
 | `a8csp_bgje/continue_delay` · `a8csp_bgje/continue_delay/{identity}` | Generic: `(int $delay, string $identity, string $run_id)` · specific: `(int $delay, string $run_id)`; return a non-negative delay in seconds, defaulting to 60. It also floors lock staleness at twice the delay. |
-| `a8csp_bgje/lock_staleness` · `a8csp_bgje/lock_staleness/{identity}` | Generic: `(int $seconds, string $identity)` · specific: `(int $seconds)`; return a positive lock window, defaulting to 900 and at least twice the continue delay. |
+| `a8csp_bgje/lock_staleness` · `a8csp_bgje/lock_staleness/{identity}` | Generic: `(int $seconds, string $identity)` · specific: `(int $seconds)`; return a positive lock window, defaulting to 900 and at least twice the continue delay. Consulted when a lock is already held, to grade the run holding it; an uncontended dispatch has no incumbent to grade and does not apply it. |
 | `a8csp_bgje/history_size` | `(int $size): int`; return a positive per-buffer history cap, defaulting to 30. |
 | `a8csp_bgje/log_to_error_log` | `(bool $enabled): bool`; return whether the current event is written to the default PHP error-log sink, defaulting to `true`. Evaluated for every event. |
 | `a8csp_bgje/error_log_level` | `(string $minimum_level): string`; return the least severe recognized PSR-3 level written to the default PHP error-log sink, defaulting to `warning`. An unrecognized return falls back to `warning`; this gates only the sink and never `a8csp_bgje/log`. |

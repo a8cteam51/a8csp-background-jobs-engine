@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceLockSweep;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
@@ -83,6 +84,8 @@ final class OverlapGuardTest extends TestCase {
 		}
 
 		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
+		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
+		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
 	}
 
 	/** Resets the site, database, and cache state. */
@@ -96,6 +99,26 @@ final class OverlapGuardTest extends TestCase {
 		$this->identity                         = Identity::compose( 'scope-a', 'email-digest' );
 		$this->wpdb                             = new WpdbLockSpy();
 		$this->rows                             = new OptionRows( $this->wpdb );
+
+		$GLOBALS['a8csp_bgje_test_hooks']                         = array();
+		$GLOBALS['a8csp_bgje_test_filter_registrations']          = array();
+		$GLOBALS['a8csp_bgje_test_filter_registration_callbacks'] = array();
+	}
+
+	/**
+	 * Declares the lock window these scenarios grade an incumbent against.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $seconds Lock staleness window.
+	 *
+	 * @return  void
+	 */
+	private function declare_lock_window( int $seconds ): void {
+		// The window is floored at twice the continue delay, so the delay is declared low enough to leave it free.
+		\add_filter( 'a8csp_bgje/continue_delay', static fn (): int => 1 );
+		\add_filter( 'a8csp_bgje/lock_staleness', static fn (): int => $seconds );
 	}
 
 	// endregion.
@@ -120,7 +143,7 @@ final class OverlapGuardTest extends TestCase {
 
 	/** An absent lock is claimed with the exact schema and non-autoload policy. */
 	public function test_fresh_claim_inserts_the_literal_non_autoloaded_lock(): void {
-		$result = $this->guard_at( 1_700_000_100 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 900 );
+		$result = $this->guard_at( 1_700_000_100 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
 		self::assertSame( LockClaimOutcome::Claimed, $result->outcome );
 		self::assertNull( $result->owner_run_id );
@@ -136,7 +159,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-live', 1_700_000_000, 1_700_000_090 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 1_700_000_100 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 900 );
+		$result = $this->guard_at( 1_700_000_100 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
 		self::assertSame( LockClaimOutcome::Contended, $result->outcome );
 		self::assertSame( 'run-live', $result->owner_run_id );
@@ -157,7 +180,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival', 100 );
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
 
 		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
 		self::assertNull( $result->owner_run_id );
@@ -241,7 +264,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw    = self::fixture_lock_raw( 'run-dead', 1_699_999_000, 1_699_999_199 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 1_700_000_100, $logger )->claim( $this->identity, self::ARGS_HASH, 'run-new', 900 );
+		$result = $this->guard_at( 1_700_000_100, $logger )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
 		self::assertSame( LockClaimOutcome::Contended, $result->outcome );
 		self::assertSame( 'run-dead', $result->owner_run_id );
@@ -257,7 +280,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = self::fixture_lock_raw( 'run-owner', 100, 120 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-owner', 900 );
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( LockClaimOutcome::Contended, $result->outcome );
 		self::assertSame( 'run-owner', $result->owner_run_id );
@@ -274,7 +297,7 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, $raw );
 		$guard = $this->guard_at( 1_000, $logger );
 
-		$result = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$result = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
 		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
 		self::assertNull( $result->owner_run_id );
@@ -291,7 +314,7 @@ final class OverlapGuardTest extends TestCase {
 		$raw = StoreFixtureBuilder::corrupt_row( new LockRowWakeupProbe() );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 1_000 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$result = $this->guard_at( 1_000 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
 		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
 		self::assertSame( $raw, $result->raw );
@@ -317,17 +340,18 @@ final class OverlapGuardTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_forward_dated_heartbeat_holds_until_after_expected_fire_plus_window(): void {
+		$this->declare_lock_window( 100 );
 		$clock = new FixedClock( 200 );
-		$guard = new OverlapGuard( $clock, new RecordingLogger(), $this->rows );
+		$guard = new OverlapGuard( $clock, new RecordingLogger(), $this->rows, new LockWindows( $clock, new RecordingLogger() ) );
 
 		$this->store_fixture_lock( 'run-owner', 100, 120 );
 
 		self::assertSame( HeartbeatOutcome::Owned, $guard->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner', 1_000 ) );
 		self::assertSame( 0, $clock->calls );
 		self::assertSame( self::expected_lock_row( 'run-owner', 100, 1_000 ), $this->lock() );
-		self::assertFalse( $this->guard_at( 500 )->claim( $this->identity, self::ARGS_HASH, 'run-rival', 100 )->stale );
-		self::assertFalse( $this->guard_at( 1_100 )->claim( $this->identity, self::ARGS_HASH, 'run-rival', 100 )->stale );
-		self::assertTrue( $this->guard_at( 1_101 )->claim( $this->identity, self::ARGS_HASH, 'run-rival', 100 )->stale );
+		self::assertFalse( $this->guard_at( 500 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' )->stale );
+		self::assertFalse( $this->guard_at( 1_100 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' )->stale );
+		self::assertTrue( $this->guard_at( 1_101 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' )->stale );
 		self::assertSame( self::expected_lock_row( 'run-owner', 100, 1_000 ), $this->lock() );
 	}
 
@@ -533,29 +557,30 @@ final class OverlapGuardTest extends TestCase {
 
 	/** Claim outcomes distinguish fresh, stale, absent, and malformed rows with exact bytes. */
 	public function test_claim_distinguishes_fresh_stale_absent_and_malformed_locks(): void {
+		$this->declare_lock_window( 100 );
 		$guard     = $this->guard_at( 1_000 );
 		$fresh_raw = self::fixture_lock_raw( 'run-owner', 100, 901 );
 		$this->wpdb->put( self::KEY, $fresh_raw );
-		$fresh = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$fresh = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 		self::assertSame( LockClaimOutcome::Contended, $fresh->outcome );
 		self::assertFalse( $fresh->stale );
 		self::assertSame( $fresh_raw, $this->wpdb->rows[ self::KEY ] );
 
 		$stale_raw = self::fixture_lock_raw( 'run-owner', 100, 899 );
 		$this->wpdb->put( self::KEY, $stale_raw );
-		$stale = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$stale = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 		self::assertSame( LockClaimOutcome::Contended, $stale->outcome );
 		self::assertTrue( $stale->stale );
 		self::assertSame( $stale_raw, $this->wpdb->rows[ self::KEY ] );
 
 		unset( $this->wpdb->rows[ self::KEY ], $this->wpdb->autoload[ self::KEY ] );
-		$absent = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$absent = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 		self::assertSame( LockClaimOutcome::Claimed, $absent->outcome );
 		self::assertSame( self::fixture_lock_raw( 'run-new', 1_000, 1_000 ), $this->wpdb->rows[ self::KEY ] );
 
 		$malformed_raw = 'not-a-lock-row';
 		$this->wpdb->put( self::KEY, $malformed_raw );
-		$malformed = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$malformed = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 		self::assertSame( LockClaimOutcome::Malformed, $malformed->outcome );
 		self::assertSame( $malformed_raw, $malformed->raw );
 		self::assertSame( $malformed_raw, $this->wpdb->rows[ self::KEY ] );
@@ -574,7 +599,7 @@ final class OverlapGuardTest extends TestCase {
 		);
 		$this->wpdb->put( self::KEY, $raw );
 
-		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
 		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
 		self::assertSame( $raw, $result->raw );
@@ -592,7 +617,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
 		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
@@ -772,18 +797,44 @@ final class OverlapGuardTest extends TestCase {
 
 	/** A heartbeat exactly one window old remains fresh until one more second elapses. */
 	public function test_staleness_requires_heartbeat_age_to_exceed_the_given_window(): void {
+		$this->declare_lock_window( 100 );
 		$boundary = self::fixture_lock_row( 'run-owner', 100, 900 );
 		$this->store_fixture_lock( 'run-owner', 100, 900 );
 		$guard = $this->guard_at( 1_000 );
 
-		$selection = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$selection = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 		self::assertSame( LockClaimOutcome::Contended, $selection->outcome );
 		self::assertFalse( $selection->stale );
 		self::assertSame( $boundary, $this->lock() );
-		$stale = $this->guard_at( 1_001 )->claim( $this->identity, self::ARGS_HASH, 'run-new', 100 );
+		$stale = $this->guard_at( 1_001 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 		self::assertSame( LockClaimOutcome::Contended, $stale->outcome );
 		self::assertTrue( $stale->stale );
 		self::assertSame( $boundary, $this->lock() );
+	}
+
+	/**
+	 * A contended claim grades the incumbent against the window its own run declares.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_contended_claim_grades_the_incumbent_by_its_own_window(): void {
+		\add_filter( 'a8csp_bgje/lock_staleness', static fn (): int => 100 );
+		// The incumbent's own continuation delay floors its window at 1,200 seconds; the contender's floors at 2.
+		\add_filter(
+			'a8csp_bgje/continue_delay',
+			static fn ( int $delay, string $identity, string $run_id ): int => 'run-owner' === $run_id ? 600 : 1,
+			10,
+			3
+		);
+		$this->store_fixture_lock( 'run-owner', 100, 500 );
+
+		$selection = $this->guard_at( 1_000 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
+
+		self::assertSame( LockClaimOutcome::Contended, $selection->outcome );
+		self::assertFalse( $selection->stale, 'A live incumbent must not be judged stale by the window its rival declares.' );
 	}
 
 	// endregion.
@@ -799,7 +850,7 @@ final class OverlapGuardTest extends TestCase {
 	 * @return  OverlapGuard
 	 */
 	private function guard_at( int $timestamp, ?RecordingLogger $logger = null ): OverlapGuard {
-		return new OverlapGuard( new FixedClock( $timestamp ), $logger ?? new RecordingLogger(), $this->rows );
+		return new OverlapGuard( new FixedClock( $timestamp ), $logger ?? new RecordingLogger(), $this->rows, new LockWindows( new FixedClock( $timestamp ), new RecordingLogger() ) );
 	}
 
 	/**

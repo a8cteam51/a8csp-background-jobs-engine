@@ -194,9 +194,43 @@ final class ScheduleTest extends TestCase {
 		self::assertNotSame( $integer->fingerprint(), $float->fingerprint() );
 	}
 
+	/**
+	 * The documented maximum argument depth is accepted, and one level beyond it is refused.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_arguments_accept_the_documented_maximum_depth(): void {
+		$accepted = new Schedule( name: 'nightly', recurrence: Recurrence::every( 300 ), job: 'refresh-index', args: array( 'tree' => self::nested( 511 ) ), );
+
+		self::assertNotSame( '', $accepted->fingerprint() );
+
+		$this->expectException( \InvalidArgumentException::class );
+
+		new Schedule( name: 'nightly', recurrence: Recurrence::every( 300 ), job: 'refresh-index', args: array( 'tree' => self::nested( 512 ) ), );
+	}
+
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Builds an argument subtree of the requested array depth.
+	 *
+	 * @param   int $levels Array levels to build.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private static function nested( int $levels ): array {
+		$tree = array( 'leaf' );
+		for ( $index = 1; $index < $levels; $index++ ) {
+			$tree = array( $tree );
+		}
+
+		return $tree;
+	}
 
 	/**
 	 * Creates the baseline definition used by fingerprint assertions.

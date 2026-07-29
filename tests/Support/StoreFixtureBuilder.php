@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
@@ -393,8 +394,8 @@ final readonly class StoreFixtureBuilder {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $args_hash, $run_id, $claimed_at, $heartbeat_at ): array {
 				$clock = new FixedClock( $claimed_at );
-				$guard = new OverlapGuard( $clock, new RecordingLogger(), new OptionRows( $wpdb ) );
-				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id, 0 )->outcome ) {
+				$guard = new OverlapGuard( $clock, new RecordingLogger(), new OptionRows( $wpdb ), new LockWindows( $clock, new RecordingLogger() ) );
+				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id )->outcome ) {
 					throw new \LogicException( 'Production OverlapGuard rejected an isolated lock fixture.' );
 				}
 

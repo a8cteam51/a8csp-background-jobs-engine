@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobKind;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\KindExecutionInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -23,6 +24,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( JobDefinition::class )]
 #[UsesClass( JobKind::class )]
 #[UsesClass( JobOptions::class )]
+#[UsesClass( OverlapPolicy::class )]
 final class JobDefinitionTest extends TestCase {
 	// region LIFECYCLE.
 
@@ -135,6 +137,36 @@ final class JobDefinitionTest extends TestCase {
 		$definition->execution->handle( $args, $context );
 
 		self::assertSame( array( array( $args, $context ) ), $calls );
+	}
+
+	/**
+	 * A closure-backed job carries a declared policy, so non-default policy needs no execution class.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_closure_composition_carries_a_declared_policy(): void {
+		$overlap_key = static function ( array $start_args ): ?string {
+			$site_id = $start_args['site_id'] ?? null;
+
+			return \is_int( $site_id ) ? 'site:' . $site_id : null;
+		};
+		$options     = new JobOptions( max_runtime: 42, overlap: OverlapPolicy::Reject, overlap_key: $overlap_key, priority: 5 );
+		$definition  = JobDefinition::closure(
+			name: 'refresh-index',
+			handler: static function ( array $start_args, RunContextInterface $context ): void {},
+			options: $options
+		);
+
+		self::assertSame( 'job', $definition->kind->value );
+		self::assertInstanceOf( JobExecutionInterface::class, $definition->execution );
+		self::assertSame( $options, $definition->options );
+		self::assertSame( 42, $definition->options->max_runtime );
+		self::assertSame( OverlapPolicy::Reject, $definition->options->overlap );
+		self::assertSame( $overlap_key, $definition->options->overlap_key );
+		self::assertSame( 5, $definition->options->priority );
 	}
 
 	// endregion.

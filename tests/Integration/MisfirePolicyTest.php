@@ -375,7 +375,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$schedule_registry    = new ScheduleRegistry( $rows, $logger );
 		$randomizer           = new RecordingRandomizer( 42 );
 		$locks                = new OptionRows( $wpdb );
-		$guard                = new OverlapGuard( $clock, $logger, $locks );
+		$guard                = new OverlapGuard( $clock, $logger, $locks, new LockWindows( $clock, $logger ) );
 		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock, $logger );
@@ -396,7 +396,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $lock_windows, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );

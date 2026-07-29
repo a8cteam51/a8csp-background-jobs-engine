@@ -147,6 +147,132 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * A started listener that supersedes the admitted run must not leave the caller holding a running run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_refuses_to_report_running_when_a_started_listener_supersedes_the_run(): void {
+		$this->boot( OverlapPolicy::Replace );
+		$this->overlap_key_resolver = static fn ( array $args ): string => 'one-lane';
+
+		$rig       = $this->rig;
+		$client    = $this->client;
+		$reentered = false;
+		$nested    = null;
+		$started   = 'a8csp_bgje/started/' . self::IDENTITY;
+
+		$GLOBALS['a8csp_bgje_test_action_observers'] = array(
+			static function ( string $hook_name, array $args ) use ( $rig, $client, $started, &$reentered, &$nested ): void {
+				if ( $started !== $hook_name || $reentered ) {
+					return;
+				}
+				$reentered                = true;
+				$rig->randomizer()->value = 43;
+				$nested                   = $client->dispatch( self::NAME, self::ARGS );
+			},
+		);
+
+		try {
+			$outer = $client->dispatch( self::NAME, self::ARGS );
+		} finally {
+			$GLOBALS['a8csp_bgje_test_action_observers'] = array();
+		}
+
+		self::assertTrue( $reentered, 'The started listener must have re-entered dispatch for this scenario to mean anything.' );
+		self::assertInstanceOf( Success::class, $nested, 'The re-entrant dispatch is the one that wins the lane.' );
+
+		// The outer run lost its lane before its delivery was scheduled, so it must not be reported as running.
+		self::assertInstanceOf( Failure::class, $outer );
+		$this->assert_failure_code( $outer, ErrorCode::OverlapHeld );
+
+		$this->rig->run_due();
+		self::assertSame( array( self::ARGS ), $this->job->calls, 'Only the surviving run may execute.' );
+	}
+
+	/**
+	 * A started listener that cancels its own run must not leave the caller holding a running run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_refuses_to_report_running_when_a_started_listener_cancels_the_run(): void {
+		$client    = $this->client;
+		$cancelled = null;
+		$started   = 'a8csp_bgje/started/' . self::IDENTITY;
+
+		$GLOBALS['a8csp_bgje_test_action_observers'] = array(
+			static function ( string $hook_name, array $args ) use ( $client, $started, &$cancelled ): void {
+				if ( $started !== $hook_name || null !== $cancelled ) {
+					return;
+				}
+				$run_id = $args[0] ?? null;
+				if ( ! $run_id instanceof RunId ) {
+					return;
+				}
+
+				$cancelled = $client->cancel( self::NAME, (string) $run_id );
+			},
+		);
+
+		try {
+			$result = $client->dispatch( self::NAME, self::ARGS );
+		} finally {
+			$GLOBALS['a8csp_bgje_test_action_observers'] = array();
+		}
+
+		self::assertInstanceOf( Success::class, $cancelled, 'The listener must have cancelled the admitted run.' );
+
+		// The row is terminal rather than absent, so the fence must read its status, not merely its presence.
+		self::assertInstanceOf( Failure::class, $result );
+		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+
+		$this->rig->run_due();
+		self::assertSame( array(), $this->job->calls, 'A cancelled run must not execute.' );
+	}
+
+	/**
+	 * A slow staleness filter must not stamp a superseding run with a generation that predates it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_stamps_liveness_after_the_admission_filters_run(): void {
+		$this->boot( OverlapPolicy::Replace );
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
+
+		// Grading the incumbent applies consumer filters, and the successor must be stamped after they run.
+		$clock = $this->rig->clock();
+		\add_filter(
+			'a8csp_bgje/lock_staleness',
+			static function ( mixed $staleness ) use ( $clock ): mixed {
+				$clock->timestamp += 10;
+
+				return $staleness;
+			}
+		);
+		$this->rig->randomizer()->value = 43;
+
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
+
+		$lock = null;
+		foreach ( $this->rig->wpdb()->rows as $name => $raw ) {
+			if ( \str_contains( $name, 'overlap_lock' ) ) {
+				$lock = \maybe_unserialize( $raw );
+				break;
+			}
+		}
+		self::assertIsArray( $lock );
+		self::assertSame( self::NOW + 10, $lock['heartbeat_at'] ?? null );
+	}
+
+	/**
 	 * Imperative admission resolves an explicit priority before the job and engine defaults.
 	 *
 	 * @since   1.0.0
@@ -991,6 +1117,8 @@ final class DispatcherTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_dispatch_passes_the_documented_lock_staleness_filter_arguments(): void {
+		// The window is only resolved to grade an incumbent, so the lane must already be held.
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
 		$filter_args = null;
 		$this->set_filter_value(
 			'a8csp_bgje/lock_staleness/' . self::IDENTITY,
@@ -1006,7 +1134,8 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		self::assertInstanceOf( Success::class, $result );
+		// The incumbent holds the lane, which is the state that consults the window.
+		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		self::assertSame(
 			array(
 				'arity' => 1,
@@ -1842,6 +1971,42 @@ final class DispatcherTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A takeover that loses the lock transfer restores the incumbent it had already superseded.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_lost_lock_transfer_restores_the_incumbent_it_superseded(): void {
+		$this->boot( OverlapPolicy::Replace );
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
+
+		// Let the incumbent supersession commit, then take the lock transfer away from the replacement.
+		$wpdb = $this->rig->wpdb();
+		$wpdb->before_next( 'update', static function (): void {} );
+		$wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $spy ): void {
+				$spy->script_result( 'update', 0 );
+			}
+		);
+		$this->rig->randomizer()->value = 43;
+
+		$replacement = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $replacement, ErrorCode::OverlapHeld );
+		$incumbent = $this->option( $this->run_option_name() );
+		self::assertIsArray( $incumbent );
+		// A takeover that lost may not leave the run it superseded terminal and unrunnable.
+		self::assertSame( 'running', $incumbent['status'] ?? null );
+		self::assertNotNull( $incumbent['pending'] ?? null );
+
+		$this->rig->run_due();
+		self::assertSame( array( self::ARGS ), $this->job->calls, 'The restored incumbent must still execute.' );
+	}
+
 	// endregion.
 
 	// region HELPERS.
@@ -2057,6 +2222,8 @@ final class DispatcherTest extends TestCase {
 	 */
 	private function script_scheduling_rollback_failure( string $failure ): void {
 		if ( 'lock_release' === $failure ) {
+			// The admitted-state confirmation reads once before scheduling, so the scripted failure targets the read after it.
+			$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 			$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 			$this->rig->wpdb()->before_next(
 				'select',

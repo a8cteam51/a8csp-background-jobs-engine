@@ -20,7 +20,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
@@ -85,7 +84,6 @@ final readonly class Dispatcher {
 	 * @param   ClockInterface      $clock                  Timestamp source.
 	 * @param   RandomizerInterface $randomizer             Run identifier randomness.
 	 * @param   LoggerInterface     $logger                 Log event sink.
-	 * @param   LockWindows         $lock_windows           Filterable run-lock timing policy.
 	 * @param   RunTransitions      $terminal_transitions   Fenced terminal-write coordinator.
 	 */
 	public function __construct(
@@ -99,7 +97,6 @@ final readonly class Dispatcher {
 		private ClockInterface $clock,
 		private RandomizerInterface $randomizer,
 		private LoggerInterface $logger,
-		private LockWindows $lock_windows,
 		private RunTransitions $terminal_transitions,
 	) {}
 
@@ -432,7 +429,10 @@ final readonly class Dispatcher {
 		}
 
 		$latest_pointer = $this->stores->latest_run_pointer( $identity );
-		$claim          = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ), $created_at );
+		// The guard decides liveness against the incumbent's own window and reports the generation it decided
+		// under, which is what the admitted run is stamped with.
+		$claim      = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
+		$created_at = $claim->claimed_at ?? $created_at;
 		if (
 			LockClaimOutcome::Malformed === $claim->outcome
 			|| LockClaimOutcome::Indeterminate === $claim->outcome
@@ -538,6 +538,29 @@ final readonly class Dispatcher {
 			return new Failure( $after_dispatch_error );
 		}
 
+		// Started listeners are consumer code and can dispatch into this same lane, superseding this run and
+		// removing its row. Scheduling the descriptor below would then report a run that can never execute.
+		// An unreadable row proves nothing, so it keeps the scheduling path rather than turning a storage
+		// fault into a lost dispatch.
+		$confirmed = $run_store->inspect( $run_id );
+		if ( ! $confirmed->is_failure() ) {
+			$snapshot = $confirmed->value;
+			if ( null === $snapshot || null === $snapshot['state'] ) {
+				$this->execute_takeover_effects( $identity, $run_id, $takeover, $run_store );
+
+				return new Failure(
+					new EngineError(
+						\sprintf( '%1$s "%2$s" lost its admitted run state while its started listeners ran; dispatch it again against the current lock state.', $kind, (string) $identity ),
+						reason: EngineErrorReason::OverlapHeld,
+						context: array(
+							'identity' => (string) $identity,
+							'run_id'   => $run_id,
+						),
+					)
+				);
+			}
+		}
+
 		$pending   = $state->pending ?? throw new \LogicException( 'Admitted run delivery requires a durable pending-action descriptor.' );
 		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {
@@ -591,7 +614,8 @@ final readonly class Dispatcher {
 		$run_id = RunIdentity::generate( $now, $this->randomizer );
 		// A resolver failure has no trustworthy client overlap lane, so its diagnostic run cannot contend with working admissions.
 		$args_hash = $this->salted_args_hash( $args_hash, $run_id );
-		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id, $this->lock_windows->lock_staleness( $identity, $run_id ) );
+		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
+		$now       = $claim->claimed_at ?? $now;
 		if (
 			LockClaimOutcome::Malformed === $claim->outcome
 			|| LockClaimOutcome::Indeterminate === $claim->outcome
@@ -603,7 +627,7 @@ final readonly class Dispatcher {
 		}
 
 		$run_store = $this->stores->run_store( $identity );
-		$state     = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), priority: $priority );
+		$state     = $run_store->create( $run_id, $kind, $args, $args_hash, $handler->initial_kind_state( $args ), priority: $priority, at: $now );
 		if ( $state instanceof Failure ) {
 			$this->overlap_guard->release( $identity, $args_hash, $run_id );
 
@@ -750,6 +774,7 @@ final readonly class Dispatcher {
 		}
 
 		$claimed_incumbent = null;
+		$superseded_here   = false;
 		if ( null !== $incumbent_snapshot && RunStatus::Running === $incumbent_snapshot['state']->status ) {
 			// This exact run-state CAS is the first linearization point: once it wins, the incumbent's in-flight completion CAS cannot commit after takeover.
 			$claimed_incumbent = $this->terminal_transitions->claim_superseded_run( $incumbent_run_id, $incumbent_snapshot['state'], $run_store, $incumbent_snapshot['raw'] );
@@ -783,6 +808,8 @@ final readonly class Dispatcher {
 					)
 				);
 			}
+
+			$superseded_here = true;
 		} elseif ( null !== $incumbent_snapshot && RunStatus::Superseded === $incumbent_snapshot['state']->status ) {
 			// An unresolved lock transfer leaves Superseded effects pending; a retry with a definite transfer owns their replay.
 			$claimed_incumbent = array(
@@ -813,6 +840,20 @@ final readonly class Dispatcher {
 			// A rival may advance the provisional state while the overlap transfer is in flight.
 			$run_store->delete_if_unchanged( $run_id, $state );
 			// The exact lock-transfer winner owns replay; competing snapshots cannot safely fire the same unmarked effects.
+			// Losing the transfer means the incumbent never left its lane, so the supersession written above is undone
+			// against the exact bytes it wrote. A row that moved since belongs to whoever moved it.
+			$restored = $superseded_here && null !== $incumbent_snapshot && null !== $claimed_incumbent
+				? $run_store->replace_if_raw_matches( $incumbent_run_id, $claimed_incumbent['raw'], $incumbent_snapshot['state'] )
+				: '';
+			if ( ! \is_string( $restored ) ) {
+				$this->logger->warning(
+					'A lost overlap transfer could not restore the run it superseded; maintenance owns its terminal effects.',
+					array(
+						'identity' => (string) $identity,
+						'run_id'   => $incumbent_run_id,
+					)
+				);
+			}
 
 			return new Failure(
 				new EngineError(

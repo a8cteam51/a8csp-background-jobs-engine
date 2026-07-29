@@ -63,14 +63,16 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ClockInterface  $clock  Timestamp source.
-	 * @param   LoggerInterface $logger Log event sink.
-	 * @param   OptionRows      $rows   Authoritative raw lock-row I/O.
+	 * @param   ClockInterface  $clock        Timestamp source.
+	 * @param   LoggerInterface $logger       Log event sink.
+	 * @param   OptionRows      $rows         Authoritative raw lock-row I/O.
+	 * @param   LockWindows     $lock_windows Filterable liveness policy for the run holding a lock.
 	 */
 	public function __construct(
 		private ClockInterface $clock,
 		private LoggerInterface $logger,
 		private OptionRows $rows,
+		private LockWindows $lock_windows,
 	) {}
 
 	// endregion
@@ -83,24 +85,19 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity         Complete scope-qualified job or chunked job identity.
-	 * @param   string   $args_hash        Stable single-flight identity.
-	 * @param   string   $run_id           Claiming run identifier.
-	 * @param   int      $staleness_window Caller-resolved staleness window in seconds.
-	 * @param   int|null $at               Admission timestamp shared with the run row, or null to read the clock. The first
-	 *                                     delivery presents the run row's heartbeat as this lock's expected generation, so a
-	 *                                     second clock read here would fence that delivery out whenever the two straddle a
-	 *                                     second boundary.
+	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
+	 * @param   string   $args_hash Stable single-flight identity.
+	 * @param   string   $run_id    Claiming run identifier.
 	 *
-	 * @return  LockClaimResult Typed selection with an exact snapshot when one was read.
+	 * @return  LockClaimResult Typed selection carrying the generation it decided under, with an exact snapshot when one was read.
 	 */
-	public function claim( Identity $identity, string $args_hash, string $run_id, int $staleness_window, ?int $at = null ): LockClaimResult {
+	public function claim( Identity $identity, string $args_hash, string $run_id ): LockClaimResult {
 		$key      = $this->option_name( $identity, $args_hash );
-		$now      = $at ?? $this->clock->now()->getTimestamp();
+		$now      = $this->clock->now()->getTimestamp();
 		$new_lock = self::new_lock( $run_id, $now );
 
 		if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
-			return LockClaimResult::claimed();
+			return LockClaimResult::claimed( $now );
 		}
 
 		$selected = $this->rows->read( $key );
@@ -118,7 +115,13 @@ final readonly class OverlapGuard {
 			return LockClaimResult::malformed( $raw );
 		}
 
-		return LockClaimResult::contended( $lock['run_id'], $raw, self::is_stale( $lock, $now, $staleness_window ) );
+		// Liveness is the incumbent's own policy: resolving the window from the contender would judge a healthy
+		// incumbent against a window it never declared. Resolving it applies consumer filters, so the age this
+		// decision uses is read afterwards.
+		$staleness_window = $this->lock_windows->lock_staleness( $identity, $lock['run_id'] );
+		$now              = $this->clock->now()->getTimestamp();
+
+		return LockClaimResult::contended( $lock['run_id'], $raw, self::is_stale( $lock, $now, $staleness_window ), $now );
 	}
 
 	/**
