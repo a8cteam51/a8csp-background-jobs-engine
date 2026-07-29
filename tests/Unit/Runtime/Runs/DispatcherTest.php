@@ -361,6 +361,31 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * A started-listener failure whose terminalization is unconfirmed reports storage rather than the listener.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The run keeps its pending descriptor when the terminal write is not confirmed, and stale-state
+	 *                maintenance redelivers a run in that shape rather than terminalizing it. Reporting the listener
+	 *                failure as definite would tell a caller the work is finished with while it is still scheduled to run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_reports_storage_when_a_started_listener_failure_cannot_terminalize(): void {
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array( 'a8csp_bgje/started/' . self::IDENTITY => new \RuntimeException( 'Started listener exploded.' ) );
+		$this->rig->wpdb()->script_result( 'update', false );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$error = $this->assert_failure_code( $result, ErrorCode::StorageFailed );
+		self::assertStringContainsString( 'could not be terminalized', $error->message );
+		self::assertSame( self::IDENTITY, $error->context['identity'] ?? null );
+		self::assertSame( self::RUN_ID, $error->context['run_id'] ?? null );
+	}
+
+	/**
 	 * A throwing started listener cannot mutate the persisted state used by terminal CAS.
 	 *
 	 * @since   1.0.0
