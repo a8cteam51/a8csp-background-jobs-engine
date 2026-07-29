@@ -70,19 +70,20 @@ final readonly class JobDefinition {
 	}
 
 	/**
-	 * Defines a closure-backed standard job with engine-default policy.
+	 * Defines a closure-backed standard job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @phpstan-param \Closure(array<array-key, mixed>, RunContextInterface): mixed $handler
 	 *
-	 * @param   string   $name    Stable scope-local job name.
-	 * @param   \Closure $handler Job handler.
+	 * @param   string          $name    Stable scope-local job name.
+	 * @param   \Closure        $handler Job handler.
+	 * @param   JobOptions|null $options Declared policy, or null for engine defaults.
 	 *
 	 * @return  self
 	 */
-	public static function closure( string $name, \Closure $handler ): self {
+	public static function closure( string $name, \Closure $handler, ?JobOptions $options = null ): self {
 		$execution = new readonly class( $handler ) implements JobExecutionInterface {
 			/**
 			 * Constructor.
@@ -102,7 +103,7 @@ final readonly class JobDefinition {
 			}
 		};
 
-		return self::job( $name, $execution );
+		return self::job( $name, $execution, $options );
 	}
 
 	/**
