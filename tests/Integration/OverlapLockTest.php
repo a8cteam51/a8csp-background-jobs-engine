@@ -183,7 +183,6 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		self::assertSame( $run_a, $lock['run_id'] ?? null, 'A rejected start must preserve the incumbent lock owner' );
 		self::assertSame(
 			array(
-				'all'     => $run_a,
 				'by_hash' => array( $args_hash => $run_a ),
 			),
 			\get_option( 'a8csp_bgje_latest_run_' . self::REJECT_IDENTITY, null ),

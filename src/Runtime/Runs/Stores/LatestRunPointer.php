@@ -75,7 +75,10 @@ final readonly class LatestRunPointer {
 	// region METHODS
 
 	/**
-	 * Records a run as latest globally and for its single-flight identity.
+	 * Records a run as the latest for its single-flight identity.
+	 *
+	 * Identities beyond the bounded LRU cap re-record on every action, which causes write churn
+	 * without weakening lock-authoritative safety.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -90,30 +93,7 @@ final readonly class LatestRunPointer {
 	 */
 	#[\NoDiscard( 'a latest-run pointer persistence failure must be handled, not dropped' )]
 	public function record( string $run_id, string $args_hash ): bool {
-		return $this->persist( $run_id, $args_hash, false );
-	}
-
-	/**
-	 * Repairs one owner pointer without displacing an unrelated global latest run.
-	 *
-	 * The global pointer moves only when absent or when it names the displaced same-identity value.
-	 * Identities beyond the bounded LRU cap repair on every action, which causes write churn without
-	 * weakening lock-authoritative safety.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $run_id    Authoritative lock owner.
-	 * @param   string $args_hash Stable single-flight identity owned by the run.
-	 *
-	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
-	 *                          not serialize the pointer to a string.
-	 *
-	 * @return  bool True when the requested pointer state is confirmed persisted.
-	 */
-	#[\NoDiscard( 'a latest-run pointer persistence failure must be handled, not dropped' )]
-	public function repair_for_hash( string $run_id, string $args_hash ): bool {
-		return $this->persist( $run_id, $args_hash, true );
+		return $this->persist( $run_id, $args_hash );
 	}
 
 	/**
@@ -142,13 +122,12 @@ final readonly class LatestRunPointer {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $run_id        Run identifier for the moved identity.
-	 * @param   string $args_hash     Stable single-flight identity.
-	 * @param   bool   $repair_global Whether to preserve an unrelated global pointer.
+	 * @param   string $run_id    Run identifier for the moved identity.
+	 * @param   string $args_hash Stable single-flight identity.
 	 *
 	 * @return  bool True when the requested pointer state is confirmed persisted.
 	 */
-	private function persist( string $run_id, string $args_hash, bool $repair_global ): bool {
+	private function persist( string $run_id, string $args_hash ): bool {
 		$option_name = $this->option_name();
 
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
@@ -160,12 +139,7 @@ final readonly class LatestRunPointer {
 			$expected_raw = $selected->value;
 			$value        = null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw );
 
-			$by_hash       = self::by_hash_from_option( $value );
-			$previous_run  = $by_hash[ $args_hash ] ?? null;
-			$global_run_id = \is_array( $value ) && \is_string( $value['all'] ?? null ) ? $value['all'] : null;
-			if ( ! $repair_global || null === $global_run_id || $global_run_id === $previous_run ) {
-				$global_run_id = $run_id;
-			}
+			$by_hash = self::by_hash_from_option( $value );
 
 			unset( $by_hash[ $args_hash ] );
 			$by_hash[ $args_hash ] = $run_id;
@@ -173,12 +147,7 @@ final readonly class LatestRunPointer {
 				$by_hash = \array_slice( $by_hash, -self::HASH_LIMIT, null, true );
 			}
 
-			$replacement_raw = self::serialize_pointer(
-				array(
-					'all'     => $global_run_id,
-					'by_hash' => $by_hash,
-				)
-			);
+			$replacement_raw = self::serialize_pointer( array( 'by_hash' => $by_hash ) );
 			if ( $replacement_raw === $expected_raw ) {
 				return true;
 			}

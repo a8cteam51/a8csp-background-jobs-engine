@@ -861,7 +861,6 @@ final class RunTransitionsTest extends TestCase {
 		);
 		self::assertSame(
 			array(
-				'all'     => self::RUN_ID,
 				'by_hash' => array( self::ARGS_HASH => self::RUN_ID ),
 			),
 			$this->option( 'a8csp_bgje_latest_run_' . self::IDENTITY )
@@ -945,7 +944,9 @@ final class RunTransitionsTest extends TestCase {
 		);
 		$latest = $this->option( LatestRunPointer::OPTION_PREFIX . self::IDENTITY );
 		self::assertIsArray( $latest );
-		self::assertSame( $run_ids[20], $latest['all'] ?? null, 'Repairing the evicted scope identity must preserve the globally newest run' );
+		$by_hash = $latest['by_hash'] ?? null;
+		self::assertIsArray( $by_hash );
+		self::assertContains( $first_run_id, $by_hash, 'Executing the evicted lane must re-record its pointer' );
 	}
 
 	/**

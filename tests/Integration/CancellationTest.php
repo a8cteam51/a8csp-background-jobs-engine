@@ -399,7 +399,6 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'all'     => $run_b,
 				'by_hash' => array(
 					self::args_hash( $args_a ) => $run_a,
 					self::args_hash( $args_b ) => $run_b,

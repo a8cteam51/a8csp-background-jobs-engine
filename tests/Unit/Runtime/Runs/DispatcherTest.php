@@ -692,7 +692,6 @@ final class DispatcherTest extends TestCase {
 		self::assertIsString( $latest_raw );
 		$latest = \maybe_unserialize( $latest_raw );
 		self::assertIsArray( $latest );
-		self::assertSame( self::OTHER_RUN_ID, $latest['all'] ?? null );
 		$latest_by_hash = $latest['by_hash'] ?? null;
 		self::assertIsArray( $latest_by_hash );
 		self::assertSame( self::OTHER_RUN_ID, $latest_by_hash[ $this->args_hash() ] ?? null );

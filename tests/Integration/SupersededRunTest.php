@@ -154,7 +154,6 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		self::assertSame( $run_b, $lock['run_id'] ?? null, 'The replacement chunked job must take ownership of the overlap lock' );
 		self::assertSame(
 			array(
-				'all'     => $run_b,
 				'by_hash' => array( $args_hash => $run_b ),
 			),
 			\get_option( 'a8csp_bgje_latest_run_' . self::IDENTITY, null ),
@@ -249,7 +248,6 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		self::assertFalse( \get_option( 'a8csp_bgje_failed_runs_' . self::IDENTITY, false ), 'Supersession and replacement success must not retain failed-run state' );
 		self::assertSame(
 			array(
-				'all'     => $run_b,
 				'by_hash' => array( $args_hash => $run_b ),
 			),
 			\get_option( 'a8csp_bgje_latest_run_' . self::IDENTITY, null ),

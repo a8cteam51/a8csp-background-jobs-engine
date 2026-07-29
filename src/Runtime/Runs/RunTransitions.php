@@ -223,7 +223,7 @@ final readonly class RunTransitions {
 		$latest_run_id      = $latest_pointer->get_latest_for_hash( $state->args_hash );
 
 		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
-		if ( $run_id !== $latest_run_id && ! $latest_pointer->repair_for_hash( $run_id, $state->args_hash ) ) {
+		if ( $run_id !== $latest_run_id && ! $latest_pointer->record( $run_id, $state->args_hash ) ) {
 			$this->logger->warning(
 				'Latest-run pointer repair failed; discovery metadata may remain stale.',
 				array(

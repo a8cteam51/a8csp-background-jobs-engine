@@ -385,7 +385,6 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 		self::assertSame( array(), $remaining_failed_entries );
 		self::assertSame(
 			array(
-				'all'     => $successful_run_id,
 				'by_hash' => array( $args_hash => $successful_run_id ),
 			),
 			\get_option( 'a8csp_bgje_latest_run_' . self::IDENTITY, null ),
