@@ -105,6 +105,9 @@ jobs:
       # Regenerating the committed POT prevents source changes from shipping stale strings.
       - name: Generate translation template
         run: |
+          # setup-php writes its GitHub token into composer's global auth; wp-cli then runs composer in its own
+          # package directory, where composer rejects that token. These packages are public and need no auth.
+          composer config --global --unset github-oauth.github.com || true
           wp package install wp-cli/i18n-command:2.7.0
           wp i18n make-pot ./ --slug=a8csp-background-jobs-engine
           test -f languages/a8csp-background-jobs-engine.pot
