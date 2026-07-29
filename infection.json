@@ -14,5 +14,5 @@
   "minCoveredMsi": 80,
   "bootstrap": "tests/infection-bootstrap.php",
   "testFramework": "phpunit",
-  "testFrameworkExtraArgs": "--testsuite=Unit"
+  "testFrameworkExtraArgs": "--testsuite=Unit -d memory_limit=1G"
 }
