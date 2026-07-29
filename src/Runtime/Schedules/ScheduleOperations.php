@@ -213,12 +213,18 @@ final readonly class ScheduleOperations {
 				$scheduled_count    = $scheduled_chains[ $schedule_identity ]['count'];
 				$scheduled_interval = $scheduled_chains[ $schedule_identity ]['interval'];
 				// Scheduling retains an existing chain, so a chain created against a superseded declaration keeps its own
-				// cadence while fingerprint and count both agree. Recreating it is the only way that disagreement converges.
+				// cadence and phase while fingerprint and count both agree. Recreating it is the only way that
+				// disagreement converges, and a chain the registry disagrees with fires at a time nothing declared.
+				$scheduled_next  = 1 === $scheduled_count
+					? $this->scheduler->get_next_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity )
+					: null;
 				$cadence_drifted = 1 === $scheduled_count && null !== $scheduled_interval && $interval_by_identity[ $schedule_identity ] !== $scheduled_interval;
-				if ( 1 === $scheduled_count && ! $cadence_drifted ) {
+				$phase_drifted   = null !== $scheduled_next && $current['next_due'] !== $scheduled_next;
+				$chain_drifted   = $cadence_drifted || $phase_drifted;
+				if ( 1 === $scheduled_count && ! $chain_drifted ) {
 					continue;
 				}
-				if ( 1 < $scheduled_count || $cadence_drifted ) {
+				if ( 1 < $scheduled_count || $chain_drifted ) {
 					$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
 					if ( $removed->is_failure() ) {
 						return $this->replacement_clear_failure( $schedule );

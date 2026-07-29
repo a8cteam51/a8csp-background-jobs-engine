@@ -303,6 +303,45 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
+	 * A chain firing at a phase the registry does not name is replaced, and an agreeing chain is left alone.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_sync_replaces_a_chain_whose_phase_drifted_and_leaves_an_agreeing_chain(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
+		$registration = $this->scope_entries( 'scope-a' )[0];
+		$next_due     = $registration['next_due'] ?? null;
+		self::assertIsInt( $next_due );
+
+		// A chain the backend will fire at a different moment than the registry names.
+		$this->rig->backend()->next_scheduled = $next_due - 100;
+		$this->reset_backend_observations();
+
+		$repaired = $this->client_a->sync( array( $schedule ) );
+
+		self::assertInstanceOf( Success::class, $repaired );
+		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
+		self::assertSame( $next_due, $this->calls( 'schedule_recurring' )[0]['args']['first_run_timestamp'] ?? null );
+		self::assertSame( $registration, $this->scope_entries( 'scope-a' )[0] );
+		// The phase is read for this identity's own chain, not for the hook at large.
+		$read = $this->calls( 'get_next_scheduled' )[0]['args'] ?? null;
+		self::assertIsArray( $read );
+		self::assertSame( array( 'scope-a:nightly' ), $read['args'] ?? null );
+		self::assertSame( 'scope-a:nightly', $read['group'] ?? null );
+
+		// A chain that agrees with the registry must not be rewritten on every sync.
+		$this->rig->backend()->next_scheduled = $next_due;
+		$this->reset_backend_observations();
+
+		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
+		self::assertSame( array(), $this->write_calls() );
+	}
+
+	/**
 	 * One sync replaces a same-backend surplus and leaves the repaired chain untouched thereafter.
 	 *
 	 * @load-bearing concurrency
