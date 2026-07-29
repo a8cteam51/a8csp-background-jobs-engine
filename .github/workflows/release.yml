@@ -157,9 +157,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The job takes only the artifact, so it has no checkout and gh cannot infer the repository from git.
           # Hyphenated SemVer tags must stay off the stable updater's latest-release endpoint.
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            gh release create "$GITHUB_REF_NAME" ./*.zip --generate-notes --prerelease --latest=false
+            gh release create "$GITHUB_REF_NAME" ./*.zip --repo "$GITHUB_REPOSITORY" --generate-notes --prerelease --latest=false
           else
-            gh release create "$GITHUB_REF_NAME" ./*.zip --generate-notes
+            gh release create "$GITHUB_REF_NAME" ./*.zip --repo "$GITHUB_REPOSITORY" --generate-notes
           fi
