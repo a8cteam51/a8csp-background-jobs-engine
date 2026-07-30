@@ -736,7 +736,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $result, ErrorCode::AdmissionConflict );
 		self::assertSame( \sprintf( 'chunked_job "%s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', self::IDENTITY ), $error->message );
 		self::assertFalse( \get_option( $this->run_option_name() ) );
 		self::assertSame( 'run-concurrent-owner', $this->lock()['run_id'] ?? null );

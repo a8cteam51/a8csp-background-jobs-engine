@@ -52,6 +52,7 @@ final class ErrorCodeTest extends TestCase {
 				'unknown_job',
 				'unknown_schedule',
 				'overlap_held',
+				'admission_conflict',
 				'payload_rejected',
 				'backend_unavailable',
 				'backend_rejected',

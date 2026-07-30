@@ -179,12 +179,11 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 		self::assertSame( array( array() ), $job->calls, 'A resumed contender that admitted nothing must not execute' );
 
 		// The lane is idle by the time the contender resumes: the incumbent completed, and its lock and
-		// run row are both gone. The engine answers overlap_held anyway, because the transfer compares
-		// against lock bytes that no longer exist. A caller reading that code as "another run has this
-		// work" declines work nobody is doing; retrying the dispatch is what actually succeeds. Pinned
-		// so that answering differently is a deliberate change rather than a side effect.
+		// run row are both gone. Its transfer therefore compares against bytes no row carries, which is
+		// a lost race rather than an owned lane — so the answer has to be the one a caller retries on,
+		// not the one it is right to skip.
 		self::assertSame( 'failure', $contender['outcome'] ?? null, 'A contender resuming onto a freed lane must report a definite outcome' );
-		self::assertSame( ErrorCode::OverlapHeld->value, $contender['code'] ?? null, 'A contender resuming onto a freed lane currently reports overlap_held' );
+		self::assertSame( ErrorCode::AdmissionConflict->value, $contender['code'] ?? null, 'A contender resuming onto a freed lane must not report the lane as held' );
 	}
 
 	/**

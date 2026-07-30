@@ -447,7 +447,7 @@ final readonly class Dispatcher {
 				return new Failure(
 					new EngineError(
 						\sprintf( '%1$s "%2$s" generated run "%3$s", but that identifier already owns the selected overlap lock; retry so the run receives a fresh identifier.', $kind, (string) $identity, $run_id ),
-						reason: EngineErrorReason::OverlapHeld,
+						reason: EngineErrorReason::AdmissionConflict,
 						context: array(
 							'identity' => (string) $identity,
 							'run_id'   => $run_id,
@@ -457,7 +457,7 @@ final readonly class Dispatcher {
 				);
 			}
 			if ( OverlapPolicy::Allow === $overlap ) {
-				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, (string) $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => (string) $identity ), ) );
+				return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, (string) $identity, $run_id ), reason: EngineErrorReason::AdmissionConflict, context: array( 'identity' => (string) $identity ), ) );
 			}
 			if ( false === $claim->stale && OverlapPolicy::Reject === $overlap ) {
 				return new Success( new SkippedJobDispatch( $claim->owner_run_id, EngineError::held( $kind, $identity, $claim->owner_run_id ) ) );
@@ -478,7 +478,7 @@ final readonly class Dispatcher {
 			$fire_at         = $pending->fire_at ?? throw new \LogicException( 'Pending single-action delivery requires an integer fire time.' );
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $identity, $args_hash, $run_id, $fire_at ) ) {
 				HeartbeatOutcome::Owned => null,
-				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its timed action; dispatch it again against the current lock state.', $kind, (string) $identity ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => (string) $identity ), ),
+				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its timed action; dispatch it again against the current lock state.', $kind, (string) $identity ), reason: EngineErrorReason::AdmissionConflict, context: array( 'identity' => (string) $identity ), ),
 				HeartbeatOutcome::Indeterminate => new EngineError( \sprintf( '%1$s "%2$s" could not confirm lock ownership while preparing its timed action; dispatch it again after authoritative storage access recovers.', $kind, (string) $identity ), reason: EngineErrorReason::StorageFailure, context: array( 'identity' => (string) $identity ), ),
 			};
 			if ( null !== $heartbeat_error ) {
@@ -551,7 +551,7 @@ final readonly class Dispatcher {
 				return new Failure(
 					new EngineError(
 						\sprintf( '%1$s "%2$s" lost its admitted run state while its started listeners ran; dispatch it again against the current lock state.', $kind, (string) $identity ),
-						reason: EngineErrorReason::OverlapHeld,
+						reason: EngineErrorReason::AdmissionConflict,
 						context: array(
 							'identity' => (string) $identity,
 							'run_id'   => $run_id,
@@ -623,7 +623,7 @@ final readonly class Dispatcher {
 			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}
 		if ( LockClaimOutcome::Claimed !== $claim->outcome ) {
-			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, (string) $identity, $run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'identity' => (string) $identity ), ) );
+			return new Failure( new EngineError( \sprintf( '%1$s "%2$s" generated a duplicate per-run overlap identity for run "%3$s"; retry so the run receives a fresh identifier.', $kind, (string) $identity, $run_id ), reason: EngineErrorReason::AdmissionConflict, context: array( 'identity' => (string) $identity ), ) );
 		}
 
 		$run_store = $this->stores->run_store( $identity );
@@ -799,7 +799,7 @@ final readonly class Dispatcher {
 				return new Failure(
 					new EngineError(
 						\sprintf( '%1$s "%2$s" incumbent run changed while the replacement was superseding it; retry the dispatch against the current incumbent state.', $kind, (string) $identity ),
-						reason: EngineErrorReason::OverlapHeld,
+						reason: EngineErrorReason::AdmissionConflict,
 						context: array(
 							'identity' => (string) $identity,
 							'run_id'   => $run_id,
@@ -858,7 +858,7 @@ final readonly class Dispatcher {
 			return new Failure(
 				new EngineError(
 					\sprintf( '%1$s "%2$s" lock ownership changed while the replacement was claiming it; retry the dispatch against the current owner.', $kind, (string) $identity ),
-					reason: EngineErrorReason::OverlapHeld,
+					reason: EngineErrorReason::AdmissionConflict,
 					context: array(
 						'identity' => (string) $identity,
 						'kind'     => $kind,

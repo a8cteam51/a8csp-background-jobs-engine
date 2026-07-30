@@ -144,6 +144,7 @@ final class BoundaryErrorMapper {
 			EngineErrorReason::UnknownJob           => ErrorCode::UnknownJob,
 			EngineErrorReason::UnknownSchedule      => ErrorCode::UnknownSchedule,
 			EngineErrorReason::OverlapHeld          => ErrorCode::OverlapHeld,
+			EngineErrorReason::AdmissionConflict    => ErrorCode::AdmissionConflict,
 			EngineErrorReason::PayloadRejected      => ErrorCode::PayloadRejected,
 			EngineErrorReason::StorageFailure       => ErrorCode::StorageFailed,
 			EngineErrorReason::RunNotRetained       => ErrorCode::RunNotRetained,

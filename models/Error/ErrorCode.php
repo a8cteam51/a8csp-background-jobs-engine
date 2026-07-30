@@ -32,8 +32,11 @@ enum ErrorCode: string {
 	/** The requested schedule is unsynchronized, inactive, or stale. */
 	case UnknownSchedule = 'unknown_schedule';
 
-	/** An overlap lock or occurrence decision is already held. */
+	/** An overlap lock or occurrence decision is held by a run that is still going; skip or wait. */
 	case OverlapHeld = 'overlap_held';
+
+	/** Admission raced and admitted nothing, and no run is known to hold the lane; dispatch again. */
+	case AdmissionConflict = 'admission_conflict';
 
 	/** The supplied arguments or scheduling payload cannot be admitted. */
 	case PayloadRejected = 'payload_rejected';
