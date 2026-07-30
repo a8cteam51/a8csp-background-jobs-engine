@@ -65,10 +65,10 @@ final readonly class Dispatcher {
 	/**
 	 * Admission attempts one imperative dispatch may spend losing races before it reports a conflict.
 	 *
-	 * Each attempt is a complete read-decide-write against current storage, so a lost attempt leaves
-	 * the lane exactly as it found it and a further attempt is the only thing that can make progress.
-	 * Attempts carry no delay: a lost compare-and-swap means a rival already committed, and every
-	 * round has exactly one winner, so waiting adds latency without improving the odds.
+	 * Two or greater. Each attempt is a complete read-decide-write against current storage, so a lost
+	 * attempt leaves the lane exactly as it found it and a further attempt is the only thing that can
+	 * make progress. Attempts carry no delay: a lost compare-and-swap means a rival already committed,
+	 * and every round has exactly one winner, so waiting adds latency without improving the odds.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -172,8 +172,10 @@ final readonly class Dispatcher {
 	public function dispatch_until_admitted( Identity $identity, array $args = array(), ?int $fire_at = null, ?int $priority = null ): AbstractResult {
 		$result = $this->dispatch( $identity, $args, $fire_at, $priority );
 
-		// Iterating the attempts that remain, rather than counting toward a limit, keeps the bound
-		// structural: no accounting mistake here can turn admission into an unbounded loop.
+		// Iterating a fixed list of the attempts that remain, rather than counting toward a limit, is
+		// what bounds this: there is no counter a mistake could invert into a loop without an end. The
+		// list is not monotonic in the budget, though, because range() reverses when its start exceeds
+		// its end — which is why the budget is documented as two or greater.
 		foreach ( \range( 2, self::MAX_ADMISSION_ATTEMPTS ) as $attempt ) {
 			if ( self::lost_admission_race( $result ) ) {
 				$this->logger->debug(
