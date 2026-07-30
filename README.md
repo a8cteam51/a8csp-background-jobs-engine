@@ -216,18 +216,6 @@ function my_plugin_queue_digest( int $user_id ): void {
 			return;
 		}
 
-		// Admission lost a race and admitted nothing. Nobody holds the lane, so dispatch again
-		// rather than returning: returning here is how work silently goes undone.
-		if ( ErrorCode::AdmissionConflict->value === $run->get_error_code() ) {
-			$run = a8csp_bgje_dispatch_job(
-				'my-plugin',
-				'email-digest',
-				array( 'user_id' => $user_id )
-			);
-		}
-	}
-
-	if ( is_wp_error( $run ) ) {
 		error_log( $run->get_error_message() );
 		return;
 	}
@@ -588,7 +576,7 @@ Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guar
 
 ## Admission, overlap, and catch-up policies
 
-Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. `overlap_held` and `admission_conflict` are different answers and call for different handling: `overlap_held` means a run owns the lane and is doing the work, so skipping is correct, while `admission_conflict` means admission lost a race and admitted nothing, so dispatching again is what runs the work. A `Replace` dispatch that loses its lock transfer returns `admission_conflict` after the incumbent is already superseded; a retry also takes custody of replaying that supersession, and if nothing retries, maintenance replays it and releases the lock. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
+Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. `overlap_held` and `admission_conflict` are different answers. `overlap_held` means a run owns the lane and is doing the work, so skipping is correct. `admission_conflict` means admission lost a race to a rival dispatch and admitted nothing. **Dispatch admits again on your behalf when that happens**, up to three attempts in total, because a lost attempt leaves the lane exactly as it found it and never reaches your handler; an attempt that follows also takes custody of replaying a supersession the losing attempt could not restore. `admission_conflict` therefore reaches you only when a lane stayed contended across every attempt, which makes it worth logging rather than retrying by hand. Re-admission is logged at debug level. Scheduled occurrence delivery admits once, because the scheduler redelivers a due occurrence on its own. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
 
 | Overlap | `run_once` catch-up (default) | `skip` catch-up |
 | --- | --- | --- |
