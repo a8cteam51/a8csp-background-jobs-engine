@@ -29,6 +29,9 @@ final class WpdbLockSpy extends \wpdb {
 	/** @var array<string, list<0|false>> */
 	private array $scripted_results = array();
 
+	/** @var list<string> Option-name fragments whose updates always report zero affected rows. */
+	private array $failing_update_keys = array();
+
 	// endregion.
 
 	// region MAGIC METHODS.
@@ -78,6 +81,29 @@ final class WpdbLockSpy extends \wpdb {
 	 */
 	public function before_next( string $operation, callable $callback ): void {
 		$this->before_operations[ $operation ][] = $callback;
+	}
+
+	/**
+	 * Makes every update against a matching option name report zero affected rows.
+	 *
+	 * Positional scripting shifts whenever a read or write is added anywhere earlier, so a fault that
+	 * has to survive repeated admission attempts is matched on its target rather than its ordinal.
+	 *
+	 * @param   string $needle Option-name fragment whose updates must lose.
+	 *
+	 * @return  void
+	 */
+	public function fail_updates_targeting( string $needle ): void {
+		$this->failing_update_keys[] = $needle;
+	}
+
+	/**
+	 * Disarms every matched update failure so modeled writes win again.
+	 *
+	 * @return  void
+	 */
+	public function stop_failing_updates(): void {
+		$this->failing_update_keys = array();
 	}
 
 	/**
@@ -182,6 +208,12 @@ final class WpdbLockSpy extends \wpdb {
 			);
 
 			$GLOBALS['a8csp_bgje_test_lifecycle_events'] = $lifecycle_events;
+		}
+
+		if ( 'update' === $operation && $this->targets_failing_key( $statement['args'] ) ) {
+			$this->rows_affected = 0;
+
+			return 0;
 		}
 
 		$scripted = isset( $this->scripted_results[ $operation ] )
@@ -584,6 +616,34 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		return array( $first, $second );
+	}
+
+	/**
+	 * Reports whether an update targets an option name armed to lose.
+	 *
+	 * @phpstan-param list<mixed> $args
+	 *
+	 * @param   array $args Prepared statement arguments including the table.
+	 *
+	 * @return  bool
+	 */
+	private function targets_failing_key( array $args ): bool {
+		if ( array() === $this->failing_update_keys ) {
+			return false;
+		}
+
+		$key = self::without_table( $args )[1] ?? null;
+		if ( ! \is_string( $key ) ) {
+			return false;
+		}
+
+		foreach ( $this->failing_update_keys as $needle ) {
+			if ( \str_contains( $key, $needle ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

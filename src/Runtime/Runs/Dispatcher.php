@@ -62,6 +62,21 @@ final readonly class Dispatcher {
 	 */
 	private const int MAX_RUN_AT = 253_402_300_799;
 
+	/**
+	 * Admission attempts one imperative dispatch may spend losing races before it reports a conflict.
+	 *
+	 * Each attempt is a complete read-decide-write against current storage, so a lost attempt leaves
+	 * the lane exactly as it found it and a further attempt is the only thing that can make progress.
+	 * Attempts carry no delay: a lost compare-and-swap means a rival already committed, and every
+	 * round has exactly one winner, so waiting adds latency without improving the odds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	public const int MAX_ADMISSION_ATTEMPTS = 3;
+
 	// endregion
 
 	// region MAGIC METHODS
@@ -125,6 +140,71 @@ final readonly class Dispatcher {
 		}
 
 		$handler->register( $identity, $definition );
+	}
+
+	/**
+	 * Creates and schedules one run, spending bounded attempts on admission races it loses.
+	 *
+	 * Re-attempting cannot duplicate work. Admission never reaches handler code, which runs from a
+	 * delivery instead, and an attempt that loses its lane deletes its own provisional run row against
+	 * the exact bytes it wrote and restores any supersession it performed. A further attempt is also
+	 * corrective: it takes custody of a supersession replay a losing attempt could not restore.
+	 *
+	 * One conflict is raised after a run has been admitted and its listeners have run, when a listener
+	 * destroys the run it was told about. Each attempt there admits a distinct run, so a further
+	 * attempt fires that run's lifecycle effects as well; the hooks report what happened to each run
+	 * rather than repeating one run's history.
+	 *
+	 * A settled answer is returned untouched. Only a lost race is re-attempted, so a lane a run
+	 * genuinely holds still reports that on the first attempt.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity                $identity Complete scope-qualified work identity.
+	 * @param   array<array-key, mixed> $args     Start arguments.
+	 * @param   int|null                $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
+	 * @param   int|null                $priority Scheduler priority from 0 through 255, or null to defer to the job default.
+	 *
+	 * @return  AbstractResult<string, EngineError|SchedulingError>
+	 */
+	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
+	public function dispatch_until_admitted( Identity $identity, array $args = array(), ?int $fire_at = null, ?int $priority = null ): AbstractResult {
+		$result = $this->dispatch( $identity, $args, $fire_at, $priority );
+
+		// Iterating the attempts that remain, rather than counting toward a limit, keeps the bound
+		// structural: no accounting mistake here can turn admission into an unbounded loop.
+		foreach ( \range( 2, self::MAX_ADMISSION_ATTEMPTS ) as $attempt ) {
+			if ( self::lost_admission_race( $result ) ) {
+				$this->logger->debug(
+					'A dispatch lost an admission race and is being admitted again.',
+					array(
+						'identity' => (string) $identity,
+						'attempt'  => $attempt,
+					)
+				);
+
+				$result = $this->dispatch( $identity, $args, $fire_at, $priority );
+			}
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Reports whether a dispatch answer is a lost admission race rather than a settled outcome.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   AbstractResult<string, EngineError|SchedulingError> $result Dispatch answer.
+	 *
+	 * @return  bool
+	 */
+	private static function lost_admission_race( AbstractResult $result ): bool {
+		return $result instanceof Failure
+			&& $result->error instanceof EngineError
+			&& EngineErrorReason::AdmissionConflict === $result->error->reason;
 	}
 
 	/**

@@ -35,7 +35,7 @@ enum ErrorCode: string {
 	/** An overlap lock or occurrence decision is held by a run that is still going; skip or wait. */
 	case OverlapHeld = 'overlap_held';
 
-	/** Admission raced and admitted nothing, and no run is known to hold the lane; dispatch again. */
+	/** Admission stayed contended across every attempt and admitted nothing; nothing holds the lane. */
 	case AdmissionConflict = 'admission_conflict';
 
 	/** The supplied arguments or scheduling payload cannot be admitted. */

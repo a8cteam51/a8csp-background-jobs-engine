@@ -1,0 +1,4 @@
+Significance: minor
+Type: changed
+
+Dispatch now admits again on the caller's behalf when it loses an admission race, up to three attempts in total, so `admission_conflict` reaches a consumer only when a lane stayed contended throughout. A lost attempt leaves the lane as it found it and never reaches handler code, and an attempt that follows also takes custody of replaying a supersession the losing attempt could not restore. Re-admission is logged at debug level; scheduled occurrence delivery still admits once, because the scheduler redelivers on its own.

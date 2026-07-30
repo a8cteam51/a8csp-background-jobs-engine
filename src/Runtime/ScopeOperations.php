@@ -128,7 +128,7 @@ final readonly class ScopeOperations {
 			return new Failure( $payload_error );
 		}
 
-		$result = BoundaryErrorMapper::map( $this->dispatcher->dispatch( $identity, $start_args, $fire_at, $priority ) );
+		$result = BoundaryErrorMapper::map( $this->dispatcher->dispatch_until_admitted( $identity, $start_args, $fire_at, $priority ) );
 
 		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
 	}

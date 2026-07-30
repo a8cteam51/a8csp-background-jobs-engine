@@ -733,6 +733,9 @@ final class DispatcherChunkedJobTest extends TestCase {
 				$wpdb->put( $concurrent[0], $concurrent[1] );
 			}
 		);
+		// No admission attempt may transfer the lane, or a later one would admit and hide the
+		// provisional-state removal this test exists to observe.
+		$this->rig->wpdb()->fail_updates_targeting( OverlapGuard::OPTION_PREFIX );
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 

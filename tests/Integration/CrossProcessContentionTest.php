@@ -155,7 +155,7 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_a_contender_parked_in_contended_admission_cannot_strand_a_lane_its_incumbent_left(): void {
+	public function test_a_contender_parked_in_contended_admission_is_readmitted_onto_the_lane_its_incumbent_left(): void {
 		$job = $this->register( self::PARKED_NAME, OverlapPolicy::Replace );
 		$this->expect_option( LatestRunPointer::OPTION_PREFIX . self::identity( self::PARKED_NAME ) );
 
@@ -181,19 +181,19 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 			}
 		);
 
+		// The lane is idle by the time the contender resumes: the incumbent completed, and its lock and
+		// run row are both gone. Its first attempt therefore compares against bytes no row carries and
+		// loses, and the attempt that follows finds an unheld lane and admits. Nothing is dropped.
+		self::assertSame( 'success', $contender['outcome'] ?? null, 'A contender resuming onto a freed lane must be re-admitted rather than told the lane is held' );
+		self::assertIsString( $contender['run_id'] ?? null );
+		self::assertNotSame( $incumbent, $contender['run_id'], 'A re-admitted contender must carry its own run' );
+
 		$this->settle_lane();
 
 		self::assertSame( array(), $this->live_run_ids( self::PARKED_NAME ), 'A settled lane must leave no live run' );
-		self::assertNull( $this->lock_owner( self::PARKED_NAME ), 'A resumed contender must not leave an orphan lock on a lane it does not own' );
-		self::assertSame( array(), $this->run_row_statuses( self::PARKED_NAME ), 'A resumed contender must not leave a run row stranded on a settled lane' );
-		self::assertSame( array( array() ), $job->calls, 'A resumed contender that admitted nothing must not execute' );
-
-		// The lane is idle by the time the contender resumes: the incumbent completed, and its lock and
-		// run row are both gone. Its transfer therefore compares against bytes no row carries, which is
-		// a lost race rather than an owned lane — so the answer has to be the one a caller retries on,
-		// not the one it is right to skip.
-		self::assertSame( 'failure', $contender['outcome'] ?? null, 'A contender resuming onto a freed lane must report a definite outcome' );
-		self::assertSame( ErrorCode::AdmissionConflict->value, $contender['code'] ?? null, 'A contender resuming onto a freed lane must not report the lane as held' );
+		self::assertNull( $this->lock_owner( self::PARKED_NAME ), 'A settled lane must hold no lock' );
+		self::assertSame( array(), $this->run_row_statuses( self::PARKED_NAME ), 'A settled lane must leave no run row' );
+		self::assertSame( array( array(), array() ), $job->calls, 'Both the incumbent and the re-admitted contender must execute, once each' );
 	}
 
 	/**
@@ -243,7 +243,7 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_a_takeover_parked_between_its_two_writes_yields_the_lane_to_a_rival(): void {
+	public function test_a_takeover_parked_between_its_two_writes_is_readmitted_over_the_rival_that_overtook_it(): void {
 		$job = $this->register( self::WINDOW_NAME, OverlapPolicy::Replace );
 		$this->expect_option( LatestRunPointer::OPTION_PREFIX . self::identity( self::WINDOW_NAME ) );
 
@@ -271,18 +271,20 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 		self::assertNotSame( 'failure', $rival, 'A rival takeover against a lane whose lock is still free to move must be admitted' );
 		self::assertNotSame( $incumbent, $rival, 'A rival takeover must admit its own run' );
 
-		// The parked takeover wrote first and still loses: the lock is what decides the lane, and it
-		// moved while the takeover was held between its own two writes.
-		self::assertSame( 'failure', $contender['outcome'] ?? null, 'A takeover whose lock transfer is overtaken must not report success' );
-		self::assertSame( ErrorCode::AdmissionConflict->value, $contender['code'] ?? null, 'An overtaken takeover admitted nothing, so it must not report the lane as held' );
+		// The parked takeover loses the transfer the rival won, and is then admitted again. Under
+		// Replace that means it takes the lane back: the caller asked for a takeover, and a lost race
+		// does not withdraw the request. This is the churn Replace buys, made bounded and visible.
+		self::assertSame( 'success', $contender['outcome'] ?? null, 'An overtaken takeover must be re-admitted rather than handed back a conflict' );
+		$readmitted = $contender['run_id'] ?? null;
+		self::assertIsString( $readmitted );
+		self::assertNotSame( $rival, $readmitted, 'A re-admitted takeover must carry its own run' );
 
-		// Neither the superseded incumbent nor the loser's provisional row may be left behind, and the
-		// only surviving claim is the one that owns the lock.
-		self::assertSame( $rival, $this->lock_owner( self::WINDOW_NAME ), 'The rival that won the transfer must own the lane lock' );
-		self::assertSame( array( $rival => 'running' ), $this->run_row_statuses( self::WINDOW_NAME ), 'A resolved window must leave exactly one run row, belonging to the lock owner' );
+		// Whatever the order, one claim survives and it is the lock owner's.
+		self::assertSame( $readmitted, $this->lock_owner( self::WINDOW_NAME ), 'The re-admitted takeover must own the lane lock' );
+		self::assertSame( array( $readmitted => 'running' ), $this->run_row_statuses( self::WINDOW_NAME ), 'A resolved window must leave exactly one run row, belonging to the lock owner' );
 
 		$this->settle_lane();
-		self::assertSame( array( array() ), $job->calls, 'One lane must execute exactly once no matter how many takeovers contended for it' );
+		self::assertSame( array( array() ), $job->calls, 'Only the run that ends up owning the lane may execute' );
 		self::assertSame( array(), $this->run_row_statuses( self::WINDOW_NAME ), 'A settled lane must leave no run row' );
 		self::assertNull( $this->lock_owner( self::WINDOW_NAME ), 'A settled lane must hold no lock' );
 	}

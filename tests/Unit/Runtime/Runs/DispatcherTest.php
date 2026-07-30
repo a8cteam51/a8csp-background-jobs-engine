@@ -206,8 +206,10 @@ final class DispatcherTest extends TestCase {
 		$started   = 'a8csp_bgje/started/' . self::IDENTITY;
 
 		$GLOBALS['a8csp_bgje_test_action_observers'] = array(
+			// Every admitted run is cancelled, because a re-admitted run would otherwise reach Running and
+			// hide the fence this test observes. The first outcome is the one asserted.
 			static function ( string $hook_name, array $args ) use ( $client, $started, &$cancelled ): void {
-				if ( $started !== $hook_name || null !== $cancelled ) {
+				if ( $started !== $hook_name ) {
 					return;
 				}
 				$run_id = $args[0] ?? null;
@@ -215,7 +217,8 @@ final class DispatcherTest extends TestCase {
 					return;
 				}
 
-				$cancelled = $client->cancel( self::NAME, (string) $run_id );
+				$outcome    = $client->cancel( self::NAME, (string) $run_id );
+				$cancelled ??= $outcome;
 			},
 		);
 
@@ -673,12 +676,24 @@ final class DispatcherTest extends TestCase {
 		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
 		$lock_raw    = $this->rig->wpdb()->rows[ $lock_option ] ?? null;
 		self::assertIsString( $lock_raw );
-		$this->rig->wpdb()->before_next(
-			'update',
-			static function ( WpdbLockSpy $wpdb ) use ( $incumbent_option, $advanced_raw ): void {
-				$wpdb->put( $incumbent_option, $advanced_raw );
-			}
-		);
+		// Each attempt re-reads the incumbent, so the advance has to move the row to NEW bytes every
+		// time or a later attempt would compare against what the previous advance wrote and win.
+		$sequence = 2;
+		$moved_to = $advanced_raw;
+		for ( $attempt = 0; Dispatcher::MAX_ADMISSION_ATTEMPTS > $attempt; $attempt++ ) {
+			$this->rig->wpdb()->before_next(
+				'update',
+				static function ( WpdbLockSpy $wpdb ) use ( $incumbent_option, $advanced, &$sequence, &$moved_to ): void {
+					$moved                    = $advanced;
+					$moved['action_sequence'] = ++$sequence;
+					$moved_raw                = \maybe_serialize( $moved );
+					if ( \is_string( $moved_raw ) ) {
+						$moved_to = $moved_raw;
+						$wpdb->put( $incumbent_option, $moved_raw );
+					}
+				}
+			);
+		}
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
@@ -692,7 +707,9 @@ final class DispatcherTest extends TestCase {
 			),
 			$error->context
 		);
-		self::assertSame( $advanced_raw, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
+		// The incumbent row is whatever the last advance wrote; the point is that the aborted takeover
+		// left it alone rather than superseding it.
+		self::assertSame( $moved_to, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
 		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
 		self::assertFalse( \get_option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->run_delivery_calls() );
@@ -1983,11 +2000,20 @@ final class DispatcherTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_a_lost_lock_transfer_restores_the_incumbent_it_superseded(): void {
+	/**
+	 * A dispatch that loses one admission race is re-admitted instead of answering with a conflict.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_readmits_a_run_whose_lock_transfer_lost_one_race(): void {
 		$this->boot( OverlapPolicy::Replace );
 		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
 
-		// Let the incumbent supersession commit, then take the lock transfer away from the replacement.
+		// Take the lock transfer away from the replacement exactly once. The lane is unheld afterwards,
+		// so the attempt that follows is the one that admits.
 		$wpdb = $this->rig->wpdb();
 		$wpdb->before_next( 'update', static function (): void {} );
 		$wpdb->before_next(
@@ -2000,6 +2026,71 @@ final class DispatcherTest extends TestCase {
 
 		$replacement = $this->client->dispatch( self::NAME, self::ARGS );
 
+		self::assertInstanceOf( Success::class, $replacement, 'A dispatch that lost one admission race must be re-admitted rather than handed back as a conflict' );
+	}
+
+	/**
+	 * An admission that settles is returned untouched rather than attempted again.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_does_not_attempt_an_admission_that_already_settled(): void {
+		$this->boot();
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertCount( 1, $this->run_delivery_calls(), 'A settled admission must schedule exactly one delivery' );
+		foreach ( $this->rig->logger()->records as $record ) {
+			self::assertNotSame( 'A dispatch lost an admission race and is being admitted again.', $record['message'], 'A settled admission must not be attempted again' );
+		}
+	}
+
+	/**
+	 * Re-admission is bounded and each attempt beyond the first is reported.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_bounds_readmission_and_reports_every_further_attempt(): void {
+		$this->boot( OverlapPolicy::Replace );
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
+
+		// No attempt can transfer the lane, so admission spends its whole budget and the log records
+		// one entry for every attempt after the first.
+		$this->rig->wpdb()->fail_updates_targeting( OverlapGuard::OPTION_PREFIX );
+		$this->rig->randomizer()->value = 43;
+
+		$replacement = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $replacement, ErrorCode::AdmissionConflict );
+
+		$attempts = array();
+		foreach ( $this->rig->logger()->records as $record ) {
+			if ( 'A dispatch lost an admission race and is being admitted again.' === $record['message'] ) {
+				$attempts[] = $record['context']['attempt'] ?? null;
+			}
+		}
+
+		self::assertSame( array( 2, 3 ), $attempts, 'Admission must spend exactly its attempt budget and report each attempt beyond the first' );
+	}
+
+	public function test_a_lost_lock_transfer_restores_the_incumbent_it_superseded(): void {
+		$this->boot( OverlapPolicy::Replace );
+		self::assertInstanceOf( Success::class, $this->client->dispatch( self::NAME, self::ARGS ) );
+
+		// Every admission attempt must lose its transfer, or a later one would admit and hide the
+		// restore this test exists to observe.
+		$this->rig->wpdb()->fail_updates_targeting( OverlapGuard::OPTION_PREFIX );
+		$this->rig->randomizer()->value = 43;
+
+		$replacement = $this->client->dispatch( self::NAME, self::ARGS );
+
 		$this->assert_failure_code( $replacement, ErrorCode::AdmissionConflict );
 		$incumbent = $this->option( $this->run_option_name() );
 		self::assertIsArray( $incumbent );
@@ -2007,6 +2098,8 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( 'running', $incumbent['status'] ?? null );
 		self::assertNotNull( $incumbent['pending'] ?? null );
 
+		// The restored incumbent cannot heartbeat while every lock write is armed to lose.
+		$this->rig->wpdb()->stop_failing_updates();
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls, 'The restored incumbent must still execute.' );
 	}
