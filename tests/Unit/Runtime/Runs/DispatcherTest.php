@@ -186,7 +186,7 @@ final class DispatcherTest extends TestCase {
 
 		// The outer run lost its lane before its delivery was scheduled, so it must not be reported as running.
 		self::assertInstanceOf( Failure::class, $outer );
-		$this->assert_failure_code( $outer, ErrorCode::OverlapHeld );
+		$this->assert_failure_code( $outer, ErrorCode::AdmissionConflict );
 
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS ), $this->job->calls, 'Only the surviving run may execute.' );
@@ -229,7 +229,7 @@ final class DispatcherTest extends TestCase {
 
 		// The row is terminal rather than absent, so the fence must read its status, not merely its presence.
 		self::assertInstanceOf( Failure::class, $result );
-		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+		$this->assert_failure_code( $result, ErrorCode::AdmissionConflict );
 
 		$this->rig->run_due();
 		self::assertSame( array(), $this->job->calls, 'A cancelled run must not execute.' );
@@ -682,7 +682,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+		$error = $this->assert_failure_code( $result, ErrorCode::AdmissionConflict );
 		self::assertSame( \sprintf( 'job "%s" incumbent run changed while the replacement was superseding it; retry the dispatch against the current incumbent state.', self::IDENTITY ), $error->message );
 		self::assertSame(
 			array(
@@ -757,7 +757,7 @@ final class DispatcherTest extends TestCase {
 
 		$outer = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $outer, ErrorCode::OverlapHeld );
+		$this->assert_failure_code( $outer, ErrorCode::AdmissionConflict );
 		self::assertInstanceOf( Success::class, $nested );
 		self::assertInstanceOf( Run::class, $nested->value );
 		self::assertSame( self::OTHER_RUN_ID, (string) $nested->value->id );
@@ -1061,7 +1061,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+		$this->assert_failure_code( $result, ErrorCode::AdmissionConflict );
 		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
 		self::assertFalse( \get_option( $this->run_option_name() ) );
 		self::assertSame( array(), $this->run_delivery_calls() );
@@ -1102,7 +1102,7 @@ final class DispatcherTest extends TestCase {
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $result, ErrorCode::OverlapHeld );
+		$this->assert_failure_code( $result, ErrorCode::AdmissionConflict );
 		self::assertSame( $lock_raw, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
 		self::assertSame( $run_raw, $this->rig->wpdb()->rows[ $run_option ] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
@@ -1131,6 +1131,10 @@ final class DispatcherTest extends TestCase {
 				return $default_staleness;
 			}
 		);
+
+		// Without a fresh identifier the seeded randomizer regenerates the incumbent's run ID, and the
+		// duplicate-identity guard answers before the lane is ever graded as held.
+		$this->rig->randomizer()->value = 43;
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
@@ -1996,7 +2000,7 @@ final class DispatcherTest extends TestCase {
 
 		$replacement = $this->client->dispatch( self::NAME, self::ARGS );
 
-		$this->assert_failure_code( $replacement, ErrorCode::OverlapHeld );
+		$this->assert_failure_code( $replacement, ErrorCode::AdmissionConflict );
 		$incumbent = $this->option( $this->run_option_name() );
 		self::assertIsArray( $incumbent );
 		// A takeover that lost may not leave the run it superseded terminal and unrunnable.

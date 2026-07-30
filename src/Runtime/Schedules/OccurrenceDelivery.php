@@ -161,7 +161,7 @@ final readonly class OccurrenceDelivery {
 			return new Failure(
 				new EngineError(
 					\sprintf( 'Schedule "%1$s" for scope "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $scope ),
-					reason: EngineErrorReason::OverlapHeld,
+					reason: EngineErrorReason::AdmissionConflict,
 					context: array(
 						'scope'    => $scope,
 						'schedule' => $name,

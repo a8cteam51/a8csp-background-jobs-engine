@@ -21,6 +21,7 @@ enum EngineErrorReason: string {
 	case UnknownJob           = 'unknown_job';
 	case UnknownSchedule      = 'unknown_schedule';
 	case OverlapHeld          = 'overlap_held';
+	case AdmissionConflict    = 'admission_conflict';
 	case PayloadRejected      = 'payload_rejected';
 	case StorageFailure       = 'storage_failed';
 	case RunNotRetained       = 'run_not_retained';

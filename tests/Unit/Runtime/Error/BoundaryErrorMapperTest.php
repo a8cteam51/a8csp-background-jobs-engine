@@ -277,6 +277,10 @@ final class BoundaryErrorMapperTest extends TestCase {
 				'reason'        => 'overlap_held',
 				'expected_code' => 'overlap_held',
 			),
+			'admission conflict'    => array(
+				'reason'        => 'admission_conflict',
+				'expected_code' => 'admission_conflict',
+			),
 			'payload rejected'      => array(
 				'reason'        => 'payload_rejected',
 				'expected_code' => 'payload_rejected',

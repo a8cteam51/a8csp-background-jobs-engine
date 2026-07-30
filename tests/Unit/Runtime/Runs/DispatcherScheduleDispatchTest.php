@@ -295,7 +295,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $collision );
 		$error = $this->boundary_error( $collision );
-		self::assertSame( ErrorCode::OverlapHeld, $error->code );
+		self::assertSame( ErrorCode::AdmissionConflict, $error->code );
 		self::assertStringContainsString( 'duplicate per-run overlap identity', $error->message );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}
@@ -435,7 +435,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
 		self::assertInstanceOf( Failure::class, $result );
-		self::assertSame( ErrorCode::OverlapHeld, $this->boundary_error( $result )->code );
+		self::assertSame( ErrorCode::AdmissionConflict, $this->boundary_error( $result )->code );
 		self::assertSame( 'run-rival', $this->lock_owner( $this->args_hash() ) );
 		$preserved = $this->option( $run_option );
 		self::assertIsArray( $preserved );
