@@ -5,7 +5,8 @@
   "testsEnvironment": false,
   "mappings": {
     "wp-content/plugins/a8csp-background-jobs-engine": ".",
-    "wp-content/plugins/action-scheduler": "./vendor/wp-plugin/action-scheduler"
+    "wp-content/plugins/action-scheduler": "./vendor/wp-plugin/action-scheduler",
+    "wp-content/db.php": "./tests/Support/Fixtures/contention-db-dropin.php"
   },
   "lifecycleScripts": {
     "afterStart": "wp-env --config .wp-env.tests.json run cli wp plugin activate action-scheduler a8csp-background-jobs-engine"

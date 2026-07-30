@@ -46,6 +46,9 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 	/** Job identity isolated to the parked contender whose incumbent stays put. */
 	private const string HELD_NAME = 'integration-contention-held';
 
+	/** Job identity isolated to the contender parked between the takeover's two writes. */
+	private const string WINDOW_NAME = 'integration-contention-window';
+
 	/** WordPress root inside the integration environment. */
 	private const string WP_PATH = '/var/www/html';
 
@@ -54,6 +57,18 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 
 	/** Barrier gate the contender parks on, inside contended admission. */
 	private const string GATE = 'contended_admission';
+
+	/** Barrier gate the database drop-in parks on, between the takeover's two writes. */
+	private const string TAKEOVER_GATE = 'takeover_window';
+
+	/** Park mode: the contender runs straight through. */
+	private const string PARK_NONE = '';
+
+	/** Park mode: the lock-staleness filter holds the contender inside contended admission. */
+	private const string PARK_ADMISSION = 'admission';
+
+	/** Park mode: the database drop-in holds the contender between the takeover's two writes. */
+	private const string PARK_TAKEOVER = 'takeover';
 
 	/** Line prefix the worker writes its verdict behind. */
 	private const string REPORT_SENTINEL = 'A8CSP_BGJE_CONTENTION_RESULT:';
@@ -155,6 +170,7 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 		$contender = $this->dispatch_from_another_process(
 			self::PARKED_NAME,
 			OverlapPolicy::Replace,
+			self::PARK_ADMISSION,
 			function () use ( $incumbent, $job ): void {
 				// Proving the park point here is what makes the rest of this test evidence about the
 				// engine: a contender that had already written would make any later verdict vacuous.
@@ -206,6 +222,7 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 		$contender = $this->dispatch_from_another_process(
 			self::HELD_NAME,
 			OverlapPolicy::Replace,
+			self::PARK_ADMISSION,
 			function () use ( $incumbent ): void {
 				self::assertSame( $incumbent, $this->lock_owner( self::HELD_NAME ), 'A parked contender must not yet have touched the lane lock' );
 				self::assertSame( array( $incumbent => 'running' ), $this->run_row_statuses( self::HELD_NAME ), 'A parked contender must not yet have superseded the incumbent' );
@@ -222,6 +239,58 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 		self::assertSame( array( array() ), $job->calls, 'A superseded incumbent delivery must not execute alongside the run that replaced it' );
 		self::assertSame( array(), $this->run_row_statuses( self::HELD_NAME ), 'A settled lane must leave no run row' );
 		self::assertNull( $this->lock_owner( self::HELD_NAME ), 'A settled lane must hold no lock' );
+	}
+
+	/**
+	 * A takeover held between its two writes yields the lane to a rival that completes one.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_takeover_parked_between_its_two_writes_yields_the_lane_to_a_rival(): void {
+		$job = $this->register( self::WINDOW_NAME, OverlapPolicy::Replace );
+		$this->expect_option( LatestRunPointer::OPTION_PREFIX . self::identity( self::WINDOW_NAME ) );
+
+		$incumbent = $this->dispatch_here( self::WINDOW_NAME );
+		$rival     = null;
+
+		$contender = $this->dispatch_from_another_process(
+			self::WINDOW_NAME,
+			OverlapPolicy::Replace,
+			self::PARK_TAKEOVER,
+			function () use ( $incumbent, &$rival ): void {
+				// The park sits between the takeover's two linearization points: the incumbent's run row
+				// is already superseded and the lock has not yet changed hands. Proving that here is what
+				// makes the rest of this test evidence about the window rather than about the harness.
+				self::assertSame( 'superseded', $this->run_row_statuses( self::WINDOW_NAME )[ $incumbent ] ?? null, 'A parked takeover must already have superseded the incumbent run row' );
+				self::assertSame( $incumbent, $this->lock_owner( self::WINDOW_NAME ), 'A parked takeover must not yet have transferred the lane lock' );
+
+				// A rival completes a takeover of its own while the first is held mid-flight.
+				$result = Component::operations( self::SCOPE )->dispatch( self::WINDOW_NAME );
+				$rival  = $result instanceof Success && $result->value instanceof Run ? (string) $result->value->id : 'failure';
+			}
+		);
+
+		self::assertIsString( $rival );
+		self::assertNotSame( 'failure', $rival, 'A rival takeover against a lane whose lock is still free to move must be admitted' );
+		self::assertNotSame( $incumbent, $rival, 'A rival takeover must admit its own run' );
+
+		// The parked takeover wrote first and still loses: the lock is what decides the lane, and it
+		// moved while the takeover was held between its own two writes.
+		self::assertSame( 'failure', $contender['outcome'] ?? null, 'A takeover whose lock transfer is overtaken must not report success' );
+		self::assertSame( ErrorCode::AdmissionConflict->value, $contender['code'] ?? null, 'An overtaken takeover admitted nothing, so it must not report the lane as held' );
+
+		// Neither the superseded incumbent nor the loser's provisional row may be left behind, and the
+		// only surviving claim is the one that owns the lock.
+		self::assertSame( $rival, $this->lock_owner( self::WINDOW_NAME ), 'The rival that won the transfer must own the lane lock' );
+		self::assertSame( array( $rival => 'running' ), $this->run_row_statuses( self::WINDOW_NAME ), 'A resolved window must leave exactly one run row, belonging to the lock owner' );
+
+		$this->settle_lane();
+		self::assertSame( array( array() ), $job->calls, 'One lane must execute exactly once no matter how many takeovers contended for it' );
+		self::assertSame( array(), $this->run_row_statuses( self::WINDOW_NAME ), 'A settled lane must leave no run row' );
+		self::assertNull( $this->lock_owner( self::WINDOW_NAME ), 'A settled lane must hold no lock' );
 	}
 
 	// endregion.
@@ -265,22 +334,26 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 	 *
 	 * @param   string        $name         Stable job name.
 	 * @param   OverlapPolicy $overlap      Overlap policy the contender registers under.
-	 * @param   callable|null $while_parked Interleaving to perform while the contender is parked, or null to let it run straight through.
+	 * @param   string        $park         Park mode deciding where, if anywhere, the contender is held.
+	 * @param   callable|null $while_parked Interleaving to perform while the contender is parked.
 	 *
 	 * @throws  \RuntimeException When the contender cannot be started.
 	 *
 	 * @return  array<string, mixed> Decoded contender verdict.
 	 */
-	private function dispatch_from_another_process( string $name, OverlapPolicy $overlap, ?callable $while_parked = null ): array {
+	private function dispatch_from_another_process( string $name, OverlapPolicy $overlap, string $park = self::PARK_NONE, ?callable $while_parked = null ): array {
 		$barrier     = new ContentionBarrier( $name );
 		$environment = \getenv();
 
-		$environment['A8CSP_BGJE_CONTENTION_SCOPE']   = self::SCOPE;
-		$environment['A8CSP_BGJE_CONTENTION_NAME']    = $name;
-		$environment['A8CSP_BGJE_CONTENTION_OVERLAP'] = $overlap->value;
-		$environment['A8CSP_BGJE_CONTENTION_TOKEN']   = null === $while_parked ? '' : $name;
+		$environment['A8CSP_BGJE_CONTENTION_SCOPE']      = self::SCOPE;
+		$environment['A8CSP_BGJE_CONTENTION_NAME']       = $name;
+		$environment['A8CSP_BGJE_CONTENTION_OVERLAP']    = $overlap->value;
+		$environment['A8CSP_BGJE_CONTENTION_TOKEN']      = self::PARK_ADMISSION === $park ? $name : '';
+		$environment['A8CSP_BGJE_CONTENTION_PARK_TOKEN'] = self::PARK_TAKEOVER === $park ? $name : '';
 
-		$barrier->clear( self::GATE );
+		$gate = self::PARK_TAKEOVER === $park ? self::TAKEOVER_GATE : self::GATE;
+
+		$barrier->clear( $gate );
 		$pipes = array();
 		// A second contender needs its own request, which only a separate process provides.
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open
@@ -306,17 +379,20 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Process pipes are native streams with no WP_Filesystem equivalent.
 			\fclose( $stdin );
 
-			if ( null !== $while_parked ) {
-				$barrier->await_arrival( self::GATE );
-				$while_parked();
-				$barrier->release( self::GATE );
+			if ( self::PARK_NONE !== $park ) {
+				$barrier->await_arrival( $gate );
+				if ( null !== $while_parked ) {
+					$while_parked();
+				}
+
+				$barrier->release( $gate );
 			}
 
 			return self::read_report( $pipes );
 		} finally {
 			\proc_terminate( $process );
 			\proc_close( $process );
-			$barrier->clear( self::GATE );
+			$barrier->clear( $gate );
 		}
 	}
 
