@@ -1,6 +1,6 @@
 {
   "name": "a8csp-background-jobs-engine",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.",
   "author": {
     "name": "A8C Special Projects",

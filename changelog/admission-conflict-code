@@ -1,4 +1,0 @@
-Significance: minor
-Type: added
-
-New `ErrorCode::AdmissionConflict` (`admission_conflict`) tells a caller that admission lost a race and admitted nothing, as distinct from `overlap_held`, which means a still-running run owns the lane.

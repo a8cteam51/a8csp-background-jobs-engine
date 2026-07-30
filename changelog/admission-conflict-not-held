@@ -1,4 +1,0 @@
-Significance: minor
-Type: fixed
-
-Admission and takeover paths that could not admit a run reported `overlap_held`, which reads as "another run is doing this work" even when the lane was free; the eight such paths now return `admission_conflict`, so a caller that skips on `overlap_held` no longer drops work nobody is doing.

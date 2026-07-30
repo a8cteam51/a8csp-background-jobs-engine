@@ -19,7 +19,7 @@
  * Plugin URI:              https://specialprojects.automattic.com
  * Update URI:              https://github.com/a8cteam51/a8csp-background-jobs-engine
  * Description:             A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.
- * Version:                 1.0.0-beta.1
+ * Version:                 1.0.0-beta.2
  * Requires at least:       7.0
  * Tested up to:            7.0
  * Requires PHP:            8.5

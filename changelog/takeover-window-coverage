@@ -1,4 +1,0 @@
-Significance: patch
-Type: added
-
-Integration coverage for the takeover window: a test now holds a real dispatch between the two compare-and-swap writes a lane takeover performs, using a WordPress database drop-in rather than any engine-side seam.
