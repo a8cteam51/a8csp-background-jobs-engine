@@ -1,0 +1,479 @@
+<?php declare( strict_types=1 );
+
+namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
+
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ContentionBarrier;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+
+/**
+ * Verifies lane admission when two operating-system processes contend for one lane.
+ *
+ * Every other interleaving in the suite is scripted inside a single process, where a hook
+ * callback runs to completion and one actor can never be held mid-flight while another
+ * advances. These contenders are real requests against the same database, so the outcome
+ * is decided by the engine's compare-and-swap writes rather than by a fake's call order.
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ */
+final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
+	// region FIELDS AND CONSTANTS.
+
+	/** Client scope isolated to cross-process contention coverage. */
+	private const string SCOPE = 'integration-contention';
+
+	/** Job identity isolated to held-lane rejection. */
+	private const string REJECT_NAME = 'integration-contention-reject';
+
+	/** Job identity isolated to cross-process takeover. */
+	private const string REPLACE_NAME = 'integration-contention-replace';
+
+	/** Job identity isolated to the parked contender whose incumbent completes underneath it. */
+	private const string PARKED_NAME = 'integration-contention-parked';
+
+	/** Job identity isolated to the parked contender whose incumbent stays put. */
+	private const string HELD_NAME = 'integration-contention-held';
+
+	/** WordPress root inside the integration environment. */
+	private const string WP_PATH = '/var/www/html';
+
+	/** Test-only WP-CLI script that dispatches one job from its own process. */
+	private const string WORKER = self::WP_PATH . '/wp-content/plugins/a8csp-background-jobs-engine/tests/Support/Fixtures/cli-contention-dispatch.php';
+
+	/** Barrier gate the contender parks on, inside contended admission. */
+	private const string GATE = 'contended_admission';
+
+	/** Line prefix the worker writes its verdict behind. */
+	private const string REPORT_SENTINEL = 'A8CSP_BGJE_CONTENTION_RESULT:';
+
+	/** Upper bound on runner drives while settling a lane, so a stuck queue fails instead of hanging. */
+	private const int MAX_RUNNER_DRIVES = 10;
+
+	// endregion.
+
+	// region LIFECYCLE.
+
+	/**
+	 * Declares the registry row a contending request writes when it boots the engine.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->expect_option( ScheduleRegistry::OPTION_PREFIX . Identity::ENGINE_SCOPE );
+	}
+
+	// endregion.
+
+	// region TESTS.
+
+	/**
+	 * A live incumbent's lane rejects a second process, which executes nothing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_second_process_cannot_admit_a_run_while_a_live_incumbent_holds_the_lane(): void {
+		$job = $this->register( self::REJECT_NAME, OverlapPolicy::Reject );
+		$this->expect_option( LatestRunPointer::OPTION_PREFIX . self::identity( self::REJECT_NAME ) );
+
+		$incumbent = $this->dispatch_here( self::REJECT_NAME );
+		$contender = $this->dispatch_from_another_process( self::REJECT_NAME, OverlapPolicy::Reject );
+
+		self::assertSame( 'failure', $contender['outcome'] ?? null, 'A held lane must refuse a second process' );
+		self::assertSame( ErrorCode::OverlapHeld->value, $contender['code'] ?? null, 'A held lane must refuse with overlap_held' );
+		self::assertSame( $incumbent, $this->lock_owner( self::REJECT_NAME ), 'A rejected contender must leave the incumbent holding the lock' );
+		self::assertSame( array( $incumbent ), $this->live_run_ids( self::REJECT_NAME ), 'A rejected contender must not add a run to the lane' );
+
+		self::assertSame( 1, $this->run_next_engine_action(), 'The incumbent delivery must still execute after the rejection' );
+		self::assertSame( array( array() ), $job->calls, 'The lane must execute exactly once across both processes' );
+		self::assertSame( array(), $this->live_run_ids( self::REJECT_NAME ), 'A completed incumbent must leave no live run' );
+		self::assertNull( $this->lock_owner( self::REJECT_NAME ), 'A completed incumbent must release its lock' );
+	}
+
+	/**
+	 * A second process takes a lane from a live incumbent, whose delivery then executes nothing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_second_process_takes_the_lane_from_a_live_incumbent_under_replace(): void {
+		$job = $this->register( self::REPLACE_NAME, OverlapPolicy::Replace );
+		$this->expect_option( LatestRunPointer::OPTION_PREFIX . self::identity( self::REPLACE_NAME ) );
+
+		$incumbent = $this->dispatch_here( self::REPLACE_NAME );
+		$contender = $this->dispatch_from_another_process( self::REPLACE_NAME, OverlapPolicy::Replace );
+
+		self::assertSame( 'success', $contender['outcome'] ?? null, 'A replace lane must admit a second process' );
+		$replacement = $contender['run_id'] ?? null;
+		self::assertIsString( $replacement );
+		self::assertNotSame( $incumbent, $replacement, 'A takeover must admit its own run' );
+		self::assertSame( $replacement, $this->lock_owner( self::REPLACE_NAME ), 'A completed takeover must own the lane lock' );
+		self::assertSame( array( $replacement ), $this->live_run_ids( self::REPLACE_NAME ), 'A completed takeover must leave exactly one live run' );
+
+		// Both processes queued a delivery. Only the run that still owns the lane may execute.
+		$this->settle_lane();
+		self::assertSame( array( array() ), $job->calls, 'A superseded incumbent delivery must not execute after a cross-process takeover' );
+		self::assertSame( array(), $this->live_run_ids( self::REPLACE_NAME ), 'A settled lane must leave no live run' );
+		self::assertNull( $this->lock_owner( self::REPLACE_NAME ), 'A settled lane must hold no lock' );
+	}
+
+	/**
+	 * A contender parked inside contended admission cannot strand a lane its incumbent has left.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_contender_parked_in_contended_admission_cannot_strand_a_lane_its_incumbent_left(): void {
+		$job = $this->register( self::PARKED_NAME, OverlapPolicy::Replace );
+		$this->expect_option( LatestRunPointer::OPTION_PREFIX . self::identity( self::PARKED_NAME ) );
+
+		$incumbent = $this->dispatch_here( self::PARKED_NAME );
+
+		$contender = $this->dispatch_from_another_process(
+			self::PARKED_NAME,
+			OverlapPolicy::Replace,
+			function () use ( $incumbent, $job ): void {
+				// Proving the park point here is what makes the rest of this test evidence about the
+				// engine: a contender that had already written would make any later verdict vacuous.
+				self::assertSame( $incumbent, $this->lock_owner( self::PARKED_NAME ), 'A parked contender must not yet have touched the lane lock' );
+				self::assertSame( array( $incumbent ), $this->live_run_ids( self::PARKED_NAME ), 'A parked contender must not yet have written a run row' );
+				self::assertSame( array( $incumbent => 'running' ), $this->run_row_statuses( self::PARKED_NAME ), 'A parked contender must not yet have superseded the incumbent' );
+
+				// The incumbent finishes normally, so the parked contender resumes holding a snapshot
+				// of a lane that no longer exists.
+				self::assertSame( 1, $this->run_next_engine_action(), 'The incumbent delivery must execute while the contender is parked' );
+				self::assertSame( array( array() ), $job->calls, 'The incumbent must execute exactly once' );
+				self::assertSame( array(), $this->run_row_statuses( self::PARKED_NAME ), 'A completed incumbent must leave no run row behind' );
+				self::assertNull( $this->lock_owner( self::PARKED_NAME ), 'A completed incumbent must release the lane before the contender resumes' );
+			}
+		);
+
+		$this->settle_lane();
+
+		self::assertSame( array(), $this->live_run_ids( self::PARKED_NAME ), 'A settled lane must leave no live run' );
+		self::assertNull( $this->lock_owner( self::PARKED_NAME ), 'A resumed contender must not leave an orphan lock on a lane it does not own' );
+		self::assertSame( array(), $this->run_row_statuses( self::PARKED_NAME ), 'A resumed contender must not leave a run row stranded on a settled lane' );
+		self::assertSame( array( array() ), $job->calls, 'A resumed contender that admitted nothing must not execute' );
+
+		// The lane is idle by the time the contender resumes: the incumbent completed, and its lock and
+		// run row are both gone. The engine answers overlap_held anyway, because the transfer compares
+		// against lock bytes that no longer exist. A caller reading that code as "another run has this
+		// work" declines work nobody is doing; retrying the dispatch is what actually succeeds. Pinned
+		// so that answering differently is a deliberate change rather than a side effect.
+		self::assertSame( 'failure', $contender['outcome'] ?? null, 'A contender resuming onto a freed lane must report a definite outcome' );
+		self::assertSame( ErrorCode::OverlapHeld->value, $contender['code'] ?? null, 'A contender resuming onto a freed lane currently reports overlap_held' );
+	}
+
+	/**
+	 * A contender parked inside contended admission still takes a lane whose incumbent stays put.
+	 *
+	 * Without this case the parked interleaving proves nothing: an outcome that arrives whether or not
+	 * the incumbent moves is caused by the park, not by the interleaving under test.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_contender_parked_in_contended_admission_still_takes_a_lane_its_incumbent_holds(): void {
+		$job = $this->register( self::HELD_NAME, OverlapPolicy::Replace );
+		$this->expect_option( LatestRunPointer::OPTION_PREFIX . self::identity( self::HELD_NAME ) );
+
+		$incumbent = $this->dispatch_here( self::HELD_NAME );
+
+		$contender = $this->dispatch_from_another_process(
+			self::HELD_NAME,
+			OverlapPolicy::Replace,
+			function () use ( $incumbent ): void {
+				self::assertSame( $incumbent, $this->lock_owner( self::HELD_NAME ), 'A parked contender must not yet have touched the lane lock' );
+				self::assertSame( array( $incumbent => 'running' ), $this->run_row_statuses( self::HELD_NAME ), 'A parked contender must not yet have superseded the incumbent' );
+			}
+		);
+
+		self::assertSame( 'success', $contender['outcome'] ?? null, 'A contender released onto an unchanged lane must complete its takeover' );
+		$replacement = $contender['run_id'] ?? null;
+		self::assertIsString( $replacement );
+		self::assertNotSame( $incumbent, $replacement, 'A takeover must admit its own run' );
+		self::assertSame( $replacement, $this->lock_owner( self::HELD_NAME ), 'A completed takeover must own the lane lock' );
+
+		$this->settle_lane();
+		self::assertSame( array( array() ), $job->calls, 'A superseded incumbent delivery must not execute alongside the run that replaced it' );
+		self::assertSame( array(), $this->run_row_statuses( self::HELD_NAME ), 'A settled lane must leave no run row' );
+		self::assertNull( $this->lock_owner( self::HELD_NAME ), 'A settled lane must hold no lock' );
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Registers one job in this process under an overlap policy.
+	 *
+	 * @param   string        $name    Stable job name.
+	 * @param   OverlapPolicy $overlap Overlap policy the lane admits under.
+	 *
+	 * @return  RecordingJob
+	 */
+	private function register( string $name, OverlapPolicy $overlap ): RecordingJob {
+		$job = new RecordingJob( $name );
+		Component::operations( self::SCOPE )->register( $job->definition( new JobOptions( overlap: $overlap ) ) );
+
+		return $job;
+	}
+
+	/**
+	 * Dispatches one job from this process and returns its run identifier.
+	 *
+	 * @param   string $name Stable job name.
+	 *
+	 * @return  string
+	 */
+	private function dispatch_here( string $name ): string {
+		$result = Component::operations( self::SCOPE )->dispatch( $name );
+		self::assertInstanceOf( Success::class, $result, 'The incumbent must be admitted through the public API' );
+		self::assertInstanceOf( Run::class, $result->value );
+
+		return (string) $result->value->id;
+	}
+
+	/**
+	 * Dispatches the same job from its own WP-CLI process, optionally parked mid-admission.
+	 *
+	 * @phpstan-param null|callable(): void $while_parked
+	 *
+	 * @param   string        $name         Stable job name.
+	 * @param   OverlapPolicy $overlap      Overlap policy the contender registers under.
+	 * @param   callable|null $while_parked Interleaving to perform while the contender is parked, or null to let it run straight through.
+	 *
+	 * @throws  \RuntimeException When the contender cannot be started.
+	 *
+	 * @return  array<string, mixed> Decoded contender verdict.
+	 */
+	private function dispatch_from_another_process( string $name, OverlapPolicy $overlap, ?callable $while_parked = null ): array {
+		$barrier     = new ContentionBarrier( $name );
+		$environment = \getenv();
+
+		$environment['A8CSP_BGJE_CONTENTION_SCOPE']   = self::SCOPE;
+		$environment['A8CSP_BGJE_CONTENTION_NAME']    = $name;
+		$environment['A8CSP_BGJE_CONTENTION_OVERLAP'] = $overlap->value;
+		$environment['A8CSP_BGJE_CONTENTION_TOKEN']   = null === $while_parked ? '' : $name;
+
+		$barrier->clear( self::GATE );
+		$pipes = array();
+		// A second contender needs its own request, which only a separate process provides.
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open
+		$process = \proc_open(
+			array( 'wp', '--path=' . self::WP_PATH, '--no-color', 'eval-file', self::WORKER ),
+			array(
+				0 => array( 'pipe', 'r' ),
+				1 => array( 'pipe', 'w' ),
+				2 => array( 'pipe', 'w' ),
+			),
+			$pipes,
+			self::WP_PATH,
+			$environment
+		);
+		if ( ! \is_resource( $process ) ) {
+			throw new \RuntimeException( 'The integration environment must expose the WP-CLI executable to a contending process.' );
+		}
+
+		try {
+			self::assertCount( 3, $pipes );
+			$stdin = $pipes[0] ?? null;
+			self::assertIsResource( $stdin );
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Process pipes are native streams with no WP_Filesystem equivalent.
+			\fclose( $stdin );
+
+			if ( null !== $while_parked ) {
+				$barrier->await_arrival( self::GATE );
+				$while_parked();
+				$barrier->release( self::GATE );
+			}
+
+			return self::read_report( $pipes );
+		} finally {
+			\proc_terminate( $process );
+			\proc_close( $process );
+			$barrier->clear( self::GATE );
+		}
+	}
+
+	/**
+	 * Reads and decodes one contender's verdict from its output streams.
+	 *
+	 * @param   array<int, mixed> $pipes Open process pipes.
+	 *
+	 * @return  array<string, mixed>
+	 */
+	private static function read_report( array $pipes ): array {
+		$stdout = $pipes[1] ?? null;
+		$stderr = $pipes[2] ?? null;
+		self::assertIsResource( $stdout );
+		self::assertIsResource( $stderr );
+
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+		$output = \stream_get_contents( $stdout );
+		$errors = \stream_get_contents( $stderr );
+		\fclose( $stdout );
+		\fclose( $stderr );
+		// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+
+		self::assertIsString( $output );
+		self::assertIsString( $errors );
+
+		$verdict = null;
+		foreach ( \explode( "\n", $output ) as $line ) {
+			if ( \str_starts_with( $line, self::REPORT_SENTINEL ) ) {
+				$verdict = \json_decode( \substr( $line, \strlen( self::REPORT_SENTINEL ) ), true );
+			}
+		}
+
+		self::assertIsArray( $verdict, \sprintf( 'The contending process must report a verdict. Output: %1$s Errors: %2$s', $output, $errors ) );
+
+		$report = array();
+		foreach ( $verdict as $key => $value ) {
+			if ( \is_string( $key ) ) {
+				$report[ $key ] = $value;
+			}
+		}
+
+		return $report;
+	}
+
+	/**
+	 * Drives due engine actions until the queue is empty.
+	 *
+	 * @return  void
+	 */
+	private function settle_lane(): void {
+		for ( $drive = 0; $drive < self::MAX_RUNNER_DRIVES; $drive++ ) {
+			if ( 0 === $this->run_next_engine_action() ) {
+				return;
+			}
+		}
+
+		self::fail( 'A contended lane must settle within a bounded number of runner drives.' );
+	}
+
+	/**
+	 * Returns the run identifier currently holding one lane's overlap lock.
+	 *
+	 * @param   string $name Stable job name.
+	 *
+	 * @return  string|null Lock owner, or null while the lane holds no lock.
+	 */
+	private function lock_owner( string $name ): ?string {
+		$raw = self::raw_option( OverlapGuard::OPTION_PREFIX . self::identity( $name ) . '_' . self::args_hash( array() ) );
+		if ( null === $raw ) {
+			return null;
+		}
+
+		$lock = \maybe_unserialize( $raw );
+
+		return \is_array( $lock ) && \is_string( $lock['run_id'] ?? null ) ? $lock['run_id'] : null;
+	}
+
+	/**
+	 * Returns the running run identifiers the inspection portal reports for one lane.
+	 *
+	 * @param   string $name Stable job name.
+	 *
+	 * @return  list<string>
+	 */
+	private function live_run_ids( string $name ): array {
+		$run_ids = array();
+		foreach ( $this->inspection()->runs( Identity::compose( self::SCOPE, $name ) )['live'] as $entry ) {
+			$run_ids[] = $entry['run_id'];
+		}
+
+		return $run_ids;
+	}
+
+	/**
+	 * Returns the persisted status of every run row a lane still carries, terminal rows included.
+	 *
+	 * A terminal row is invisible to the inspection portal's live view, which is exactly where a
+	 * stranded takeover would hide.
+	 *
+	 * @param   string $name Stable job name.
+	 *
+	 * @return  array<string, string> Persisted statuses keyed by run identifier.
+	 */
+	private function run_row_statuses( string $name ): array {
+		global $wpdb;
+
+		$prefix = RunIdentity::raw_option_name_prefix( self::identity( $name ) );
+
+		/** @var \wpdb $wpdb */
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT `option_name`, `option_value` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( $prefix ) . '%' ), \ARRAY_A );
+		if ( ! \is_array( $rows ) ) {
+			return array();
+		}
+
+		$statuses = array();
+		foreach ( $rows as $row ) {
+			if ( ! \is_array( $row ) || ! \is_string( $row['option_name'] ?? null ) || ! \is_string( $row['option_value'] ?? null ) ) {
+				continue;
+			}
+
+			$state = \maybe_unserialize( $row['option_value'] );
+			if ( \is_array( $state ) && \is_string( $state['status'] ?? null ) ) {
+				$statuses[ \substr( $row['option_name'], \strlen( $prefix ) ) ] = $state['status'];
+			}
+		}
+
+		return $statuses;
+	}
+
+	/**
+	 * Reads one option row past the option cache, so a peer process's write is visible.
+	 *
+	 * @param   string $name Option name.
+	 *
+	 * @return  string|null Raw option value, or null while the row is absent.
+	 */
+	private static function raw_option( string $name ): ?string {
+		global $wpdb;
+
+		/** @var \wpdb $wpdb */
+		$value = $wpdb->get_var( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s', $wpdb->options, $name ) );
+
+		return \is_string( $value ) ? $value : null;
+	}
+
+	/**
+	 * Composes one lane's scope-qualified identity.
+	 *
+	 * @param   string $name Stable job name.
+	 *
+	 * @return  string
+	 */
+	private static function identity( string $name ): string {
+		return self::SCOPE . ':' . $name;
+	}
+
+	// endregion.
+}
