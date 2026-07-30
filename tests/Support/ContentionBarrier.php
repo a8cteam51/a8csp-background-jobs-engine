@@ -24,6 +24,18 @@ final class ContentionBarrier {
 	/** Seconds a wait blocks before reporting that its peer never came. */
 	public const float TIMEOUT = 30.0;
 
+	/**
+	 * Gate a contender parks on inside contended admission.
+	 *
+	 * Both gate names live here because the two sides of each rendezvous sit in different files that
+	 * cannot see each other's constants: one is a WP-CLI fixture, the other a database drop-in that
+	 * loads before any autoloader. Drift between two copies would surface only as a barrier timeout.
+	 */
+	public const string ADMISSION_GATE = 'contended_admission';
+
+	/** Gate a contender parks on between the takeover's two compare-and-swap writes. */
+	public const string TAKEOVER_GATE = 'takeover_window';
+
 	// endregion.
 
 	// region MAGIC METHODS.

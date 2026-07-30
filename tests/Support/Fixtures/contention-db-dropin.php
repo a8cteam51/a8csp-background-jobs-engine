@@ -31,9 +31,6 @@ if ( '' === $a8csp_bgje_park_token || ! \class_exists( 'wpdb', false ) ) {
 class A8CSP_BGJE_Takeover_Window_Wpdb extends wpdb {
 	// region FIELDS AND CONSTANTS.
 
-	/** Barrier gate the parked write announces itself on. */
-	public const string GATE = 'takeover_window';
-
 	/** Barrier token shared with the peer process. */
 	private string $token = '';
 
@@ -82,11 +79,11 @@ class A8CSP_BGJE_Takeover_Window_Wpdb extends wpdb {
 
 		$this->parked = true;
 
-		// A barrier read must not recurse back into this override, and the support class is
-		// autoloadable by the time any engine write runs even though it was not when this file loaded.
-		if ( \class_exists( \A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ContentionBarrier::class ) ) {
-			( new \A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ContentionBarrier( $this->token ) )->arrive( self::GATE );
-		}
+		// Only the engine writes this row, so its autoloader is registered by the time this runs even
+		// though it was not when this file loaded. An unautoloadable barrier is therefore a broken
+		// harness, and a fatal here says so rather than degrading into a peer's barrier timeout.
+		$barrier = new \A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\ContentionBarrier( $this->token );
+		$barrier->arrive( $barrier::TAKEOVER_GATE );
 
 		return $result;
 	}

@@ -55,12 +55,6 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 	/** Test-only WP-CLI script that dispatches one job from its own process. */
 	private const string WORKER = self::WP_PATH . '/wp-content/plugins/a8csp-background-jobs-engine/tests/Support/Fixtures/cli-contention-dispatch.php';
 
-	/** Barrier gate the contender parks on, inside contended admission. */
-	private const string GATE = 'contended_admission';
-
-	/** Barrier gate the database drop-in parks on, between the takeover's two writes. */
-	private const string TAKEOVER_GATE = 'takeover_window';
-
 	/** Park mode: the contender runs straight through. */
 	private const string PARK_NONE = '';
 
@@ -351,7 +345,7 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 		$environment['A8CSP_BGJE_CONTENTION_TOKEN']      = self::PARK_ADMISSION === $park ? $name : '';
 		$environment['A8CSP_BGJE_CONTENTION_PARK_TOKEN'] = self::PARK_TAKEOVER === $park ? $name : '';
 
-		$gate = self::PARK_TAKEOVER === $park ? self::TAKEOVER_GATE : self::GATE;
+		$gate = self::PARK_TAKEOVER === $park ? ContentionBarrier::TAKEOVER_GATE : ContentionBarrier::ADMISSION_GATE;
 
 		$barrier->clear( $gate );
 		$pipes = array();
@@ -380,7 +374,25 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 			\fclose( $stdin );
 
 			if ( self::PARK_NONE !== $park ) {
-				$barrier->await_arrival( $gate );
+				try {
+					$barrier->await_arrival( $gate );
+				} catch ( \RuntimeException $never_arrived ) {
+					// A contender that never announces itself is almost always a missing park mechanism
+					// rather than a slow one, and the bare timeout does not say which.
+					throw new \RuntimeException(
+						\sprintf(
+							'%1$s The %2$s park never engaged. %3$s',
+							$never_arrived->getMessage(),
+							$park,
+							self::PARK_TAKEOVER === $park
+								? 'That park needs the database drop-in installed at wp-content/db.php; recreate the environment with `npm run wp-env:tests:start`.'
+								: 'That park needs the contender to register the lock-staleness filter.'
+						),
+						0,
+						$never_arrived
+					);
+				}
+
 				if ( null !== $while_parked ) {
 					$while_parked();
 				}
