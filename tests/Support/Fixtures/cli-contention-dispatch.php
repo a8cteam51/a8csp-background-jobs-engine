@@ -52,7 +52,7 @@ if ( '' !== $a8csp_bgje_token ) {
 		static function ( int $seconds ) use ( $a8csp_bgje_barrier, &$a8csp_bgje_parked ): int {
 			if ( true !== $a8csp_bgje_parked ) {
 				$a8csp_bgje_parked = true;
-				$a8csp_bgje_barrier->arrive( 'contended_admission' );
+				$a8csp_bgje_barrier->arrive( ContentionBarrier::ADMISSION_GATE );
 			}
 
 			return $seconds;
