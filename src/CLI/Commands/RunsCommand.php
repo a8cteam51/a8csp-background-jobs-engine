@@ -33,7 +33,8 @@ final readonly class RunsCommand {
 	 *
 	 * Table, JSON, and YAML include live state plus bounded recent history. CSV includes live state
 	 * only, and count is the number of live runs. Every format reports omitted unreadable rows on
-	 * STDERR without adding diagnostic prose to rendered data.
+	 * STDERR without adding diagnostic prose to rendered data; that count covers every corrupt row
+	 * sharing this identity's run option-name prefix, which a longer sibling identity also shares.
 	 *
 	 * ## OPTIONS
 	 *

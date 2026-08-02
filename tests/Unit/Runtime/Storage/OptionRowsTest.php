@@ -259,7 +259,7 @@ final class OptionRowsTest extends TestCase {
 	}
 
 	/**
-	 * A non-advancing raw cursor is reported as an authoritative storage failure.
+	 * An unusable raw cursor is reported as a cursor-advance failure, not a read failure.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -276,6 +276,8 @@ final class OptionRowsTest extends TestCase {
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+		self::assertSame( 'Authoritative option-name enumeration could not advance its keyset cursor past the last returned row.', $result->error->message );
+		self::assertSame( array(), $result->error->context );
 	}
 
 	/**
@@ -315,28 +317,6 @@ final class OptionRowsTest extends TestCase {
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame( array( 'storage_error' => 'scripted option-name read failure' ), $result->error->context );
-	}
-
-	/** A bounded page keysets past rejected candidates and counts only accepted names. */
-	public function test_option_names_page_applies_the_limit_after_validation(): void {
-		$prefix       = 'a8csp_bgje_active_run_scope:email-digest_';
-		$first_valid  = $prefix . \sprintf( '%020d-%019d', 1, 1 );
-		$second_valid = $prefix . \sprintf( '%020d-%019d', 2, 2 );
-		$wpdb         = new WpdbLockSpy();
-		$wpdb->put( $prefix . \sprintf( '!%039d', 1 ), 'malformed-run-row' );
-		$wpdb->put( $prefix . \sprintf( '!%039d', 2 ), 'malformed-run-row' );
-		$wpdb->put( $first_valid, 'first-run-row' );
-		$wpdb->put( $second_valid, 'second-run-row' );
-
-		$page = ( new OptionRows( $wpdb ) )->option_names_page( $prefix, \strlen( $first_valid ), 1, static fn ( string $name ): bool => 1 === \preg_match( '/\A\d{20}-\d{19}\z/D', \substr( $name, \strlen( $prefix ) ) ) );
-
-		self::assertSame(
-			array(
-				'names' => array( $first_valid ),
-				'total' => 2,
-			),
-			$page
-		);
 	}
 
 	/** Authoritative reads distinguish found, missing, and failed outcomes. */
@@ -449,20 +429,22 @@ final class OptionRowsTest extends TestCase {
 	}
 
 	/**
-	 * A bounded name page abandons its scan on a silent Core query failure.
+	 * Cursor-paged name enumeration reports every silent Core query failure.
 	 *
 	 * @param   'not_ready'|'query_filtered'|'reconnect_failed' $leg Core query failure leg.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'silent_query_failure_provider' )]
-	public function test_option_names_page_rejects_every_silent_core_query_failure( string $leg ): void {
+	public function test_option_names_after_rejects_every_silent_core_query_failure( string $leg ): void {
 		$wpdb = new WpdbLockSpy();
 		$wpdb->fail_next_read_at( $leg );
 
-		$page = ( new OptionRows( $wpdb ) )->option_names_page( 'a8csp_bgje_', 30, 1, static fn ( string $name ): bool => true );
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgje_', null, 1 );
 
-		self::assertNull( $page );
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
 	}
 
 	/**

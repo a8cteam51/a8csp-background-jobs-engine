@@ -180,7 +180,7 @@ final readonly class RunOutput {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $unreadable Number of unreadable live-run rows omitted from inspection.
+	 * @param   int $unreadable Number of unreadable option rows omitted from inspection.
 	 *
 	 * @return  string|null
 	 */
@@ -189,7 +189,8 @@ final readonly class RunOutput {
 			return null;
 		}
 
-		return \sprintf( '%1$d unreadable live-run %2$s %3$s omitted; maintenance reclaims corrupt state, but repair malformed option names manually.', $unreadable, 1 === $unreadable ? 'row' : 'rows', 1 === $unreadable ? 'was' : 'were' );
+		// A malformed name cannot be attributed to one identity: a longer sibling name shares the prefix, so the scope is the prefix rather than the requested identity.
+		return \sprintf( '%1$d unreadable option %2$s sharing this identity\'s run option-name prefix %3$s omitted; maintenance reclaims corrupt state, but repair malformed option names manually.', $unreadable, 1 === $unreadable ? 'row' : 'rows', 1 === $unreadable ? 'was' : 'were' );
 	}
 
 	/**

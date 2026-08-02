@@ -373,15 +373,13 @@ final class WpdbLockSpy extends \wpdb {
 	 * @return  list<\stdClass>
 	 */
 	private function selected_names( array $statement ): array {
-		$args             = self::without_table( $statement['args'] );
-		$pattern          = $args[0] ?? null;
-		$has_total_length = \str_contains( $statement['template'], 'LENGTH(`option_name`) = %d' );
-		$total_length     = $has_total_length ? ( $args[1] ?? null ) : null;
-		$has_cursor       = \str_contains( $statement['template'], 'BINARY `option_name` > BINARY %s' );
-		$cursor           = $has_cursor ? ( $args[ $has_total_length ? 2 : 1 ] ?? null ) : null;
-		$limit_index      = 1 + ( $has_total_length ? 1 : 0 ) + ( $has_cursor ? 1 : 0 );
-		$limit            = $args[ $limit_index ] ?? null;
-		if ( ! \is_string( $pattern ) || ! \str_ends_with( $pattern, '%' ) || ( null !== $total_length && ! \is_int( $total_length ) ) || ( null !== $cursor && ! \is_string( $cursor ) ) || ( null !== $limit && ! \is_int( $limit ) ) ) {
+		$args        = self::without_table( $statement['args'] );
+		$pattern     = $args[0] ?? null;
+		$has_cursor  = \str_contains( $statement['template'], 'BINARY `option_name` > BINARY %s' );
+		$cursor      = $has_cursor ? ( $args[1] ?? null ) : null;
+		$limit_index = $has_cursor ? 2 : 1;
+		$limit       = $args[ $limit_index ] ?? null;
+		if ( ! \is_string( $pattern ) || ! \str_ends_with( $pattern, '%' ) || ( null !== $cursor && ! \is_string( $cursor ) ) || ( null !== $limit && ! \is_int( $limit ) ) ) {
 			throw new \UnexpectedValueException( 'WpdbLockSpy option scans require a trailing-wildcard pattern and valid bounds.' );
 		}
 
@@ -402,7 +400,7 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
-		$names = \array_values( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && 0 === \strncasecmp( $name, $prefix, \strlen( $prefix ) ) && ( null === $total_length || \strlen( $name ) === $total_length ) && ( null === $cursor || 0 < \strcmp( $name, $cursor ) ) ) );
+		$names = \array_values( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && 0 === \strncasecmp( $name, $prefix, \strlen( $prefix ) ) && ( null === $cursor || 0 < \strcmp( $name, $cursor ) ) ) );
 		\sort( $names, \SORT_STRING );
 		if ( null !== $limit ) {
 			$names = \array_slice( $names, 0, $limit );

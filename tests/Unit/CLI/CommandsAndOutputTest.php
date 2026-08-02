@@ -961,7 +961,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$rows   = \json_decode( $result->stdout, true, 512, \JSON_THROW_ON_ERROR );
 
 		self::assertSame( 0, $result->exit_code );
-		self::assertSame( "Warning: 1 unreadable live-run row was omitted; maintenance reclaims corrupt state, but repair malformed option names manually.\n", $result->stderr );
+		self::assertSame( "Warning: 1 unreadable option row sharing this identity's run option-name prefix was omitted; maintenance reclaims corrupt state, but repair malformed option names manually.\n", $result->stderr );
 		self::assertIsArray( $rows );
 		self::assertSame( array( self::run_id( 1 ) ), \array_column( $rows, 'run_id' ) );
 		self::assertStringNotContainsString( 'unreadable', $result->stdout );

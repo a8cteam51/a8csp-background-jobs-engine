@@ -583,6 +583,24 @@ final class InspectionTest extends TestCase {
 	}
 
 	/**
+	 * A wrong-length name counts as unreadable while a well-formed sibling identity does not.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_enumeration_counts_wrong_length_names_and_ignores_foreign_siblings(): void {
+		$identity = 'scope:foo';
+		$this->put( StoreFixtureBuilder::for_identity( 'scope:foo_bar' )->unreadable_run( self::run_id( 1 ) ) );
+		$this->put( StoreFixtureBuilder::for_identity( $identity )->unreadable_run( 'z' ) );
+
+		$snapshot = $this->rig->inspection()->runs( self::identity( $identity ) );
+
+		self::assertSame( array( 0, 0, 1 ), array( $snapshot['live_scanned'], $snapshot['live_uninspected'], $snapshot['live_unreadable'] ) );
+	}
+
+	/**
 	 * Live inspection terminates at its documented cap and reports the exact remainder.
 	 *
 	 * @load-bearing bounded-retry-liveness

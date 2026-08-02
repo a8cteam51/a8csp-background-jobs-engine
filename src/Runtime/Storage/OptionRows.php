@@ -239,7 +239,7 @@ final readonly class OptionRows {
 		if ( $scanned === $limit ) {
 			$next_cursor = $candidates[ $scanned - 1 ] ?? null;
 			if ( ! \is_string( $next_cursor ) || ( null !== $after_name && 0 >= \strcmp( $next_cursor, $after_name ) ) ) {
-				return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
+				return new Failure( new EngineError( 'Authoritative option-name enumeration could not advance its keyset cursor past the last returned row.', reason: EngineErrorReason::StorageFailure, ) );
 			}
 		}
 
@@ -256,83 +256,6 @@ final readonly class OptionRows {
 				'next_cursor' => $next_cursor,
 				'scanned'     => $scanned,
 			)
-		);
-	}
-
-	/**
-	 * Returns one bounded page and the complete accepted count for an exact option-name byte length.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                 $prefix       Literal option-name prefix.
-	 * @param   int                    $total_length Required complete option-name byte length.
-	 * @param   int                    $limit        Positive maximum number of names returned.
-	 * @param   callable(string): bool $is_valid     Complete-name validity predicate.
-	 *
-	 * @throws  \InvalidArgumentException When the length or limit is invalid.
-	 * @throws  \LogicException           When the current site differs from the bound site.
-	 *
-	 * @return  array{names: list<string>, total: int}|null Null when either authoritative read fails.
-	 */
-	public function option_names_page( string $prefix, int $total_length, int $limit, callable $is_valid ): ?array {
-		if ( \strlen( $prefix ) > $total_length || 1 > $limit ) {
-			throw new \InvalidArgumentException( 'An option-name page requires a complete length at least as long as its prefix and a positive limit.' );
-		}
-
-		$this->assert_site();
-		$wpdb     = $this->wpdb;
-		$pattern  = $wpdb->esc_like( $prefix ) . '%';
-		$accepted = array();
-		$total    = 0;
-		$cursor   = null;
-
-		do {
-			if ( null === $cursor ) {
-				$result = $wpdb->query( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $total_length, $limit ) ?? '' );
-			} else {
-				$result = $wpdb->query( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $total_length, $cursor, $limit ) ?? '' );
-			}
-			if ( false === $result ) {
-				return null;
-			}
-
-			$candidates      = \array_map( static fn ( \stdClass $row ): mixed => $row->option_name ?? null, $wpdb->last_result ?? array() );
-			$candidate_count = \count( $candidates );
-			if ( 0 === $candidate_count ) {
-				break;
-			}
-
-			$next_cursor = $candidates[ $candidate_count - 1 ] ?? null;
-			if (
-				! \is_string( $next_cursor )
-				|| ( null !== $cursor && 0 >= \strcmp( $next_cursor, $cursor ) )
-			) {
-				return null;
-			}
-
-			foreach ( $candidates as $name ) {
-				if (
-					! \is_string( $name )
-					|| \strlen( $name ) !== $total_length
-					|| ! \str_starts_with( $name, $prefix )
-					|| ! $is_valid( $name )
-				) {
-					continue;
-				}
-
-				++$total;
-				if ( $total <= $limit ) {
-					$accepted[] = $name;
-				}
-			}
-
-			$cursor = $next_cursor;
-		} while ( $candidate_count === $limit );
-
-		return array(
-			'names' => $accepted,
-			'total' => $total,
 		);
 	}
 

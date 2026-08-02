@@ -67,7 +67,8 @@ final readonly class Inspection {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Maximum authoritative live-run rows inspected for one command invocation.
+	 * Maximum authoritative live-run rows inspected for one command invocation, and the page size
+	 * of the option-name enumeration that finds them.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -272,24 +273,9 @@ final readonly class Inspection {
 	 * @return  array
 	 */
 	public function runs( Identity $identity ): array {
-		$observed_at     = $this->clock->now()->getTimestamp();
-		$run_store       = $this->stores->run_store( $identity );
-		$prefix          = RunIdentity::option_name_prefix( $identity );
-		$live_unreadable = 0;
-		$page            = $this->option_rows->option_names_page(
-			$prefix,
-			\strlen( $prefix ) + RunIdentity::LENGTH,
-			self::LIVE_RUN_LIMIT,
-			static function ( string $option_name ) use ( $identity, &$live_unreadable ): bool {
-				$run_identity = RunIdentity::from_option_name( $option_name );
-				if ( null === $run_identity ) {
-					++$live_unreadable;
-					return false;
-				}
-
-				return (string) $identity === (string) $run_identity['identity'];
-			}
-		);
+		$observed_at = $this->clock->now()->getTimestamp();
+		$run_store   = $this->stores->run_store( $identity );
+		$page        = $this->live_run_ids( $identity );
 		if ( null === $page ) {
 			return array(
 				'observed_at'      => $observed_at,
@@ -302,16 +288,10 @@ final readonly class Inspection {
 			);
 		}
 
-		$live = array();
+		$live            = array();
+		$live_unreadable = $page['unreadable'];
 
-		foreach ( $page['names'] as $option_name ) {
-			$run_identity = RunIdentity::from_option_name( $option_name );
-			if ( null === $run_identity || (string) $identity !== (string) $run_identity['identity'] ) {
-				// Malformed names are counted where the page filter rejects them; accepted names cannot fail here.
-				continue;
-			}
-
-			$run_id    = $run_identity['run_id'];
+		foreach ( $page['run_ids'] as $run_id ) {
 			$inspected = $run_store->inspect( $run_id );
 			if ( $inspected->is_failure() ) {
 				return array(
@@ -319,8 +299,8 @@ final readonly class Inspection {
 					'live'             => array(),
 					'history'          => array(),
 					'live_error'       => 'read_failed',
-					'live_scanned'     => \count( $page['names'] ),
-					'live_uninspected' => \max( 0, $page['total'] - \count( $page['names'] ) ),
+					'live_scanned'     => \count( $page['run_ids'] ),
+					'live_uninspected' => \max( 0, $page['total'] - \count( $page['run_ids'] ) ),
 					'live_unreadable'  => $live_unreadable,
 				);
 			}
@@ -359,8 +339,8 @@ final readonly class Inspection {
 			'live'             => $live,
 			'history'          => $this->history( $identity ),
 			'live_error'       => null,
-			'live_scanned'     => \count( $page['names'] ),
-			'live_uninspected' => \max( 0, $page['total'] - \count( $page['names'] ) ),
+			'live_scanned'     => \count( $page['run_ids'] ),
+			'live_uninspected' => \max( 0, $page['total'] - \count( $page['run_ids'] ) ),
 			'live_unreadable'  => $live_unreadable,
 		);
 	}
@@ -368,6 +348,57 @@ final readonly class Inspection {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Returns bounded validated live run IDs and complete enumeration counts.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete scope-qualified background-work identity.
+	 *
+	 * @throws  \LogicException When the current site differs from the bound site.
+	 *
+	 * @return  array{run_ids: list<string>, total: int, unreadable: int}|null Null when authoritative option-name enumeration fails.
+	 */
+	private function live_run_ids( Identity $identity ): ?array {
+		$prefix     = RunIdentity::option_name_prefix( $identity );
+		$run_ids    = array();
+		$total      = 0;
+		$unreadable = 0;
+		$cursor     = null;
+
+		do {
+			$page = $this->option_rows->option_names_after( $prefix, $cursor, self::LIVE_RUN_LIMIT );
+			if ( $page->is_failure() ) {
+				return null;
+			}
+
+			foreach ( $page->value['names'] as $option_name ) {
+				$parsed = RunIdentity::from_option_name( $option_name );
+				if ( null === $parsed ) {
+					++$unreadable;
+					continue;
+				}
+				if ( (string) $identity !== (string) $parsed['identity'] ) {
+					continue;
+				}
+
+				++$total;
+				if ( $total <= self::LIVE_RUN_LIMIT ) {
+					$run_ids[] = $parsed['run_id'];
+				}
+			}
+
+			$cursor = $page->value['next_cursor'];
+		} while ( null !== $cursor );
+
+		return array(
+			'run_ids'    => $run_ids,
+			'total'      => $total,
+			'unreadable' => $unreadable,
+		);
+	}
 
 	/**
 	 * Returns a declared schedule's complete validated overlap-lock state.
