@@ -686,7 +686,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 				return;
 			}
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), ErrorCode::PayloadRejected );
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), ErrorCode::PayloadRejected, $this->failure_details( $state ) );
 
 			return;
 		}

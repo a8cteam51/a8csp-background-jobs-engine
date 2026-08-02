@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+A Chunked Job whose queue is refused when the attempt commits now reports the chunk that was in flight in `RunFailure::$details['failed_chunk']`, matching every other terminal chunked failure that has one.

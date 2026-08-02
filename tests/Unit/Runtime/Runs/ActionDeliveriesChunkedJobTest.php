@@ -1233,7 +1233,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), null );
+		$this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), $current );
 	}
 
 	/**
@@ -1372,7 +1372,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), null );
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), $current );
 		self::assertMatchesRegularExpression( '/\ARun state contains \d+ persisted serialization bytes; the limit is \d+ bytes\.\z/', $failure->summary );
 		self::assertCount( 1, $this->chunked_job->process_calls );
 		$this->rig->assert_no_delivery( self::IDENTITY );
