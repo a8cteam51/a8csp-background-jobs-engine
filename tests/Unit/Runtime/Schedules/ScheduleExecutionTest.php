@@ -16,7 +16,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -681,7 +680,7 @@ final class ScheduleExecutionTest extends TestCase {
 				'job'      => Identity::compose( self::SCOPE, $schedule->job ),
 			),
 		);
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( self::SCOPE, $declarations, $redeclared['registrations'], reset_undeclared_episodes: true ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( self::SCOPE, $declarations, $redeclared['registrations'], reset_undeclared_episodes: true ) );
 		$this->reset_observations();
 
 		$this->rig->run_due();

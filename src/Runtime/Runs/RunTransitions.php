@@ -38,18 +38,20 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   OverlapGuard     $overlap_guard    Execution-overlap guard.
-	 * @param   StoreFactory     $stores           Name-bound store factory.
-	 * @param   ClockInterface   $clock            Timestamp source.
-	 * @param   LockWindows      $lock_windows     Filterable run-lock timing policy.
-	 * @param   LoggerInterface  $logger           Log event sink.
-	 * @param   LifecycleEffects $terminal_effects Claimed terminal-effect executor.
+	 * @param   OverlapGuard      $overlap_guard      Execution-overlap guard.
+	 * @param   StoreFactory      $stores             Name-bound store factory.
+	 * @param   ClockInterface    $clock              Timestamp source.
+	 * @param   LockWindows       $lock_windows       Filterable run-lock timing policy.
+	 * @param   DeliveryScheduler $delivery_scheduler Lifecycle-delivery scheduler.
+	 * @param   LoggerInterface   $logger             Log event sink.
+	 * @param   LifecycleEffects  $terminal_effects   Claimed terminal-effect executor.
 	 */
 	public function __construct(
 		private OverlapGuard $overlap_guard,
 		private StoreFactory $stores,
 		private ClockInterface $clock,
 		private LockWindows $lock_windows,
+		private DeliveryScheduler $delivery_scheduler,
 		private LoggerInterface $logger,
 		private LifecycleEffects $terminal_effects,
 	) {}
@@ -270,19 +272,16 @@ final readonly class RunTransitions {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param \Closure(): mixed $clear_pending_actions
-	 *
-	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
-	 * @param   Identity             $identity              Complete scope-qualified work identity.
-	 * @param   string               $run_id                Run identifier.
-	 * @param   RunState             $state                 Running state from the exact inspected snapshot.
-	 * @param   RunStore             $run_store             Active-run store.
-	 * @param   string               $expected_raw          Exact pre-cancel snapshot.
-	 * @param   \Closure             $clear_pending_actions Winner-only pending-delivery clear.
+	 * @param   KindHandlerInterface $handler      Handler selected by the persisted kind.
+	 * @param   Identity             $identity     Complete scope-qualified work identity.
+	 * @param   string               $run_id       Run identifier.
+	 * @param   RunState             $state        Running state from the exact inspected snapshot.
+	 * @param   RunStore             $run_store    Active-run store.
+	 * @param   string               $expected_raw Exact pre-cancel snapshot.
 	 *
 	 * @return  bool|Failure<EngineError> True when the cancellation transition is claimed, false after a lost fence, or the classified write failure.
 	 */
-	public function cancel_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, \Closure $clear_pending_actions ): bool|Failure {
+	public function cancel_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw ): bool|Failure {
 		$terminal_state = $state->with_status( RunStatus::Cancelled )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
 		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw, );
 		if ( $terminal_raw instanceof Failure ) {
@@ -293,7 +292,17 @@ final readonly class RunTransitions {
 		}
 
 		try {
-			$clear_pending_actions();
+			$cleared = $this->delivery_scheduler->unschedule( $identity, $run_id );
+			if ( $cleared->is_failure() ) {
+				$this->logger->warning(
+					'Cancelled-run pending deliveries could not be cleared; the terminal state fences any leftover delivery.',
+					array(
+						'identity' => (string) $identity,
+						'run_id'   => $run_id,
+						'error'    => $cleared->error->message,
+					)
+				);
+			}
 		} finally {
 			try {
 				$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $terminal_state, $terminal_raw, $run_store, null );

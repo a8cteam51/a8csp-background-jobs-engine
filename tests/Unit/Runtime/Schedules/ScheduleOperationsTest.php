@@ -488,11 +488,14 @@ final class ScheduleOperationsTest extends TestCase {
 	}
 
 	/**
-	 * A read failure during scope replacement keeps the persist-failure recovery contract.
+	 * A read failure during scope replacement reports the option-read recovery contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_registry_replacement_read_failure_keeps_persist_failure_guidance(): void {
+	public function test_registry_replacement_read_failure_reports_read_failure_guidance(): void {
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(
 			'select',
@@ -506,7 +509,7 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( BoundaryError::class, $result->error );
 		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be read; repair WordPress option reads and retry.', $result->error->message );
 		self::assertSame( array( 'scope' => 'scope-a' ), $result->error->context );
 		self::assertSame( array(), $this->write_calls() );
 	}

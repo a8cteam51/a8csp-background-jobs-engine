@@ -144,6 +144,12 @@ final class DispatcherCancelTest extends TestCase {
 		$result = $this->client->cancel( self::JOB_NAME, $run_id );
 
 		$this->assert_successful_cancel( $result, self::JOB_IDENTITY, $run_id );
+		$warnings = \array_values( \array_filter( $this->rig->logger()->records, static fn ( array $record ): bool => 'warning' === $record['level'] ) );
+		self::assertCount( 1, $warnings );
+		self::assertSame( 'Cancelled-run pending deliveries could not be cleared; the terminal state fences any leftover delivery.', $warnings[0]['message'] ?? null );
+		self::assertSame( self::JOB_IDENTITY, $warnings[0]['context']['identity'] ?? null );
+		self::assertSame( $run_id, $warnings[0]['context']['run_id'] ?? null );
+		self::assertSame( 'Repair scheduling.', $warnings[0]['context']['error'] ?? null );
 	}
 
 	/**

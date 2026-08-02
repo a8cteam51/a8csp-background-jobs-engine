@@ -172,8 +172,8 @@ final class RunReconciliationTest extends TestCase {
 		$randomizer                 = new RecordingRandomizer( 42 );
 		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$this->terminal_effects     = new LifecycleEffects( $guard, $this->stores, $this->logger );
-		$this->terminal_transitions = new RunTransitions( $guard, $this->stores, $this->clock, $lock_windows, $this->logger, $this->terminal_effects );
 		$delivery_scheduler         = new DeliveryScheduler( $this->backend, $this->clock );
+		$this->terminal_transitions = new RunTransitions( $guard, $this->stores, $this->clock, $lock_windows, $delivery_scheduler, $this->logger, $this->terminal_effects );
 		$failure_lifecycle          = new FailureLifecycle( $delivery_scheduler, $this->clock, $randomizer, $this->logger, $this->terminal_transitions, $this->terminal_effects );
 		$job_handler                = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
 		$chunked_job_handler        = new ChunkedJobKindHandler( $this->registry, $delivery_scheduler, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
@@ -182,7 +182,7 @@ final class RunReconciliationTest extends TestCase {
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$this->lifecycle_deliveries = new ActionDeliveries( $this->handlers, $this->stores, $this->terminal_transitions );
-		$this->dispatcher           = new Dispatcher( $this->registry, $this->handlers, $this->backend, $delivery_scheduler, $guard, $overlap_identity, $this->stores, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
+		$this->dispatcher           = new Dispatcher( $this->registry, $this->handlers, $delivery_scheduler, $guard, $overlap_identity, $this->stores, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
 		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->handlers, $delivery_scheduler );
 		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
 		$this->maintenance          = new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );

@@ -142,5 +142,32 @@ final class DeliverySchedulerTest extends TestCase {
 		self::assertSame( self::NOW, $this->backend->calls[0]['args']['timestamp'] ?? null );
 	}
 
+	/**
+	 * Unscheduling targets the canonical delivery hook for exactly one run of one identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unschedule_clears_the_canonical_delivery_hook_for_one_run(): void {
+		$result = $this->scheduler->unschedule( $this->identity, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'unschedule_run',
+					'args' => array(
+						'hook'     => ActionDeliveries::DELIVER_HOOK,
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->backend->calls
+		);
+	}
+
 	// endregion.
 }

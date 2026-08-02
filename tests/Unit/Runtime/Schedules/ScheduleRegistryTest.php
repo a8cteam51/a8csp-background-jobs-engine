@@ -12,7 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\UndeclaredOccurrenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -50,7 +49,6 @@ final class ScheduleRegistryWakeupProbe {
  * @version 1.0.0
  */
 #[CoversClass( ScheduleRegistry::class )]
-#[CoversClass( ScopeReplacementOutcome::class )]
 #[UsesClass( EngineLogger::class )]
 final class ScheduleRegistryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -282,7 +280,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'], reset_undeclared_episodes: true ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'], reset_undeclared_episodes: true ) );
 
 		$expected = $scope;
 
@@ -391,9 +389,41 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'] );
 
-		self::assertSame( ScopeReplacementOutcome::ReadFailed, $outcome );
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be read; repair WordPress option reads and retry.', $outcome->error->message );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
+	 * Scope removal reports the re-read after a lost delete as a read failure, not write contention.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_scope_removal_reports_read_failure_after_a_lost_delete(): void {
+		$scope_a = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope_a ) );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'delete', 0 );
+		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted registry re-read failure';
+			}
+		);
+		$registry = $this->registry();
+
+		$outcome = $registry->replace_scope( 'scope-a', array(), array() );
+
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be read; repair WordPress option reads and retry.', $outcome->error->message );
+		self::assertArrayHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
 	}
 
 	/**
@@ -410,7 +440,9 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'] );
 
-		self::assertSame( ScopeReplacementOutcome::Corrupt, $outcome );
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( $option_name, $outcome->error->context['option_name'] ?? null );
 		self::assertSame( $poison, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 	}
@@ -601,13 +633,13 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
 		self::assertSame( self::registration_bytes( $scope_a['registrations'] ), $this->raw_row() );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 
 		$this->put_fixture( $this->fixtures->schedule_registration( $scope_a ) );
 		$this->rig->wpdb()->recorded_queries = array();
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', array(), array() ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', array(), array() ) );
 		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'DELETE ' )[0] );
 	}
@@ -639,11 +671,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( $next_b ): void {
-				self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-b', self::internal_declarations( $next_b['declarations'] ), $next_b['registrations'] ) );
+				self::assertInstanceOf( Success::class, $this->registry()->replace_scope( 'scope-b', self::internal_declarations( $next_b['declarations'] ), $next_b['registrations'] ) );
 			}
 		);
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
+		self::assertInstanceOf( Success::class, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row( 'scope-a' ) );
@@ -682,7 +714,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
 
 		$expected                                     = $replacement;
 		$expected['registrations']['scope-a:nightly'] = $advanced;
@@ -728,7 +760,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $stale['declarations'] ), $stale['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $stale['declarations'] ), $stale['registrations'] ) );
 
 		self::assertSame( array(), $this->write_queries() );
 		self::assertSame( $fixture[1], $this->raw_row() );
@@ -748,7 +780,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->put_fixture( $this->fixtures->schedule_registration( $stored ) );
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
 
 		$registrations = $registry->registrations_for( 'scope-a' );
 		self::assertInstanceOf( Success::class, $registrations );
@@ -783,7 +815,7 @@ final class ScheduleRegistryTest extends TestCase {
 			}
 		);
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
+		self::assertInstanceOf( Success::class, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row() );
 		self::assertSame( $scope_b_raw, $this->raw_row( 'scope-b' ) );
@@ -898,7 +930,10 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::CasFailed, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] );
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $outcome->error->message );
 
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
@@ -939,7 +974,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
 		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( self::registration_bytes( $scope_a['registrations'] ), $this->raw_row() );
@@ -977,7 +1012,10 @@ final class ScheduleRegistryTest extends TestCase {
 		}
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::CasFailed, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] );
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $outcome->error->message );
 		self::assertCount( 5, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 5, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'INSERT ' ) );

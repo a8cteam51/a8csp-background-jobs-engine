@@ -138,7 +138,7 @@ final readonly class Inspection {
 
 		$inspected = $this->stores->run_store( $identity )->inspect( $run_id );
 		if ( $inspected->is_failure() ) {
-			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunIdentity::option_name( $identity, $run_id ) ), ) );
+			return new Failure( $inspected->error );
 		}
 
 		$snapshot = $inspected->value;

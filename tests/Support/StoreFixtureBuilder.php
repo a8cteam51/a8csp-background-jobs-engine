@@ -20,7 +20,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use Psr\Log\NullLogger;
@@ -345,7 +344,7 @@ final readonly class StoreFixtureBuilder {
 				}
 
 				$registry = new ScheduleRegistry( new OptionRows( $wpdb ), new NullLogger() );
-				if ( ScopeReplacementOutcome::Persisted !== $registry->replace_scope( $scope['scope'], $declarations, $scope['registrations'] ) ) {
+				if ( $registry->replace_scope( $scope['scope'], $declarations, $scope['registrations'] )->is_failure() ) {
 					throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registration fixture.' );
 				}
 

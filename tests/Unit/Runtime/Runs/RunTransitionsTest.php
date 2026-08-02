@@ -179,13 +179,13 @@ final class RunTransitionsTest extends TestCase {
 		$stores                     = new StoreFactory( $this->clock, $this->rows, $this->logger );
 		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
-		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$delivery_scheduler         = new DeliveryScheduler( $this->backend, $this->clock );
+		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $delivery_scheduler, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions, $terminal_effects );
 		$this->handler              = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );
 		$this->handlers             = array( $this->handler->key() => $this->handler );
 
-		$this->dispatcher = new Dispatcher( $this->registry, $this->handlers, $this->backend, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
+		$this->dispatcher = new Dispatcher( $this->registry, $this->handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions );
 	}
 
 	// endregion.
@@ -647,14 +647,14 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
-	 * A throwing group-clear listener cannot strand cancellation state or suppress lifecycle hooks.
+	 * A throwing backend clear cannot strand cancellation state or suppress lifecycle hooks.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_run_finishes_terminal_state_when_group_clear_throws(): void {
+	public function test_cancel_run_finishes_terminal_state_when_backend_clear_throws(): void {
 		$this->prepare_run_action();
 		$run_store  = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
 		$inspection = $run_store->inspect( self::RUN_ID );
@@ -664,7 +664,13 @@ final class RunTransitionsTest extends TestCase {
 		$snapshot = $inspection->value;
 		self::assertNotNull( $snapshot );
 		self::assertInstanceOf( RunState::class, $snapshot['state'] );
-		$throwable = new \RuntimeException( 'Group-clear listener failed.' );
+		$throwable = new \RuntimeException( 'Backend run clear failed.' );
+		$this->backend->before_next(
+			'unschedule_run',
+			static function () use ( $throwable ): void {
+				throw $throwable;
+			}
+		);
 
 		try {
 			$this->terminal_transitions->cancel_run(
@@ -673,12 +679,9 @@ final class RunTransitionsTest extends TestCase {
 				self::RUN_ID,
 				$snapshot['state'],
 				$run_store,
-				$snapshot['raw'],
-				static function () use ( $throwable ): void {
-					throw $throwable;
-				}
+				$snapshot['raw']
 			);
-			self::fail( 'The group-clear listener exception must propagate to the caller.' );
+			self::fail( 'The backend run-clear exception must propagate to the caller.' );
 		} catch ( \RuntimeException $caught ) {
 			self::assertSame( $throwable, $caught );
 		}

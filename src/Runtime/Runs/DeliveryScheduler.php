@@ -72,5 +72,21 @@ final readonly class DeliveryScheduler {
 		return $this->scheduler->schedule_single( ActionDeliveries::DELIVER_HOOK, \max( $this->clock->now()->getTimestamp(), $fire_at ), $args, $group, $pending->priority );
 	}
 
+	/**
+	 * Unschedules every pending lifecycle delivery for one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete scope-qualified work identity.
+	 * @param   string   $run_id   Run identifier.
+	 *
+	 * @return  AbstractResult<true, SchedulingError>
+	 */
+	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
+	public function unschedule( Identity $identity, string $run_id ): AbstractResult {
+		return $this->scheduler->unschedule_run( ActionDeliveries::DELIVER_HOOK, (string) $identity, $run_id );
+	}
+
 	// endregion
 }

@@ -379,8 +379,6 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock, $logger );
-		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
-		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade(
 			array(
 				new ActionSchedulerBackend(),
@@ -388,6 +386,8 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 			)
 		);
 		$delivery_scheduler   = new DeliveryScheduler( $scheduler, $clock );
+		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
+		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $delivery_scheduler, $logger, $terminal_effects );
 		$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 		$job_handler          = new JobKindHandler( $job_registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$chunked_job_handler  = new ChunkedJobKindHandler( $job_registry, $delivery_scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
@@ -396,7 +396,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
 		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );

@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepairPlan;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
@@ -93,16 +94,17 @@ final class LockRepairTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->rig      = EngineRig::set_up( self::NOW );
-		$this->identity = Identity::compose( 'repair-tests', 'reports' );
-		$this->rows     = new OptionRows( $this->rig->wpdb() );
-		$guard          = new OverlapGuard( $this->rig->clock(), $this->rig->logger(), $this->rows, new LockWindows( $this->rig->clock(), $this->rig->logger() ) );
-		$this->stores   = new StoreFactory( $this->rig->clock(), $this->rows, $this->rig->logger() );
-		$lock_windows   = new LockWindows( $this->rig->clock(), $this->rig->logger() );
-		$effects        = new LifecycleEffects( $guard, $this->stores, $this->rig->logger() );
-		$transitions    = new RunTransitions( $guard, $this->stores, $this->rig->clock(), $lock_windows, $this->rig->logger(), $effects );
-		$this->repair   = new LockRepair( $this->rows, $guard, $this->stores, $lock_windows, $transitions );
-		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
+		$this->rig          = EngineRig::set_up( self::NOW );
+		$this->identity     = Identity::compose( 'repair-tests', 'reports' );
+		$this->rows         = new OptionRows( $this->rig->wpdb() );
+		$guard              = new OverlapGuard( $this->rig->clock(), $this->rig->logger(), $this->rows, new LockWindows( $this->rig->clock(), $this->rig->logger() ) );
+		$this->stores       = new StoreFactory( $this->rig->clock(), $this->rows, $this->rig->logger() );
+		$lock_windows       = new LockWindows( $this->rig->clock(), $this->rig->logger() );
+		$effects            = new LifecycleEffects( $guard, $this->stores, $this->rig->logger() );
+		$delivery_scheduler = new DeliveryScheduler( $this->rig->backend(), $this->rig->clock() );
+		$transitions        = new RunTransitions( $guard, $this->stores, $this->rig->clock(), $lock_windows, $delivery_scheduler, $this->rig->logger(), $effects );
+		$this->repair       = new LockRepair( $this->rows, $guard, $this->stores, $lock_windows, $transitions );
+		$this->fixtures     = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
 	/**

@@ -11,7 +11,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
@@ -91,7 +90,6 @@ final readonly class Dispatcher {
 	 *
 	 * @param   JobRegistry         $registry               Registered work definitions.
 	 * @param   array               $handlers               Kind handlers keyed by their persisted keys.
-	 * @param   BackendInterface    $scheduler              Scheduling facade boundary.
 	 * @param   DeliveryScheduler   $delivery_scheduler     Lifecycle-delivery scheduler.
 	 * @param   OverlapGuard        $overlap_guard          Execution-overlap guard.
 	 * @param   OverlapIdentity     $overlap_identity       Stable single-flight identity resolver.
@@ -104,7 +102,6 @@ final readonly class Dispatcher {
 	public function __construct(
 		private JobRegistry $registry,
 		private array $handlers,
-		private BackendInterface $scheduler,
 		private DeliveryScheduler $delivery_scheduler,
 		private OverlapGuard $overlap_guard,
 		private OverlapIdentity $overlap_identity,
@@ -422,7 +419,7 @@ final readonly class Dispatcher {
 			return new Failure( $cancellation_error );
 		}
 
-		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->scheduler->unschedule_run( ActionDeliveries::DELIVER_HOOK, (string) $identity, $run_id ) );
+		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'] );
 		if ( $cancelled instanceof Failure ) {
 			return $cancelled;
 		}

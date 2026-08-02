@@ -535,7 +535,13 @@ final class InspectionTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $live_failure );
 		self::assertInstanceOf( EngineError::class, $live_failure->error );
 		self::assertSame( EngineErrorReason::StorageFailure, $live_failure->error->reason );
-		self::assertSame( array( 'option_name' => RunIdentity::option_name( $work_identity, $run_id ) ), $live_failure->error->context );
+		self::assertSame(
+			array(
+				'option_name'   => RunIdentity::option_name( $work_identity, $run_id ),
+				'storage_error' => 'live row read failed',
+			),
+			$live_failure->error->context
+		);
 
 		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
 		$this->rig->wpdb()->before_next(

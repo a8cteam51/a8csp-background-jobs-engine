@@ -217,10 +217,10 @@ final class ScheduleRegistry {
 	 *
 	 * @throws  \InvalidArgumentException When a registration identity is invalid or belongs to another scope.
 	 *
-	 * @return  ScopeReplacementOutcome Classified persistence outcome.
+	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
-	public function replace_scope( string $scope, array $schedules, array $registrations, bool $reset_undeclared_episodes = false ): ScopeReplacementOutcome {
+	public function replace_scope( string $scope, array $schedules, array $registrations, bool $reset_undeclared_episodes = false ): AbstractResult {
 		$scope_registrations = self::scope_registrations( $scope, $registrations );
 		if ( null === $scope_registrations ) {
 			throw new \InvalidArgumentException( 'Schedule registration identities must be canonical and belong to the bound scope.' );
@@ -239,7 +239,7 @@ final class ScheduleRegistry {
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( $option_name );
 			if ( $read->is_failure() ) {
-				return ScopeReplacementOutcome::ReadFailed;
+				return new Failure( SchedulingError::registry_read_failure( $scope ) );
 			}
 
 			$expected_raw = $read->value;
@@ -247,14 +247,14 @@ final class ScheduleRegistry {
 				if ( array() === $scope_registrations ) {
 					$this->retain_scope( $scope, $schedules );
 
-					return ScopeReplacementOutcome::Persisted;
+					return new Success( true );
 				}
 
 				$replacement_raw = self::serialize_registrations( $replacement_baseline );
 				if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
 					$this->retain_scope( $scope, $schedules );
 
-					return ScopeReplacementOutcome::Persisted;
+					return new Success( true );
 				}
 
 				continue;
@@ -262,7 +262,7 @@ final class ScheduleRegistry {
 
 			$stored = RawOptionDecoder::decode( $expected_raw );
 			if ( ! \is_array( $stored ) ) {
-				return ScopeReplacementOutcome::Corrupt;
+				return new Failure( SchedulingError::registry_corrupt( $scope, $option_name ) );
 			}
 
 			$replacement_registrations = $replacement_baseline;
@@ -282,19 +282,19 @@ final class ScheduleRegistry {
 			if ( $replacement_registrations === $stored ) {
 				$this->retain_scope( $scope, $schedules );
 
-				return ScopeReplacementOutcome::Persisted;
+				return new Success( true );
 			}
 
 			if ( array() === $scope_registrations ) {
 				if ( RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $option_name, $expected_raw ) ) {
 					$this->retain_scope( $scope, $schedules );
 
-					return ScopeReplacementOutcome::Persisted;
+					return new Success( true );
 				}
 
 				$current = $this->rows->read( $option_name );
 				if ( $current->is_failure() ) {
-					return ScopeReplacementOutcome::ReadFailed;
+					return new Failure( SchedulingError::registry_read_failure( $scope ) );
 				}
 
 				// A lost delete whose row is already gone means another writer reached the goal state first.
@@ -302,10 +302,10 @@ final class ScheduleRegistry {
 				if ( null === $current_raw ) {
 					$this->retain_scope( $scope, $schedules );
 
-					return ScopeReplacementOutcome::Persisted;
+					return new Success( true );
 				}
 				if ( $current_raw === $expected_raw ) {
-					return ScopeReplacementOutcome::CasFailed;
+					return new Failure( SchedulingError::registry_persist_failure( $scope ) );
 				}
 
 				continue;
@@ -316,14 +316,14 @@ final class ScheduleRegistry {
 			if ( RowWriteOutcome::Won === $write ) {
 				$this->retain_scope( $scope, $schedules );
 
-				return ScopeReplacementOutcome::Persisted;
+				return new Success( true );
 			}
 			if ( RowWriteOutcome::WriteFailed === $write ) {
-				return ScopeReplacementOutcome::CasFailed;
+				return new Failure( SchedulingError::registry_persist_failure( $scope ) );
 			}
 		}
 
-		return ScopeReplacementOutcome::CasFailed;
+		return new Failure( SchedulingError::registry_persist_failure( $scope ) );
 	}
 
 	// endregion

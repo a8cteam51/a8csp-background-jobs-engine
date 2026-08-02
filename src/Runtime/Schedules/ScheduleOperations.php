@@ -259,8 +259,8 @@ final readonly class ScheduleOperations {
 				'undeclared_escalated'   => false,
 			);
 			$replacement                = $this->registry->replace_scope( $scope, $declared, $next );
-			if ( ScopeReplacementOutcome::Persisted !== $replacement ) {
-				return $this->registry_replacement_failure( $scope, $replacement );
+			if ( $replacement->is_failure() ) {
+				return $replacement;
 			}
 
 			$scheduled = $this->scheduler->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, $interval, array( $schedule_identity ), $next_due, $schedule_identity, priority: self::TICK_PRIORITY );
@@ -280,15 +280,15 @@ final readonly class ScheduleOperations {
 
 			unset( $next[ $schedule_identity ] );
 			$replacement = $this->registry->replace_scope( $scope, $declared, $next );
-			if ( ScopeReplacementOutcome::Persisted !== $replacement ) {
-				return $this->registry_replacement_failure( $scope, $replacement );
+			if ( $replacement->is_failure() ) {
+				return $replacement;
 			}
 		}
 
 		// Backend convergence precedes marker reset so only a successful declaration refresh ends the zombie episode.
 		$replacement = $this->registry->replace_scope( $scope, $declared, $next, reset_undeclared_episodes: true );
-		if ( ScopeReplacementOutcome::Persisted !== $replacement ) {
-			return $this->registry_replacement_failure( $scope, $replacement );
+		if ( $replacement->is_failure() ) {
+			return $replacement;
 		}
 
 		return new Success( true );
@@ -371,25 +371,6 @@ final readonly class ScheduleOperations {
 	 */
 	private function registry_read_failure( string $scope ): Failure {
 		return new Failure( SchedulingError::registry_read_failure( $scope ) );
-	}
-
-	/**
-	 * Returns the public failure for one classified scope-row replacement.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                  $scope   Stable client identifier.
-	 * @param   ScopeReplacementOutcome $outcome Classified failed replacement.
-	 *
-	 * @return  Failure<SchedulingError>
-	 */
-	private function registry_replacement_failure( string $scope, ScopeReplacementOutcome $outcome ): Failure {
-		if ( ScopeReplacementOutcome::Corrupt === $outcome ) {
-			return new Failure( SchedulingError::registry_corrupt( $scope, ScheduleRegistry::option_name( $scope ) ) );
-		}
-
-		return new Failure( SchedulingError::registry_persist_failure( $scope ) );
 	}
 
 	// endregion

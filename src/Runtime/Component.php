@@ -213,15 +213,15 @@ final class Component extends AbstractComponent {
 			$guard                = new OverlapGuard( $clock, $logger, $option_rows, $lock_windows );
 			$overlap_identity     = new OverlapIdentity();
 			$stores               = new StoreFactory( $clock, $option_rows, $logger );
-			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
-			$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
-			$lock_repair          = new LockRepair( $option_rows, $guard, $stores, $lock_windows, $terminal_transitions );
 			$backends           ??= array(
 				new ActionSchedulerBackend(),
 				new WPCronBackend(),
 			);
 			$scheduler            = new SchedulerFacade( $backends );
 			$delivery_scheduler   = new DeliveryScheduler( $scheduler, $clock );
+			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
+			$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $delivery_scheduler, $logger, $terminal_effects );
+			$lock_repair          = new LockRepair( $option_rows, $guard, $stores, $lock_windows, $terminal_transitions );
 			$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 			$job_handler          = new JobKindHandler( $registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 			$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $delivery_scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
@@ -230,7 +230,7 @@ final class Component extends AbstractComponent {
 				$chunked_job_handler->key() => $chunked_job_handler,
 			);
 			$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-			$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
+			$dispatcher           = new Dispatcher( $registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
 			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
