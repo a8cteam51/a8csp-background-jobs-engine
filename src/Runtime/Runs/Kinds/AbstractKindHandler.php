@@ -61,9 +61,7 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	 * @return  void
 	 */
 	final protected function fail_orphaned_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
-		$kind  = $this->key();
-		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %1$s implementation for run "%3$s"; register that %1$s or purge the run.', $kind, (string) $identity, $run_id ) );
-
+		$error = new EngineError( \sprintf( '%1$s identity "%2$s" has no registered %1$s implementation for run "%3$s"; register that %1$s or purge the run.', $this->key(), $identity, $run_id ) );
 		$this->terminal_transitions->fail_unregistered_run( $this, $identity, $run_id, $state, $run_store, $error );
 	}
 
@@ -81,7 +79,7 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 		$lease = $this->lock_windows->execution_lease( $options->max_runtime );
 		$now   = $this->clock->now()->getTimestamp();
 
-		return $now > \PHP_INT_MAX - $lease ? \PHP_INT_MAX : $now + $lease;
+		return $now > ( \PHP_INT_MAX - $lease ) ? \PHP_INT_MAX : ( $now + $lease );
 	}
 
 	// endregion
