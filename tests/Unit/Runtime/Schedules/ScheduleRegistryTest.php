@@ -478,6 +478,9 @@ final class ScheduleRegistryTest extends TestCase {
 	/**
 	 * A listener inspecting the same corrupt row cannot recursively emit its warning.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_corrupt_scope_warning_is_guarded_against_reentrant_listeners(): void {

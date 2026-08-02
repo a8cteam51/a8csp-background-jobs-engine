@@ -71,7 +71,10 @@ final class ScheduleRegistry {
 	/**
 	 * Corrupt-row warnings currently crossing the logger boundary, keyed by exact option name.
 	 *
-	 * @var array<string, true>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     array<string, true>
 	 */
 	private array $corrupt_warnings_in_flight = array();
 

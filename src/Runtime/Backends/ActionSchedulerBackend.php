@@ -430,7 +430,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_absent(): bool {
-		return ! \array_any( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => \function_exists( $function_name ) );
+		return ! \array_any( self::REQUIRED_FUNCTIONS, static fn ( string $function_name ): bool => \function_exists( $function_name ) );
 	}
 
 	/**
@@ -457,7 +457,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @return  array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool}
 	 */
 	private function readiness_facts(): array {
-		$functions_exist = \array_all( self::REQUIRED_FUNCTIONS, fn ( string $function_name ): bool => \function_exists( $function_name ) );
+		$functions_exist = \array_all( self::REQUIRED_FUNCTIONS, static fn ( string $function_name ): bool => \function_exists( $function_name ) );
 
 		return array(
 			'action_scheduler_functions_exist'   => $functions_exist,
