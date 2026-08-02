@@ -382,7 +382,7 @@ live in the CLI — see "WP-CLI".
 
 ### 5. Handling failures
 
-The identity-specific `a8csp_bgje/failed/{identity}` hook fires before the generic `a8csp_bgje/failed` hook; both receive the same `RunFailure` object. Crash-recovery replay can reconstruct an equivalent value. Throw `NonRetryableException` from `handle()`, `generate_queue()`, or `process_chunk()` to fail permanently without consuming the remaining automatic attempts. An uncaught portability or size rejection from the chunked run context, for a chunk or resulting queue, is also deterministic: the failing invocation counts once, the engine schedules no automatic retry, and the remaining allowance stays unused.
+The identity-specific `a8csp_bgje/failed/{identity}` hook fires before the generic `a8csp_bgje/failed` hook; both receive the same `RunFailure` object. Crash-recovery replay can reconstruct an equivalent value. Throw `NonRetryableException` from `handle()`, `generate_queue()`, or `process_chunk()` to fail permanently without consuming the remaining automatic attempts. An uncaught portability or size rejection is also deterministic: the failing invocation counts once, the engine schedules no automatic retry, and the remaining allowance stays unused. A queue that crosses the byte limit by more than its index envelope is refused by the chunked run context as the mutation is made; one that crosses it only within that envelope is refused when the attempt commits, and reports `payload_rejected` at the scheduling stage.
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
@@ -668,7 +668,7 @@ This table covers engine-enforced identity, payload, scheduling-admission, stora
 The engine is designed for a handful of plugins with tens of jobs and schedules each. Its supported operating envelope is:
 
 - **Schedules per scope:** low tens. Each scope's registrations live in one option row that every occurrence rewrites, so co-firing hundreds of schedules for one scope adds contention. For declarations whose fingerprints match, synchronization censuses every ready backend. Action Scheduler issues one identity-scoped, identifier-only occurrence query per declaration, while WP-Cron buckets the requested identities from one cron snapshot. The aggregate count lets the unchanged-declaration fast path distinguish exactly one tick from a missing or duplicated chain.
-- **Chunked Job chunk count:** thousands is fine; the queue is capped at 983,616 persisted serialization bytes, but chunk *count* is not. Queue generation serializes each growing candidate queue, and each context mutation serializes its candidate queue, so tens of thousands of tiny chunks is expensive. Prefer fewer, larger chunks or paginate a parent chunked job.
+- **Chunked Job chunk count:** thousands is fine; the queue is capped at 983,616 persisted serialization bytes, but chunk *count* is not. Each chunk is measured once as it is generated and each context mutation measures only its own chunk, so the queue cost is linear in chunk count. Prefer fewer, larger chunks anyway: every chunk is a separate scheduled delivery, and that overhead dominates.
 - **`history_size` filter:** the default 30 is generous; there is no hard maximum, so a very large value grows the per-identity history row.
 - **Action Scheduler group rows:** the engine creates one AS group per scope-qualified Job or Chunked Job identity. Action Scheduler does not garbage-collect groups, so retired identities leave rows behind, but lifetime run count does not increase this table.
 

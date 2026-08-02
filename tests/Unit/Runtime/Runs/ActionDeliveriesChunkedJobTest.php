@@ -18,6 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -39,6 +40,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( ActionDeliveries::class )]
+#[CoversClass( ChunkedJobKindHandler::class )]
 final class ActionDeliveriesChunkedJobTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -680,6 +682,33 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
+	 * Lazy queue materialization stops at the accumulated chunk-byte boundary before exhausting its generator.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_lazy_queue_materialization_stops_at_the_accumulated_chunk_byte_boundary(): void {
+		$generated                                 = 0;
+		$this->chunked_job->generate_queue_factory = static function () use ( &$generated ): iterable {
+			for ( $index = 0; 40_000 > $index; ++$index ) {
+				++$generated;
+				yield array( 'value' => 1_000_000 );
+			}
+		};
+		$this->start();
+
+		$this->rig->run_due();
+
+		$failure = $this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::queue_generation(), null );
+		self::assertSame( 35_130, $generated );
+		self::assertSame( 'chunked_job queue contains 1253580 persisted serialization bytes; the limit is 983616 bytes.', $failure->summary );
+	}
+
+	/**
 	 * A non-array queue-filter result fails before scheduling continue.
 	 *
 	 * @since   1.0.0
@@ -1162,7 +1191,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Context mutations accept the persisted queue ceiling and reject its adjacent overflow.
+	 * Context mutations accept the persisted queue ceiling and defer adjacent index-envelope overflow to commit.
 	 *
 	 * @param   string $mutation        Context mutation method.
 	 * @param   int    $persisted_bytes Exact persisted candidate-queue size.
@@ -1204,7 +1233,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 			return;
 		}
 
-		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), $current );
+		$this->assert_failure( ErrorCode::PayloadRejected, RunFailureStage::scheduling(), null );
 	}
 
 	/**
@@ -1234,6 +1263,56 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 				'persisted_bytes' => 983_617,
 				'accepted'        => false,
 			),
+		);
+	}
+
+	/**
+	 * Context mutations reject accumulated chunk bytes above the persisted queue ceiling in both directions.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $mutation Context mutation method.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'context_queue_mutations' )]
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_context_mutations_reject_accumulated_chunk_bytes_above_the_persisted_queue_ceiling( string $mutation ): void {
+		$current        = array( 'chunk' => 'current' );
+		$candidate      = self::queue_with_persisted_bytes( 983_623 );
+		$mutation_chunk = 'prepend_chunk' === $mutation ? \array_shift( $candidate ) : \array_pop( $candidate );
+		self::assertIsArray( $mutation_chunk );
+
+		$this->options = new JobOptions( retry: new RetryPolicy( max_attempts: 1 ) );
+		$this->prepare_scheduled_chunk( array( $current, ...$candidate ) );
+		$this->chunked_job->queue            = array();
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->chunked_job->on_process       = static function ( array $chunk_args, ChunkedRunContextInterface $context ) use ( $mutation, $mutation_chunk ): void {
+			if ( 'append_chunk' === $mutation ) {
+				$context->append_chunk( $mutation_chunk );
+
+				return;
+			}
+
+			$context->prepend_chunk( $mutation_chunk );
+		};
+
+		$this->rig->run_due();
+
+		$this->assert_failure( ErrorCode::ExecutionFailed, RunFailureStage::execution(), $current );
+	}
+
+	/**
+	 * Supplies both context queue mutation directions.
+	 *
+	 * @return  array<string, array{mutation: 'append_chunk'|'prepend_chunk'}>
+	 */
+	public static function context_queue_mutations(): array {
+		return array(
+			'append_chunk'  => array( 'mutation' => 'append_chunk' ),
+			'prepend_chunk' => array( 'mutation' => 'prepend_chunk' ),
 		);
 	}
 

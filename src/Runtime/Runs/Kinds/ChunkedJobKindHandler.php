@@ -916,7 +916,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @return  list<array<array-key, mixed>>|EngineError
 	 */
 	private function materialize_queue( iterable $chunks ): array|EngineError {
-		$queue = array();
+		$queue       = array();
+		$queue_bytes = 0;
 		foreach ( $chunks as $chunk_args ) {
 			$index = \count( $queue );
 			if ( ! \is_array( $chunk_args ) ) {
@@ -940,15 +941,27 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 				return new EngineError( \sprintf( 'chunked_job queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, ChunkedRunContext::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
 			}
 
-			$queue[]          = $chunk_args;
-			$serialized_queue = \maybe_serialize( $queue );
-			if ( ! \is_string( $serialized_queue ) ) {
-				return new EngineError( 'chunked_job queue could not be serialized for persistence.', \UnexpectedValueException::class );
-			}
-			$queue_bytes = \strlen( $serialized_queue );
+			$queue[] = $chunk_args;
+
+			// A list of reference-free members serializes to its members plus an index envelope, so this sum
+			// always runs under the real total: crossing the ceiling here proves the whole queue crosses it,
+			// and stopping bounds materialization of an unsized generator. The rebuild above is what makes
+			// the members reference-free; shared references would serialize the whole to less than its parts
+			// and let this sum overshoot. The exact measurement below decides the boundary.
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- A validated chunk is a known array, so this is the branch maybe_serialize() takes; it measures the persisted representation without producing one.
+			$queue_bytes += \strlen( \serialize( $chunk_args ) );
 			if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
-				return new EngineError( \sprintf( 'chunked_job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $queue_bytes, self::MAX_QUEUE_BYTES ), \UnexpectedValueException::class );
+				break;
 			}
+		}
+
+		$serialized_queue = \maybe_serialize( $queue );
+		if ( ! \is_string( $serialized_queue ) ) {
+			return new EngineError( 'chunked_job queue could not be serialized for persistence.', \UnexpectedValueException::class );
+		}
+		$queue_bytes = \strlen( $serialized_queue );
+		if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
+			return new EngineError( \sprintf( 'chunked_job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $queue_bytes, self::MAX_QUEUE_BYTES ), \UnexpectedValueException::class );
 		}
 
 		return $queue;

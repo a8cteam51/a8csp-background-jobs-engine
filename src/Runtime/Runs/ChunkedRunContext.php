@@ -64,6 +64,16 @@ final class ChunkedRunContext implements ChunkedRunContextInterface {
 	private array $queue;
 
 	/**
+	 * Accumulated serialization bytes for the base queue and buffered mutation chunks, once measured.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int|null
+	 */
+	private ?int $queue_bytes = null;
+
+	/**
 	 * Separate front mutations reverse once at commit without shifting the base queue repeatedly.
 	 *
 	 * @since   1.0.0
@@ -120,7 +130,7 @@ final class ChunkedRunContext implements ChunkedRunContextInterface {
 	public function append_chunk( array $chunk_args ): void {
 		$chunk_args = self::snapshot_arguments( $chunk_args );
 		self::assert_valid_chunk( $chunk_args );
-		self::assert_queue_within_persisted_byte_limit( array( ...$this->get_queue(), $chunk_args ) );
+		$this->assert_room_for( $chunk_args );
 
 		$this->appended[] = $chunk_args;
 	}
@@ -135,7 +145,7 @@ final class ChunkedRunContext implements ChunkedRunContextInterface {
 	public function prepend_chunk( array $chunk_args ): void {
 		$chunk_args = self::snapshot_arguments( $chunk_args );
 		self::assert_valid_chunk( $chunk_args );
-		self::assert_queue_within_persisted_byte_limit( array( $chunk_args, ...$this->get_queue() ) );
+		$this->assert_room_for( $chunk_args );
 
 		$this->prepended[] = $chunk_args;
 	}
@@ -269,32 +279,45 @@ final class ChunkedRunContext implements ChunkedRunContextInterface {
 	}
 
 	/**
-	 * Rejects a queue mutation whose persisted serialization exceeds the aggregate limit.
+	 * Rejects a queue mutation whose accumulated serialization bytes exceed the aggregate limit.
 	 *
-	 * RunStore writes this representation inside the wp_options run-state row. Chunk JSON limits
-	 * remain independent because they define the portable payload contract.
+	 * The base seed includes its list envelope, while mutations add only member bytes, keeping the
+	 * estimate below the merged queue without rebuilding buffered mutations.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   list<array<array-key, mixed>> $queue Candidate queue in processing order.
+	 * @param   array<array-key, mixed> $chunk_args Validated chunk arguments.
 	 *
-	 * @throws  InvalidChunkException When the candidate queue exceeds the persisted byte limit.
+	 * @throws  InvalidChunkException When the queue this mutation would produce exceeds the persisted byte limit.
 	 *
 	 * @return  void
 	 */
-	private static function assert_queue_within_persisted_byte_limit( array $queue ): void {
-		$serialized_queue = \maybe_serialize( $queue );
-		if ( ! \is_string( $serialized_queue ) ) {
-			// Core serializes arrays to strings; the smallest rejected count keeps a violated storage contract fail-closed.
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-			throw InvalidChunkException::queue_too_large( self::MAX_QUEUE_BYTES + 1, self::MAX_QUEUE_BYTES );
-		}
-		$queue_bytes = \strlen( $serialized_queue );
+	private function assert_room_for( array $chunk_args ): void {
+		$this->queue_bytes ??= self::persisted_bytes( $this->queue );
+		$queue_bytes         = $this->queue_bytes + self::persisted_bytes( $chunk_args );
 		if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
+			// A refused mutation is never buffered, so the reported total measures the queue exactly rather than the estimate that refused it.
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-			throw InvalidChunkException::queue_too_large( $queue_bytes, self::MAX_QUEUE_BYTES );
+			throw InvalidChunkException::queue_too_large( self::persisted_bytes( array( ...$this->get_queue(), $chunk_args ) ), self::MAX_QUEUE_BYTES );
 		}
+
+		$this->queue_bytes = $queue_bytes;
+	}
+
+	/**
+	 * Returns the byte length of one argument array's persisted representation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $arguments Portable argument array.
+	 *
+	 * @return  int
+	 */
+	private static function persisted_bytes( array $arguments ): int {
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- A portable argument array is a known array, so this is the branch maybe_serialize() takes; it measures the persisted representation without producing one.
+		return \strlen( \serialize( $arguments ) );
 	}
 
 	// endregion

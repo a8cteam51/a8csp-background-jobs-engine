@@ -30,7 +30,7 @@ interface ChunkedRunContextInterface extends RunContextInterface {
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for the appended chunk.
 	 *
-	 * @throws  \InvalidArgumentException When the chunk is not portable or the chunk or resulting queue exceeds its persisted byte limit. The condition is deterministic, so the run fails terminally without consuming the remaining automatic attempts.
+	 * @throws  \InvalidArgumentException When the chunk is not portable, or the resulting queue exceeds its persisted byte limit by more than the queue's index envelope. A queue over the limit only within that envelope is refused when the attempt commits instead. Either condition is deterministic, so the run fails terminally without consuming the remaining automatic attempts.
 	 *
 	 * @return  void
 	 */
@@ -47,7 +47,7 @@ interface ChunkedRunContextInterface extends RunContextInterface {
 	 *
 	 * @param   array<array-key, mixed> $chunk_args Arguments for the prepended chunk.
 	 *
-	 * @throws  \InvalidArgumentException When the chunk is not portable or the chunk or resulting queue exceeds its persisted byte limit. The condition is deterministic, so the run fails terminally without consuming the remaining automatic attempts.
+	 * @throws  \InvalidArgumentException When the chunk is not portable, or the resulting queue exceeds its persisted byte limit by more than the queue's index envelope. A queue over the limit only within that envelope is refused when the attempt commits instead. Either condition is deterministic, so the run fails terminally without consuming the remaining automatic attempts.
 	 *
 	 * @return  void
 	 */
