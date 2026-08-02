@@ -20,6 +20,9 @@ final class WpdbLockSpy extends \wpdb {
 	/** @var list<mixed>|null Scripted option-name scan result. */
 	public ?array $option_name_results = null;
 
+	/** @var array<\stdClass>|null Core-shaped result buffer. */
+	public $last_result = array();
+
 	/** @var array<string, array{template: string, args: list<mixed>}> */
 	private array $prepared = array();
 
@@ -31,6 +34,9 @@ final class WpdbLockSpy extends \wpdb {
 
 	/** @var list<string> Option-name fragments whose updates always report zero affected rows. */
 	private array $failing_update_keys = array();
+
+	/** @var 'not_ready'|'query_filtered'|'reconnect_failed'|null Next Core query failure leg. */
+	private ?string $next_read_failure_leg = null;
 
 	// endregion.
 
@@ -74,8 +80,8 @@ final class WpdbLockSpy extends \wpdb {
 	/**
 	 * Runs a callback immediately before the next matching operation reaches storage.
 	 *
-	 * @param   'count'|'insert'|'scan'|'select'|'update'|'delete' $operation Query operation.
-	 * @param   callable(self): void                               $callback  Interleaving callback.
+	 * @param   'insert'|'scan'|'select'|'update'|'delete' $operation Query operation.
+	 * @param   callable(self): void                       $callback  Interleaving callback.
 	 *
 	 * @return  void
 	 */
@@ -120,6 +126,21 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		$this->scripted_results[ $operation ][] = $result;
+	}
+
+	/**
+	 * Makes the next read return false through one Core query leg without setting last_error.
+	 *
+	 * @param   'not_ready'|'query_filtered'|'reconnect_failed' $leg Core query failure leg.
+	 *
+	 * @return  void
+	 */
+	public function fail_next_read_at( string $leg ): void {
+		if ( ! \in_array( $leg, array( 'not_ready', 'query_filtered', 'reconnect_failed' ), true ) ) {
+			throw new \InvalidArgumentException( 'WpdbLockSpy requires a modeled Core query failure leg.' );
+		}
+
+		$this->next_read_failure_leg = $leg;
 	}
 
 	/**
@@ -178,7 +199,7 @@ final class WpdbLockSpy extends \wpdb {
 	}
 
 	/**
-	 * Executes a modeled lock write.
+	 * Executes a modeled option-table query.
 	 *
 	 * @param   mixed $query Prepared statement.
 	 *
@@ -187,10 +208,14 @@ final class WpdbLockSpy extends \wpdb {
 	#[\Override]
 	public function query( $query ): int|bool {
 		if ( ! \is_string( $query ) ) {
-			throw new \InvalidArgumentException( 'WpdbLockSpy writes require a prepared query string.' );
+			throw new \InvalidArgumentException( 'WpdbLockSpy queries require a prepared query string.' );
 		}
 
 		$statement = $this->statement( $query );
+		if ( \str_starts_with( $statement['template'], 'SELECT ' ) ) {
+			return $this->execute_read( $statement, $query );
+		}
+
 		$operation = self::write_operation( $statement['template'] );
 
 		$this->run_before( $operation );
@@ -236,118 +261,6 @@ final class WpdbLockSpy extends \wpdb {
 	}
 
 	/**
-	 * Selects one modeled raw lock row.
-	 *
-	 * @phpstan-param 'OBJECT'|'ARRAY_A'|'ARRAY_N' $output
-	 * @phpstan-return null|($output is 'ARRAY_A' ? array{option_value: string} : ($output is 'ARRAY_N' ? list{string} : \stdClass))
-	 *
-	 * @param   mixed $query  Prepared statement.
-	 * @param   mixed $output Output shape.
-	 * @param   mixed $y      Row offset.
-	 *
-	 * @return  array<array-key, mixed>|\stdClass|null
-	 */
-	#[\Override]
-	public function get_row( $query = null, $output = 'OBJECT', $y = 0 ): array|\stdClass|null {
-		if ( ! \is_string( $query ) ) {
-			throw new \InvalidArgumentException( 'WpdbLockSpy selects require a prepared query string.' );
-		}
-
-		$statement = $this->statement( $query );
-		if ( ! \str_starts_with( $statement['template'], 'SELECT ' ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy get_row() accepts only lock SELECT statements.' );
-		}
-
-		$this->last_error = '';
-		$this->run_before( 'select' );
-		$this->recorded_queries[] = $query;
-		if ( '' !== $this->last_error ) {
-			return null;
-		}
-
-		$args = self::without_table( $statement['args'] );
-		$key  = $args[0] ?? null;
-		if ( ! \is_string( $key ) ) {
-			return null;
-		}
-
-		$raw = $this->raw_value( $key );
-		if ( null === $raw ) {
-			return null;
-		}
-
-		$row = array( 'option_value' => $raw );
-
-		return match ( $output ) {
-			'ARRAY_A' => $row,
-			'ARRAY_N' => \array_values( $row ),
-			default   => (object) $row,
-		};
-	}
-
-	/**
-	 * Selects modeled raw option rows by exact option name.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param 'OBJECT'|'OBJECT_K'|'ARRAY_A'|'ARRAY_N' $output
-	 * @phpstan-return ($output is 'ARRAY_A' ? list<array{option_name: string, option_value: string}> : ($output is 'ARRAY_N' ? list<list{string, string}> : ($output is 'OBJECT_K' ? array<string, \stdClass> : list<\stdClass>)))
-	 *
-	 * @param   mixed $query  Prepared statement.
-	 * @param   mixed $output Output shape.
-	 *
-	 * @return  array<array-key, mixed>
-	 */
-	#[\Override]
-	public function get_results( $query = null, $output = 'OBJECT' ): array {
-		if ( ! \is_string( $query ) ) {
-			throw new \InvalidArgumentException( 'WpdbLockSpy selects require a prepared query string.' );
-		}
-
-		$statement = $this->statement( $query );
-		if ( ! \str_starts_with( $statement['template'], 'SELECT `option_name`, `option_value` ' ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy get_results() accepts only option-row SELECT statements.' );
-		}
-
-		$this->last_error = '';
-		$this->run_before( 'select' );
-		$this->recorded_queries[] = $query;
-		if ( '' !== $this->last_error ) {
-			return array();
-		}
-
-		$rows = array();
-		foreach ( self::without_table( $statement['args'] ) as $key ) {
-			if ( ! \is_string( $key ) ) {
-				continue;
-			}
-
-			$raw = $this->raw_value( $key );
-			if ( null === $raw ) {
-				continue;
-			}
-
-			$row = array(
-				'option_name'  => $key,
-				'option_value' => $raw,
-			);
-			if ( 'OBJECT_K' === $output ) {
-				$rows[ $key ] = (object) $row;
-				continue;
-			}
-
-			$rows[] = match ( $output ) {
-				'ARRAY_A' => $row,
-				'ARRAY_N' => \array_values( $row ),
-				default   => (object) $row,
-			};
-		}
-
-		return $rows;
-	}
-
-	/**
 	 * Returns option names matching one prepared escaped-prefix scan.
 	 *
 	 * @param   mixed $query Prepared statement.
@@ -357,123 +270,146 @@ final class WpdbLockSpy extends \wpdb {
 	 */
 	#[\Override]
 	public function get_col( $query = null, $x = 0 ): array {
-		if ( ! \is_string( $query ) ) {
-			throw new \InvalidArgumentException( 'WpdbLockSpy scans require a prepared query string.' );
+		if ( null !== $query ) {
+			$this->query( $query );
+		}
+		if ( ! \is_int( $x ) ) {
+			throw new \InvalidArgumentException( 'WpdbLockSpy column offsets must be integers.' );
 		}
 
-		$statement = $this->statement( $query );
-		if ( ! \str_starts_with( $statement['template'], 'SELECT `option_name` ' ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy get_col() accepts only option-name scans.' );
-		}
-
-		$this->last_error = '';
-		$this->run_before( 'scan' );
-		$this->recorded_queries[] = $query;
-		if ( '' !== $this->last_error ) {
-			return array();
-		}
-		if ( null !== $this->option_name_results ) {
-			return $this->option_name_results;
-		}
-
-		$args             = self::without_table( $statement['args'] );
-		$pattern          = $args[0] ?? null;
-		$has_total_length = \str_contains( $statement['template'], 'LENGTH(`option_name`) = %d' );
-		$total_length     = $has_total_length ? ( $args[1] ?? null ) : null;
-		$has_cursor       = \str_contains( $statement['template'], 'BINARY `option_name` > BINARY %s' );
-		$cursor           = null;
-		if ( $has_cursor ) {
-			$cursor = $args[ $has_total_length ? 2 : 1 ] ?? null;
-			if ( ! \is_string( $cursor ) ) {
-				throw new \UnexpectedValueException( 'WpdbLockSpy keyset option scans require a string cursor.' );
-			}
-		}
-		$limit_index = 1 + ( $has_total_length ? 1 : 0 ) + ( $has_cursor ? 1 : 0 );
-		$limit       = $args[ $limit_index ] ?? null;
-		if ( ! \is_string( $pattern ) || ! \str_ends_with( $pattern, '%' ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy option scans require one trailing-wildcard pattern.' );
-		}
-		if ( null !== $total_length && ! \is_int( $total_length ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy bounded option scans require an integer name length.' );
-		}
-		if ( null !== $limit && ! \is_int( $limit ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy bounded option scans require an integer limit.' );
-		}
-
-		$escaped_prefix = \substr( $pattern, 0, -1 );
-		$prefix         = \preg_replace( '/\\\\([\\\\_%])/', '$1', $escaped_prefix );
-		if ( ! \is_string( $prefix ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy could not decode the escaped option prefix.' );
-		}
-
-		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
-		if ( ! \is_array( $options ) ) {
-			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
-		}
-
-		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
-		$names = \array_values( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && 0 === \strncasecmp( $name, $prefix, \strlen( $prefix ) ) && ( null === $total_length || \strlen( $name ) === $total_length ) && ( null === $cursor || 0 < \strcmp( $name, $cursor ) ) ) );
-		\sort( $names, \SORT_STRING );
-
-		return null === $limit ? $names : \array_slice( $names, 0, $limit );
-	}
-
-	/**
-	 * Counts option names matching one prepared escaped-prefix and exact-length query.
-	 *
-	 * @param   mixed $query Prepared statement.
-	 * @param   mixed $x     Column offset.
-	 * @param   mixed $y     Row offset.
-	 *
-	 * @return  string|null
-	 */
-	public function get_var( $query = null, $x = 0, $y = 0 ): ?string {
-		if ( ! \is_string( $query ) ) {
-			throw new \InvalidArgumentException( 'WpdbLockSpy counts require a prepared query string.' );
-		}
-
-		$statement = $this->statement( $query );
-		if ( ! \str_starts_with( $statement['template'], 'SELECT COUNT(*) ' ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy get_var() accepts only option-name count statements.' );
-		}
-
-		$this->last_error = '';
-		$this->run_before( 'count' );
-		$this->recorded_queries[] = $query;
-		if ( '' !== $this->last_error ) {
-			return null;
-		}
-
-		$args         = self::without_table( $statement['args'] );
-		$pattern      = $args[0] ?? null;
-		$total_length = $args[1] ?? null;
-		if (
-			! \is_string( $pattern )
-			|| ! \str_ends_with( $pattern, '%' )
-			|| ! \is_int( $total_length )
-		) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy option counts require a trailing-wildcard pattern and integer name length.' );
-		}
-
-		$escaped_prefix = \substr( $pattern, 0, -1 );
-		$prefix         = \preg_replace( '/\\\\([\\\\_%])/', '$1', $escaped_prefix );
-		if ( ! \is_string( $prefix ) ) {
-			throw new \UnexpectedValueException( 'WpdbLockSpy could not decode the escaped option prefix.' );
-		}
-
-		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
-		if ( ! \is_array( $options ) ) {
-			throw new \UnexpectedValueException( 'Initialize the test option store as an array.' );
-		}
-
-		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
-
-		return (string) \count( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && \strlen( $name ) === $total_length && 0 === \strncasecmp( $name, $prefix, \strlen( $prefix ) ) ) );
+		return \array_values( \array_map( static fn ( \stdClass $row ): mixed => \array_values( \get_object_vars( $row ) )[ $x ] ?? null, $this->last_result ?? array() ) );
 	}
 
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Executes a modeled authoritative read and populates Core's public result buffer.
+	 *
+	 * @phpstan-param array{template: string, args: list<mixed>} $statement
+	 *
+	 * @param   array  $statement Prepared statement and arguments.
+	 * @param   string $query     Prepared query.
+	 *
+	 * @return  int|false
+	 */
+	private function execute_read( array $statement, string $query ): int|false {
+		$operation = match ( true ) {
+			\str_starts_with( $statement['template'], 'SELECT `option_name` FROM ' )            => 'scan',
+			\str_starts_with( $statement['template'], 'SELECT `option_value` FROM ' ),
+			\str_starts_with( $statement['template'], 'SELECT `option_name`, `option_value` ' ) => 'select',
+			default => throw new \UnexpectedValueException( 'WpdbLockSpy models only option-row and option-name SELECT statements.' ),
+		};
+		$this->recorded_queries[] = $query;
+
+		$failure_leg                 = $this->next_read_failure_leg;
+		$this->next_read_failure_leg = null;
+		if ( 'not_ready' === $failure_leg || 'query_filtered' === $failure_leg ) {
+			return false;
+		}
+
+		$this->last_error  = '';
+		$this->last_result = array();
+		if ( 'reconnect_failed' === $failure_leg ) {
+			return false;
+		}
+
+		$this->run_before( $operation );
+		if ( '' !== $this->last_error ) {
+			return false;
+		}
+
+		$this->last_result = match ( $operation ) {
+			'select' => $this->selected_rows( $statement ),
+			default  => $this->selected_names( $statement ),
+		};
+
+		return \count( $this->last_result );
+	}
+
+	/**
+	 * Returns modeled rows for an exact-name read.
+	 *
+	 * @phpstan-param array{template: string, args: list<mixed>} $statement
+	 *
+	 * @param   array $statement Prepared statement and arguments.
+	 *
+	 * @return  list<\stdClass>
+	 */
+	private function selected_rows( array $statement ): array {
+		$args = self::without_table( $statement['args'] );
+		$rows = array();
+		foreach ( $args as $key ) {
+			if ( ! \is_string( $key ) ) {
+				continue;
+			}
+
+			$raw = $this->raw_value( $key );
+			if ( null === $raw ) {
+				continue;
+			}
+
+			if ( \str_starts_with( $statement['template'], 'SELECT `option_value` ' ) ) {
+				$rows[] = (object) array( 'option_value' => $raw );
+			} else {
+				$rows[] = (object) array(
+					'option_name'  => $key,
+					'option_value' => $raw,
+				);
+			}
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Returns modeled rows for a prefix scan.
+	 *
+	 * @phpstan-param array{template: string, args: list<mixed>} $statement
+	 *
+	 * @param   array $statement Prepared statement and arguments.
+	 *
+	 * @return  list<\stdClass>
+	 */
+	private function selected_names( array $statement ): array {
+		$args             = self::without_table( $statement['args'] );
+		$pattern          = $args[0] ?? null;
+		$has_total_length = \str_contains( $statement['template'], 'LENGTH(`option_name`) = %d' );
+		$total_length     = $has_total_length ? ( $args[1] ?? null ) : null;
+		$has_cursor       = \str_contains( $statement['template'], 'BINARY `option_name` > BINARY %s' );
+		$cursor           = $has_cursor ? ( $args[ $has_total_length ? 2 : 1 ] ?? null ) : null;
+		$limit_index      = 1 + ( $has_total_length ? 1 : 0 ) + ( $has_cursor ? 1 : 0 );
+		$limit            = $args[ $limit_index ] ?? null;
+		if ( ! \is_string( $pattern ) || ! \str_ends_with( $pattern, '%' ) || ( null !== $total_length && ! \is_int( $total_length ) ) || ( null !== $cursor && ! \is_string( $cursor ) ) || ( null !== $limit && ! \is_int( $limit ) ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy option scans require a trailing-wildcard pattern and valid bounds.' );
+		}
+
+		// A keyset template whose cursor argument never arrived would silently drop the cursor predicate below.
+		if ( $has_cursor && null === $cursor ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy keyset option scans require a string cursor.' );
+		}
+
+		$escaped_prefix = \substr( $pattern, 0, -1 );
+		$prefix         = \preg_replace( '/\\\\([\\\\_%])/', '$1', $escaped_prefix );
+		$options        = $GLOBALS['a8csp_bgje_test_options'] ?? array();
+		if ( ! \is_string( $prefix ) || ! \is_array( $options ) ) {
+			throw new \UnexpectedValueException( 'WpdbLockSpy could not model the option-name scan.' );
+		}
+
+		if ( null !== $this->option_name_results ) {
+			return \array_map( static fn ( mixed $name ): \stdClass => (object) array( 'option_name' => $name ), $this->option_name_results );
+		}
+
+		$names = \array_unique( array( ...\array_keys( $this->rows ), ...\array_keys( $options ) ) );
+		$names = \array_values( \array_filter( $names, static fn ( mixed $name ): bool => \is_string( $name ) && 0 === \strncasecmp( $name, $prefix, \strlen( $prefix ) ) && ( null === $total_length || \strlen( $name ) === $total_length ) && ( null === $cursor || 0 < \strcmp( $name, $cursor ) ) ) );
+		\sort( $names, \SORT_STRING );
+		if ( null !== $limit ) {
+			$names = \array_slice( $names, 0, $limit );
+		}
+
+		return \array_map( static fn ( mixed $name ): \stdClass => (object) array( 'option_name' => $name ), $names );
+	}
 
 	/**
 	 * Models INSERT IGNORE against option_name's unique key.

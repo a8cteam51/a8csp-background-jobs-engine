@@ -538,6 +538,25 @@ final class MaintenanceJobTest extends TestCase {
 		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
+	/** A silent reconnection failure cannot turn an incomplete sweep into cursor deletion. */
+	public function test_silent_reconnection_failure_does_not_delete_the_persisted_cursor(): void {
+		$cursor_raw = $this->cursor_raw;
+		$this->wpdb->put( $this->cursor_option, $cursor_raw );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $database ): void {
+				$database->fail_next_read_at( 'reconnect_failed' );
+			}
+		);
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( $cursor_raw, $this->wpdb->rows[ $this->cursor_option ] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'run-enumeration', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
+	}
+
 	/**
 	 * Reconciliation failure leaves the previously persisted cursor bytes unchanged.
 	 *

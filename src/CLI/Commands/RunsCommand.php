@@ -612,12 +612,12 @@ final readonly class RunsCommand {
 		 *
 		 * @var \wpdb $wpdb
 		 */
-		$option_names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( FailedRunStore::OPTION_PREFIX ) . '%' ) );
-		if ( '' !== $wpdb->last_error ) {
+		$selected = new OptionRows( $wpdb )->option_names( FailedRunStore::OPTION_PREFIX );
+		if ( $selected->is_failure() ) {
 			return null;
 		}
 
-		return self::identities_from_option_names( $option_names );
+		return self::identities_from_option_names( $selected->value );
 	}
 
 	/**

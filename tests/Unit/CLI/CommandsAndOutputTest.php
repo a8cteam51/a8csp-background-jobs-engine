@@ -726,6 +726,17 @@ final class CommandsAndOutputTest extends TestCase {
 		}
 	}
 
+	/** Failed-run discovery preserves its rendered database error when Core fails silently. */
+	public function test_failed_run_purge_reports_a_silent_database_failure(): void {
+		$this->rig->wpdb()->fail_next_read_at( 'reconnect_failed' );
+
+		$result = CliHarness::run( 'failed-runs', array( 'purge' ), array( 'all' => true ) );
+
+		self::assertSame( 1, $result->exit_code );
+		self::assertSame( '', $result->stdout );
+		self::assertSame( "Error: The database check for failed-run stores failed; resolve the database error and try again.\n", $result->stderr );
+	}
+
 	/**
 	 * Failed-run JSON retains healthy entries while unreadable members warn only on STDERR.
 	 *
