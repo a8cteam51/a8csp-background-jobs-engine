@@ -18,9 +18,10 @@ use Psr\Log\LoggerInterface;
 /**
  * Owns execution-overlap locks stored as WordPress options.
  *
- * A claim mutates only an absent row. Existing parseable and malformed rows are returned as exact
- * snapshots so the admission coordinator can fence the incumbent before transferring that same
- * lock generation. Maintenance owns stale deletion independently.
+ * A claim mutates only an absent row. Existing parseable rows are returned as exact snapshots so
+ * the admission coordinator can fence the incumbent before transferring that same lock generation.
+ * Unreadable or malformed selections are indeterminate and remain unchanged. Maintenance owns stale
+ * deletion independently.
  *
  * LockWindows resolves the 15-minute default, lock-staleness filter, and
  * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
@@ -80,7 +81,7 @@ final readonly class OverlapGuard {
 	// region METHODS
 
 	/**
-	 * Claims an absent lock or selects an existing parseable or malformed row.
+	 * Claims an absent lock or selects an existing parseable row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -89,7 +90,7 @@ final readonly class OverlapGuard {
 	 * @param   string   $args_hash Stable single-flight identity.
 	 * @param   string   $run_id    Claiming run identifier.
 	 *
-	 * @return  LockClaimResult Typed selection carrying the generation it decided under, with an exact snapshot when one was read.
+	 * @return  LockClaimResult Typed selection carrying the generation it decided under, with an exact contended snapshot when one was read.
 	 */
 	public function claim( Identity $identity, string $args_hash, string $run_id ): LockClaimResult {
 		$key      = $this->option_name( $identity, $args_hash );
@@ -112,7 +113,7 @@ final readonly class OverlapGuard {
 
 		$lock = self::parse( $raw );
 		if ( null === $lock ) {
-			return LockClaimResult::malformed( $raw );
+			return LockClaimResult::indeterminate();
 		}
 
 		// Liveness is the incumbent's own policy: resolving the window from the contender would judge a healthy

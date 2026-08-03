@@ -290,8 +290,8 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
 
-	/** A malformed raw row is classified with its exact bytes without mutation. */
-	public function test_claim_classifies_a_malformed_row_without_mutation(): void {
+	/** A malformed raw row produces no claim or contention and remains unchanged. */
+	public function test_claim_reports_a_malformed_row_as_indeterminate_without_mutation(): void {
 		$logger = new RecordingLogger();
 		$raw    = \str_repeat( 'malformed-', 30 );
 		$this->wpdb->put( self::KEY, $raw );
@@ -299,16 +299,16 @@ final class OverlapGuardTest extends TestCase {
 
 		$result = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
-		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
 		self::assertNull( $result->owner_run_id );
-		self::assertSame( $raw, $result->raw );
+		self::assertNull( $result->raw );
 		self::assertNull( $result->stale );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array(), $logger->records );
 	}
 
-	/** A serialized object is classified as malformed without constructing its class or changing its bytes. */
-	public function test_malformed_object_row_is_classified_without_class_construction_or_mutation(): void {
+	/** A malformed serialized object produces no claim or contention, class construction, or mutation. */
+	public function test_malformed_object_row_is_indeterminate_without_class_construction_or_mutation(): void {
 		LockRowWakeupProbe::$woke = false;
 
 		$raw = StoreFixtureBuilder::corrupt_row( new LockRowWakeupProbe() );
@@ -316,8 +316,8 @@ final class OverlapGuardTest extends TestCase {
 
 		$result = $this->guard_at( 1_000 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
-		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
-		self::assertSame( $raw, $result->raw );
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertNull( $result->raw );
 		self::assertFalse( LockRowWakeupProbe::$woke );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
@@ -555,7 +555,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
-	/** Claim outcomes distinguish fresh, stale, absent, and malformed rows with exact bytes. */
+	/** Claim selects fresh and stale locks, claims absence, and rejects malformed bytes. */
 	public function test_claim_distinguishes_fresh_stale_absent_and_malformed_locks(): void {
 		$this->declare_lock_window( 100 );
 		$guard     = $this->guard_at( 1_000 );
@@ -581,13 +581,13 @@ final class OverlapGuardTest extends TestCase {
 		$malformed_raw = 'not-a-lock-row';
 		$this->wpdb->put( self::KEY, $malformed_raw );
 		$malformed = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
-		self::assertSame( LockClaimOutcome::Malformed, $malformed->outcome );
-		self::assertSame( $malformed_raw, $malformed->raw );
+		self::assertSame( LockClaimOutcome::Indeterminate, $malformed->outcome );
+		self::assertNull( $malformed->raw );
 		self::assertSame( $malformed_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'insert', 'select', 'insert', 'select', 'insert', 'insert', 'select' ), $this->operations() );
 	}
 
-	/** Claim classifies a deserializable row outside the exact three-field schema as malformed. */
+	/** Claim rejects a deserializable row outside the exact three-field schema as indeterminate. */
 	public function test_claim_rejects_a_lock_row_with_extra_fields(): void {
 		$raw = StoreFixtureBuilder::corrupt_row(
 			array(
@@ -601,8 +601,8 @@ final class OverlapGuardTest extends TestCase {
 
 		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
-		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
-		self::assertSame( $raw, $result->raw );
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertNull( $result->raw );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 	}
 

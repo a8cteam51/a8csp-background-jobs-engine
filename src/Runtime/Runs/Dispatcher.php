@@ -512,10 +512,7 @@ final readonly class Dispatcher {
 		// under, which is what the admitted run is stamped with.
 		$claim      = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
 		$created_at = $claim->claimed_at ?? $created_at;
-		if (
-			LockClaimOutcome::Malformed === $claim->outcome
-			|| LockClaimOutcome::Indeterminate === $claim->outcome
-		) {
+		if ( LockClaimOutcome::Indeterminate === $claim->outcome ) {
 			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}
 		if ( LockClaimOutcome::Contended === $claim->outcome ) {
@@ -695,10 +692,7 @@ final readonly class Dispatcher {
 		$args_hash = $this->salted_args_hash( $args_hash, $run_id );
 		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
 		$now       = $claim->claimed_at ?? $now;
-		if (
-			LockClaimOutcome::Malformed === $claim->outcome
-			|| LockClaimOutcome::Indeterminate === $claim->outcome
-		) {
+		if ( LockClaimOutcome::Indeterminate === $claim->outcome ) {
 			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}
 		if ( LockClaimOutcome::Claimed !== $claim->outcome ) {

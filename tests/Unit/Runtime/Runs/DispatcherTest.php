@@ -638,6 +638,7 @@ final class DispatcherTest extends TestCase {
 		$lock_option = OverlapGuard::OPTION_PREFIX . self::IDENTITY . '_' . $this->args_hash();
 		$malformed   = 'malformed-overlap-lock';
 		$this->rig->wpdb()->put( $lock_option, $malformed );
+		$this->rig->wpdb()->recorded_queries = array();
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
@@ -652,6 +653,10 @@ final class DispatcherTest extends TestCase {
 		);
 		self::assertSame( $malformed, $this->rig->wpdb()->rows[ $lock_option ] ?? null );
 		self::assertFalse( \get_option( $this->run_option_name() ) );
+		// An absent row cannot tell a run that was never written from one written and rolled back, so the
+		// query ledger is what proves admission refused before it touched the run row at all.
+		$run_option = $this->run_option_name();
+		self::assertSame( array(), \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_contains( $query, $run_option ) ) ) );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
