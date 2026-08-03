@@ -250,6 +250,35 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
+	 * A job delivery whose identity belongs to another kind terminalizes the run instead of executing it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_job_delivery_of_a_registration_owned_by_another_kind_fails_the_run_as_orphaned(): void {
+		$foreign_job = new RecordingChunkedJob( self::NAME );
+		$this->registry->register( $this->identity, $foreign_job->definition() );
+
+		$guard = new OverlapGuard( $this->clock, $this->logger, $this->rows, new LockWindows( $this->clock, $this->logger ) );
+		self::assertSame( LockClaimOutcome::Claimed, $guard->claim( $this->identity, self::ARGS_HASH, self::RUN_ID )->outcome );
+
+		$run_store = new RunStore( $this->identity, $this->clock, $this->rows );
+		$state     = $run_store->create( self::RUN_ID, JobKindHandler::KIND, self::ARGS, self::ARGS_HASH, array(), PendingAction::async( 'run', 10 ), at: self::NOW );
+		self::assertInstanceOf( RunState::class, $state );
+		$this->logger->records = array();
+
+		$this->handler->deliver( $this->identity, self::RUN_ID, $state, $run_store );
+
+		self::assertSame( array(), $this->job->calls );
+		self::assertSame( array(), $foreign_job->generate_calls );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'job delivery references an unregistered execution; register the job before dispatching its run action.', $this->logger->records[0]['message'] ?? null );
+		self::assertNull( $this->option( $this->run_option_name() ) );
+	}
+
+	/**
 	 * A terminal winner deleting the run during a live heartbeat CAS stops the stale delivery without acting on it.
 	 *
 	 * @since   1.0.0

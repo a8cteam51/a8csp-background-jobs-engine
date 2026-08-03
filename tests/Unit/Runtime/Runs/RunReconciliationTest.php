@@ -1097,7 +1097,7 @@ final class RunReconciliationTest extends TestCase {
 		$state = new RunState( status: RunStatus::Running, kind: 'chunked_job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array( $chunk ), failed_attempts: 0, action_sequence: 1, created_at: self::NOW - 901, heartbeat_at: self::NOW - 901, pending: PendingAction::async( 'continue', 10 ) );
 		$this->store_running_state( self::IDENTITY, $state );
 		$this->put_lock( $this->lock_option_name(), self::RUN_ID, self::NOW - 901 );
-		$current_job = $this->registry->execution( $this->identity );
+		$current_job = $this->registry->definition_for_kind( $this->identity, 'job' )?->execution;
 		self::assertInstanceOf( RecordingJob::class, $current_job );
 
 		$this->run_maintenance();

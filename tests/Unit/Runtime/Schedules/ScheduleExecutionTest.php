@@ -252,6 +252,63 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * A throwing delivery-state write releases the occurrence lease before outer error handling.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The registry update throws inside the accepted callback, and the lease delete observes that outer occurrence logging has not started, pinning release to the callback's exception path.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_delivery_state_persistence_exception_releases_the_lease_before_outer_error_handling(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$lease_option                  = OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
+		$release_observed              = false;
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function (): void {
+				throw new \RuntimeException( 'Scripted delivery-state persistence exception.' );
+			}
+		);
+		$this->rig->wpdb()->before_next(
+			'delete',
+			function ( WpdbLockSpy $wpdb ) use ( $lease_option, &$release_observed ): void {
+				$release_observed = true;
+				self::assertArrayHasKey( $lease_option, $wpdb->rows );
+				self::assertSame( array(), $this->rig->logger()->records );
+			}
+		);
+
+		$this->rig->run_due();
+
+		self::assertTrue( $release_observed );
+		self::assertArrayNotHasKey( $lease_option, $this->rig->wpdb()->rows );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'Schedule occurrence delivery failed after claiming its decision lease; the next delivery reconciles against persisted schedule state.', $this->rig->logger()->records[0]['message'] ?? null );
+	}
+
+	/**
+	 * Manual occurrence acceptance commits its firing marker and releases its decision lease.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_occurrence_acceptance_commits_state_and_releases_its_lease(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( Success::class, $result );
+		self::assertSame( self::NOW, $this->registration()['last_fired'] ?? null );
+		self::assertArrayNotHasKey( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
+	}
+
+	/**
 	 * A Skip schedule delivered inside grace dispatches normally without a misfire-skipped hook.
 	 *
 	 * @since   1.0.0

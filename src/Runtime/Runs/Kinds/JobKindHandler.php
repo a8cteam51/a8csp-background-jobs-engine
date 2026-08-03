@@ -131,9 +131,9 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function execution( Identity $identity ): ?JobExecutionInterface {
-		$execution = $this->registry->execution( $identity );
+		$execution = $this->registry->definition_for_kind( $identity, self::KIND )?->execution;
 
-		return self::KIND === $this->registry->kind( $identity ) && $execution instanceof JobExecutionInterface ? $execution : null;
+		return $execution instanceof JobExecutionInterface ? $execution : null;
 	}
 
 	/**
@@ -148,7 +148,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function options( Identity $identity ): ?JobOptions {
-		return self::KIND === $this->registry->kind( $identity ) ? $this->registry->options( $identity ) : null;
+		return $this->registry->definition_for_kind( $identity, self::KIND )?->options;
 	}
 
 	/**

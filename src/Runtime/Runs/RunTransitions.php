@@ -194,7 +194,7 @@ final readonly class RunTransitions {
 		$at = $handler->delivery_liveness_at( $identity, $run_id, $state ) ?? $this->clock->now()->getTimestamp();
 
 		// Only confirmed lock ownership permits the delivery to refresh its run row and enter lifecycle work.
-		if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], $at, $state->heartbeat_at ) ) {
+		if ( $this->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $at, $state->heartbeat_at, $snapshot['raw'] ) ) {
 			return null;
 		}
 
@@ -202,7 +202,7 @@ final readonly class RunTransitions {
 		if ( $marked instanceof Failure ) {
 			// replace_if_state_matches(), replace_if_raw_matches(), and mark_executing_with_heartbeat()
 			// collapse lost CAS and SQL write failure to null, so Failure denotes payload rejection.
-			if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], $at, $at ) ) {
+			if ( $this->enforce_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $at, $at, $snapshot['raw'] ) ) {
 				return null;
 			}
 			$this->fail_run( $handler, $identity, $run_id, $state, $run_store, $marked->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::PayloadRejected, $handler->failure_details( $state ), $snapshot['raw'] );
@@ -391,12 +391,13 @@ final readonly class RunTransitions {
 	 * @param   RunStore             $run_store             Active-run store.
 	 * @param   int|null             $at                    Liveness timestamp, or null to use the current clock time.
 	 * @param   int|null             $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
+	 * @param   string|null          $expected_raw          Exact selected snapshot, or null to derive it from the typed state.
 	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 *
 	 * @phpstan-impure
 	 */
-	public function enforce_delivery_fence( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null ): bool {
+	public function enforce_delivery_fence( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, ?int $at = null, ?int $expected_heartbeat_at = null, ?string $expected_raw = null ): bool {
 		$outcome = $this->overlap_guard->heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
@@ -429,7 +430,7 @@ final readonly class RunTransitions {
 		}
 
 		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
-		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store );
+		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
 		if ( $claimed instanceof Failure ) {
 			$this->logger->error(
 				$claimed->error->message,
@@ -514,78 +515,6 @@ final readonly class RunTransitions {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Aborts a scheduler delivery when its ownership fence is not confirmed.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
-	 * @param   Identity             $identity              Complete scope-qualified work identity.
-	 * @param   string               $run_id                Run identifier.
-	 * @param   RunState             $state                 Running state observed before the fence.
-	 * @param   RunStore             $run_store             Active-run store.
-	 * @param   string               $expected_raw          Exact run state observed before the fence.
-	 * @param   int|null             $at                    Liveness timestamp, or null to use the current clock time.
-	 * @param   int|null             $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
-	 *
-	 * @return  bool Whether the caller must abort this delivery.
-	 */
-	private function enforce_raw_delivery_fence( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?int $at, ?int $expected_heartbeat_at ): bool {
-		$outcome = $this->overlap_guard->heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
-		if ( HeartbeatOutcome::Owned === $outcome ) {
-			return false;
-		}
-		if ( HeartbeatOutcome::GenerationMismatch === $outcome ) {
-			// The fence aborts without a terminal transition and the scheduler action still completes, so this record is the
-			// only evidence separating a superseded delivery from a handler that did nothing.
-			$this->logger->debug(
-				$handler->key() . ' delivery generation is superseded; the delivery aborts without a terminal transition.',
-				array(
-					'identity' => (string) $identity,
-					'run_id'   => $run_id,
-				)
-			);
-
-			return true;
-		}
-
-		if ( HeartbeatOutcome::Indeterminate === $outcome ) {
-			$kind = $handler->key();
-			$this->logger->debug(
-				$kind . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
-				array(
-					'identity' => (string) $identity,
-					'run_id'   => $run_id,
-				)
-			);
-
-			return true;
-		}
-
-		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
-		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
-		if ( $claimed instanceof Failure ) {
-			$this->logger->error(
-				$claimed->error->message,
-				array(
-					'identity'     => (string) $identity,
-					'run_id'       => $run_id,
-					'error_class'  => $claimed->error::class,
-					'error_reason' => $claimed->error->reason?->value,
-				)
-			);
-
-			return true;
-		}
-		if ( null === $claimed ) {
-			return true;
-		}
-		$this->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
-
-		return true;
-	}
 
 	/**
 	 * Claims a terminal state and executes only the winning transition's effects.

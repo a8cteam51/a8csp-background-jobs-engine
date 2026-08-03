@@ -160,9 +160,9 @@ final readonly class RunStore {
 	 * @throws  \LogicException           When the current site differs from the bound site or WordPress does not serialize
 	 *                                    the kind-owned or complete run state to a string.
 	 *
-	 * @return  RunState|Failure<EngineError>|null Payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, or null when the run option cannot be added.
+	 * @return  RunState|Failure<EngineError> Payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, or storage failure when the run option cannot be added.
 	 */
-	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null, ?int $at = null ): RunState|Failure|null {
+	public function create( string $run_id, string $kind, array $start_args, string $args_hash, array $kind_state, ?PendingAction $pending = null, ?int $priority = null, ?int $at = null ): RunState|Failure {
 		// The second-granularity integer invariant keeps caller timestamp bounds such as PHP_INT_MAX - $now overflow-safe.
 		$now   = $at ?? $this->clock->now()->getTimestamp();
 		$state = new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: $start_args, args_hash: $args_hash, kind_state: $kind_state, failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: $pending, priority: $priority, );
@@ -179,7 +179,17 @@ final readonly class RunStore {
 		}
 
 		if ( RowWriteOutcome::Won !== $this->rows->insert_if_absent( RunIdentity::option_name( $this->identity, $run_id ), $raw ) ) {
-			return null;
+			return new Failure(
+				new EngineError(
+					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, (string) $this->identity ),
+					reason: EngineErrorReason::StorageFailure,
+					context: array(
+						'identity' => (string) $this->identity,
+						'run_id'   => $run_id,
+						'kind'     => $kind,
+					),
+				)
+			);
 		}
 
 		return $state;

@@ -123,7 +123,7 @@ final readonly class ActionDeliveries {
 			return;
 		}
 
-		$claimed->handler->deliver( $claimed->identity, $canonical_run_id, $claimed->state, $this->stores->run_store( $claimed->identity ) );
+		$claimed->handler->deliver( $claimed->identity, $canonical_run_id, $claimed->state, $run_store );
 	}
 
 	/**

@@ -706,22 +706,6 @@ final readonly class Dispatcher {
 
 			return $state;
 		}
-		if ( null === $state ) {
-			$this->overlap_guard->release( $identity, $args_hash, $run_id );
-
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, (string) $identity ),
-					reason: EngineErrorReason::StorageFailure,
-					context: array(
-						'identity' => (string) $identity,
-						'run_id'   => $run_id,
-						'kind'     => $kind,
-					),
-				)
-			);
-		}
-
 		$on_accepted?->__invoke();
 		$terminalized = $this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ) );
 		if ( ! $terminalized ) {
@@ -773,23 +757,6 @@ final readonly class Dispatcher {
 			}
 
 			return $state;
-		}
-		if ( null === $state ) {
-			if ( LockClaimOutcome::Claimed === $claim->outcome ) {
-				$this->overlap_guard->release( $identity, $args_hash, $run_id );
-			}
-
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, (string) $identity ),
-					reason: EngineErrorReason::StorageFailure,
-					context: array(
-						'identity' => (string) $identity,
-						'run_id'   => $run_id,
-						'kind'     => $kind,
-					),
-				)
-			);
 		}
 		if ( LockClaimOutcome::Claimed === $claim->outcome ) {
 			return array(
@@ -1045,8 +1012,10 @@ final readonly class Dispatcher {
 	 * @return  KindHandlerInterface|Failure<EngineError>
 	 */
 	private function registered_handler_for_persisted_kind( Identity $identity, string $run_id, string $kind, string $operation ): KindHandlerInterface|Failure {
+		// Kind agreement follows from the handler map being keyed by each handler's own key, because every
+		// execution() resolves through a lookup filtered on that same key.
 		$handler = $this->handlers[ $kind ] ?? null;
-		if ( null === $handler || $kind !== $this->registry->kind( $identity ) || null === $handler->execution( $identity ) ) {
+		if ( null === $handler || null === $handler->execution( $identity ) ) {
 			return $this->incompatible_kind_registration( $identity, $run_id, $kind, $operation );
 		}
 

@@ -637,36 +637,58 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * An existing exact option row preserves create's null-on-conflict contract.
+	 * An existing exact option row returns the shared persistence failure without replacing its bytes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_create_returns_null_when_the_exact_option_row_exists(): void {
+	public function test_create_returns_storage_failure_when_the_exact_option_row_exists(): void {
 		$this->rig->wpdb()->put( $this->run_option_name(), 'incumbent-row' );
 
 		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), array() );
 
-		self::assertNull( $result );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( 'Run "' . self::RUN_ID . '" for acme.export "' . self::IDENTITY . '" could not be persisted; remove the conflicting run option before retrying.', $result->error->message );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+				'kind'     => 'acme.export',
+			),
+			$result->error->context
+		);
 		self::assertSame( 'incumbent-row', $this->raw_row() );
 	}
 
 	/**
-	 * An indeterminate exact-row insert preserves create's null failure contract.
+	 * An indeterminate exact-row insert returns the same persistence failure without creating a row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_create_returns_null_when_the_exact_row_insert_fails(): void {
+	public function test_create_returns_storage_failure_when_the_exact_row_insert_fails(): void {
 		$this->rig->wpdb()->script_result( 'insert', false );
 
 		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), array() );
 
-		self::assertNull( $result );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( 'Run "' . self::RUN_ID . '" for acme.export "' . self::IDENTITY . '" could not be persisted; remove the conflicting run option before retrying.', $result->error->message );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+				'kind'     => 'acme.export',
+			),
+			$result->error->context
+		);
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->rig->wpdb()->rows );
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );

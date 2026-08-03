@@ -250,6 +250,31 @@ final readonly class OccurrenceDelivery {
 	}
 
 	/**
+	 * Returns an accepted-occurrence commit that releases its decision lease even when persistence throws.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool} $accepted_registration
+	 *
+	 * @param   Identity              $identity              Complete scope-qualified schedule identity.
+	 * @param   string                $scope                 Stable client identifier.
+	 * @param   array                 $accepted_registration Accepted registration timing state.
+	 * @param   OccurrenceLeaseHandle $lease_handle          Claimed occurrence-lease handle.
+	 *
+	 * @return  \Closure
+	 */
+	private function commit_accepted_occurrence( Identity $identity, string $scope, array $accepted_registration, OccurrenceLeaseHandle $lease_handle ): \Closure {
+		return function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
+			try {
+				$this->persist_delivery_state( $identity, $scope, $accepted_registration );
+			} finally {
+				$lease_handle->release();
+			}
+		};
+	}
+
+	/**
 	 * Advances a due instant by whole intervals until it is strictly in the future.
 	 *
 	 * @since   1.0.0
@@ -502,13 +527,7 @@ final readonly class OccurrenceDelivery {
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority,
-			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
-				try {
-					$this->persist_delivery_state( $identity, $scope, $accepted_registration );
-				} finally {
-					$lease_handle->release();
-				}
-			},
+			$this->commit_accepted_occurrence( $identity, $scope, $accepted_registration, $lease_handle ),
 			terminalize_overlap_key_failure: true
 		);
 		if ( $dispatched->is_failure() ) {
@@ -611,13 +630,7 @@ final readonly class OccurrenceDelivery {
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority,
-			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
-				try {
-					$this->persist_delivery_state( $identity, $scope, $accepted_registration );
-				} finally {
-					$lease_handle->release();
-				}
-			}
+			$this->commit_accepted_occurrence( $identity, $scope, $accepted_registration, $lease_handle )
 		);
 		if ( $dispatched->is_failure() ) {
 			return $dispatched;
