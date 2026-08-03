@@ -215,7 +215,7 @@ final readonly class RunReconciliation {
 		}
 
 		if ( $state->executing ) {
-			return $this->reconcile_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $fence, $handler );
+			return $this->reconcile_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $fence, $staleness, $handler );
 		}
 
 		return $this->reconcile_non_executing_run( $identity, $run_id, $state, $run_store, $snapshot['raw'], $staleness, $handler );
@@ -237,21 +237,20 @@ final readonly class RunReconciliation {
 	 * @param   RunStore                $run_store    Name-bound run store.
 	 * @param   string                  $expected_raw Exact observed state.
 	 * @param   MaintenanceFenceOutcome $fence        Executing-run fence outcome.
+	 * @param   int                     $staleness    Resolved lock-staleness window.
 	 * @param   KindHandlerInterface    $handler      Resolved kind handler.
 	 *
 	 * @return  AbstractResult<null, EngineError>
 	 */
-	private function reconcile_executing_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, KindHandlerInterface $handler ): AbstractResult {
-		if (
-			MaintenanceFenceOutcome::Owned === $fence
-			|| MaintenanceFenceOutcome::Indeterminate === $fence
-		) {
+	private function reconcile_executing_run( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, MaintenanceFenceOutcome $fence, int $staleness, KindHandlerInterface $handler ): AbstractResult {
+		// Delivery ownership co-stamps the run row and lock with one credited heartbeat, so run-row freshness remains valid evidence when malformed bytes hide the lock heartbeat.
+		if ( MaintenanceFenceOutcome::Owned === $fence || MaintenanceFenceOutcome::Indeterminate === $fence || ( MaintenanceFenceOutcome::Malformed === $fence && ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $staleness ) ) ) {
 			return new Success( null );
 		}
 
 		$error = $this->crash_reclamation_error( $identity, $run_id );
 		$this->logger->warning(
-			'Reclaimed running run whose owned execution-overlap lock was stale or missing.',
+			'Reclaimed running run whose execution-overlap lock was stale or missing, or whose run-row heartbeat was stale behind a malformed lock.',
 			array(
 				'identity' => (string) $identity,
 				'run_id'   => $run_id,
@@ -284,10 +283,7 @@ final readonly class RunReconciliation {
 
 		if ( null === $state->pending ) {
 			$fence = $this->overlap_guard->fence_abandoned_run( $identity, $state->args_hash, $run_id, $staleness );
-			if (
-				MaintenanceFenceOutcome::Owned === $fence
-				|| MaintenanceFenceOutcome::Indeterminate === $fence
-			) {
+			if ( MaintenanceFenceOutcome::Owned === $fence || MaintenanceFenceOutcome::Indeterminate === $fence ) {
 				return new Success( null );
 			}
 			if ( MaintenanceFenceOutcome::Transferred === $fence ) {
@@ -480,7 +476,7 @@ final readonly class RunReconciliation {
 	 * @return  EngineError
 	 */
 	private function crash_reclamation_error( Identity $identity, string $run_id ): EngineError {
-		return new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash reclaim path because its owned lock was stale or missing.', $run_id, (string) $identity ) );
+		return new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by the maintenance crash reclaim path because its execution-overlap lock was stale or missing, or because its run-row heartbeat was stale behind a malformed lock.', $run_id, (string) $identity ) );
 	}
 
 	// endregion

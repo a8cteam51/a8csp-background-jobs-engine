@@ -451,20 +451,19 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * The real lock commands list redacted corruption and repair the maintenance lane directly.
+	 * The real lock command lists malformed corruption with redacted correlation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_locks_list_preserves_and_repair_clears_a_malformed_lock_after_superseding_its_run(): void {
+	public function test_locks_list_reports_a_malformed_lock_without_exposing_its_bytes(): void {
 		$args      = array( 'source' => 'cli-boundary' );
 		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$args_hash = $builder->args_hash( $args );
 		$lock_name = OverlapGuard::OPTION_PREFIX . self::CANCEL_NAME . '_' . $args_hash;
 		$lock_raw  = 'integration-secret-malformed-lock';
-		$run_name  = $this->seed_cancel_run();
 		self::assertTrue( \update_option( $lock_name, $lock_raw, false ) );
 
 		try {
@@ -485,26 +484,8 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 			self::assertSame( \substr( \hash( 'sha256', $lock_raw ), 0, 16 ), $row['raw_sha256'] ?? null );
 			self::assertStringNotContainsString( $lock_raw, $listed['stdout'] );
 			self::assertSame( $lock_raw, \get_option( $lock_name ) );
-
-			$repaired = self::run_locks_command( 'repair', self::CANCEL_NAME, '--args-hash=' . $args_hash, '--yes' );
-
-			self::assertSame( 0, $repaired['exit_code'] );
-			self::assertSame( '', $repaired['stderr'] );
-			self::assertStringContainsString( 'identity=' . self::CANCEL_NAME . "\n", $repaired['stdout'] );
-			self::assertStringContainsString( 'args_hash=' . $args_hash . "\n", $repaired['stdout'] );
-			self::assertStringContainsString( "runs_superseded=1\n", $repaired['stdout'] );
-			self::assertStringContainsString( "lock_cleared=true\n", $repaired['stdout'] );
-			self::assertStringNotContainsString( $lock_raw, $repaired['stdout'] );
-			\wp_cache_delete( $lock_name, 'options' );
-			\wp_cache_delete( $run_name, 'options' );
-			self::assertFalse( \get_option( $lock_name, false ) );
-			$run = \get_option( $run_name );
-			self::assertIsArray( $run );
-			self::assertSame( RunStatus::Superseded->value, $run['status'] ?? null );
-			self::assertArrayNotHasKey( 'pending', $run );
 		} finally {
 			\delete_option( $lock_name );
-			\delete_option( $run_name );
 		}
 	}
 

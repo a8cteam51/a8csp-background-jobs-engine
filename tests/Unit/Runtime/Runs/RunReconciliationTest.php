@@ -184,7 +184,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->dispatcher           = new Dispatcher( $this->registry, $this->handlers, $delivery_scheduler, $guard, $overlap_identity, $this->stores, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
 		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->handlers, $delivery_scheduler );
 		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), $scheduler, $option_rows, $this->clock, $this->logger );
-		$this->maintenance          = new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
+		$this->maintenance          = new MaintenanceJob( $option_rows, $reconciliation, $guard, $this->stores, $cleanup_intents, $this->logger );
 	}
 
 	// endregion.
@@ -306,6 +306,96 @@ final class RunReconciliationTest extends TestCase {
 		$this->create_running_run();
 		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
 		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+
+		$this->run_maintenance();
+
+		$this->assert_crashed_run_terminalized();
+	}
+
+	/**
+	 * A stale executing run is crash-reclaimed from its own heartbeat when its lock is malformed.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_terminalizes_a_stale_executing_run_behind_a_malformed_lock(): void {
+		$this->create_running_run();
+		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
+		$this->wpdb->put( $this->lock_option_name(), 'malformed-overlap-lock' );
+		$this->clock->timestamp = self::NOW + 901;
+
+		$this->run_maintenance();
+
+		$this->assert_crashed_run_terminalized();
+		$record = $this->log_record(
+			'warning',
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+			)
+		);
+		self::assertNotNull( $record );
+		self::assertSame( 'Reclaimed running run whose execution-overlap lock was stale or missing, or whose run-row heartbeat was stale behind a malformed lock.', $record['message'] );
+	}
+
+	/**
+	 * A malformed lock remains authoritative while its executing run heartbeat is still fresh.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_preserves_a_fresh_executing_run_behind_a_malformed_lock(): void {
+		$this->create_running_run();
+		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
+		$this->wpdb->put( $this->lock_option_name(), 'malformed-overlap-lock' );
+		$this->clock->timestamp = self::NOW + 900;
+
+		$run_raw = $this->wpdb->rows[ $this->run_option_name() ] ?? null;
+		self::assertIsString( $run_raw );
+
+		$this->run_maintenance();
+
+		self::assertSame( $run_raw, $this->wpdb->rows[ $this->run_option_name() ] ?? null );
+		self::assertSame( 'malformed-overlap-lock', $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+		self::assertSame( array(), $this->fired_actions() );
+	}
+
+	/**
+	 * A fresh valid owned lock remains authoritative for its executing run.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale Maintenance must not crash-fail the ordinary executing state while its valid owned lock remains fresh.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_preserves_a_fresh_executing_run_with_a_valid_owned_lock(): void {
+		$this->create_running_run();
+		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
+
+		$run_raw  = $this->wpdb->rows[ $this->run_option_name() ] ?? null;
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $run_raw );
+		self::assertIsString( $lock_raw );
+
+		$this->run_maintenance();
+
+		self::assertSame( $run_raw, $this->wpdb->rows[ $this->run_option_name() ] ?? null );
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
+		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
+		self::assertSame( array(), $this->fired_actions() );
+	}
+
+	/**
+	 * A stale non-executing run behind a malformed lock follows the crash-failure terminal path.
+	 *
+	 * @return  void
+	 */
+	public function test_sweep_terminalizes_a_stale_non_executing_run_behind_a_malformed_lock(): void {
+		$this->store_running_state(
+			self::IDENTITY,
+			new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: self::ARGS, args_hash: self::ARGS_HASH, kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW )
+		);
+		$this->wpdb->put( $this->lock_option_name(), 'malformed-overlap-lock' );
+		$this->clock->timestamp = self::NOW + 901;
 
 		$this->run_maintenance();
 
@@ -1189,9 +1279,16 @@ final class RunReconciliationTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_leaves_a_running_run_untouched_when_lock_read_fails(): void {
+	public function test_sweep_leaves_a_stale_executing_run_untouched_when_lock_read_fails(): void {
 		$this->create_running_run();
-		unset( $this->wpdb->rows[ $this->lock_option_name() ] );
+		$this->set_run_fields( self::IDENTITY, array( 'executing' => true ) );
+		$this->clock->timestamp = self::NOW + 901;
+
+		$run_raw  = $this->wpdb->rows[ $this->run_option_name() ] ?? null;
+		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
+		self::assertIsString( $run_raw );
+		self::assertIsString( $lock_raw );
+		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
 			'select',
@@ -1202,15 +1299,11 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertArrayHasKey( $this->run_option_name(), $this->options() );
+		self::assertSame( $run_raw, $this->wpdb->rows[ $this->run_option_name() ] ?? null );
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
-		self::assertCount( 1, $this->logger->records );
-		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'run-reconciliation', $this->logger->records[0]['context']['phase'] ?? null );
-		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
-		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
-		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
-		self::assertSame( 'storage_failed', $this->logger->records[0]['context']['error_reason'] ?? null );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame( array(), $this->logger->records );
 	}
 
 	/**
@@ -1586,11 +1679,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * A schema-invalid lock row is preserved with a redacted operator diagnostic.
+	 * A schema-invalid lock row without a Running run is reclaimed with a redacted diagnostic.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_preserves_and_diagnoses_a_schema_invalid_lock_row(): void {
+	public function test_sweep_reclaims_and_diagnoses_a_schema_invalid_lock_row(): void {
 		$corrupt_name = self::identity( 'corrupt-job' );
 		$lock_name    = OverlapGuard::OPTION_PREFIX . $corrupt_name . '_' . \str_repeat( 'b', 64 );
 		$raw          = 'not-serialized';
@@ -1598,9 +1691,9 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( $raw, $this->wpdb->rows[ $lock_name ] ?? null );
+		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
-		self::assertSame( 'Preserved schema-invalid execution-overlap lock during maintenance sweep; inspect and repair it with WP-CLI.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame( 'Reclaimed schema-invalid execution-overlap lock during maintenance sweep because no Running run occupies its lane.', $this->logger->records[0]['message'] ?? null );
 		self::assertSame( $corrupt_name, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( \str_repeat( 'b', 64 ), $this->logger->records[0]['context']['args_hash'] ?? null );
 		self::assertTrue( $this->logger->records[0]['context']['malformed'] ?? null );
@@ -1610,11 +1703,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Multiple schema-invalid lock rows are preserved and diagnosed independently.
+	 * Multiple schema-invalid lock rows without Running runs are reclaimed and diagnosed independently.
 	 *
 	 * @return  void
 	 */
-	public function test_sweep_preserves_and_diagnoses_multiple_schema_invalid_lock_rows(): void {
+	public function test_sweep_reclaims_and_diagnoses_multiple_schema_invalid_lock_rows(): void {
 		$first_name = self::identity( 'broken-lock' );
 		$first_hash = \str_repeat( 'b', 64 );
 		$first_key  = OverlapGuard::OPTION_PREFIX . $first_name . '_' . $first_hash;
@@ -1629,8 +1722,8 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( $first_raw, $this->wpdb->rows[ $first_key ] ?? null );
-		self::assertSame( $second_raw, $this->wpdb->rows[ $second_key ] ?? null );
+		self::assertArrayNotHasKey( $first_key, $this->wpdb->rows );
+		self::assertArrayNotHasKey( $second_key, $this->wpdb->rows );
 		self::assertCount( 2, $this->logger->records );
 		self::assertSame( array( $first_name, $second_name ), \array_column( \array_column( $this->logger->records, 'context' ), 'identity' ) );
 	}

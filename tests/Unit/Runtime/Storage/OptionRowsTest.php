@@ -410,6 +410,37 @@ final class OptionRowsTest extends TestCase {
 	}
 
 	/**
+	 * Multi-row reads reject case and PAD SPACE variants returned by option-name collation.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The IN predicate has no binary comparison, so its result must be reduced to the byte-exact requested names before maintenance consumes it.
+	 *
+	 * @return  void
+	 */
+	public function test_read_many_keeps_only_byte_exact_requested_names(): void {
+		$wpdb                     = new WpdbLockSpy();
+		$wpdb->option_row_results = array(
+			(object) array(
+				'option_name'  => self::KEY,
+				'option_value' => 'exact',
+			),
+			(object) array(
+				'option_name'  => \strtoupper( self::KEY ),
+				'option_value' => 'case-variant',
+			),
+			(object) array(
+				'option_name'  => self::KEY . ' ',
+				'option_value' => 'space-variant',
+			),
+		);
+
+		$result = ( new OptionRows( $wpdb ) )->read_many( array( self::KEY ) );
+
+		self::assertFalse( $result->is_failure() );
+		self::assertSame( array( self::KEY => 'exact' ), $result->value );
+	}
+
+	/**
 	 * A multi-row read reports a silent Core query failure rather than an empty selection.
 	 *
 	 * @param   'not_ready'|'query_filtered'|'reconnect_failed' $leg Core query failure leg.

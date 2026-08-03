@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockInspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -102,7 +103,7 @@ final class EngineComponentTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The root is always needed and publishes all three retained facades.
+	 * The root is always needed and publishes every retained service.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -117,6 +118,7 @@ final class EngineComponentTest extends TestCase {
 
 		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
 		self::assertInstanceOf( Inspection::class, Component::get_inspection() );
+		self::assertInstanceOf( LockInspection::class, Component::get_lock_inspection() );
 		self::assertNotNull( Component::get_scheduler() );
 	}
 

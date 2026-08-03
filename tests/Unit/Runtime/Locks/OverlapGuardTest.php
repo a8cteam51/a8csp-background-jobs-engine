@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\RedeliveryFenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
@@ -51,6 +52,7 @@ final class LockRowWakeupProbe {
  *
  */
 #[CoversClass( OverlapGuard::class )]
+#[CoversClass( MaintenanceFenceOutcome::class )]
 #[UsesClass( LockClaimOutcome::class )]
 #[UsesClass( LockClaimResult::class )]
 #[UsesClass( LockTransferOutcome::class )]
@@ -58,6 +60,7 @@ final class LockRowWakeupProbe {
 #[UsesClass( RedeliveryFenceOutcome::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
+#[UsesClass( RowDeleteOutcome::class )]
 final class OverlapGuardTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -700,6 +703,50 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
+	/** A malformed row is exact-deleted through the maintenance reclaim boundary. */
+	public function test_reclaim_malformed_lock_exact_deletes_the_selected_row(): void {
+		$raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $raw );
+
+		$reclaimed = $this->guard_at( 1_000 )->reclaim_malformed_lock( $this->identity, self::ARGS_HASH, $raw );
+
+		self::assertSame( RowDeleteOutcome::Deleted, $reclaimed );
+		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
+		self::assertSame( array( 'delete' ), $this->operations() );
+	}
+
+	/** Exact malformed-row reclamation cannot delete a concurrent replacement. */
+	public function test_reclaim_malformed_lock_loses_to_a_concurrent_replacement(): void {
+		$raw         = 'not-a-lock-row';
+		$replacement = self::fixture_lock_raw( 'run-winner', 1_000, 1_000 );
+		$this->wpdb->put( self::KEY, $raw );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( $replacement ): void {
+				$wpdb->put( self::KEY, $replacement );
+			}
+		);
+
+		$reclaimed = $this->guard_at( 1_000 )->reclaim_malformed_lock( $this->identity, self::ARGS_HASH, $raw );
+
+		self::assertSame( RowDeleteOutcome::ValueMismatch, $reclaimed );
+		self::assertSame( $replacement, $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertSame( array( 'delete' ), $this->operations() );
+	}
+
+	/** A failed malformed-row delete remains distinguishable from a concurrent replacement. */
+	public function test_reclaim_malformed_lock_reports_a_delete_failure(): void {
+		$raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $raw );
+		$this->wpdb->script_result( 'delete', false );
+
+		$reclaimed = $this->guard_at( 1_000 )->reclaim_malformed_lock( $this->identity, self::ARGS_HASH, $raw );
+
+		self::assertSame( RowDeleteOutcome::DeleteFailed, $reclaimed );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertSame( array( 'delete' ), $this->operations() );
+	}
+
 	/** Inspection returns a normalized healthy lock without writing or reading twice. */
 	public function test_inspection_returns_a_healthy_lock_without_writing(): void {
 		$raw = self::fixture_lock_raw( 'run-owner', 900, 950 );
@@ -728,6 +775,18 @@ final class OverlapGuardTest extends TestCase {
 
 		unset( $this->wpdb->rows[ self::KEY ], $this->wpdb->autoload[ self::KEY ] );
 		self::assertSame( MaintenanceFenceOutcome::Abandoned, $guard->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
+	}
+
+	/** Both maintenance fences distinguish a persisted malformed row from a failed read. */
+	public function test_maintenance_fences_report_malformed_for_an_unparseable_row(): void {
+		$raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $raw );
+		$guard = $this->guard_at( 1_000 );
+
+		self::assertSame( MaintenanceFenceOutcome::Malformed, $guard->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
+		self::assertSame( MaintenanceFenceOutcome::Malformed, $guard->classify_run_fence( $this->identity, self::ARGS_HASH, 'run-owner' ) );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertSame( array( 'select', 'select' ), $this->operations() );
 	}
 
 	/** A redelivery fence classifies a stale owner without deleting its exact-generation heartbeat. */
@@ -864,6 +923,14 @@ final class OverlapGuardTest extends TestCase {
 		);
 
 		self::assertSame( MaintenanceFenceOutcome::Indeterminate, $this->guard_at( 1_000 )->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
+
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient read failure';
+			}
+		);
+		self::assertSame( MaintenanceFenceOutcome::Indeterminate, $this->guard_at( 1_000 )->classify_run_fence( $this->identity, self::ARGS_HASH, 'run-owner' ) );
 	}
 
 	/** A stale-delete CAS loss leaves maintenance unable to claim the crash decision. */

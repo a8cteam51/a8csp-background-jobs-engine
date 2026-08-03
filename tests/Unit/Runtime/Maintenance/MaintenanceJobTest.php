@@ -53,6 +53,7 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunContext::class )]
 #[UsesClass( RunReconciliation::class )]
 #[UsesClass( RunHistory::class )]
+#[UsesClass( RunStore::class )]
 #[UsesClass( RunTransitions::class )]
 #[UsesClass( ScheduleRegistry::class )]
 #[UsesClass( StoreFactory::class )]
@@ -150,7 +151,7 @@ final class MaintenanceJobTest extends TestCase {
 		);
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows, $this->logger ), $scheduler, $rows, $clock, $this->logger );
-		$this->maintenance    = new MaintenanceJob( $rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
+		$this->maintenance    = new MaintenanceJob( $rows, $reconciliation, $guard, $stores, $cleanup_intents, $this->logger );
 		$this->run_context    = new RunContext( RunId::from( self::RUN_ID ), array() );
 	}
 
@@ -242,26 +243,234 @@ final class MaintenanceJobTest extends TestCase {
 	}
 
 	/**
-	 * A lock row the parser rejects is preserved and reported with redacted correlation.
-	 *
-	 * The sweep can delete a lock it can read, so the one it cannot read is the one an operator has to
-	 * be told about, and the bytes are summarised rather than logged.
+	 * A malformed lock without a Running run is reclaimed and reported with redacted correlation.
 	 *
 	 * @return  void
 	 */
-	public function test_malformed_lock_row_is_preserved_and_reported(): void {
+	public function test_malformed_lock_without_a_running_run_is_reclaimed_and_reported(): void {
 		$lock_name = self::lock_name( 0 );
 		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
+		$warnings = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => true === ( $record['context']['malformed'] ?? null ) ) );
+		self::assertCount( 1, $warnings );
+		self::assertSame( 'Reclaimed schema-invalid execution-overlap lock during maintenance sweep because no Running run occupies its lane.', $warnings[0]['message'] ?? null );
+		self::assertSame( 'malformed-lock-reclamation', $warnings[0]['context']['phase'] ?? null );
+		self::assertSame( 22, $warnings[0]['context']['raw_length'] ?? null );
+		// The digest is truncated where it is built, so the log carries a correlator rather than anything that could reconstruct the row.
+		self::assertSame( \substr( \hash( 'sha256', 'malformed-overlap-lock' ), 0, 16 ), $warnings[0]['context']['raw_sha256'] ?? null );
+	}
+
+	/**
+	 * A malformed lock remains authoritative while a Running run occupies the same lane.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_lock_with_a_running_run_is_preserved_and_reported(): void {
+		$lock_name = self::lock_name( 0 );
+		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+		[ $run_name, $run_raw ] = StoreFixtureBuilder::for_identity( 'sweep-tests:lock-000' )->run(
+			self::RUN_ID,
+			new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: self::ARGS_HASH, kind_state: array(), failed_attempts: 0, action_sequence: 0, created_at: self::NOW, heartbeat_at: self::NOW )
+		);
+		$this->wpdb->put( $run_name, $run_raw );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( 'malformed-overlap-lock', $this->wpdb->rows[ $lock_name ] ?? null );
+		self::assertSame( $run_raw, $this->wpdb->rows[ $run_name ] ?? null );
+		$warnings = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => true === ( $record['context']['malformed'] ?? null ) ) );
+		self::assertCount( 1, $warnings );
+		self::assertSame( 'Preserved schema-invalid execution-overlap lock during maintenance sweep because a Running run occupies its lane.', $warnings[0]['message'] ?? null );
+		self::assertSame( 'malformed-lock-run-inspection', $warnings[0]['context']['phase'] ?? null );
+		self::assertSame( 22, $warnings[0]['context']['raw_length'] ?? null );
+		self::assertSame( \substr( \hash( 'sha256', 'malformed-overlap-lock' ), 0, 16 ), $warnings[0]['context']['raw_sha256'] ?? null );
+	}
+
+	/**
+	 * A Running row protects only the malformed lock lane with the same arguments hash.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale A Running row may protect only its exact arguments lane; otherwise one Allow-policy run blocks malformed-lock reclamation for every sibling lane.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_lock_is_reclaimed_when_only_a_different_lane_has_a_running_run(): void {
+		$identity       = 'sweep-tests:lock-000';
+		$different_hash = \str_repeat( 'f', 64 );
+		$lock_name      = self::lock_name( 0 );
+		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+		[ $run_name, $run_raw ] = StoreFixtureBuilder::for_identity( $identity )->run(
+			self::RUN_ID,
+			new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: $different_hash, kind_state: array(), failed_attempts: 0, action_sequence: 0, created_at: self::NOW, heartbeat_at: self::NOW )
+		);
+		$this->wpdb->put( $run_name, $run_raw );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
+		self::assertSame( $run_raw, $this->wpdb->rows[ $run_name ] ?? null );
+	}
+
+	/**
+	 * An unreadable active-run row preserves malformed lanes until a complete run pass removes it.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_lock_is_preserved_when_an_identity_run_cannot_be_hydrated(): void {
+		$identity  = 'sweep-tests:lock-000';
+		$lock_name = self::lock_name( 0 );
+		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+		[ $run_name, $run_raw ] = StoreFixtureBuilder::for_identity( $identity )->run(
+			self::RUN_ID,
+			new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: self::ARGS_HASH, kind_state: array(), failed_attempts: 0, action_sequence: 0, created_at: self::NOW, heartbeat_at: self::NOW )
+		);
+
+		$state = RawOptionDecoder::decode( $run_raw );
+		self::assertIsArray( $state );
+		unset( $state['kind'] );
+		$corrupt_raw = \maybe_serialize( $state );
+		self::assertIsString( $corrupt_raw );
+		$this->wpdb->put( $run_name, $corrupt_raw );
+		$this->wpdb->put( $this->cursor_option, self::cursor_bytes( $run_name, null, null ) );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( 'malformed-overlap-lock', $this->wpdb->rows[ $lock_name ] ?? null );
+		self::assertSame( $corrupt_raw, $this->wpdb->rows[ $run_name ] ?? null );
+		$warnings = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => true === ( $record['context']['malformed'] ?? null ) ) );
+		self::assertCount( 1, $warnings );
+		self::assertSame( 'Preserved schema-invalid execution-overlap lock during maintenance sweep because an active-run row for its identity is unreadable.', $warnings[0]['message'] ?? null );
+		self::assertSame( 'malformed-lock-run-inspection', $warnings[0]['context']['phase'] ?? null );
+	}
+
+	/**
+	 * A terminal row does not depend on a malformed execution-overlap lock.
+	 *
+	 * @return  void
+	 */
+	public function test_terminal_run_does_not_preserve_a_malformed_lock(): void {
+		$identity  = 'sweep-tests:lock-000';
+		$lock_name = self::lock_name( 0 );
+		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+		[ $run_name, $run_raw ] = StoreFixtureBuilder::for_identity( $identity )->run(
+			self::RUN_ID,
+			new RunState( status: RunStatus::Superseded, kind: 'job', executing: false, start_args: array(), args_hash: self::ARGS_HASH, kind_state: array(), failed_attempts: 0, action_sequence: 0, created_at: self::NOW, heartbeat_at: self::NOW )
+		);
+		$this->wpdb->put( $run_name, $run_raw );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertArrayNotHasKey( $lock_name, $this->wpdb->rows );
+		self::assertSame( $run_raw, $this->wpdb->rows[ $run_name ] ?? null );
+	}
+
+	/**
+	 * Exact malformed-lock deletion loses to a concurrent replacement generation.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_lock_reclaim_preserves_a_concurrent_replacement(): void {
+		$lock_name = self::lock_name( 0 );
+		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+		[ $replacement_name, $replacement ] = StoreFixtureBuilder::for_identity( 'sweep-tests:lock-000' )->lock( self::ARGS_HASH, self::RUN_ID, self::NOW, self::NOW );
+		self::assertSame( $lock_name, $replacement_name );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( $lock_name, $replacement ): void {
+				$wpdb->put( $lock_name, $replacement );
+			}
+		);
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( $replacement, $this->wpdb->rows[ $lock_name ] ?? null );
+		self::assertSame( array(), $this->logger->records );
+	}
+
+	/**
+	 * A failed malformed-lock delete remains visible while the inspected generation survives.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_lock_delete_failure_is_logged_and_preserved(): void {
+		$lock_name = self::lock_name( 0 );
+		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+		$this->wpdb->script_result( 'delete', false );
 
 		$this->maintenance->handle( array(), $this->run_context );
 
 		self::assertSame( 'malformed-overlap-lock', $this->wpdb->rows[ $lock_name ] ?? null );
 		$warnings = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => true === ( $record['context']['malformed'] ?? null ) ) );
 		self::assertCount( 1, $warnings );
-		self::assertSame( 'Preserved schema-invalid execution-overlap lock during maintenance sweep; inspect and repair it with WP-CLI.', $warnings[0]['message'] ?? null );
+		self::assertSame( 'Could not reclaim schema-invalid execution-overlap lock during maintenance sweep because the exact option-row delete failed; repair WordPress option writes and retry the sweep.', $warnings[0]['message'] ?? null );
+		self::assertSame( 'sweep-tests:lock-000', $warnings[0]['context']['identity'] ?? null );
+		self::assertSame( self::ARGS_HASH, $warnings[0]['context']['args_hash'] ?? null );
+		self::assertTrue( $warnings[0]['context']['malformed'] ?? false );
+		self::assertSame( 'malformed-lock-reclamation', $warnings[0]['context']['phase'] ?? null );
 		self::assertSame( 22, $warnings[0]['context']['raw_length'] ?? null );
-		// The digest is truncated where it is built, so the log carries a correlator rather than anything that could reconstruct the row.
 		self::assertSame( \substr( \hash( 'sha256', 'malformed-overlap-lock' ), 0, 16 ), $warnings[0]['context']['raw_sha256'] ?? null );
+	}
+
+	/**
+	 * Active-run inspection is reused for every malformed lane under one identity.
+	 *
+	 * @load-bearing performance
+	 * @pin-rationale A malformed-lock sweep must compute one identity's bounded compact liveness projection once, regardless of how many sibling lanes require classification.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_run_inspection_is_memoized_per_identity(): void {
+		$identity    = 'sweep-tests:memoized';
+		$first_lock  = OverlapGuard::OPTION_PREFIX . $identity . '_' . \str_repeat( 'a', 64 );
+		$second_lock = OverlapGuard::OPTION_PREFIX . $identity . '_' . \str_repeat( 'b', 64 );
+		$this->wpdb->put( $first_lock, 'first-malformed-lock' );
+		$this->wpdb->put( $second_lock, 'second-malformed-lock' );
+		[ $run_name, $run_raw ] = StoreFixtureBuilder::for_identity( $identity )->run(
+			self::RUN_ID,
+			new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: \str_repeat( 'a', 64 ), kind_state: array(), failed_attempts: 0, action_sequence: 0, created_at: self::NOW, heartbeat_at: self::NOW )
+		);
+		$this->wpdb->put( $run_name, $run_raw );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( 'first-malformed-lock', $this->wpdb->rows[ $first_lock ] ?? null );
+		self::assertArrayNotHasKey( $second_lock, $this->wpdb->rows );
+		$unbounded_scans = \array_values(
+			\array_filter(
+				$this->wpdb->recorded_queries,
+				static fn ( string $query ): bool => \str_starts_with( $query, 'SELECT `option_name` FROM ' ) && ! \str_contains( $query, ' LIMIT ' )
+			)
+		);
+		self::assertCount( 1, $unbounded_scans );
+		$batch_reads = \array_values( \array_filter( $this->wpdb->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'SELECT `option_name`, `option_value` FROM ' ) ) );
+		self::assertCount( 1, $batch_reads );
+	}
+
+	/**
+	 * A failed active-run inspection preserves the malformed lane and exposes the decisive phase.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_lock_run_inspection_failure_is_logged_and_preserved(): void {
+		$lock_name = self::lock_name( 0 );
+		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+		$this->wpdb->fail_scans_targeting( 'sweep-tests:lock-000' );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( 'malformed-overlap-lock', $this->wpdb->rows[ $lock_name ] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Preserved schema-invalid execution-overlap lock during maintenance sweep because active-run inspection failed; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame( 'sweep-tests:lock-000', $this->logger->records[0]['context']['identity'] ?? null );
+		self::assertSame( self::ARGS_HASH, $this->logger->records[0]['context']['args_hash'] ?? null );
+		self::assertTrue( $this->logger->records[0]['context']['malformed'] ?? false );
+		self::assertSame( 'malformed-lock-run-inspection', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertSame( EngineError::class, $this->logger->records[0]['context']['error_class'] ?? null );
+		self::assertSame( EngineErrorReason::StorageFailure->value, $this->logger->records[0]['context']['error_reason'] ?? null );
 	}
 
 	/**

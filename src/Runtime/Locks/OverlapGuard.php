@@ -272,6 +272,24 @@ final readonly class OverlapGuard {
 	}
 
 	/**
+	 * Reclaims a malformed lock only while its exact inspected row is unchanged.
+	 *
+	 * @internal Engine maintenance only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity     Complete scope-qualified job or chunked job identity.
+	 * @param   string   $args_hash    Stable single-flight identity.
+	 * @param   string   $expected_raw Exact inspected malformed row value.
+	 *
+	 * @return  RowDeleteOutcome Exact malformed-row delete classification.
+	 */
+	public function reclaim_malformed_lock( Identity $identity, string $args_hash, string $expected_raw ): RowDeleteOutcome {
+		return $this->rows->delete_if_value_matches( $this->option_name( $identity, $args_hash ), $expected_raw );
+	}
+
+	/**
 	 * Parses a canonical work identity and argument hash from one overlap-lock option name.
 	 *
 	 * @internal Engine maintenance only.
@@ -384,7 +402,7 @@ final readonly class OverlapGuard {
 
 		$lock = $snapshot['lock'];
 		if ( null === $lock ) {
-			return MaintenanceFenceOutcome::Indeterminate;
+			return MaintenanceFenceOutcome::Malformed;
 		}
 
 		if ( $run_id !== $lock['run_id'] ) {
@@ -427,7 +445,7 @@ final readonly class OverlapGuard {
 
 		$lock = $snapshot['lock'];
 		if ( null === $lock ) {
-			return MaintenanceFenceOutcome::Indeterminate;
+			return MaintenanceFenceOutcome::Malformed;
 		}
 
 		return $run_id === $lock['run_id']

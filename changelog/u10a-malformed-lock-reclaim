@@ -1,0 +1,6 @@
+Significance: patch
+Type: changed
+
+Maintenance reads active-run values in bounded batches and exact-deletes a schema-invalid execution-overlap lock when no matching run is in Running state, while preserving the inspected lock when a matching Running run still depends on it or active-run inspection cannot safely classify the identity. A stale executing run, or a stale non-executing run with no pending action, is crash-reclaimed automatically from its run-row heartbeat behind a malformed lock; the subsequent lock phase reclaims the orphaned lock. While a non-executing row is fresh and preserved, `wp a8csp-bgje runs cancel` resolves it only when the identity has a live executable registration matching the persisted kind; otherwise cancellation returns `unknown_job`. Maintenance can still crash-reclaim the engine-installed `job` and `chunked_job` kinds after their heartbeat becomes stale without that consumer registration. Malformed-lock diagnostics expose only redacted raw-value correlation: a changed or absent generation loses the exact-delete fence silently, while an option-delete failure warns the operator.
+
+The documented manual lock-repair command has been removed. Operators who previously used it should expect the scheduled maintenance sweep to reclaim orphaned malformed lanes automatically; `wp a8csp-bgje locks list` remains available for diagnosis.

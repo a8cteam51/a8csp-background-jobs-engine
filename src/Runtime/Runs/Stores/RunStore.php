@@ -80,6 +80,16 @@ final readonly class RunStore {
 	public const int MAX_ROW_BYTES = 1_000_000;
 
 	/**
+	 * Maximum active-run values hydrated by one maintenance liveness query.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int LANE_LIVENESS_READ_BATCH_SIZE = 10;
+
+	/**
 	 * Bytes reserved for variable active-run fields outside the kind-owned state.
 	 *
 	 * Twice `Runtime\ScopeOperations::MAX_ARGUMENTS_BYTES` budgets the JSON-bounded start arguments,
@@ -207,46 +217,65 @@ final readonly class RunStore {
 	}
 
 	/**
-	 * Returns every canonical active-run snapshot for the bound identity.
+	 * Returns compact active-run lane liveness for the bound identity.
 	 *
-	 * @internal Explicit lock repair only.
+	 * @internal Malformed-lock maintenance only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  AbstractResult<list<array{run_id: string, raw: string, state: RunState|null}>, EngineError>
+	 * @return  AbstractResult<array{unreadable: bool, running_lanes: array<string, true>}, EngineError>
 	 */
-	#[\NoDiscard( 'an exhaustive run-state read outcome must be handled, not dropped' )]
-	public function inspect_all(): AbstractResult {
+	#[\NoDiscard( 'a run-liveness read outcome must be handled, not dropped' )]
+	public function inspect_lane_liveness(): AbstractResult {
 		$names = $this->rows->option_names( RunIdentity::raw_option_name_prefix( $this->identity ) );
 		if ( $names->is_failure() ) {
 			return $names;
 		}
 
-		$snapshots = array();
-		foreach ( $names->value as $option_name ) {
-			$run_identity = RunIdentity::from_option_name( $option_name );
-			if ( null === $run_identity || $this->identity !== (string) $run_identity['identity'] ) {
-				continue;
-			}
-
-			$run_id    = $run_identity['run_id'];
-			$inspected = $this->inspect( $run_id );
-			if ( $inspected->is_failure() ) {
-				return $inspected;
-			}
-			if ( null === $inspected->value ) {
-				continue;
-			}
-
-			$snapshots[] = array(
-				'run_id' => $run_id,
-				'raw'    => $inspected->value['raw'],
-				'state'  => $inspected->value['state'],
+		$unreadable    = false;
+		$running_lanes = array();
+		$name_count    = \count( $names->value );
+		for ( $offset = 0; $offset < $name_count; $offset += self::LANE_LIVENESS_READ_BATCH_SIZE ) {
+			$selected = $this->rows->read_many(
+				\array_slice( $names->value, $offset, self::LANE_LIVENESS_READ_BATCH_SIZE )
 			);
+			if ( $selected->is_failure() ) {
+				return $selected;
+			}
+
+			foreach ( $selected->value as $option_name => $raw ) {
+				$run_identity = RunIdentity::from_option_name( $option_name );
+				if ( null === $run_identity || $this->identity !== (string) $run_identity['identity'] ) {
+					continue;
+				}
+
+				$state = self::from_option( RawOptionDecoder::decode( $raw ) );
+				if ( null === $state ) {
+					$unreadable = true;
+					continue;
+				}
+				if (
+					RunStatus::Running === $state->status
+					&& 1 !== \preg_match( '/\A[a-f0-9]{64}\z/D', $state->args_hash )
+				) {
+					$unreadable = true;
+					continue;
+				}
+				if ( RunStatus::Running === $state->status ) {
+					$running_lanes[ $state->args_hash ] = true;
+				}
+			}
+			// Release the completed payload batch before the next authoritative query materializes its successor.
+			unset( $selected, $state, $raw );
 		}
 
-		return new Success( $snapshots );
+		return new Success(
+			array(
+				'unreadable'    => $unreadable,
+				'running_lanes' => $running_lanes,
+			)
+		);
 	}
 
 	/**
@@ -716,6 +745,7 @@ final readonly class RunStore {
 			|| ! PortableArguments::is_valid( $value['kind_state'] )
 			|| ! \is_int( $value['failed_attempts'] ?? null )
 			|| ! \is_int( $value['action_sequence'] ?? null )
+			|| 0 > $value['action_sequence']
 			|| ! \is_int( $value['created_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 			|| (

@@ -20,6 +20,9 @@ final class WpdbLockSpy extends \wpdb {
 	/** @var list<mixed>|null Scripted option-name scan result. */
 	public ?array $option_name_results = null;
 
+	/** @var list<\stdClass>|null Scripted option-row read result. */
+	public ?array $option_row_results = null;
+
 	/** @var array<\stdClass>|null Core-shaped result buffer. */
 	public $last_result = array();
 
@@ -34,6 +37,9 @@ final class WpdbLockSpy extends \wpdb {
 
 	/** @var list<string> Option-name fragments whose updates always report zero affected rows. */
 	private array $failing_update_keys = array();
+
+	/** @var list<string> Prepared-argument fragments whose option-name scans fail. */
+	private array $failing_scan_needles = array();
 
 	/** @var 'not_ready'|'query_filtered'|'reconnect_failed'|null Next Core query failure leg. */
 	private ?string $next_read_failure_leg = null;
@@ -101,6 +107,17 @@ final class WpdbLockSpy extends \wpdb {
 	 */
 	public function fail_updates_targeting( string $needle ): void {
 		$this->failing_update_keys[] = $needle;
+	}
+
+	/**
+	 * Makes option-name scans with a matching prepared argument report a database error.
+	 *
+	 * @param   string $needle Prepared-argument fragment whose scan must fail.
+	 *
+	 * @return  void
+	 */
+	public function fail_scans_targeting( string $needle ): void {
+		$this->failing_scan_needles[] = $needle;
 	}
 
 	/**
@@ -314,6 +331,11 @@ final class WpdbLockSpy extends \wpdb {
 		if ( 'reconnect_failed' === $failure_leg ) {
 			return false;
 		}
+		if ( 'scan' === $operation && $this->targets_failing_scan( $statement['args'] ) ) {
+			$this->last_error = 'scripted targeted option-name scan failure';
+
+			return false;
+		}
 
 		$this->run_before( $operation );
 		if ( '' !== $this->last_error ) {
@@ -338,6 +360,10 @@ final class WpdbLockSpy extends \wpdb {
 	 * @return  list<\stdClass>
 	 */
 	private function selected_rows( array $statement ): array {
+		if ( null !== $this->option_row_results ) {
+			return $this->option_row_results;
+		}
+
 		$args = self::without_table( $statement['args'] );
 		$rows = array();
 		foreach ( $args as $key ) {
@@ -578,6 +604,22 @@ final class WpdbLockSpy extends \wpdb {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Reports whether an option-name scan carries an argument armed to fail.
+	 *
+	 * @phpstan-param list<mixed> $args
+	 *
+	 * @param   array $args Prepared statement arguments including the table.
+	 *
+	 * @return  bool
+	 */
+	private function targets_failing_scan( array $args ): bool {
+		return \array_any(
+			$this->failing_scan_needles,
+			static fn ( string $needle ): bool => \array_any( $args, static fn ( mixed $arg ): bool => \is_string( $arg ) && \str_contains( $arg, $needle ) )
+		);
 	}
 
 	/**
