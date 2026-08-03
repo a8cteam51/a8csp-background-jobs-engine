@@ -242,6 +242,29 @@ final class MaintenanceJobTest extends TestCase {
 	}
 
 	/**
+	 * A lock row the parser rejects is preserved and reported with redacted correlation.
+	 *
+	 * The sweep can delete a lock it can read, so the one it cannot read is the one an operator has to
+	 * be told about, and the bytes are summarised rather than logged.
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_lock_row_is_preserved_and_reported(): void {
+		$lock_name = self::lock_name( 0 );
+		$this->wpdb->put( $lock_name, 'malformed-overlap-lock' );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( 'malformed-overlap-lock', $this->wpdb->rows[ $lock_name ] ?? null );
+		$warnings = \array_values( \array_filter( $this->logger->records, static fn ( array $record ): bool => true === ( $record['context']['malformed'] ?? null ) ) );
+		self::assertCount( 1, $warnings );
+		self::assertSame( 'Preserved schema-invalid execution-overlap lock during maintenance sweep; inspect and repair it with WP-CLI.', $warnings[0]['message'] ?? null );
+		self::assertSame( 22, $warnings[0]['context']['raw_length'] ?? null );
+		// The digest is truncated where it is built, so the log carries a correlator rather than anything that could reconstruct the row.
+		self::assertSame( \substr( \hash( 'sha256', 'malformed-overlap-lock' ), 0, 16 ), $warnings[0]['context']['raw_sha256'] ?? null );
+	}
+
+	/**
 	 * An unreadable schedule-registry row is reclaimed with its exact option name.
 	 *
 	 * @return  void

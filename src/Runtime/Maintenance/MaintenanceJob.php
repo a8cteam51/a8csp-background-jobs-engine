@@ -252,21 +252,20 @@ final class MaintenanceJob implements JobExecutionInterface {
 
 				$run_id = null;
 				try {
-					$sweep  = $this->guard->sweep_persisted_lock( $identity, $args_hash );
-					$run_id = $sweep->run_id;
-					if ( $sweep->malformed_preserved ) {
+					$inspected = $this->guard->inspect_persisted_lock( $identity, $args_hash );
+					$snapshot  = $inspected->is_success() ? $inspected->value : null;
+					$run_id    = $snapshot['lock']['run_id'] ?? null;
+					if ( null !== $snapshot && null === $run_id ) {
 						$this->logger->warning(
 							'Preserved schema-invalid execution-overlap lock during maintenance sweep; inspect and repair it with WP-CLI.',
 							array(
-								'identity'   => (string) $identity,
-								'args_hash'  => $args_hash,
-								'malformed'  => true,
-								'raw_length' => $sweep->raw_length,
-								'raw_sha256' => $sweep->raw_sha256,
+								'identity'  => (string) $identity,
+								'args_hash' => $args_hash,
+								'malformed' => true,
+								...OverlapGuard::raw_correlation( $snapshot['raw'] ),
 							)
 						);
 					}
-
 					if ( null === $run_id ) {
 						continue;
 					}

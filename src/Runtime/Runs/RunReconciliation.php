@@ -317,7 +317,7 @@ final readonly class RunReconciliation {
 				return new Success( null );
 			}
 
-			$redelivery_fence = $this->overlap_guard->prepare_run_redelivery_fence( $identity, $state->args_hash, $run_id, $state->created_at, $state->heartbeat_at, $staleness );
+			$redelivery_fence = $this->overlap_guard->prepare_run_redelivery_fence( $identity, $state->args_hash, $run_id, $state->heartbeat_at, $staleness );
 			if (
 				RedeliveryFenceOutcome::Live === $redelivery_fence
 				|| RedeliveryFenceOutcome::Indeterminate === $redelivery_fence

@@ -35,7 +35,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
  *     identity: Identity,
  *     args_hash: string,
  *     raw: string,
- *     lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+ *     lock: array{run_id: string, heartbeat_at: int}|null
  * }
  *
  * @since   1.0.0

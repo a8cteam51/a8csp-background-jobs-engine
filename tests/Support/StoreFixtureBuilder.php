@@ -384,21 +384,21 @@ final readonly class StoreFixtureBuilder {
 	 *
 	 * @param   string $args_hash    Stable single-flight identity.
 	 * @param   string $run_id       Lock owner.
-	 * @param   int    $claimed_at   Claim timestamp.
+	 * @param   int    $initial_heartbeat_at   Claim timestamp.
 	 * @param   int    $heartbeat_at Latest liveness timestamp.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function lock( string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at ): array {
+	public function lock( string $args_hash, string $run_id, int $initial_heartbeat_at, int $heartbeat_at ): array {
 		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $args_hash, $run_id, $claimed_at, $heartbeat_at ): array {
-				$clock = new FixedClock( $claimed_at );
+			function ( \wpdb $wpdb ) use ( $args_hash, $run_id, $initial_heartbeat_at, $heartbeat_at ): array {
+				$clock = new FixedClock( $initial_heartbeat_at );
 				$guard = new OverlapGuard( $clock, new RecordingLogger(), new OptionRows( $wpdb ), new LockWindows( $clock, new RecordingLogger() ) );
 				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id )->outcome ) {
 					throw new \LogicException( 'Production OverlapGuard rejected an isolated lock fixture.' );
 				}
 
-				if ( $heartbeat_at !== $claimed_at ) {
+				if ( $heartbeat_at !== $initial_heartbeat_at ) {
 					$clock->timestamp = $heartbeat_at;
 					if ( HeartbeatOutcome::Owned !== $guard->heartbeat( $this->identity, $args_hash, $run_id ) ) {
 						throw new \LogicException( 'Production OverlapGuard could not serialize the requested lock heartbeat.' );

@@ -249,7 +249,7 @@ final readonly class OverlapGuard {
 	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   string   $args_hash Stable single-flight identity.
 	 *
-	 * @return  AbstractResult<array{raw: string, lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null}|null, EngineError>
+	 * @return  AbstractResult<array{raw: string, lock: array{run_id: string, heartbeat_at: int}|null}|null, EngineError>
 	 */
 	#[\NoDiscard( 'a persisted-lock read outcome must be handled, not dropped' )]
 	public function inspect_persisted_lock( Identity $identity, string $args_hash ): AbstractResult {
@@ -269,42 +269,6 @@ final readonly class OverlapGuard {
 				'lock' => self::parse( $raw ),
 			)
 		);
-	}
-
-	/**
-	 * Reads one persisted lock and preserves malformed state for explicit repair.
-	 *
-	 * @internal Engine maintenance only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
-	 * @param   string   $args_hash Stable single-flight identity.
-	 *
-	 * @return  MaintenanceLockSweep Actionable owner or malformed-row diagnostic.
-	 */
-	#[\NoDiscard( 'a persisted-lock maintenance sweep must be handled, not dropped' )]
-	public function sweep_persisted_lock( Identity $identity, string $args_hash ): MaintenanceLockSweep {
-		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
-		if ( $inspected->is_failure() ) {
-			return new MaintenanceLockSweep( null, false, null, null );
-		}
-
-		$snapshot = $inspected->value;
-		if ( null === $snapshot ) {
-			return new MaintenanceLockSweep( null, false, null, null );
-		}
-
-		$lock = $snapshot['lock'];
-		if ( null === $lock ) {
-			$raw         = $snapshot['raw'];
-			$correlation = self::raw_correlation( $raw );
-
-			return new MaintenanceLockSweep( null, true, $correlation['raw_length'], $correlation['raw_sha256'] );
-		}
-
-		return new MaintenanceLockSweep( $lock['run_id'], false, null, null );
 	}
 
 	/**
@@ -482,17 +446,15 @@ final readonly class OverlapGuard {
 	 * @param   Identity $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string   $args_hash    Stable single-flight identity.
 	 * @param   string   $run_id       Expected lock owner.
-	 * @param   int      $claimed_at   Original run claim timestamp.
 	 * @param   int      $heartbeat_at Delivery-generation heartbeat.
 	 * @param   int      $staleness    Resolved lock-staleness window.
 	 *
 	 * @return  RedeliveryFenceOutcome Typed readiness after the preparation attempt.
 	 */
-	public function prepare_run_redelivery_fence( Identity $identity, string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at, int $staleness ): RedeliveryFenceOutcome {
+	public function prepare_run_redelivery_fence( Identity $identity, string $args_hash, string $run_id, int $heartbeat_at, int $staleness ): RedeliveryFenceOutcome {
 		$key         = $this->option_name( $identity, $args_hash );
 		$replacement = array(
 			'run_id'       => $run_id,
-			'claimed_at'   => $claimed_at,
 			'heartbeat_at' => $heartbeat_at,
 		);
 		$inspected   = $this->inspect_persisted_lock( $identity, $args_hash );
@@ -535,8 +497,7 @@ final readonly class OverlapGuard {
 			return RedeliveryFenceOutcome::Live;
 		}
 
-		$replacement['claimed_at'] = $lock['claimed_at'];
-		$write                     = $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) );
+		$write = $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) );
 		if ( RowWriteOutcome::Won === $write ) {
 			return RedeliveryFenceOutcome::Ready;
 		}
@@ -694,14 +655,13 @@ final readonly class OverlapGuard {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Claiming run identifier.
-	 * @param   int    $now    Claim timestamp.
+	 * @param   int    $now    Initial heartbeat timestamp.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}
+	 * @return  array{run_id: string, heartbeat_at: int}
 	 */
 	private static function new_lock( string $run_id, int $now ): array {
 		return array(
 			'run_id'       => $run_id,
-			'claimed_at'   => $now,
 			'heartbeat_at' => $now,
 		);
 	}
@@ -712,7 +672,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $row Complete lock row.
+	 * @param   array{run_id: string, heartbeat_at: int} $row Complete lock row.
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the row to a string.
 	 *
@@ -728,22 +688,20 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Parses only the exact three-field persisted lock shape.
+	 * Parses the required persisted lock fields into the canonical row shape.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $raw Exact persisted option value.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+	 * @return  array{run_id: string, heartbeat_at: int}|null
 	 */
 	private static function parse( string $raw ): ?array {
 		$value = RawOptionDecoder::decode( $raw );
 		if (
 			! \is_array( $value )
-			|| 3 !== \count( $value )
 			|| ! \is_string( $value['run_id'] ?? null )
-			|| ! \is_int( $value['claimed_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 		) {
 			return null;
@@ -751,7 +709,6 @@ final readonly class OverlapGuard {
 
 		return array(
 			'run_id'       => $value['run_id'],
-			'claimed_at'   => $value['claimed_at'],
 			'heartbeat_at' => $value['heartbeat_at'],
 		);
 	}
@@ -762,9 +719,9 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $lock             Lock row.
-	 * @param   int                                                       $now              Current timestamp.
-	 * @param   int                                                       $staleness_window Staleness window in seconds.
+	 * @param   array{run_id: string, heartbeat_at: int} $lock             Lock row.
+	 * @param   int                                      $now              Current timestamp.
+	 * @param   int                                      $staleness_window Staleness window in seconds.
 	 *
 	 * @return  bool
 	 */

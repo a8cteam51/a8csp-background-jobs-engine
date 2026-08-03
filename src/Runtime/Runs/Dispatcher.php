@@ -511,7 +511,7 @@ final readonly class Dispatcher {
 		// The guard decides liveness against the incumbent's own window and reports the generation it decided
 		// under, which is what the admitted run is stamped with.
 		$claim      = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
-		$created_at = $claim->claimed_at ?? $created_at;
+		$created_at = $claim->admitted_at ?? $created_at;
 		if ( LockClaimOutcome::Indeterminate === $claim->outcome ) {
 			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}
@@ -691,7 +691,7 @@ final readonly class Dispatcher {
 		// A resolver failure has no trustworthy client overlap lane, so its diagnostic run cannot contend with working admissions.
 		$args_hash = $this->salted_args_hash( $args_hash, $run_id );
 		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
-		$now       = $claim->claimed_at ?? $now;
+		$now       = $claim->admitted_at ?? $now;
 		if ( LockClaimOutcome::Indeterminate === $claim->outcome ) {
 			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}

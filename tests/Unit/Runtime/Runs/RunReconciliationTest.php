@@ -18,7 +18,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceLockSweep;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
@@ -69,7 +68,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( RunReconciliation::class )]
 #[UsesClass( Dispatcher::class )]
 #[UsesClass( MaintenanceJob::class )]
-#[UsesClass( MaintenanceLockSweep::class )]
 #[UsesClass( OverlapGuard::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
@@ -602,14 +600,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( 'enqueue_async', $this->backend_calls()[0]['verb'] ?? null );
 		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock_raw );
-		self::assertSame(
-			array(
-				'run_id'       => self::RUN_ID,
-				'claimed_at'   => self::NOW,
-				'heartbeat_at' => self::NOW,
-			),
-			\maybe_unserialize( $lock_raw )
-		);
+		self::assertSame( 'a:2:{s:6:"run_id";s:40:"00000000001700000000-0000000000000000042";s:12:"heartbeat_at";i:1700000000;}', $lock_raw );
 
 		$this->lifecycle_deliveries->handle_deliver_action( self::IDENTITY, self::RUN_ID, 1 );
 

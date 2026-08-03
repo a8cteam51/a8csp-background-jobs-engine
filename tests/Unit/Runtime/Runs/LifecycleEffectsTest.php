@@ -659,7 +659,7 @@ final class LifecycleEffectsTest extends TestCase {
 	/**
 	 * Returns the decoded lock row for the deterministic argument identity.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+	 * @return  array{run_id: string, heartbeat_at: int}|null
 	 */
 	private function lock(): ?array {
 		$raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
@@ -671,7 +671,6 @@ final class LifecycleEffectsTest extends TestCase {
 		if (
 			! \is_array( $value )
 			|| ! \is_string( $value['run_id'] ?? null )
-			|| ! \is_int( $value['claimed_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 		) {
 			return null;
@@ -679,7 +678,6 @@ final class LifecycleEffectsTest extends TestCase {
 
 		return array(
 			'run_id'       => $value['run_id'],
-			'claimed_at'   => $value['claimed_at'],
 			'heartbeat_at' => $value['heartbeat_at'],
 		);
 	}
