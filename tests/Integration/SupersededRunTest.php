@@ -221,9 +221,8 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 
 		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}> $process_calls_before */
 		$process_calls_before = $chunked_job->process_calls;
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained replacement queue' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained replacement queue and complete the run' );
 		self::assertSame( $process_calls_before, $chunked_job->process_calls, 'The drained-queue continue action must not execute chunk work' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute replacement terminal cleanup' );
 
 		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}> $process_calls */
 		$process_calls = $chunked_job->process_calls;

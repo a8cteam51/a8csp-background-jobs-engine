@@ -179,7 +179,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function owns_stage( ?string $stage ): bool {
-		return \in_array( $stage, array( 'start', 'continue', 'cleanup' ), true );
+		return \in_array( $stage, array( 'start', 'continue' ), true );
 	}
 
 	/**
@@ -235,7 +235,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Refuses cancellation after the queue drains and cleanup becomes authoritative.
+	 * Refuses cancellation after the queue drains and its continuation becomes authoritative.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -251,11 +251,12 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		if ( $queue instanceof EngineError ) {
 			return $queue;
 		}
-		if ( array() !== $queue || 1 >= $state->action_sequence || 'start' === $state->pending?->stage ) {
+		// Only a continuation completes a drained run, so any other pending stage leaves cancellation the operator's one way out.
+		if ( array() !== $queue || 1 >= $state->action_sequence || 'continue' !== $state->pending?->stage ) {
 			return null;
 		}
 
-		return new EngineError( \sprintf( 'Run "%s" has no chunks left to process; the pending cleanup completes it.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), );
+		return new EngineError( \sprintf( 'Run "%s" has no chunks left to process; the pending continuation completes it.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), );
 	}
 
 	/**
@@ -272,10 +273,6 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 */
 	#[\Override]
 	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int {
-		if ( 'cleanup' === $state->pending?->stage ) {
-			return null;
-		}
-
 		$options = $this->registry->raw_options( $identity, self::KIND );
 		if ( null === $options ) {
 			return null;
@@ -285,7 +282,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Preserves chunked-job retry state when cleanup completes the drained run.
+	 * Preserves chunked-job retry state when a drained continuation completes the run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -317,7 +314,6 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		match ( $state->pending?->stage ) {
 			'start'    => $this->handle_start( $identity, $run_id, $state, $run_store ),
 			'continue' => $this->handle_continue( $identity, $run_id, $state, $run_store ),
-			'cleanup'  => $this->handle_cleanup( $identity, $run_id, $state, $run_store ),
 			default    => null,
 		};
 	}
@@ -522,11 +518,11 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$this->schedule_async_successor( $identity, $run_id, $state, $run_store, 'continue' );
+		$this->schedule_async_successor( $identity, $run_id, $state, $run_store );
 	}
 
 	/**
-	 * Processes the current queue head or advances a drained queue to cleanup.
+	 * Processes the current queue head or completes a drained queue.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -555,64 +551,12 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		}
 
 		if ( array() === $queue ) {
-			$priority     = $state->pending->priority ?? throw new \LogicException( 'Claimed chunked-job delivery requires a durable pending-action descriptor.' );
-			$pending      = PendingAction::async( 'cleanup', $priority );
-			$replacement  = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
-			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
-			if ( $transitioned instanceof Failure ) {
-				if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
-					return;
-				}
-				$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), ErrorCode::PayloadRejected );
-
-				return;
-			}
-			if ( null === $transitioned ) {
-				return;
-			}
-
-			$this->schedule_async_successor( $identity, $run_id, $replacement, $run_store, 'cleanup' );
+			$this->terminal_transitions->complete_run( $this, $identity, $run_id, $state, $run_store );
 
 			return;
 		}
 
 		$this->process_chunk( $execution, $identity, $run_id, $state, $run_store, $queue );
-	}
-
-	/**
-	 * Completes one drained run after its terminal delivery is fenced.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
-	 * @param   string   $run_id    Run identifier.
-	 * @param   RunState $state     Fenced executing state.
-	 * @param   RunStore $run_store Active-run store.
-	 *
-	 * @return  void
-	 */
-	private function handle_cleanup( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
-		$execution = $this->execution_for_action( $identity, $run_id, 'cleanup' );
-		if ( null === $execution ) {
-			$this->fail_orphaned_run( $identity, $run_id, $state, $run_store );
-
-			return;
-		}
-		$queue = $this->queue_for_state( $state );
-		if ( $queue instanceof EngineError ) {
-			$this->fail_malformed_kind_state( $identity, $run_id, $state, $run_store, $queue );
-
-			return;
-		}
-
-		if ( array() !== $queue ) {
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', self::KIND, (string) $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::UnsupportedOperation );
-
-			return;
-		}
-
-		$this->terminal_transitions->complete_run( $this, $identity, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -724,21 +668,20 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity             $identity  Complete scope-qualified chunked-job identity.
-	 * @param   string               $run_id    Run identifier.
-	 * @param   RunState             $state     Persisted successor state.
-	 * @param   RunStore             $run_store Active-run store.
-	 * @param   'continue'|'cleanup' $stage     Persisted successor stage.
+	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Persisted successor state.
+	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @throws  \LogicException When the persisted successor has no durable pending-action descriptor.
 	 *
 	 * @return  void
 	 */
-	private function schedule_async_successor( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $stage ): void {
+	private function schedule_async_successor( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
 		$pending   = $state->pending ?? throw new \LogicException( 'Persisted chunked-job successor requires a durable pending-action descriptor.' );
 		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, $stage, $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), $scheduled->error->reason->api_code() );
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, 'continue', $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), $scheduled->error->reason->api_code() );
 		}
 	}
 

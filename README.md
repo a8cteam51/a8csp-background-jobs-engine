@@ -238,6 +238,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 
 final class RecountCommentsExecution implements ChunkedJobExecutionInterface {
 	public const string NAME = 'recount-comments';
@@ -308,9 +309,20 @@ function my_plugin_dispatch_recount(): void {
 
 	update_option( 'my_plugin_last_recount_run', (string) $run->id );
 }
+
+add_action(
+	'a8csp_bgje/completed/my-plugin:recount-comments',
+	static function ( RunId $run_id, array $start_args ): void {
+		my_plugin_cleanup_recount( (string) $run_id, $start_args );
+	},
+	10,
+	2
+);
 ```
 
 Chunks run one at a time with a short pause between them. `ChunkedRunContextInterface` also exposes `prepend_chunk()`, `get_run_id()`, and `get_start_args()`. A failed chunked job starts a fresh run from its retained arguments and retained priority through `runs()->retry_failed()`; the retry replays both values directly instead of resolving priority again. A retained entry without a priority field uses engine default 10.
+
+`ChunkedJobExecutionInterface` defines queue generation and chunk processing; post-queue work belongs on the completed hook above, whose payload and delivery guarantees are covered in [Reacting to run lifecycles](#4-reacting-to-run-lifecycles).
 
 ### 4. Reacting to run lifecycles
 

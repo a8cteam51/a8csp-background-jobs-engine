@@ -11,6 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
@@ -30,6 +31,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( Dispatcher::class )]
+#[CoversClass( ChunkedJobKindHandler::class )]
 final class DispatcherCancelTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -495,21 +497,22 @@ final class DispatcherCancelTest extends TestCase {
 	}
 
 	/**
-	 * A zero-chunk chunked job preserves its accepted cleanup delivery.
+	 * A zero-chunk chunked job preserves its accepted continuation delivery.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_cancel_rejects_a_zero_chunk_chunked_job_pending_cleanup(): void {
+	public function test_cancel_rejects_a_zero_chunk_chunked_job_pending_continuation(): void {
 		$run_id = $this->start();
 		$this->rig->run_due();
 		$this->reset_backend_observations();
 
 		$result = $this->client->cancel( self::CHUNKED_JOB_NAME, $run_id );
 
-		$this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
+		$error = $this->assert_failure_code( $result, ErrorCode::RunNotCancellable );
+		self::assertSame( 'Run "' . $run_id . '" has no chunks left to process; the pending continuation completes it.', $error->message );
 		$this->rig->backend()->assert_scheduled( self::CHUNKED_JOB_IDENTITY );
 		self::assertSame( array(), $this->backend_calls( 'unschedule_run' ) );
 	}

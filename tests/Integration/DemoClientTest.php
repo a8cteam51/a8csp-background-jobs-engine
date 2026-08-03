@@ -292,8 +292,8 @@ final class DemoClientTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Run::class, $chunked_job->value );
 		$chunked_job_run_id = (string) $chunked_job->value->id;
 
-		for ( $step = 1; 5 >= $step; ++$step ) {
-			self::assertSame( 1, $this->run_next_engine_action(), \sprintf( 'The scheduler must execute demo chunked job action %d of 5.', $step ) );
+		for ( $step = 1; 4 >= $step; ++$step ) {
+			self::assertSame( 1, $this->run_next_engine_action(), \sprintf( 'The scheduler must execute demo chunked job action %d of 4.', $step ) );
 		}
 
 		self::assertSame(

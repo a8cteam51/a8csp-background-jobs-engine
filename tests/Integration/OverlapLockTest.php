@@ -208,8 +208,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		$second_action_id = $this->assert_pending_chunk_continuation( self::REJECT_IDENTITY, $run_a, $group_a, array( 'chunk' => 'two' ) );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the incumbent second chunk' );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $second_action_id ), 'Action Scheduler must complete the incumbent second continuation' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained incumbent queue' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete incumbent cleanup' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained incumbent queue and complete the run' );
 
 		self::assertSame( array( array( 'chunk' => 'one' ), array( 'chunk' => 'two' ) ), \array_column( $chunked_job->process_calls, 'chunk_args' ), 'The accepted incumbent must process both chunks after the rejected start' );
 		self::assertSame(
@@ -489,7 +488,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * Drives a generated queue through per-chunk actions and terminal cleanup.
+	 * Drives a generated queue through per-chunk actions and terminal completion.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -519,9 +518,8 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		}
 
 		$process_calls_before = $chunked_job->process_calls;
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the accepted run drained queue' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the accepted run drained queue and complete the run' );
 		self::assertSame( $process_calls_before, $chunked_job->process_calls, 'The drained-queue continue action must not execute chunk work' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute accepted run cleanup' );
 	}
 
 	// endregion.

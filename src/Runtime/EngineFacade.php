@@ -57,7 +57,7 @@ final readonly class EngineFacade {
 	}
 
 	/**
-	 * Cancels one retained run that is not executing or pending chunked job cleanup.
+	 * Cancels one retained run that is not executing or pending drained-queue completion.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

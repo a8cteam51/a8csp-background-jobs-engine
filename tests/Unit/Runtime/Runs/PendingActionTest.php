@@ -98,7 +98,7 @@ final class PendingActionTest extends TestCase {
 	// region DATA PROVIDERS.
 
 	/**
-	 * Returns grammar-valid stages: the engine's own plus vendor-qualified extensions.
+	 * Returns grammar-valid stages: engine-owned, unowned, and vendor-qualified extensions.
 	 *
 	 * @return  iterable<string, array{string}>
 	 */

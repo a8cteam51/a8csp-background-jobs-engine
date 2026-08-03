@@ -107,7 +107,7 @@ final class ActionDeliveriesTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The registered start, continue, and cleanup actions complete one real chunked job.
+	 * The registered start and continuation actions complete one real chunked job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -121,7 +121,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$result = $this->client->dispatch( 'hook-registration-probe', self::ARGS );
 		self::assertInstanceOf( Success::class, $result );
 
-		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
 			$this->rig->run_due();
 		}
 

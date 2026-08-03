@@ -505,10 +505,11 @@ final class ChunkedRunContextTest extends TestCase {
 		};
 
 		$this->start_and_deliver_first_chunk( $chunked_job, array( 'site_id' => 7 ) );
-		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 2; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
+		$this->rig->assert_completed();
 		self::assertInstanceOf( \InvalidArgumentException::class, $caught );
 		self::assertSame( 'Chunked Job chunk arguments must contain only null, scalar, or nested array values.', $caught->getMessage() );
 		self::assertCount( 2, $chunked_job->process_calls );

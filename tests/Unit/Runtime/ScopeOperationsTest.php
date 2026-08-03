@@ -138,7 +138,6 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		$this->rig->run_due();
 		$this->rig->run_due();
-		$this->rig->run_due();
 		self::assertSame( array( array( 'site_id' => 7 ) ), $chunked_job->generate_calls );
 		$this->rig->assert_completed();
 	}

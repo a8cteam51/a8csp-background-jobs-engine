@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
@@ -178,14 +179,14 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 */
 	public function test_cancel_surfaces_the_zero_chunk_completeness_refusal(): void {
 		$this->expect_option( self::cancel_chunked_job_run_option_name() );
-		$option_name = $this->seed_cancel_chunked_job_pending_cleanup();
+		$option_name = $this->seed_cancel_chunked_job_awaiting_its_continuation();
 
 		$result = self::run_command_with_globals( 'runs', array( '--require=' . self::CANCEL_CHUNKED_JOB_BOOTSTRAP ), 'cancel', self::CANCEL_CHUNKED_JOB_NAME, self::RUN_ID );
 		self::assertTrue( \delete_option( $option_name ), 'The completeness fixture must remain retained after refusal' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( 'Error: Run "' . self::RUN_ID . '" has no chunks left to process; the pending cleanup completes it.' . "\n", $result['stderr'] );
+		self::assertSame( 'Error: Run "' . self::RUN_ID . '" has no chunks left to process; the pending continuation completes it.' . "\n", $result['stderr'] );
 	}
 
 	/**
@@ -1202,18 +1203,18 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * Persists one materialized zero-chunk chunked job waiting for cleanup.
+	 * Persists one materialized zero-chunk chunked job whose continuation is still pending.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  string Active-run option name.
 	 */
-	private function seed_cancel_chunked_job_pending_cleanup(): string {
+	private function seed_cancel_chunked_job_awaiting_its_continuation(): string {
 		$args    = array( 'source' => 'cli-completeness-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_CHUNKED_JOB_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, 'chunked_job', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'chunked_job', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now, PendingAction::single( 'continue', $now + 60, 10 ) );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 

@@ -218,7 +218,7 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 
 		self::assert_run( $jobs->dispatch( 'plain-job', $job_args ), self::SCOPE . ':plain-job', RunStatus::Running );
 		self::assert_run( $jobs->dispatch( 'chunked-job', $chunked_args ), self::SCOPE . ':chunked-job', RunStatus::Running );
-		for ( $delivery = 0; 5 > $delivery; ++$delivery ) {
+		for ( $delivery = 0; 4 > $delivery; ++$delivery ) {
 			$this->rig->run_due();
 		}
 

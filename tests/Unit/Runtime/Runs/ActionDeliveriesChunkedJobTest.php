@@ -17,6 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
@@ -149,7 +150,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$result = $this->client->dispatch( self::NAME, $start_args );
 		self::assertInstanceOf( Success::class, $result );
 
-		for ( $delivery = 0; 3 > $delivery; ++$delivery ) {
+		for ( $delivery = 0; 2 > $delivery; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
@@ -177,7 +178,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertInstanceOf( Run::class, $first->value );
 		self::assertInstanceOf( RunId::class, $first->value->id );
 
-		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 2; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
@@ -188,7 +189,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		self::assertInstanceOf( Run::class, $second->value );
 		self::assertInstanceOf( RunId::class, $second->value->id );
 
-		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 2; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
@@ -997,42 +998,46 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Continue sends a drained queue to cleanup without invoking chunk work.
+	 * Continue completes a drained queue without invoking chunk work or scheduling a successor.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_continue_action_schedules_cleanup_for_an_empty_queue(): void {
+	public function test_handle_continue_action_completes_an_empty_queue_without_a_successor(): void {
 		$this->prepare_started_chunked_job( array() );
 
 		$this->rig->run_due();
 
 		self::assertSame( array(), $this->chunked_job->process_calls );
-		self::assertCount( 1, $this->calls_for_hook( ActionDeliveries::DELIVER_HOOK ) );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+		$this->rig->assert_completed();
 	}
 
 	/**
-	 * Continue carries the admitted priority into its persisted cleanup and backend delivery.
+	 * A drained continuation credits its execution lease until completion effects finish.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_continue_action_inherits_admitted_priority_for_cleanup(): void {
-		$this->prepare_started_chunked_job( array(), 42 );
+	public function test_handle_continue_action_credits_its_execution_lease_until_completion_finishes(): void {
+		$this->prepare_started_chunked_job( array() );
+		$this->rig->clock()->timestamp = self::NOW + 120;
+		$observed_heartbeat            = null;
+		$this->observe_action(
+			'a8csp_bgje/completed/' . self::IDENTITY,
+			function () use ( &$observed_heartbeat ): void {
+				$observed_heartbeat = $this->lock()['heartbeat_at'] ?? null;
+			}
+		);
 
 		$this->rig->run_due();
 
-		$call = $this->single_call_for_hook( ActionDeliveries::DELIVER_HOOK );
-		self::assertSame( 'enqueue_async', $call['verb'] );
-		self::assertSame( 42, $call['args']['priority'] ?? null );
-		$pending = $this->run_state()['pending'] ?? null;
-		self::assertIsArray( $pending );
-		self::assertSame( 'cleanup', $pending['stage'] ?? null );
-		self::assertSame( 42, $pending['priority'] ?? null );
+		self::assertSame( self::NOW + 120 + LockWindows::DEFAULT_EXECUTION_LEASE, $observed_heartbeat );
+		$this->rig->assert_completed();
 	}
 
 	/**
@@ -1465,6 +1470,49 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 		$this->rig->run_due();
 		self::assertCount( 1, $this->chunked_job->process_calls );
 		self::assertSame( $current, $this->chunked_job->process_calls[0]['chunk_args'] );
+	}
+
+	/**
+	 * A persisted cleanup descriptor is reported without advancing the run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_persisted_cleanup_stage_reports_warning_without_advancing_the_run(): void {
+		$this->prepare_started_chunked_job( array() );
+		$this->replace_pending_stage( 'cleanup' );
+		$before                       = $this->run_state();
+		$this->rig->logger()->records = array();
+
+		$this->rig->run_due();
+
+		self::assertSame( $before, $this->run_state() );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( 'chunked_job', $this->rig->logger()->records[0]['context']['kind'] ?? null );
+		self::assertSame( 'cleanup', $this->rig->logger()->records[0]['context']['stage'] ?? null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/completed/' . self::IDENTITY ) );
+		$this->rig->assert_no_delivery( self::IDENTITY );
+	}
+
+	/**
+	 * A run stranded on an unowned stage stays cancellable, so the operator keeps a way out.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_persisted_cleanup_stage_leaves_the_stranded_run_cancellable(): void {
+		$this->prepare_started_chunked_job( array() );
+		$this->replace_pending_stage( 'cleanup' );
+
+		$cancelled = $this->rig->operations( self::SCOPE )->cancel( self::NAME, self::RUN_ID );
+
+		self::assertInstanceOf( Success::class, $cancelled );
+		self::assertNotSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/cancelled/' . self::IDENTITY ) );
 	}
 
 	/**
@@ -2009,18 +2057,18 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Cleanup fences terminal completion before public hooks.
+	 * The drained continuation fences terminal completion before public hooks.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Hook-time production state proves cleanup publishes its terminal generation before notifying consumers, while the observed sequence pins identity-specific delivery before the generic hook.
+	 * @pin-rationale Hook-time production state proves the drained continuation publishes its terminal generation before notifying consumers, while the observed sequence pins identity-specific delivery before the generic hook.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_cleanup_action_fences_before_completed_hooks_and_preserves_hook_order(): void {
-		$this->prepare_cleanup_delivery();
+	public function test_drained_continue_action_fences_before_completed_hooks_and_preserves_hook_order(): void {
+		$this->prepare_drained_continue_delivery();
 		$observed = null;
 		$this->observe_action(
 			'a8csp_bgje/completed/' . self::IDENTITY,
@@ -2044,7 +2092,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Cleanup preserves the persisted attempt count while publishing completion.
+	 * The drained continuation preserves the persisted attempt count while publishing completion.
 	 *
 	 * @load-bearing state-transition
 	 * @pin-rationale Chunked completion consumes no work attempt, so its terminal CAS retains the exact admitted attempt count.
@@ -2054,8 +2102,8 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_cleanup_completion_preserves_persisted_failed_attempts(): void {
-		$this->prepare_cleanup_delivery();
+	public function test_drained_continue_completion_preserves_persisted_failed_attempts(): void {
+		$this->prepare_drained_continue_delivery();
 		$this->replace_failed_attempts( 2 );
 		$observed = null;
 		$this->observe_action(
@@ -2080,7 +2128,7 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_completed_listener_throw_retains_terminal_row(): void {
-		$this->prepare_cleanup_delivery();
+		$this->prepare_drained_continue_delivery();
 		$listener = new \RuntimeException( 'Completed listener exploded.' );
 		$this->set_action_throwable( 'a8csp_bgje/completed/' . self::IDENTITY, $listener );
 
@@ -2101,19 +2149,19 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A replacement started by the completed hook survives the finishing cleanup.
+	 * A replacement started by the completed hook survives the finishing continuation.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale A real facade admission from the completed hook creates the successor generation that incumbent cleanup must not delete.
+	 * @pin-rationale A real facade admission from the completed hook creates the successor generation that the incumbent continuation must not delete.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_cleanup_action_completes_when_completed_hook_starts_replacement(): void {
+	public function test_drained_continue_action_completes_when_completed_hook_starts_replacement(): void {
 		$this->options = new JobOptions( overlap: OverlapPolicy::Replace );
-		$this->prepare_cleanup_delivery();
+		$this->prepare_drained_continue_delivery();
 		$replacement = null;
 		$this->observe_action(
 			'a8csp_bgje/completed/' . self::IDENTITY,
@@ -2133,18 +2181,18 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A sequential duplicate cleanup delivery cannot repeat completed hooks.
+	 * A sequential duplicate drained continuation cannot repeat completed hooks.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Redelivering the registered cleanup generation after state consumption proves terminal hooks are idempotent under at-least-once scheduling.
+	 * @pin-rationale Redelivering the registered continuation generation after state consumption proves terminal hooks are idempotent under at-least-once scheduling.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_duplicate_cleanup_delivery_fires_completed_hooks_once(): void {
-		$this->prepare_cleanup_delivery();
+	public function test_duplicate_drained_continue_delivery_fires_completed_hooks_once(): void {
+		$this->prepare_drained_continue_delivery();
 		$sequence = $this->run_state()['action_sequence'] ?? null;
 		self::assertIsInt( $sequence );
 
@@ -2201,23 +2249,23 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * A failed cleanup schedule terminalizes a drained run.
+	 * A drained continuation completes without consulting the asynchronous scheduler.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale The rejected cleanup write must leave no accepted delivery that could invoke success after terminal failure.
+	 * @pin-rationale A scripted asynchronous scheduling rejection proves drained completion has no successor write that can replace its terminal outcome.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_handle_continue_action_fails_terminally_when_cleanup_scheduling_fails(): void {
+	public function test_handle_continue_action_completes_when_async_scheduling_is_unavailable(): void {
 		$this->prepare_started_chunked_job( array() );
 		$this->rig->backend()->results['enqueue_async'] = $this->scheduling_failure_result();
 
 		$this->rig->run_due();
 
-		$this->assert_failure( ErrorCode::BackendRejected, RunFailureStage::scheduling(), null );
+		$this->rig->assert_completed();
 		$this->rig->assert_no_delivery( self::IDENTITY );
 	}
 
@@ -2398,16 +2446,15 @@ final class ActionDeliveriesChunkedJobTest extends TestCase {
 	}
 
 	/**
-	 * Leaves the cleanup action for one drained chunked job pending.
+	 * Leaves the drained continuation for one chunked job pending.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	private function prepare_cleanup_delivery(): void {
+	private function prepare_drained_continue_delivery(): void {
 		$this->prepare_started_chunked_job( array() );
-		$this->rig->run_due();
 		$this->rig->clock()->timestamp = self::NOW + 120;
 	}
 
