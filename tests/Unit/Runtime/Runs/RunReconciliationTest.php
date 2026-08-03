@@ -172,7 +172,8 @@ final class RunReconciliationTest extends TestCase {
 		$randomizer                 = new RecordingRandomizer( 42 );
 		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$this->terminal_effects     = new LifecycleEffects( $guard, $this->stores, $this->logger );
-		$delivery_scheduler         = new DeliveryScheduler( $this->backend, $this->clock );
+		$scheduler                  = new SchedulerFacade( array( $this->backend ) );
+		$delivery_scheduler         = new DeliveryScheduler( $scheduler, $this->clock );
 		$this->terminal_transitions = new RunTransitions( $guard, $this->stores, $this->clock, $lock_windows, $delivery_scheduler, $this->logger, $this->terminal_effects );
 		$failure_lifecycle          = new FailureLifecycle( $delivery_scheduler, $this->clock, $randomizer, $this->logger, $this->terminal_transitions, $this->terminal_effects );
 		$job_handler                = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $failure_lifecycle );
@@ -184,7 +185,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->lifecycle_deliveries = new ActionDeliveries( $this->handlers, $this->stores, $this->terminal_transitions );
 		$this->dispatcher           = new Dispatcher( $this->registry, $this->handlers, $delivery_scheduler, $guard, $overlap_identity, $this->stores, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
 		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->handlers, $delivery_scheduler );
-		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), new SchedulerFacade( array( $this->backend ) ), $option_rows, $this->clock, $this->logger );
+		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), $scheduler, $option_rows, $this->clock, $this->logger );
 		$this->maintenance          = new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $this->logger );
 	}
 
@@ -294,7 +295,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->backend_calls() );
 		$this->assert_crashed_run_terminalized();
 	}
 
@@ -345,7 +346,7 @@ final class RunReconciliationTest extends TestCase {
 					),
 				),
 			),
-			$this->backend->calls
+			$this->backend_calls()
 		);
 		$state = $this->run_state( $name );
 		self::assertSame( 'running', $state['status'] ?? null );
@@ -401,7 +402,7 @@ final class RunReconciliationTest extends TestCase {
 					),
 				),
 			),
-			$this->backend->calls
+			$this->backend_calls()
 		);
 		self::assertSame( 'running', $this->run_state( $name )['status'] ?? null );
 	}
@@ -450,7 +451,7 @@ final class RunReconciliationTest extends TestCase {
 					),
 				),
 			),
-			$this->backend->calls
+			$this->backend_calls()
 		);
 		self::assertSame( 'running', $this->run_state( self::IDENTITY )['status'] ?? null );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
@@ -537,7 +538,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->run_maintenance();
 		$this->run_maintenance();
 
-		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->backend_calls() );
 		self::assertSame( $state_before, $this->run_state( self::IDENTITY ) );
 		self::assertArrayNotHasKey( $this->lock_option_name(), $this->wpdb->rows );
 		self::assertSame(
@@ -579,9 +580,9 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertCount( 1, $this->backend->calls );
-		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
-		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+		self::assertCount( 1, $this->backend_calls() );
+		self::assertSame( 'enqueue_async', $this->backend_calls()[0]['verb'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend_calls()[0]['args']['args'] ?? null );
 	}
 
 	/**
@@ -597,8 +598,8 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertCount( 1, $this->backend->calls );
-		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
+		self::assertCount( 1, $this->backend_calls() );
+		self::assertSame( 'enqueue_async', $this->backend_calls()[0]['verb'] ?? null );
 		$lock_raw = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock_raw );
 		self::assertSame(
@@ -635,7 +636,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->run_maintenance();
 
 		$options = $this->options();
-		self::assertCount( 1, $this->backend->calls );
+		self::assertCount( 1, $this->backend_calls() );
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		$this->assert_history_status( $options, 'completed' );
@@ -665,7 +666,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->backend_calls() );
 		$credited_lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $credited_lock );
 		$credited_lock = \maybe_unserialize( $credited_lock );
@@ -688,7 +689,7 @@ final class RunReconciliationTest extends TestCase {
 					),
 				),
 			),
-			$this->backend->calls
+			$this->backend_calls()
 		);
 		$restored_lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $restored_lock );
@@ -744,7 +745,7 @@ final class RunReconciliationTest extends TestCase {
 					),
 				),
 			),
-			$this->backend->calls
+			$this->backend_calls()
 		);
 		self::assertSame( 'running', $this->run_state( self::IDENTITY )['status'] ?? null );
 	}
@@ -795,8 +796,8 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertCount( 1, $this->backend->calls );
-		$rejected_call = $this->backend->calls[0];
+		self::assertCount( 1, $this->backend_calls() );
+		$rejected_call = $this->backend_calls()[0];
 		$state_after   = $this->run_state( $name );
 		$raw_after     = \maybe_serialize( $state_after );
 		self::assertIsString( $raw_after );
@@ -819,8 +820,8 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertCount( 2, $this->backend->calls );
-		self::assertSame( $rejected_call, $this->backend->calls[1] );
+		self::assertCount( 2, $this->backend_calls() );
+		self::assertSame( $rejected_call, $this->backend_calls()[1] );
 		self::assertCount( 1, $this->logger->records );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . $name, $this->options() );
 		self::assertSame( array(), $this->fired_actions() );
@@ -847,7 +848,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->run_maintenance();
 
 		$options = $this->options();
-		self::assertCount( 1, $this->backend->calls );
+		self::assertCount( 1, $this->backend_calls() );
 		self::assertArrayHasKey( $this->run_option_name(), $options );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame( array(), $this->fired_actions() );
@@ -860,7 +861,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->run_maintenance();
 
 		$options = $this->options();
-		self::assertCount( 1, $this->backend->calls );
+		self::assertCount( 1, $this->backend_calls() );
 		self::assertArrayNotHasKey( $this->run_option_name(), $options );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame(
@@ -912,8 +913,8 @@ final class RunReconciliationTest extends TestCase {
 		$this->run_maintenance();
 
 		$options = $this->options();
-		self::assertCount( 2, $this->backend->calls );
-		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
+		self::assertCount( 2, $this->backend_calls() );
+		self::assertSame( $this->backend_calls()[0], $this->backend_calls()[1] );
 		self::assertArrayHasKey( $this->run_option_name(), $options );
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $options );
 		self::assertSame( array(), $this->fired_actions() );
@@ -940,7 +941,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->backend_calls() );
 		$this->assert_crashed_run_terminalized();
 		self::assertNotNull(
 			$this->log_record(
@@ -967,7 +968,7 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->backend_calls() );
 		self::assertSame( $state_before, $this->run_state( self::IDENTITY ) );
 		self::assertSame( $lock_before, $this->wpdb->rows[ $this->lock_option_name() ] ?? null );
 	}
@@ -993,11 +994,11 @@ final class RunReconciliationTest extends TestCase {
 		$this->run_maintenance();
 		$this->run_maintenance();
 
-		self::assertCount( 2, $this->backend->calls );
-		self::assertSame( $this->backend->calls[0], $this->backend->calls[1] );
-		self::assertSame( 'enqueue_async', $this->backend->calls[0]['verb'] ?? null );
-		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( $name, self::RUN_ID, 2 ), $this->backend->calls[0]['args']['args'] ?? null );
+		self::assertCount( 2, $this->backend_calls() );
+		self::assertSame( $this->backend_calls()[0], $this->backend_calls()[1] );
+		self::assertSame( 'enqueue_async', $this->backend_calls()[0]['verb'] ?? null );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend_calls()[0]['args']['hook'] ?? null );
+		self::assertSame( array( $name, self::RUN_ID, 2 ), $this->backend_calls()[0]['args']['args'] ?? null );
 
 		$this->lifecycle_deliveries->handle_deliver_action( $name, self::RUN_ID, 2 );
 		$this->lifecycle_deliveries->handle_deliver_action( $name, self::RUN_ID, 2 );
@@ -1020,8 +1021,8 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend_calls()[0]['args']['hook'] ?? null );
+		self::assertSame( array( self::IDENTITY, self::RUN_ID, 1 ), $this->backend_calls()[0]['args']['args'] ?? null );
 
 		$this->lifecycle_deliveries->handle_deliver_action( self::IDENTITY, self::RUN_ID, 1 );
 
@@ -1063,8 +1064,8 @@ final class RunReconciliationTest extends TestCase {
 
 		$this->run_maintenance();
 
-		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend->calls[0]['args']['hook'] ?? null );
-		self::assertSame( array( $name, self::RUN_ID, 1 ), $this->backend->calls[0]['args']['args'] ?? null );
+		self::assertSame( 'a8csp_bgje/internal/deliver', $this->backend_calls()[0]['args']['hook'] ?? null );
+		self::assertSame( array( $name, self::RUN_ID, 1 ), $this->backend_calls()[0]['args']['args'] ?? null );
 
 		$this->lifecycle_deliveries->handle_deliver_action( $name, self::RUN_ID, 1 );
 
@@ -1710,7 +1711,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->run_maintenance();
 
 		self::assertSame( $before, $this->run_state( $name ) );
-		self::assertSame( array(), $this->backend->calls );
+		self::assertSame( array(), $this->backend_calls() );
 		$record = $this->log_record(
 			'warning',
 			array(
@@ -2546,6 +2547,18 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	private function run_maintenance(): void {
 		$this->maintenance->handle( array(), new RunContext( RunId::from( '00000000000000000000-0000000000000000001' ), array() ) );
+	}
+
+	/**
+	 * Returns backend calls without facade readiness probes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
+	 */
+	private function backend_calls(): array {
+		return \array_values( \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'is_ready' !== $call['verb'] ) );
 	}
 
 	/**

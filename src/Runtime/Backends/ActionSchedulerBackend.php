@@ -14,10 +14,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason
  * Scheduling backend over Action Scheduler.
  *
  * Action Scheduler is commonly bundled by a client rather than activated as a standalone
- * plugin. Readiness derives from its complete procedural table and the lifecycle state reported by
- * the action_scheduler_init and init actions. Every procedural call remains guarded because load
- * order can change between requests and clients can supply partial or competing copies of the
- * library.
+ * plugin, so several partial or competing copies can be present and the elected version decides
+ * which one answers. Readiness derives from that complete procedural table, the elected version, and
+ * the action_scheduler_init lifecycle state. WordPress init remains part of failure context, while
+ * the complete table is gated before every procedural call because PHP function availability is
+ * monotone within a request.
  *
  * @internal
  *
@@ -76,28 +77,19 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
-		if ( ! $this->is_ready() ) {
-			return $this->backend_not_ready( $this->readiness_facts() );
+		$facts = $this->readiness_facts();
+		if ( ! self::facts_are_ready( $facts ) ) {
+			return $this->backend_not_ready( $facts );
 		}
 
 		if ( 1 > $interval ) {
 			return new Failure( new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Action Scheduler requires recurring intervals of at least one second.', array( 'interval' => $interval ), ) );
 		}
 
-		$function_failure = $this->missing_function_failure( 'as_next_scheduled_action' );
-		if ( null !== $function_failure ) {
-			return $function_failure;
-		}
-
 		$next = \as_next_scheduled_action( $hook, $args, $group );
 		// A running action is the current occurrence, so treating its true sentinel as future work starves the chain.
 		if ( \is_int( $next ) ) {
 			return new Success( true );
-		}
-
-		$function_failure = $this->missing_function_failure( 'as_schedule_recurring_action' );
-		if ( null !== $function_failure ) {
-			return $function_failure;
 		}
 
 		$action_id = \as_schedule_recurring_action( $first_run_timestamp ?? \time(), $interval, $hook, $args, $group, true, $priority );
@@ -116,24 +108,15 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_single( string $hook, int $timestamp, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
-		if ( ! $this->is_ready() ) {
-			return $this->backend_not_ready( $this->readiness_facts() );
-		}
-
-		$function_failure = $this->missing_function_failure( 'as_next_scheduled_action' );
-		if ( null !== $function_failure ) {
-			return $function_failure;
+		$facts = $this->readiness_facts();
+		if ( ! self::facts_are_ready( $facts ) ) {
+			return $this->backend_not_ready( $facts );
 		}
 
 		$next = \as_next_scheduled_action( $hook, $args, $group );
 		// A running action is the current occurrence, so treating its true sentinel as future work starves the chain.
 		if ( \is_int( $next ) ) {
 			return new Success( true );
-		}
-
-		$function_failure = $this->missing_function_failure( 'as_schedule_single_action' );
-		if ( null !== $function_failure ) {
-			return $function_failure;
 		}
 
 		$action_id = \as_schedule_single_action( $timestamp, $hook, $args, $group, false, $priority );
@@ -156,13 +139,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function enqueue_async( string $hook, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
-		if ( ! $this->is_ready() ) {
-			return $this->backend_not_ready( $this->readiness_facts() );
-		}
-
-		$function_failure = $this->missing_function_failure( 'as_enqueue_async_action' );
-		if ( null !== $function_failure ) {
-			return $function_failure;
+		$facts = $this->readiness_facts();
+		if ( ! self::facts_are_ready( $facts ) ) {
+			return $this->backend_not_ready( $facts );
 		}
 
 		$action_id = \as_enqueue_async_action( $hook, $args, $group, true, $priority );
@@ -184,21 +163,12 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult {
-		if ( ! $this->is_ready() ) {
-			return $this->backend_not_ready( $this->readiness_facts() );
-		}
-
-		$function_failure = $this->missing_function_failure( 'as_unschedule_all_actions' );
-		if ( null !== $function_failure ) {
-			return $function_failure;
+		$facts = $this->readiness_facts();
+		if ( ! self::facts_are_ready( $facts ) ) {
+			return $this->backend_not_ready( $facts );
 		}
 
 		\as_unschedule_all_actions( $hook, $args, $group );
-
-		$function_failure = $this->missing_function_failure( 'as_has_scheduled_action' );
-		if ( null !== $function_failure ) {
-			return $function_failure;
-		}
 
 		$postcheck_args = '' === $hook && array() === $args && '' !== $group ? null : $args;
 		if ( \as_has_scheduled_action( $hook, $postcheck_args, $group ) ) {
@@ -226,15 +196,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
-		if ( ! $this->is_ready() ) {
-			return $this->backend_not_ready( $this->readiness_facts() );
-		}
-
-		foreach ( array( 'as_get_scheduled_actions', 'as_unschedule_all_actions' ) as $function_name ) {
-			$function_failure = $this->missing_function_failure( $function_name );
-			if ( null !== $function_failure ) {
-				return $function_failure;
-			}
+		$facts = $this->readiness_facts();
+		if ( ! self::facts_are_ready( $facts ) ) {
+			return $this->backend_not_ready( $facts );
 		}
 
 		foreach ( $this->pending_run_args( $hook, $identity, $run_id ) as $args ) {
@@ -269,15 +233,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule_hooks( array $hooks ): AbstractResult {
-		if ( ! $this->is_ready() ) {
-			return $this->backend_not_ready( $this->readiness_facts() );
-		}
-
-		foreach ( array( 'as_get_scheduled_actions', 'as_unschedule_all_actions' ) as $function_name ) {
-			$function_failure = $this->missing_function_failure( $function_name );
-			if ( null !== $function_failure ) {
-				return $function_failure;
-			}
+		$facts = $this->readiness_facts();
+		if ( ! self::facts_are_ready( $facts ) ) {
+			return $this->backend_not_ready( $facts );
 		}
 
 		$count = 0;
@@ -329,7 +287,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
-		if ( ! $this->is_ready() || ! \function_exists( 'as_get_scheduled_actions' ) ) {
+		if ( ! $this->is_ready() ) {
 			return 0;
 		}
 
@@ -382,7 +340,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	public function is_scheduled( string $hook, array $args = array(), string $group = '' ): bool {
-		if ( ! $this->is_ready() || ! \function_exists( 'as_next_scheduled_action' ) ) {
+		if ( ! $this->is_ready() ) {
 			return false;
 		}
 
@@ -400,7 +358,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 */
 	#[\Override]
 	public function get_next_scheduled( string $hook, array $args = array(), string $group = '' ): ?int {
-		if ( ! $this->is_ready() || ! \function_exists( 'as_next_scheduled_action' ) ) {
+		if ( ! $this->is_ready() ) {
 			return null;
 		}
 
@@ -523,7 +481,7 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @return  array{count: int<0, max>, interval: positive-int|null}
 	 */
 	private function scheduled_chain( string $hook, string $schedule_identity ): array {
-		if ( ! $this->is_ready() || ! \function_exists( 'as_get_scheduled_actions' ) ) {
+		if ( ! $this->is_ready() ) {
 			return array(
 				'count'    => 0,
 				'interval' => null,
@@ -611,49 +569,17 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	}
 
 	/**
-	 * Returns a corrective failure when a direct procedural dependency is absent.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   non-empty-string $function_name Required function.
-	 *
-	 * @return  Failure<SchedulingError>|null
-	 */
-	private function missing_function_failure( string $function_name ): ?Failure {
-		if ( \function_exists( $function_name ) ) {
-			return null;
-		}
-
-		$facts = $this->readiness_facts();
-
-		$facts['action_scheduler_functions_exist'] = false;
-
-		return $this->backend_not_ready( $facts, $function_name );
-	}
-
-	/**
 	 * Builds the failure returned before an unready backend can touch its procedural API.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool} $facts            Readiness facts.
-	 * @param   non-empty-string|null                                                                                                                           $missing_function Missing function.
+	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool} $facts Readiness facts.
 	 *
 	 * @return  Failure<SchedulingError>
 	 */
-	private function backend_not_ready( array $facts, ?string $missing_function = null ): Failure {
-		$context = $facts;
-		if ( null !== $missing_function ) {
-			$context['missing_function'] = $missing_function;
-		}
-
-		$message = null === $missing_function
-			? 'Action Scheduler is not ready; load or activate Action Scheduler, then call this scheduling operation after action_scheduler_init fires.'
-			: \sprintf( 'Action Scheduler function "%s" is unavailable; load or activate a complete Action Scheduler API, then retry after action_scheduler_init fires.', $missing_function );
-
-		return new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, $message, $context, ) );
+	private function backend_not_ready( array $facts ): Failure {
+		return new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Action Scheduler is not ready; load or activate Action Scheduler, then call this scheduling operation after action_scheduler_init fires.', $facts, ) );
 	}
 
 	/**
@@ -671,21 +597,16 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	private function result_for_unique_action_id( int $action_id, string $hook, array $args, string $group, string $function_name ): AbstractResult {
-		$diagnostic_facts = null;
-		$failure_cause    = null;
+		$failure_cause = null;
 		if ( 0 === $action_id ) {
 			if ( '' === $group ) {
 				$failure_cause = 'a unique scheduling write in the empty group returned zero, which is ambiguous between a duplicate and a store failure; use a non-empty group for verifiable uniqueness.';
-			} elseif ( ! \function_exists( 'as_has_scheduled_action' ) ) {
-				$diagnostic_facts = $this->readiness_facts();
-
-				$diagnostic_facts['action_scheduler_functions_exist'] = false;
 			} elseif ( \as_has_scheduled_action( $hook, $args, $group ) ) {
 				return new Success( true );
 			}
 		}
 
-		return $this->result_for_action_id( $action_id, $hook, $function_name, $diagnostic_facts, $failure_cause );
+		return $this->result_for_action_id( $action_id, $hook, $function_name, $failure_cause );
 	}
 
 	/**
@@ -694,33 +615,28 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int                                                                                                                                                  $action_id     Positive action ID, or a non-positive rejection value.
-	 * @param   string                                                                                                                                               $hook          Hook being scheduled.
-	 * @param   non-empty-string                                                                                                                                     $function_name Procedural function called.
-	 * @param   array{action_scheduler_functions_exist: bool, action_scheduler_init_fired: bool, action_scheduler_version_supported: bool, wp_init_fired: bool}|null $facts         Known diagnostic facts.
-	 * @param   non-empty-string|null                                                                                                                                $failure_cause Known rejection cause.
+	 * @param   int                   $action_id     Positive action ID, or a non-positive rejection value.
+	 * @param   string                $hook          Hook being scheduled.
+	 * @param   non-empty-string      $function_name Procedural function called.
+	 * @param   non-empty-string|null $failure_cause Known rejection cause.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	private function result_for_action_id( int $action_id, string $hook, string $function_name, ?array $facts = null, ?string $failure_cause = null ): AbstractResult {
+	private function result_for_action_id( int $action_id, string $hook, string $function_name, ?string $failure_cause = null ): AbstractResult {
 		if ( 0 < $action_id ) {
 			return new Success( true );
 		}
 
-		$facts ??= $this->readiness_facts();
+		$facts = $this->readiness_facts();
 
 		if ( null !== $failure_cause ) {
 			$cause = $failure_cause;
 		} elseif ( 0 > $action_id ) {
 			$cause = \sprintf( '%1$s returned negative action ID %2$d; only a positive ID confirms that Action Scheduler persisted the action.', $function_name, $action_id );
-		} elseif ( ! $facts['action_scheduler_functions_exist'] ) {
-			$cause = 'the Action Scheduler function table is unavailable; load or activate Action Scheduler before retrying.';
 		} elseif ( ! $facts['wp_init_fired'] ) {
+			// action_scheduler_init is a public action, so a copy that fires it outside WordPress init passes the
+			// gate; the fact stays out of the gate because init ordering is not the engine's to guarantee.
 			$cause = 'WordPress init has not fired; call the scheduling operation after action_scheduler_init instead of before init.';
-		} elseif ( ! $facts['action_scheduler_init_fired'] ) {
-			$cause = 'action_scheduler_init has not fired; load Action Scheduler early enough to initialize, then retry after that action.';
-		} elseif ( ! $facts['action_scheduler_version_supported'] ) {
-			$cause = \sprintf( 'the initialized Action Scheduler is older than %s, which chunked work requires for args-aware unique scheduling; upgrade the copy that wins version election.', self::MINIMUM_VERSION );
 		} else {
 			$cause = \sprintf( 'the Action Scheduler store rejected the action; inspect the PHP error log for a store or database exception, or a %s filter returning zero.', 'pre_' . $function_name );
 		}

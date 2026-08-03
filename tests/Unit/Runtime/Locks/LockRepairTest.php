@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Locks;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepairPlan;
@@ -101,7 +102,7 @@ final class LockRepairTest extends TestCase {
 		$this->stores       = new StoreFactory( $this->rig->clock(), $this->rows, $this->rig->logger() );
 		$lock_windows       = new LockWindows( $this->rig->clock(), $this->rig->logger() );
 		$effects            = new LifecycleEffects( $guard, $this->stores, $this->rig->logger() );
-		$delivery_scheduler = new DeliveryScheduler( $this->rig->backend(), $this->rig->clock() );
+		$delivery_scheduler = new DeliveryScheduler( new SchedulerFacade( array( $this->rig->backend() ) ), $this->rig->clock() );
 		$transitions        = new RunTransitions( $guard, $this->stores, $this->rig->clock(), $lock_windows, $delivery_scheduler, $this->rig->logger(), $effects );
 		$this->repair       = new LockRepair( $this->rows, $guard, $this->stores, $lock_windows, $transitions );
 		$this->fixtures     = StoreFixtureBuilder::for_identity( self::IDENTITY );

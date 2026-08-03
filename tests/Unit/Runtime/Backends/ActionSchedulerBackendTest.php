@@ -383,6 +383,48 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
+	 * A gated write reached before init names that cause instead of blaming the store.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_write_before_init_names_init_rather_than_a_store_rejection(): void {
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'action_scheduler_init' => 1 );
+		$GLOBALS['a8csp_bgje_test_as_results']  = array(
+			'as_enqueue_async_action' => array( 0 ),
+			'as_has_scheduled_action' => array( false ),
+		);
+
+		$result = ( new ActionSchedulerBackend() )->enqueue_async( self::HOOK, array(), 'reports' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertStringContainsString( 'WordPress init has not fired', $result->error->message );
+		self::assertFalse( $result->error->context['wp_init_fired'] ?? null );
+	}
+
+	/**
+	 * A rejected action reports the identifier this call returned rather than ambient request state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_negative_action_id_outranks_the_unfired_init_cause(): void {
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'action_scheduler_init' => 1 );
+		$GLOBALS['a8csp_bgje_test_as_results']  = array( 'as_enqueue_async_action' => array( -1 ) );
+
+		$result = ( new ActionSchedulerBackend() )->enqueue_async( self::HOOK, array(), 'reports' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertStringContainsString( 'returned negative action ID -1', $result->error->message );
+	}
+
+	/**
 	 * An unready adapter fails before calling any Action Scheduler write function.
 	 *
 	 * @since   1.0.0

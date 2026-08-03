@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
@@ -179,7 +180,7 @@ final class RunTransitionsTest extends TestCase {
 		$stores                     = new StoreFactory( $this->clock, $this->rows, $this->logger );
 		$lock_windows               = new LockWindows( $this->clock, $this->logger );
 		$terminal_effects           = new LifecycleEffects( $guard, $stores, $this->logger );
-		$delivery_scheduler         = new DeliveryScheduler( $this->backend, $this->clock );
+		$delivery_scheduler         = new DeliveryScheduler( new SchedulerFacade( array( $this->backend ) ), $this->clock );
 		$this->terminal_transitions = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $delivery_scheduler, $this->logger, $terminal_effects );
 		$this->failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $this->clock, $this->randomizer, $this->logger, $this->terminal_transitions, $terminal_effects );
 		$this->handler              = new JobKindHandler( $this->registry, $this->logger, $this->clock, $lock_windows, $this->terminal_transitions, $terminal_effects, $this->failure_lifecycle );

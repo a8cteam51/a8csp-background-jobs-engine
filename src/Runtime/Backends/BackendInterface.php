@@ -128,9 +128,8 @@ interface BackendInterface {
 	 *
 	 * Identity matching follows native backend query semantics: the hook plus serialized arguments,
 	 * plus a non-empty group where the backend supports groups. Empty groups retain backend-native
-	 * query behavior. The count includes every matching pending occurrence exposed by the receiver;
-	 * composite receivers total their currently ready children. Use is_scheduled() when only existence
-	 * matters.
+	 * query behavior. The count includes every matching pending occurrence exposed by the receiver.
+	 * Use is_scheduled() when only existence matters.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

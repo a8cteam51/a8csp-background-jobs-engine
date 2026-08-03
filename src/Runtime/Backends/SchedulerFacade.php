@@ -28,7 +28,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class SchedulerFacade implements BackendInterface {
+final readonly class SchedulerFacade {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -131,7 +131,6 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule_run( string $hook, string $identity, string $run_id ): AbstractResult {
 		$ready_backends = $this->ready_backends();
@@ -151,7 +150,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Unschedules every pending action for the supplied hooks across all ready backends.
 	 *
 	 * Hook-wide clearance requires every present backend to be ready because reset callers cannot
 	 * retain dormant pending work safely.
@@ -159,9 +158,10 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   list<non-empty-string> $hooks Hooks to unschedule.
+	 *
 	 * @return  AbstractResult<int, SchedulingError>
 	 */
-	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule_hooks( array $hooks ): AbstractResult {
 		$ready_backends = $this->ready_backends();
@@ -198,19 +198,21 @@ final readonly class SchedulerFacade implements BackendInterface {
 		return ! $this->snapshot_is_authoritative( $this->ready_backends() );
 	}
 
-	// endregion
-
-	// region INHERITED METHODS
-
 	/**
-	 * {@inheritDoc}
+	 * Routes a recurring hook through configured backends in declaration order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   string      $hook                Hook to run.
+	 * @param   int         $interval            Positive interval in seconds.
+	 * @param   list<mixed> $args                Arguments passed to the hook.
+	 * @param   int|null    $first_run_timestamp Unix timestamp of the first run, or null for now.
+	 * @param   string      $group               Backend grouping label.
+	 * @param   int         $priority            Advisory execution priority.
+	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_recurring( string $hook, int $interval, array $args = array(), ?int $first_run_timestamp = null, string $group = '', int $priority = 10 ): AbstractResult {
 		if ( null !== $first_run_timestamp && 1 > $first_run_timestamp ) {
@@ -226,14 +228,19 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Routes a single-run hook through configured backends in declaration order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   string      $hook      Hook to run.
+	 * @param   int         $timestamp Unix timestamp of the run.
+	 * @param   list<mixed> $args      Arguments passed to the hook.
+	 * @param   string      $group     Backend grouping label.
+	 * @param   int         $priority  Advisory execution priority.
+	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function schedule_single( string $hook, int $timestamp, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
 		if ( 1 > $timestamp ) {
@@ -249,14 +256,18 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Routes an asynchronous hook through configured backends in declaration order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   string      $hook     Hook to run.
+	 * @param   list<mixed> $args     Arguments passed to the hook.
+	 * @param   string      $group    Backend grouping label.
+	 * @param   int         $priority Advisory execution priority.
+	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function enqueue_async( string $hook, array $args = array(), string $group = '', int $priority = 10 ): AbstractResult {
 		$payload_failure = $this->payload_failure( $hook, $args );
@@ -268,23 +279,26 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Unschedules every hook matching the supplied identity.
 	 *
 	 * Success confirms absence across the currently-ready backends.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   string      $hook  Hook to unschedule.
+	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
+	 * @param   string      $group Backend grouping label.
+	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */
-	#[\Override]
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule( string $hook, array $args = array(), string $group = '' ): AbstractResult {
 		return $this->unschedule_snapshot( $this->ready_backends(), $hook, $args, $group );
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Returns the number of matching pending occurrences.
 	 *
 	 * The total spans every currently ready backend so same-backend and cross-backend surpluses share
 	 * one convergence signal.
@@ -292,9 +306,12 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   string      $hook  Hook to query.
+	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
+	 * @param   string      $group Backend grouping label.
+	 *
 	 * @return  int<0, max>
 	 */
-	#[\Override]
 	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
 		$count = 0;
 		foreach ( $this->ready_backends() as $backend ) {
@@ -305,7 +322,7 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Returns the pending count and cadence for every requested schedule identity.
 	 *
 	 * The per-identity totals span every currently ready backend so same-backend and cross-backend
 	 * surpluses retain the scalar convergence semantics.
@@ -313,9 +330,11 @@ final readonly class SchedulerFacade implements BackendInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
+	 * @param   string       $hook       Hook to query.
+	 * @param   list<string> $identities Canonical schedule identities to query.
+	 *
 	 * @return  array<string, array{count: int<0, max>, interval: positive-int|null}>
 	 */
-	#[\Override]
 	public function scheduled_chains( string $hook, array $identities ): array {
 		$chains = array();
 		foreach ( $identities as $requested_identity ) {
@@ -350,23 +369,33 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Returns whether any ready backend has a matching hook scheduled.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string      $hook  Hook to query.
+	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
+	 * @param   string      $group Backend grouping label.
+	 *
+	 * @return  bool
 	 */
-	#[\Override]
 	public function is_scheduled( string $hook, array $args = array(), string $group = '' ): bool {
 		return \array_any( $this->ready_backends(), static fn ( BackendInterface $backend ): bool => $backend->is_scheduled( $hook, $args, $group ) );
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Returns the earliest next run reported by any ready backend.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
+	 *
+	 * @param   string      $hook  Hook to query.
+	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
+	 * @param   string      $group Backend grouping label.
+	 *
+	 * @return  int|null Unix timestamp of the next run, or null when none exists.
 	 */
-	#[\Override]
 	public function get_next_scheduled( string $hook, array $args = array(), string $group = '' ): ?int {
 		$timestamps = array();
 		foreach ( $this->ready_backends() as $backend ) {
@@ -380,36 +409,13 @@ final readonly class SchedulerFacade implements BackendInterface {
 	}
 
 	/**
-	 * {@inheritDoc}
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 */
-	#[\Override]
-	public function is_ready(): bool {
-		return array() !== $this->ready_backends();
-	}
-
-	/**
-	 * {@inheritDoc}
+	 * Registers per-request hooks for every configured backend.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  bool
+	 * @return  void
 	 */
-	#[\Override]
-	public function is_absent(): bool {
-		return \array_all( $this->backends, static fn ( BackendInterface $backend ): bool => $backend->is_absent() );
-	}
-
-	/**
-	 * {@inheritDoc}
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 */
-	#[\Override]
 	public function register_hooks(): void {
 		foreach ( $this->backends as $backend ) {
 			$backend->register_hooks();

@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
@@ -47,6 +48,8 @@ final class DeliverySchedulerTest extends TestCase {
 		if ( ! \defined( 'ABSPATH' ) ) {
 			\define( 'ABSPATH', __DIR__ . '/' );
 		}
+
+		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
 	}
 
 	/**
@@ -63,7 +66,7 @@ final class DeliverySchedulerTest extends TestCase {
 
 		$this->backend   = new RecordingBackend();
 		$this->identity  = Identity::compose( 'delivery-tests', 'catalog-sync' );
-		$this->scheduler = new DeliveryScheduler( $this->backend, new FixedClock( self::NOW ) );
+		$this->scheduler = new DeliveryScheduler( new SchedulerFacade( array( $this->backend ) ), new FixedClock( self::NOW ) );
 	}
 
 	// endregion.
@@ -94,7 +97,7 @@ final class DeliverySchedulerTest extends TestCase {
 					),
 				),
 			),
-			$this->backend->calls
+			$this->calls()
 		);
 	}
 
@@ -123,7 +126,7 @@ final class DeliverySchedulerTest extends TestCase {
 					),
 				),
 			),
-			$this->backend->calls
+			$this->calls()
 		);
 	}
 
@@ -139,7 +142,7 @@ final class DeliverySchedulerTest extends TestCase {
 		$result = $this->scheduler->schedule( $this->identity, self::RUN_ID, 13, PendingAction::single( 'continue', self::NOW - 75, 19 ) );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::NOW, $this->backend->calls[0]['args']['timestamp'] ?? null );
+		self::assertSame( self::NOW, $this->calls()[0]['args']['timestamp'] ?? null );
 	}
 
 	/**
@@ -165,8 +168,24 @@ final class DeliverySchedulerTest extends TestCase {
 					),
 				),
 			),
-			$this->backend->calls
+			$this->calls()
 		);
+	}
+
+	// endregion.
+
+	// region HELPERS.
+
+	/**
+	 * Returns every recorded backend call except the facade's readiness probes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  list<array{verb: string, args: array<string, mixed>}>
+	 */
+	private function calls(): array {
+		return \array_values( \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'is_ready' !== $call['verb'] ) );
 	}
 
 	// endregion.

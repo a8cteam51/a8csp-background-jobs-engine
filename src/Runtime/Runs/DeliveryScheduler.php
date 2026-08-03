@@ -4,7 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use Psr\Clock\ClockInterface;
 
@@ -27,11 +27,11 @@ final readonly class DeliveryScheduler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   BackendInterface $scheduler Scheduling facade boundary.
-	 * @param   ClockInterface   $clock     Timestamp source.
+	 * @param   SchedulerFacade $scheduler Scheduling facade boundary.
+	 * @param   ClockInterface  $clock     Timestamp source.
 	 */
 	public function __construct(
-		private BackendInterface $scheduler,
+		private SchedulerFacade $scheduler,
 		private ClockInterface $clock,
 	) {}
 
