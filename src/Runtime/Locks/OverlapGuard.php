@@ -174,26 +174,57 @@ final readonly class OverlapGuard {
 	 */
 	#[\NoDiscard( 'a lock-heartbeat outcome must be handled, not dropped' )]
 	public function heartbeat( Identity $identity, string $args_hash, string $run_id, ?int $at = null, ?int $expected_heartbeat_at = null ): HeartbeatOutcome {
-		return $this->heartbeat_for_identity( (string) $identity, $args_hash, $run_id, $at, $expected_heartbeat_at );
-	}
+		$key      = $this->option_name( $identity, $args_hash );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			$this->logger->warning(
+				'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
+				array(
+					'key'       => $key,
+					'identity'  => (string) $identity,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
 
-	/**
-	 * Refreshes liveness for untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity              Raw scheduler-wire identity bytes.
-	 * @param   string   $args_hash             Stable single-flight identity.
-	 * @param   string   $run_id                Owning run identifier.
-	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time.
-	 * @param   int|null $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
-	 *
-	 * @return  HeartbeatOutcome Ownership classification after the heartbeat attempt.
-	 */
-	#[\NoDiscard( 'a lock-heartbeat outcome must be handled, not dropped' )]
-	public function raw_heartbeat( string $identity, string $args_hash, string $run_id, ?int $at = null, ?int $expected_heartbeat_at = null ): HeartbeatOutcome {
-		return $this->heartbeat_for_identity( $identity, $args_hash, $run_id, $at, $expected_heartbeat_at );
+			return HeartbeatOutcome::Indeterminate;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return HeartbeatOutcome::Lost;
+		}
+
+		$lock = self::parse( $raw );
+		if ( null === $lock || $run_id !== $lock['run_id'] ) {
+			return HeartbeatOutcome::Lost;
+		}
+		if ( null !== $expected_heartbeat_at && $expected_heartbeat_at !== $lock['heartbeat_at'] ) {
+			return HeartbeatOutcome::GenerationMismatch;
+		}
+
+		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
+
+		$write = $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) );
+		if ( RowWriteOutcome::Won === $write ) {
+			return HeartbeatOutcome::Owned;
+		}
+		if ( RowWriteOutcome::WriteFailed === $write ) {
+			$this->logger->warning(
+				'Execution-overlap lock heartbeat could not write the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
+				array(
+					'key'       => $key,
+					'identity'  => (string) $identity,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
+
+			return HeartbeatOutcome::Indeterminate;
+		}
+
+		// Ownership moved after selection, so execution cannot continue under this lock.
+		return null !== $expected_heartbeat_at ? HeartbeatOutcome::GenerationMismatch : HeartbeatOutcome::Lost;
 	}
 
 	/**
@@ -531,74 +562,6 @@ final readonly class OverlapGuard {
 	// region HELPERS
 
 	/**
-	 * Refreshes liveness for exact identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity              Exact identity bytes used for the option key and diagnostics.
-	 * @param   string   $args_hash             Stable single-flight identity.
-	 * @param   string   $run_id                Owning run identifier.
-	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time.
-	 * @param   int|null $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
-	 *
-	 * @return  HeartbeatOutcome Ownership classification after the heartbeat attempt.
-	 */
-	private function heartbeat_for_identity( string $identity, string $args_hash, string $run_id, ?int $at, ?int $expected_heartbeat_at ): HeartbeatOutcome {
-		$key      = $this->raw_option_name( $identity, $args_hash );
-		$selected = $this->rows->read( $key );
-		if ( $selected->is_failure() ) {
-			$this->logger->warning(
-				'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
-				array(
-					'key'       => $key,
-					'identity'  => $identity,
-					'args_hash' => $args_hash,
-					'run_id'    => $run_id,
-				)
-			);
-
-			return HeartbeatOutcome::Indeterminate;
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return HeartbeatOutcome::Lost;
-		}
-
-		$lock = self::parse( $raw );
-		if ( null === $lock || $run_id !== $lock['run_id'] ) {
-			return HeartbeatOutcome::Lost;
-		}
-		if ( null !== $expected_heartbeat_at && $expected_heartbeat_at !== $lock['heartbeat_at'] ) {
-			return HeartbeatOutcome::GenerationMismatch;
-		}
-
-		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
-
-		$write = $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) );
-		if ( RowWriteOutcome::Won === $write ) {
-			return HeartbeatOutcome::Owned;
-		}
-		if ( RowWriteOutcome::WriteFailed === $write ) {
-			$this->logger->warning(
-				'Execution-overlap lock heartbeat could not write the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
-				array(
-					'key'       => $key,
-					'identity'  => $identity,
-					'args_hash' => $args_hash,
-					'run_id'    => $run_id,
-				)
-			);
-
-			return HeartbeatOutcome::Indeterminate;
-		}
-
-		// Ownership moved after selection, so execution cannot continue under this lock.
-		return null !== $expected_heartbeat_at ? HeartbeatOutcome::GenerationMismatch : HeartbeatOutcome::Lost;
-	}
-
-	/**
 	 * Reclassifies a redelivery fence after an exact lock write loses its race.
 	 *
 	 * @since   1.0.0
@@ -648,22 +611,7 @@ final readonly class OverlapGuard {
 	 * @return  string
 	 */
 	private function option_name( Identity $identity, string $args_hash ): string {
-		return $this->raw_option_name( (string) $identity, $args_hash );
-	}
-
-	/**
-	 * Returns the execution-overlap option name for exact identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity  Exact identity bytes.
-	 * @param   string $args_hash Stable single-flight identity.
-	 *
-	 * @return  string
-	 */
-	private function raw_option_name( string $identity, string $args_hash ): string {
-		return self::OPTION_PREFIX . $identity . '_' . $args_hash;
+		return self::OPTION_PREFIX . (string) $identity . '_' . $args_hash;
 	}
 
 	/**

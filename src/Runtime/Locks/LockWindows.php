@@ -114,21 +114,6 @@ final readonly class LockWindows {
 	}
 
 	/**
-	 * Resolves the per-run lock window for untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 * @param   string $run_id   Run identifier.
-	 *
-	 * @return  int
-	 */
-	public function raw_lock_staleness( string $identity, string $run_id ): int {
-		return $this->resolve_lock_staleness( $identity, $run_id );
-	}
-
-	/**
 	 * Resolves the bounded liveness credit for one execution invocation.
 	 *
 	 * @since   1.0.0

@@ -468,6 +468,18 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
+	/** An expected heartbeat rejects an already-advanced generation before attempting a write. */
+	public function test_heartbeat_rejects_an_already_newer_same_run_generation(): void {
+		$newer_raw = self::fixture_lock_raw( 'run-owner', 100, 300 );
+		$this->wpdb->put( self::KEY, $newer_raw );
+
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner', null, 120 );
+
+		self::assertSame( HeartbeatOutcome::GenerationMismatch, $outcome );
+		self::assertSame( $newer_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
+	}
+
 	/** An expected heartbeat refuses to shorten a newer generation owned by the same run. */
 	public function test_heartbeat_rejects_a_newer_same_run_generation(): void {
 		$newer_raw = self::fixture_lock_raw( 'run-owner', 100, 300 );

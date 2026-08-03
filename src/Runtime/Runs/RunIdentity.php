@@ -121,20 +121,6 @@ final class RunIdentity {
 	}
 
 	/**
-	 * Returns the active-run option prefix for untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 *
-	 * @return  string
-	 */
-	public static function raw_option_name_prefix( string $identity ): string {
-		return self::option_prefix() . $identity . '_';
-	}
-
-	/**
 	 * Returns the complete active-run option name.
 	 *
 	 * @since   1.0.0
@@ -147,21 +133,6 @@ final class RunIdentity {
 	 */
 	public static function option_name( Identity $identity, string $run_id ): string {
 		return self::option_name_prefix( $identity ) . $run_id;
-	}
-
-	/**
-	 * Returns the complete active-run option name for untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 * @param   string $run_id   Run identifier.
-	 *
-	 * @return  string
-	 */
-	public static function raw_option_name( string $identity, string $run_id ): string {
-		return self::raw_option_name_prefix( $identity ) . $run_id;
 	}
 
 	/**

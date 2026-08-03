@@ -111,23 +111,6 @@ final class JobRegistry {
 	}
 
 	/**
-	 * Returns the policy declaration for untrusted scheduler-wire identity bytes when its kind matches.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 * @param   string $kind     Persisted kind key.
-	 *
-	 * @return  JobOptions|null
-	 */
-	public function raw_options( string $identity, string $kind ): ?JobOptions {
-		$registration = $this->registrations[ $identity ] ?? null;
-
-		return ( $registration['kind'] ?? null ) === $kind ? $registration['options'] : null;
-	}
-
-	/**
 	 * Returns the registered kind for one complete identity.
 	 *
 	 * @since   1.0.0

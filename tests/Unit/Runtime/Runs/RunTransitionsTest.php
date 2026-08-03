@@ -14,6 +14,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
@@ -25,6 +26,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
@@ -37,6 +39,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingBackend;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingRandomizer;
@@ -75,10 +78,10 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RunState::class )]
 #[UsesClass( RunStatus::class )]
 #[UsesClass( RunStore::class )]
-#[UsesClass( StoreFactory::class )]
+#[CoversClass( StoreFactory::class )]
 #[UsesClass( LifecycleEffects::class )]
 #[UsesClass( JobRegistry::class )]
-#[UsesClass( JobKindHandler::class )]
+#[CoversClass( JobKindHandler::class )]
 final class RunTransitionsTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -202,7 +205,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_job_context_rejects_a_non_canonical_run_id_before_execution(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		$caught = null;
@@ -216,6 +219,34 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNotNull( $caught );
 		self::assertStringContainsString( 'Run identifier must match the canonical shape', $caught->getMessage() );
 		self::assertSame( array(), $this->job->calls );
+	}
+
+	/**
+	 * A run cannot borrow an execution lease from a registration owned by another kind.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_uses_clock_liveness_for_a_registration_of_another_kind(): void {
+		$foreign_options = new JobOptions( max_runtime: 600 );
+		$foreign_job     = new RecordingChunkedJob( self::NAME );
+		$this->registry->register( $this->identity, $foreign_job->definition( $foreign_options ) );
+
+		$guard = new OverlapGuard( $this->clock, $this->logger, $this->rows, new LockWindows( $this->clock, $this->logger ) );
+		self::assertSame( LockClaimOutcome::Claimed, $guard->claim( $this->identity, self::ARGS_HASH, self::RUN_ID )->outcome );
+
+		$run_store = new RunStore( $this->identity, $this->clock, $this->rows );
+		$state     = $run_store->create( self::RUN_ID, JobKindHandler::KIND, self::ARGS, self::ARGS_HASH, array(), PendingAction::async( 'run', 10 ), at: self::NOW );
+		self::assertInstanceOf( RunState::class, $state );
+		self::assertNull( $this->handler->delivery_liveness_at( $this->identity, self::RUN_ID, $state ) );
+
+		$this->clock->timestamp = self::NOW + 90;
+		$claimed                = $this->terminal_transitions->claim_delivery_ownership( $this->handlers, $this->identity, self::RUN_ID, 1, $run_store );
+
+		self::assertNotNull( $claimed );
+		self::assertSame( self::NOW + 90, $claimed->state->heartbeat_at );
 	}
 
 	/**
@@ -313,7 +344,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_claim_superseded_run_does_not_release_lock_or_execute_effects(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$inspected = $run_store->inspect( self::RUN_ID );
 		self::assertTrue( $inspected->is_success() );
 		$snapshot = $inspected->value;
@@ -353,7 +384,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_handle_run_action_drops_a_stale_sequence_before_every_side_effect(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_action_sequence( 2 ) ) );
@@ -392,7 +423,7 @@ final class RunTransitionsTest extends TestCase {
 	public function test_claim_delivery_ownership_anchors_on_the_exact_observed_run_bytes(): void {
 		$this->prepare_run_action();
 		$expected_raw = $this->install_reordered_run_row();
-		$run_store    = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store    = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 
 		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 
@@ -418,7 +449,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->prepare_run_action();
 		$this->install_reordered_run_row();
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 
 		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 
@@ -433,6 +464,49 @@ final class RunTransitionsTest extends TestCase {
 			\array_column( $this->fired_actions(), 'hook_name' )
 		);
 		$this->assert_terminal_history( 'superseded' );
+	}
+
+	/**
+	 * A failed supersession write logs its typed identity without executing terminal effects.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_logs_a_failed_supersession_write(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $state );
+		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->script_result( 'update', false );
+			}
+		);
+
+		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+
+		self::assertNull( $claimed );
+		self::assertEquals( $state, RunStoreInspector::state( $run_store, self::RUN_ID ) );
+		self::assertSame( array(), $this->fired_actions() );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'error',
+					'message' => 'Run terminal transition could not write authoritative active-run storage; repair option writes before retrying.',
+					'context' => array(
+						'identity'     => self::IDENTITY,
+						'run_id'       => self::RUN_ID,
+						'error_class'  => EngineError::class,
+						'error_reason' => 'storage_failed',
+					),
+				),
+			),
+			$this->logger->records
+		);
 	}
 
 	/**
@@ -455,7 +529,7 @@ final class RunTransitionsTest extends TestCase {
 				),
 			)
 		);
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 
 		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 
@@ -491,7 +565,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_claim_delivery_ownership_drops_a_fresh_same_sequence_delivery(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$first     = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
@@ -529,7 +603,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_claim_delivery_ownership_admits_and_refences_a_stale_execution_marker(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$first     = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $first );
 		self::assertTrue( $first->executing );
@@ -557,7 +631,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_claim_delivery_ownership_drops_a_stale_sequence_after_the_incumbent_advances(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$credit_at = self::NOW + 390;
 		$incumbent = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
 		self::assertInstanceOf( RunState::class, $incumbent );
@@ -590,7 +664,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_enforce_delivery_fence_aborts_without_a_terminal_claim_when_heartbeat_is_indeterminate(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$before    = $run_store->inspect( self::RUN_ID );
 		if ( $before->is_failure() ) {
 			self::fail( 'The running state could not be inspected before the indeterminate fence.' );
@@ -657,7 +731,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_cancel_run_finishes_terminal_state_when_backend_clear_throws(): void {
 		$this->prepare_run_action();
-		$run_store  = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store  = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$inspection = $run_store->inspect( self::RUN_ID );
 		if ( $inspection->is_failure() ) {
 			self::fail( 'The cancellable run snapshot could not be read.' );
@@ -752,7 +826,7 @@ final class RunTransitionsTest extends TestCase {
 		$this->randomizer->value = 5;
 		$this->randomizer->calls = array();
 		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
-		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+		self::assertTrue( ( new LatestRunPointer( $this->identity, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 95 );
 		$this->backend->calls = array();
 
@@ -793,7 +867,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_handle_run_action_supersedes_a_run_that_lost_replacement_ownership(): void {
 		$this->prepare_run_action();
-		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
+		self::assertTrue( ( new LatestRunPointer( $this->identity, $this->rows ) )->record( 'run-newer', self::ARGS_HASH ) );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
 		$GLOBALS['a8csp_bgje_test_option_calls']     = array();
 		$GLOBALS['a8csp_bgje_test_lifecycle_events'] = array();
@@ -851,7 +925,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_handle_run_action_keeps_the_lock_winner_when_pointer_commit_lags(): void {
 		$this->prepare_run_action();
-		self::assertTrue( ( new LatestRunPointer( self::IDENTITY, $this->rows ) )->record( 'run-losing-starter', self::ARGS_HASH ) );
+		self::assertTrue( ( new LatestRunPointer( $this->identity, $this->rows ) )->record( 'run-losing-starter', self::ARGS_HASH ) );
 
 		$this->handle_job_run_action( self::RUN_ID, $this->action_sequence() );
 
@@ -873,6 +947,38 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->logger->records );
 		$this->assert_terminal_history( 'completed' );
+	}
+
+	/**
+	 * A failed latest-pointer repair does not revoke an otherwise valid delivery claim.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_claim_delivery_ownership_warns_and_continues_when_latest_pointer_repair_fails(): void {
+		$this->prepare_run_action();
+		self::assertTrue( ( new LatestRunPointer( $this->identity, $this->rows ) )->record( 'run-losing-starter', self::ARGS_HASH ) );
+		$this->wpdb->fail_updates_targeting( LatestRunPointer::OPTION_PREFIX . self::IDENTITY );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+
+		$claimed = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+
+		self::assertInstanceOf( RunState::class, $claimed );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Latest-run pointer repair failed; discovery metadata may remain stale.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->logger->records
+		);
 	}
 
 	/**
@@ -998,7 +1104,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_enforce_delivery_fence_persists_superseded_after_confirmed_foreign_owner(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		$this->replace_lock_owner( 'run-newer', self::NOW + 90 );
@@ -1030,7 +1136,7 @@ final class RunTransitionsTest extends TestCase {
 	#[DataProvider( 'terminal_statuses' )]
 	public function test_handle_run_action_does_not_execute_a_persisted_terminal_state( string $status ): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		self::assertIsString( $run_store->replace_if_state_matches( self::RUN_ID, $state, $state->with_status( RunStatus::from( $status ) ) ) );
@@ -1080,7 +1186,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	public function test_terminal_failure_logs_once_for_the_winning_transition(): void {
 		$this->prepare_run_action( 42 );
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		self::assertNotNull( $state->pending );
@@ -1292,7 +1398,7 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	private function handle_job_run_action( string $run_id, int $action_sequence ): void {
 		$this->register_job();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = $this->claim_delivery_ownership( $run_id, $action_sequence, $run_store );
 		if ( null === $state ) {
 			return;
@@ -1331,7 +1437,7 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  RunState|null
 	 */
 	private function claim_delivery_ownership( string $run_id, ?int $action_sequence, RunStore $run_store ): ?RunState {
-		$claimed = $this->terminal_transitions->claim_delivery_ownership( $this->handlers, self::IDENTITY, $run_id, $action_sequence, $run_store );
+		$claimed = $this->terminal_transitions->claim_delivery_ownership( $this->handlers, $this->identity, $run_id, $action_sequence, $run_store );
 
 		return $claimed?->state;
 	}

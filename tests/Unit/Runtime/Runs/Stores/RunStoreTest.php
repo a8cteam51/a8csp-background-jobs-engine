@@ -1600,7 +1600,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  RunStore
 	 */
 	private function store(): RunStore {
-		return new RunStore( self::IDENTITY, $this->rig->clock(), $this->rows );
+		return new RunStore( $this->identity, $this->rig->clock(), $this->rows );
 	}
 
 	/**

@@ -16,6 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -32,6 +33,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( ActionDeliveries::class )]
+#[CoversClass( RunTransitions::class )]
 final class ActionDeliveriesTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -138,42 +140,73 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * A malformed lifecycle-action identity performs the exact raw lookup before stale-drop handling.
+	 * A malformed lifecycle-action identity is rejected before storage access.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_malformed_wire_identity_uses_the_exact_raw_lookup_before_stale_drop(): void {
-		$identity = 'malformed';
-		$before   = $this->rig->wpdb()->rows;
+	public function test_malformed_wire_identity_is_rejected_before_storage_access(): void {
+		$identity = \str_repeat( 'malformed', 128 );
 
-		$this->rig->wpdb()->recorded_queries = array();
-		$this->rig->logger()->records        = array();
-
-		\do_action( ActionDeliveries::DELIVER_HOOK, $identity, self::RUN_ID, 1 );
-
-		self::assertSame(
+		$this->assert_malformed_wire_delivery_is_rejected(
+			$identity,
+			self::RUN_ID,
+			'identity',
 			array(
-				"SELECT `option_value` FROM `wp_options` WHERE `option_name` = 'a8csp_bgje_active_run_malformed_" . self::RUN_ID . "' LIMIT 1",
-			),
-			$this->rig->wpdb()->recorded_queries
+				'identity_length' => \strlen( $identity ),
+				'identity_sha256' => \substr( \hash( 'sha256', $identity ), 0, 16 ),
+				'run_id'          => self::RUN_ID,
+			)
 		);
-		self::assertSame( $before, $this->rig->wpdb()->rows );
-		self::assertSame( array(), $this->job->calls );
-		self::assertSame(
+	}
+
+	/**
+	 * A malformed lifecycle-action run identifier is rejected before storage access.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_run_id_is_rejected_before_storage_access(): void {
+		$run_id = \str_repeat( 'malformed', 128 );
+
+		$this->assert_malformed_wire_delivery_is_rejected(
+			self::IDENTITY,
+			$run_id,
+			'run identifier',
 			array(
-				array(
-					'level'   => 'debug',
-					'message' => 'Stale delivery for a finished or cancelled run was dropped.',
-					'context' => array(
-						'identity' => $identity,
-						'run_id'   => self::RUN_ID,
-					),
-				),
-			),
-			$this->rig->logger()->records
+				'identity'      => self::IDENTITY,
+				'run_id_length' => \strlen( $run_id ),
+				'run_id_sha256' => \substr( \hash( 'sha256', $run_id ), 0, 16 ),
+			)
+		);
+	}
+
+	/**
+	 * Malformed lifecycle-action identity and run identifier bytes are both reported without storage access.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_and_run_id_are_rejected_before_storage_access(): void {
+		$identity = \str_repeat( 'malformed-identity', 128 );
+		$run_id   = \str_repeat( 'malformed-run-id', 128 );
+
+		$this->assert_malformed_wire_delivery_is_rejected(
+			$identity,
+			$run_id,
+			'identity and run identifier',
+			array(
+				'identity_length' => \strlen( $identity ),
+				'identity_sha256' => \substr( \hash( 'sha256', $identity ), 0, 16 ),
+				'run_id_length'   => \strlen( $run_id ),
+				'run_id_sha256'   => \substr( \hash( 'sha256', $run_id ), 0, 16 ),
+			)
 		);
 	}
 
@@ -554,6 +587,42 @@ final class ActionDeliveriesTest extends TestCase {
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Asserts malformed scheduler bytes stop before storage and emit bounded correlation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string               $identity           Scheduler-wire work identity.
+	 * @param   string               $run_id             Scheduler-wire run identifier.
+	 * @param   string               $rejected_component Rejected wire component description.
+	 * @param   array<string, mixed> $context            Expected diagnostic context.
+	 *
+	 * @return  void
+	 */
+	private function assert_malformed_wire_delivery_is_rejected( string $identity, string $run_id, string $rejected_component, array $context ): void {
+		$before = $this->rig->wpdb()->rows;
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->logger()->records        = array();
+
+		\do_action( ActionDeliveries::DELIVER_HOOK, $identity, $run_id, 1 );
+
+		self::assertSame( array(), $this->rig->wpdb()->recorded_queries );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->job->calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => \sprintf( 'Background-work delivery carried a malformed %s and was dropped before storage access; correct the scheduler delivery arguments before retrying.', $rejected_component ),
+					'context' => $context,
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
 
 	/**
 	 * Boots the deterministic graph with one job definition.

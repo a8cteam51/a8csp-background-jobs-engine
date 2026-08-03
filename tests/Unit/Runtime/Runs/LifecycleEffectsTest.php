@@ -143,7 +143,7 @@ final class LifecycleEffectsTest extends TestCase {
 	/** Non-Failed terminal replay completes generic hooks and history without kind-owned context. */
 	public function test_execute_claimed_transition_replays_non_failed_effects_without_failure_detail(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal     = $running->with_status( RunStatus::Superseded )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
@@ -167,7 +167,7 @@ final class LifecycleEffectsTest extends TestCase {
 	/** Failed terminal replay consumes an already-resolved failure detail for retention and hooks. */
 	public function test_execute_claimed_transition_replays_failed_retention_with_resolved_failure_detail(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal       = $running->with_status( RunStatus::Failed )->with_failed_attempts( 2 )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null )->with_error(
@@ -204,7 +204,7 @@ final class LifecycleEffectsTest extends TestCase {
 	/** Failed-run retention failure is logged without skipping terminal hooks or history. */
 	public function test_failed_run_retention_failure_is_logged_and_later_effects_continue(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
@@ -256,7 +256,7 @@ final class LifecycleEffectsTest extends TestCase {
 	/** Terminal-history failure leaves a marked claim for reconciliation after active lock cleanup. */
 	public function test_terminal_history_failure_keeps_the_claim_for_replay(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$state     = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $state );
 		$this->wpdb->before_next( 'update', static function (): void {} );
@@ -307,7 +307,7 @@ final class LifecycleEffectsTest extends TestCase {
 	/** Only the exact terminal snapshot carrying every required effect marker may be deleted. */
 	public function test_finish_claimed_transition_requires_every_effect_and_the_exact_latest_raw(): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal  = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
@@ -345,7 +345,7 @@ final class LifecycleEffectsTest extends TestCase {
 	#[DataProvider( 'terminal_hook_statuses' )]
 	public function test_terminal_states_fire_unchanged_hook_payloads( string $status ): void {
 		$this->prepare_run_action();
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal = $running
@@ -411,7 +411,7 @@ final class LifecycleEffectsTest extends TestCase {
 			'mirror' => 'accepted',
 		);
 		$this->prepare_run_action( $start_args );
-		$run_store = new RunStore( self::IDENTITY, $this->clock, new OptionRows( $this->wpdb ) );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
 		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
 		self::assertNotNull( $running );
 		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );

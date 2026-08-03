@@ -514,7 +514,7 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 	private function run_row_statuses( string $name ): array {
 		global $wpdb;
 
-		$prefix = RunIdentity::raw_option_name_prefix( self::identity( $name ) );
+		$prefix = RunIdentity::option_name_prefix( Identity::compose( self::SCOPE, $name ) );
 
 		/** @var \wpdb $wpdb */
 		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT `option_name`, `option_value` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( $prefix ) . '%' ), \ARRAY_A );

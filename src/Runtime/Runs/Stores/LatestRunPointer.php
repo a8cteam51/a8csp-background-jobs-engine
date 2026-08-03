@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
@@ -62,11 +63,11 @@ final readonly class LatestRunPointer {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string     $identity Complete scope-qualified job or chunked job identity.
+	 * @param   Identity   $identity Complete scope-qualified job or chunked job identity.
 	 * @param   OptionRows $rows     Authoritative raw pointer-row I/O.
 	 */
 	public function __construct(
-		private string $identity,
+		private Identity $identity,
 		private OptionRows $rows,
 	) {}
 
@@ -200,7 +201,7 @@ final readonly class LatestRunPointer {
 	 * @return  string
 	 */
 	private function option_name(): string {
-		return self::OPTION_PREFIX . $this->identity;
+		return self::OPTION_PREFIX . (string) $this->identity;
 	}
 
 	/**

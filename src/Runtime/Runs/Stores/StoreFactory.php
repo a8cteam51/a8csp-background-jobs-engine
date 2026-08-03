@@ -54,20 +54,6 @@ final readonly class StoreFactory {
 	 * @return  RunStore
 	 */
 	public function run_store( Identity $identity ): RunStore {
-		return new RunStore( (string) $identity, $this->clock, $this->rows );
-	}
-
-	/**
-	 * Constructs an active-run store bound to untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 *
-	 * @return  RunStore
-	 */
-	public function raw_run_store( string $identity ): RunStore {
 		return new RunStore( $identity, $this->clock, $this->rows );
 	}
 
@@ -82,20 +68,6 @@ final readonly class StoreFactory {
 	 * @return  LatestRunPointer
 	 */
 	public function latest_run_pointer( Identity $identity ): LatestRunPointer {
-		return new LatestRunPointer( (string) $identity, $this->rows );
-	}
-
-	/**
-	 * Constructs a latest-run pointer bound to untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 *
-	 * @return  LatestRunPointer
-	 */
-	public function raw_latest_run_pointer( string $identity ): LatestRunPointer {
 		return new LatestRunPointer( $identity, $this->rows );
 	}
 

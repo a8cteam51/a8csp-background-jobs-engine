@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -28,6 +29,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( ActionDeliveries::class )]
 #[CoversClass( Inspection::class )]
 #[CoversClass( RunStore::class )]
+#[CoversClass( RunTransitions::class )]
 final class KindDeliveryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -300,7 +302,7 @@ final class KindDeliveryTest extends TestCase {
 	 * @return  RunStore
 	 */
 	private function run_store(): RunStore {
-		return new RunStore( self::IDENTITY, $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
+		return new RunStore( $this->identity, $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
 	}
 
 	/**

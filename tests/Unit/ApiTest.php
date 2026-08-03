@@ -366,7 +366,7 @@ final class ApiTest extends TestCase {
 
 		$this->rig->run_due();
 
-		$run_store = new RunStore( $identity, $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
+		$run_store = new RunStore( Identity::tryFrom( $identity ) ?? throw new \LogicException( 'The test identity must be canonical.' ), $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
 		$terminal  = RunStoreInspector::state( $run_store, $target_run_id );
 		self::assertNotNull( $terminal );
 		self::assertSame( $seed_run_id, $terminal->previous_completed_run_id );

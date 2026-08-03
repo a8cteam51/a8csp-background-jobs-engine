@@ -164,13 +164,13 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Raw scheduler-wire identity bytes.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Persisted state admitted for delivery.
 	 *
 	 * @return  int|null Null when no registered definition can declare an execution lease.
 	 */
-	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int;
+	public function delivery_liveness_at( Identity $identity, string $run_id, RunState $state ): ?int;
 
 	/**
 	 * Returns the kind-owned state used to build a completed terminal transition.

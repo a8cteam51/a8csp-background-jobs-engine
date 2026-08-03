@@ -63,9 +63,6 @@ final readonly class RunTransitions {
 	/**
 	 * Claims delivery ownership of one recoverable running state for a lifecycle action.
 	 *
-	 * Scheduler-wire identity bytes stay raw because corrupt values still drive exact run lookup and
-	 * stale-delivery diagnostics until a run state is claimed.
-	 *
 	 * @internal Engine product service.
 	 *
 	 * @since   1.0.0
@@ -74,22 +71,20 @@ final readonly class RunTransitions {
 	 * @phpstan-param array<string, KindHandlerInterface> $handlers
 	 *
 	 * @param   array    $handlers        Kind handlers keyed by their persisted keys.
-	 * @param   string   $identity        Complete scope-qualified work identity.
+	 * @param   Identity $identity        Complete scope-qualified work identity.
 	 * @param   string   $run_id          Run identifier.
 	 * @param   int|null $action_sequence Received lifecycle action sequence.
 	 * @param   RunStore $run_store       Active-run store.
 	 *
-	 * @throws  \LogicException When a delivery claim does not retain its canonical identity.
-	 *
 	 * @return  ClaimedDelivery|null
 	 */
-	public function claim_delivery_ownership( array $handlers, string $identity, string $run_id, ?int $action_sequence, RunStore $run_store ): ?ClaimedDelivery {
+	public function claim_delivery_ownership( array $handlers, Identity $identity, string $run_id, ?int $action_sequence, RunStore $run_store ): ?ClaimedDelivery {
 		$inspection = $run_store->inspect( $run_id );
 		if ( $inspection->is_failure() ) {
 			$this->logger->warning(
 				'Background-work run state could not be read; repair WordPress option reads and retry the delivery.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 					'error'    => $inspection->error->message,
 				)
@@ -103,7 +98,7 @@ final readonly class RunTransitions {
 			$this->logger->debug(
 				'Stale delivery for a finished or cancelled run was dropped.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -116,7 +111,7 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Background-work run state is corrupt; repair or remove the row so the reconciliation sweep can release any remaining lock.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -128,7 +123,7 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				$state->kind . ' run is already terminal; allow the reconciliation sweep to finish its cleanup.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 					'status'   => $state->status->value,
 				)
@@ -143,7 +138,7 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Persisted run kind has no registered handler; the delivery was dropped without changing the run.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 					'kind'     => $kind,
 				)
@@ -155,7 +150,7 @@ final readonly class RunTransitions {
 			$this->logger->warning(
 				'Persisted lifecycle stage is not owned by the resolved kind handler; the delivery was dropped without changing the run.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 					'kind'     => $kind,
 					'stage'    => $state->pending?->stage,
@@ -169,7 +164,7 @@ final readonly class RunTransitions {
 			$this->logger->info(
 				'Stale lifecycle action delivery dropped.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'expected' => $state->action_sequence,
 					'received' => $action_sequence,
 					'run_id'   => $run_id,
@@ -181,12 +176,12 @@ final readonly class RunTransitions {
 
 		if (
 			$state->executing
-			&& ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $this->lock_windows->raw_lock_staleness( $identity, $run_id ) )
+			&& ! $this->lock_windows->heartbeat_is_stale( $state->heartbeat_at, $this->lock_windows->lock_staleness( $identity, $run_id ) )
 		) {
 			$this->logger->debug(
 				'Duplicate lifecycle action delivery dropped while the current delivery is still executing.',
 				array(
-					'identity'        => $identity,
+					'identity'        => (string) $identity,
 					'run_id'          => $run_id,
 					'kind'            => $kind,
 					'action_sequence' => $state->action_sequence,
@@ -210,8 +205,7 @@ final readonly class RunTransitions {
 			if ( $this->enforce_raw_delivery_fence( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], $at, $at ) ) {
 				return null;
 			}
-			$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed delivery requires a canonical background-work identity.' );
-			$this->fail_run( $handler, $canonical_identity, $run_id, $state, $run_store, $marked->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::PayloadRejected, $handler->failure_details( $state ), $snapshot['raw'] );
+			$this->fail_run( $handler, $identity, $run_id, $state, $run_store, $marked->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::PayloadRejected, $handler->failure_details( $state ), $snapshot['raw'] );
 
 			return null;
 		}
@@ -220,22 +214,21 @@ final readonly class RunTransitions {
 		}
 		$state = $marked;
 
-		$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed delivery requires a canonical background-work identity.' );
-		$latest_pointer     = $this->stores->latest_run_pointer( $canonical_identity );
-		$latest_run_id      = $latest_pointer->get_latest_for_hash( $state->args_hash );
+		$latest_pointer = $this->stores->latest_run_pointer( $identity );
+		$latest_run_id  = $latest_pointer->get_latest_for_hash( $state->args_hash );
 
 		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
 		if ( $run_id !== $latest_run_id && ! $latest_pointer->record( $run_id, $state->args_hash ) ) {
 			$this->logger->warning(
 				'Latest-run pointer repair failed; discovery metadata may remain stale.',
 				array(
-					'identity' => (string) $canonical_identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
 		}
 
-		return new ClaimedDelivery( $canonical_identity, $handler, $state );
+		return new ClaimedDelivery( $identity, $handler, $state );
 	}
 
 	/**
@@ -523,13 +516,13 @@ final readonly class RunTransitions {
 	// region HELPERS
 
 	/**
-	 * Aborts an untrusted scheduler-wire delivery when its ownership fence is not confirmed.
+	 * Aborts a scheduler delivery when its ownership fence is not confirmed.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   KindHandlerInterface $handler               Handler selected by the persisted kind.
-	 * @param   string               $identity              Raw scheduler-wire identity bytes.
+	 * @param   Identity             $identity              Complete scope-qualified work identity.
 	 * @param   string               $run_id                Run identifier.
 	 * @param   RunState             $state                 Running state observed before the fence.
 	 * @param   RunStore             $run_store             Active-run store.
@@ -537,12 +530,10 @@ final readonly class RunTransitions {
 	 * @param   int|null             $at                    Liveness timestamp, or null to use the current clock time.
 	 * @param   int|null             $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
 	 *
-	 * @throws  \LogicException When a claimed superseded run does not retain its canonical identity.
-	 *
 	 * @return  bool Whether the caller must abort this delivery.
 	 */
-	private function enforce_raw_delivery_fence( KindHandlerInterface $handler, string $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?int $at, ?int $expected_heartbeat_at ): bool {
-		$outcome = $this->overlap_guard->raw_heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
+	private function enforce_raw_delivery_fence( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $expected_raw, ?int $at, ?int $expected_heartbeat_at ): bool {
+		$outcome = $this->overlap_guard->heartbeat( $identity, $state->args_hash, $run_id, $at, $expected_heartbeat_at );
 		if ( HeartbeatOutcome::Owned === $outcome ) {
 			return false;
 		}
@@ -552,7 +543,7 @@ final readonly class RunTransitions {
 			$this->logger->debug(
 				$handler->key() . ' delivery generation is superseded; the delivery aborts without a terminal transition.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -565,7 +556,7 @@ final readonly class RunTransitions {
 			$this->logger->debug(
 				$kind . ' ownership fence is indeterminate; the delivery aborts without a terminal transition.',
 				array(
-					'identity' => $identity,
+					'identity' => (string) $identity,
 					'run_id'   => $run_id,
 				)
 			);
@@ -573,13 +564,13 @@ final readonly class RunTransitions {
 			return true;
 		}
 
-		$latest_run_id = $this->stores->raw_latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
+		$latest_run_id = $this->stores->latest_run_pointer( $identity )->get_latest_for_hash( $state->args_hash );
 		$claimed       = $this->claim_superseded_run( $run_id, $state, $run_store, $expected_raw );
 		if ( $claimed instanceof Failure ) {
 			$this->logger->error(
 				$claimed->error->message,
 				array(
-					'identity'     => $identity,
+					'identity'     => (string) $identity,
 					'run_id'       => $run_id,
 					'error_class'  => $claimed->error::class,
 					'error_reason' => $claimed->error->reason?->value,
@@ -591,8 +582,7 @@ final readonly class RunTransitions {
 		if ( null === $claimed ) {
 			return true;
 		}
-		$canonical_identity = Identity::tryFrom( $identity ) ?? throw new \LogicException( 'Claimed supersession requires a canonical background-work identity.' );
-		$this->execute_claimed_supersession( $canonical_identity, $run_id, $latest_run_id, $claimed, $run_store );
+		$this->execute_claimed_supersession( $identity, $run_id, $latest_run_id, $claimed, $run_store );
 
 		return true;
 	}

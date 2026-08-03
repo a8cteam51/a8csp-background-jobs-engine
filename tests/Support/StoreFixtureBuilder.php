@@ -167,7 +167,7 @@ final readonly class StoreFixtureBuilder {
 	public function run( string $run_id, RunState $state ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
-				$store   = new RunStore( (string) $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
+				$store   = new RunStore( $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
 				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending, $state->priority );
 				if ( ! $created instanceof RunState ) {
 					throw new \LogicException( 'Production RunStore rejected an isolated active-run fixture.' );
@@ -299,7 +299,7 @@ final readonly class StoreFixtureBuilder {
 	public function latest( array $entries ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $entries ): array {
-				$store = new LatestRunPointer( (string) $this->identity, new OptionRows( $wpdb ) );
+				$store = new LatestRunPointer( $this->identity, new OptionRows( $wpdb ) );
 				foreach ( $entries as $entry ) {
 					if ( ! $store->record( $entry['run_id'], $entry['args_hash'] ) ) {
 						throw new \LogicException( 'Production LatestRunPointer rejected an isolated pointer fixture.' );

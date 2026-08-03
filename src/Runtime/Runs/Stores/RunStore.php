@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
@@ -123,12 +124,12 @@ final readonly class RunStore {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string         $identity Complete scope-qualified job or chunked job identity.
+	 * @param   Identity       $identity Complete scope-qualified job or chunked job identity.
 	 * @param   ClockInterface $clock    Timestamp source.
 	 * @param   OptionRows     $rows     Authoritative raw option-row I/O.
 	 */
 	public function __construct(
-		private string $identity,
+		private Identity $identity,
 		private ClockInterface $clock,
 		private OptionRows $rows,
 	) {}
@@ -177,7 +178,7 @@ final readonly class RunStore {
 			return $rejected;
 		}
 
-		if ( RowWriteOutcome::Won !== $this->rows->insert_if_absent( RunIdentity::raw_option_name( $this->identity, $run_id ), $raw ) ) {
+		if ( RowWriteOutcome::Won !== $this->rows->insert_if_absent( RunIdentity::option_name( $this->identity, $run_id ), $raw ) ) {
 			return null;
 		}
 
@@ -198,7 +199,7 @@ final readonly class RunStore {
 	 */
 	#[\NoDiscard( 'a run-state read outcome must be handled, not dropped' )]
 	public function inspect( string $run_id ): AbstractResult {
-		$selected = $this->rows->read( RunIdentity::raw_option_name( $this->identity, $run_id ) );
+		$selected = $this->rows->read( RunIdentity::option_name( $this->identity, $run_id ) );
 		if ( $selected->is_failure() ) {
 			return $selected;
 		}
@@ -228,7 +229,7 @@ final readonly class RunStore {
 	 */
 	#[\NoDiscard( 'a run-liveness read outcome must be handled, not dropped' )]
 	public function inspect_lane_liveness(): AbstractResult {
-		$names = $this->rows->option_names( RunIdentity::raw_option_name_prefix( $this->identity ) );
+		$names = $this->rows->option_names( RunIdentity::option_name_prefix( $this->identity ) );
 		if ( $names->is_failure() ) {
 			return $names;
 		}
@@ -246,7 +247,7 @@ final readonly class RunStore {
 
 			foreach ( $selected->value as $option_name => $raw ) {
 				$run_identity = RunIdentity::from_option_name( $option_name );
-				if ( null === $run_identity || $this->identity !== (string) $run_identity['identity'] ) {
+				if ( null === $run_identity || (string) $this->identity !== (string) $run_identity['identity'] ) {
 					continue;
 				}
 
@@ -458,7 +459,7 @@ final readonly class RunStore {
 	 * @return  bool Whether this caller deleted the exact row.
 	 */
 	public function delete_exact( string $run_id, string $expected_raw ): bool {
-		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::raw_option_name( $this->identity, $run_id ), $expected_raw );
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw );
 	}
 
 	/**
@@ -478,7 +479,7 @@ final readonly class RunStore {
 	 * @return  bool Whether this caller deleted the exact row.
 	 */
 	public function delete_if_unchanged( string $run_id, RunState $expected ): bool {
-		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::raw_option_name( $this->identity, $run_id ), self::serialize_state( $expected ) );
+		return RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( RunIdentity::option_name( $this->identity, $run_id ), self::serialize_state( $expected ) );
 	}
 
 	/**
@@ -567,7 +568,7 @@ final readonly class RunStore {
 		$expected_raw = $expected instanceof RunState ? self::serialize_state( $expected ) : $expected;
 
 		return array(
-			'outcome' => $this->rows->compare_and_swap( RunIdentity::raw_option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ),
+			'outcome' => $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ),
 			'raw'     => $replacement_raw,
 		);
 	}

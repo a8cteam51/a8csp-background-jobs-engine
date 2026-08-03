@@ -272,15 +272,15 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Raw scheduler-wire identity bytes.
+	 * @param   Identity $identity Complete scope-qualified job identity.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Persisted run-stage state.
 	 *
 	 * @return  int|null Null when no registered definition can declare an execution lease.
 	 */
 	#[\Override]
-	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int {
-		$options = $this->registry->raw_options( $identity, self::KIND );
+	public function delivery_liveness_at( Identity $identity, string $run_id, RunState $state ): ?int {
+		$options = $this->options( $identity );
 		if ( null === $options ) {
 			return null;
 		}

@@ -395,7 +395,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
+		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions, $logger );
 		$dispatcher           = new Dispatcher( $job_registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );

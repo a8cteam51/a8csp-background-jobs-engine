@@ -180,7 +180,7 @@ final class RunReconciliationTest extends TestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$this->lifecycle_deliveries = new ActionDeliveries( $this->handlers, $this->stores, $this->terminal_transitions );
+		$this->lifecycle_deliveries = new ActionDeliveries( $this->handlers, $this->stores, $this->terminal_transitions, $this->logger );
 		$this->dispatcher           = new Dispatcher( $this->registry, $this->handlers, $delivery_scheduler, $guard, $overlap_identity, $this->stores, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
 		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->handlers, $delivery_scheduler );
 		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), $scheduler, $option_rows, $this->clock, $this->logger );
