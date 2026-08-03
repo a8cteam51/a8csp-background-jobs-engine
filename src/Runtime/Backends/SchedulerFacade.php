@@ -298,34 +298,10 @@ final readonly class SchedulerFacade {
 	}
 
 	/**
-	 * Returns the number of matching pending occurrences.
-	 *
-	 * The total spans every currently ready backend so same-backend and cross-backend surpluses share
-	 * one convergence signal.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string      $hook  Hook to query.
-	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
-	 * @param   string      $group Backend grouping label.
-	 *
-	 * @return  int<0, max>
-	 */
-	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
-		$count = 0;
-		foreach ( $this->ready_backends() as $backend ) {
-			$count += $backend->scheduled_count( $hook, $args, $group );
-		}
-
-		return $count;
-	}
-
-	/**
 	 * Returns the pending count and cadence for every requested schedule identity.
 	 *
 	 * The per-identity totals span every currently ready backend so same-backend and cross-backend
-	 * surpluses retain the scalar convergence semantics.
+	 * surpluses reach one convergence signal.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

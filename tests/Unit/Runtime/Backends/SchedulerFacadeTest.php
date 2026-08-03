@@ -153,40 +153,40 @@ final class SchedulerFacadeTest extends TestCase {
 	}
 
 	/**
-	 * Scheduled counts preserve multiple matching occurrences inside one ready backend.
+	 * Scheduled chains preserve multiple matching occurrences inside one ready backend.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_scheduled_count_preserves_same_backend_multiplicity(): void {
+	public function test_scheduled_chains_preserve_same_backend_multiplicity(): void {
 		$identity  = self::SCOPE . ':same-backend-count';
 		$scheduler = new SchedulerFacade( array( $this->preferred() ) );
 		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( $identity ), self::NOW + 300, $identity ) );
 		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( $identity ), self::NOW + 600, $identity ) );
 
-		self::assertSame( 2, $scheduler->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( $identity ), $identity ) );
+		self::assertSame( 2, $scheduler->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( $identity ) )[ $identity ]['count'] );
 	}
 
 	/**
-	 * Scheduled counts sum matching occurrences across ready backends.
+	 * Scheduled chains sum matching occurrences across ready backends.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_scheduled_count_sums_ready_backend_occurrences(): void {
+	public function test_scheduled_chains_sum_ready_backend_occurrences(): void {
 		$identity  = self::SCOPE . ':cross-backend-count';
 		$scheduler = new SchedulerFacade( $this->rig->backends() );
 		self::assertInstanceOf( Success::class, $this->preferred()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( $identity ), self::NOW + 300, $identity ) );
 		self::assertInstanceOf( Success::class, $this->fallback()->schedule_recurring( OccurrenceDelivery::SCHEDULE_HOOK, 300, array( $identity ), self::NOW + 300, $identity ) );
 
-		self::assertSame( 2, $scheduler->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( $identity ), $identity ) );
+		self::assertSame( 2, $scheduler->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( $identity ) )[ $identity ]['count'] );
 
 		$this->preferred()->ready = false;
-		self::assertSame( 1, $scheduler->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( $identity ), $identity ) );
+		self::assertSame( 1, $scheduler->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( $identity ) )[ $identity ]['count'] );
 	}
 
 	/**
@@ -286,7 +286,6 @@ final class SchedulerFacadeTest extends TestCase {
 			$calls = $this->calls( $backend, 'scheduled_chains' );
 			self::assertCount( 1, $calls );
 			self::assertSame( $identities, $calls[0]['args']['identities'] ?? null );
-			self::assertSame( array(), $this->calls( $backend, 'scheduled_count' ) );
 		}
 	}
 

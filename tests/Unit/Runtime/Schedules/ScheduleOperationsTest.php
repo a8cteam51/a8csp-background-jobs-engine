@@ -166,7 +166,6 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertCount( 1, $calls );
 		self::assertSame( OccurrenceDelivery::SCHEDULE_HOOK, $calls[0]['args']['hook'] ?? null );
 		self::assertSame( array( 'scope-a:nightly' ), $calls[0]['args']['identities'] ?? null );
-		self::assertSame( array(), $this->calls( 'scheduled_count' ) );
 		self::assertSame(
 			array( 'scope-a:hourly', 'scope-a:hourly' ),
 			\array_map( static fn ( array $call ): mixed => $call['args']['group'] ?? null, $this->write_calls() )
@@ -366,7 +365,7 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Success::class, $repaired );
 		self::assertSame( array( 'unschedule', 'schedule_recurring' ), \array_column( $this->write_calls(), 'verb' ) );
 		self::assertSame( $next_due, $this->calls( 'schedule_recurring' )[0]['args']['first_run_timestamp'] ?? null );
-		self::assertSame( 1, $this->rig->backend()->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( 'scope-a:nightly' ), 'scope-a:nightly' ) );
+		self::assertSame( 1, $this->rig->backend()->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( 'scope-a:nightly' ) )['scope-a:nightly']['count'] );
 		self::assertSame( $registration, $this->scope_entries( 'scope-a' )[0] );
 
 		$this->reset_backend_observations();

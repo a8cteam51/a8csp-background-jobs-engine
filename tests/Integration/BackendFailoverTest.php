@@ -146,8 +146,8 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 
 		$preferred = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $preferred );
-		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 0, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
+		self::assertSame( 0, $wp_cron_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
 		$registration_before = \get_option( $registry_option, null );
 		self::assertIsArray( $registration_before );
 
@@ -156,15 +156,15 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$action_scheduler->ready = false;
 		$fallback                = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $fallback );
-		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 1, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
+		self::assertSame( 1, $wp_cron_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
 
 		$action_scheduler->ready = true;
 		$converged               = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 
 		self::assertInstanceOf( Success::class, $converged );
-		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 0, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
+		self::assertSame( 0, $wp_cron_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
 		self::assertSame( $registration_before, \get_option( $registry_option, null ) );
 	}
 

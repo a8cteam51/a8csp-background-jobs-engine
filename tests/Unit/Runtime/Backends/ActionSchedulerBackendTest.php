@@ -226,35 +226,40 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
-	 * Pending occurrences are counted without fetching Action Scheduler objects.
+	 * Same-backend duplicate chains remain visible through the scheduled-chain census.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Same-backend duplicate chains are invisible through logical schedule reads, so exact pending-ID cardinality remains the scalar query signal; requesting IDs avoids materializing complete actions for callers that need only one identity.
+	 * @pin-rationale Same-backend duplicate chains are invisible through existence and next-occurrence reads, so each identity's scheduled-chain census must retain exact pending cardinality.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_pending_occurrence_count_uses_an_identity_scoped_id_query(): void {
+	public function test_scheduled_chains_preserve_same_backend_duplicate_cardinality(): void {
 		$GLOBALS['a8csp_bgje_test_as_results'] = array(
-			'as_get_scheduled_actions' => array( array( 41, 42 ) ),
+			'as_get_scheduled_actions' => array(
+				array(
+					41 => new \A8CSP_BGJE_Test_AS_Action( array( 'schedule-17' ), 'schedule-17' ),
+					42 => new \A8CSP_BGJE_Test_AS_Action( array( 'schedule-17' ), 'schedule-17' ),
+				),
+			),
 		);
 
-		$count = ( new ActionSchedulerBackend() )->scheduled_count( self::HOOK, array( 'schedule-17' ), 'reports' );
+		$chains = ( new ActionSchedulerBackend() )->scheduled_chains( self::HOOK, array( 'schedule-17' ) );
 
-		self::assertSame( 2, $count );
+		self::assertSame( 2, $chains['schedule-17']['count'] );
 		self::assertSame(
 			array(
 				array(
 					'hook'     => self::HOOK,
 					'args'     => array( 'schedule-17' ),
-					'group'    => 'reports',
+					'group'    => 'schedule-17',
 					'status'   => 'pending',
 					'per_page' => -1,
 					'orderby'  => 'none',
 				),
-				'ids',
+				'OBJECT',
 			),
 			$this->calls( 'as_get_scheduled_actions' )[0]['args']
 		);
