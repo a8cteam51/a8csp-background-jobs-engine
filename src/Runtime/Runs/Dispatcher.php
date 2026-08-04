@@ -221,15 +221,12 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
 	public function dispatch( Identity $identity, array $args = array(), ?int $fire_at = null, ?int $priority = null ): AbstractResult {
-		$kind = $this->registry->kind( $identity );
-		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
+		$registration = $this->resolve_registration( $identity );
+		if ( $registration instanceof Failure ) {
+			return $registration;
 		}
-		$handler = $this->handler( $kind );
-		$options = $handler->options( $identity );
-		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
-		}
+		$handler = $registration['handler'];
+		$options = $registration['options'];
 
 		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $args, $fire_at, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
 	}
@@ -250,15 +247,12 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
 	public function dispatch_scheduled_target( Identity $identity, array $args, ?int $priority = null, ?\Closure $on_accepted = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
-		$kind = $this->registry->kind( $identity );
-		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
+		$registration = $this->resolve_registration( $identity );
+		if ( $registration instanceof Failure ) {
+			return $registration;
 		}
-		$handler = $this->handler( $kind );
-		$options = $handler->options( $identity );
-		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
-		}
+		$handler = $registration['handler'];
+		$options = $registration['options'];
 
 		return $this->dispatch_resolved( $handler, $options, $identity, $args, null, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted, terminalize_overlap_key_failure: $terminalize_overlap_key_failure );
 	}
@@ -996,6 +990,49 @@ final readonly class Dispatcher {
 		}
 
 		return $handler;
+	}
+
+	/**
+	 * Returns the dispatch failure for an absent or incomplete live registration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete scope-qualified work identity.
+	 *
+	 * @return  Failure<EngineError>
+	 */
+	private function unregistered_dispatch_failure( Identity $identity ): Failure {
+		return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
+	}
+
+	/**
+	 * Resolves one live registration and its policy declaration for dispatch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete scope-qualified work identity.
+	 *
+	 * @throws  \LogicException When the engine graph has no handler for the installed kind.
+	 *
+	 * @return  array{handler: KindHandlerInterface, options: JobOptions}|Failure<EngineError>
+	 */
+	private function resolve_registration( Identity $identity ): array|Failure {
+		$kind = $this->registry->kind( $identity );
+		if ( null === $kind ) {
+			return $this->unregistered_dispatch_failure( $identity );
+		}
+		$handler = $this->handler( $kind );
+		$options = $handler->options( $identity );
+		if ( null === $handler->execution( $identity ) || null === $options ) {
+			return $this->unregistered_dispatch_failure( $identity );
+		}
+
+		return array(
+			'handler' => $handler,
+			'options' => $options,
+		);
 	}
 
 	/**

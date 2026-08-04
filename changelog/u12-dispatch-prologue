@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Both dispatch entry points resolve a job's registration through one shared step, so an unregistered or incompletely registered job reports the same failure from either. The public API and observable behaviour are unchanged.

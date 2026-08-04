@@ -7,23 +7,39 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+use A8C\SpecialProjects\BackgroundJobsEngine\JobKind;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\DeliveryScheduler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -1420,6 +1436,36 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Dispatch rejects a registry entry that lacks the execution role declared by its kind.
+	 *
+	 * The definition reaches the data-only registry directly because no engine write can produce this
+	 * state: both kind handlers type-check the execution role before registering, so the guard under
+	 * test is defensive, and only a caller-owned registry can present the state it defends against.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_rejects_a_registration_without_its_kind_execution(): void {
+		$name     = 'incomplete-registration';
+		$identity = Identity::compose( self::SCOPE, $name );
+		$registry = new JobRegistry();
+		$registry->register( $identity, JobDefinition::for_kind( $name, JobKind::job(), new RecordingChunkedJob( $name ) ) );
+		$before = $this->public_effects_snapshot();
+
+		$result = $this->job_dispatcher_for_registry( $registry )->dispatch( $identity, self::ARGS );
+
+		self::assertInstanceOf( Failure::class, $result );
+		$error = $result->error;
+		self::assertInstanceOf( EngineError::class, $error );
+		self::assertSame( EngineErrorReason::UnknownJob, $error->reason );
+		self::assertSame( 'Background-work "runs-tests:incomplete-registration" is not registered; register it before dispatching.', $error->message );
+		self::assertSame( array( 'identity' => 'runs-tests:incomplete-registration' ), $error->context );
+		self::assertSame( $before, $this->public_effects_snapshot() );
+	}
+
+	/**
 	 * Public priority validation rejects values before an engine boundary.
 	 *
 	 * @since   1.0.0
@@ -2354,6 +2400,35 @@ final class DispatcherTest extends TestCase {
 	 */
 	private function run_option_name(): string {
 		return 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID;
+	}
+
+	/**
+	 * Builds one job-kind dispatcher against a caller-owned registration view.
+	 *
+	 * The handler map installs the job kind alone, so a chunked-kind identity reaches the engine
+	 * graph's missing-handler exception rather than a dispatch result.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   JobRegistry $registry Registered work definitions.
+	 *
+	 * @return  Dispatcher
+	 */
+	private function job_dispatcher_for_registry( JobRegistry $registry ): Dispatcher {
+		$clock                = $this->rig->clock();
+		$logger               = $this->rig->logger();
+		$rows                 = new OptionRows( $this->rig->wpdb() );
+		$lock_windows         = new LockWindows( $clock, $logger );
+		$guard                = new OverlapGuard( $clock, $logger, $rows, $lock_windows );
+		$stores               = new StoreFactory( $clock, $rows, $logger );
+		$delivery_scheduler   = new DeliveryScheduler( new SchedulerFacade( array( $this->rig->backend() ) ), $clock );
+		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
+		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $delivery_scheduler, $logger, $terminal_effects );
+		$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $this->rig->randomizer(), $logger, $terminal_transitions, $terminal_effects );
+		$handler              = new JobKindHandler( $registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
+
+		return new Dispatcher( $registry, array( $handler->key() => $handler ), $delivery_scheduler, $guard, new OverlapIdentity(), $stores, $clock, $this->rig->randomizer(), $logger, $terminal_transitions );
 	}
 
 	/**
