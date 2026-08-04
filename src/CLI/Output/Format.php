@@ -12,7 +12,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class Format {
+final class Format {
 	// region FIELDS AND CONSTANTS
 
 	/**

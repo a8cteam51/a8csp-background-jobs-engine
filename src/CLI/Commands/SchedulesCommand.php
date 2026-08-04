@@ -85,8 +85,6 @@ final readonly class SchedulesCommand {
 	/**
 	 * Validates schedule arguments without requiring WordPress or WP-CLI state.
 	 *
-	 * @internal Command decision seam.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -227,28 +225,28 @@ final readonly class SchedulesCommand {
 	private function remove_schedules( string $scope ): void {
 		$inspection = Component::get_inspection();
 		if ( null === $inspection ) {
-			ScheduleOutput::error( 'The background jobs inspection service is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
 		$scope_exists = $inspection->schedule_scope_exists( $scope );
 		if ( null === $scope_exists ) {
-			ScheduleOutput::error( 'Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.' );
+			\WP_CLI::error( 'Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.' );
 			return;
 		}
 		if ( ! $scope_exists ) {
-			ScheduleOutput::error( \sprintf( 'No schedule registrations are persisted for scope "%s".', $scope ) );
+			\WP_CLI::error( \sprintf( 'No schedule registrations are persisted for scope "%s".', $scope ) );
 			return;
 		}
 
 		$engine = Component::get_engine();
 		if ( null === $engine ) {
-			ScheduleOutput::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 		$scheduler = Component::get_scheduler();
 		if ( null === $scheduler ) {
-			ScheduleOutput::error( 'The background jobs scheduler is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs scheduler is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 		$has_dormant_candidate = $scheduler->has_dormant_candidate();

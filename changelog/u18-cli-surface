@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+WP-CLI inspection behaviour, accepted arguments, and output stay stable while internal formatting and error paths use a smaller surface.

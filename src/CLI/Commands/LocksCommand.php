@@ -45,19 +45,19 @@ final readonly class LocksCommand {
 	public function locks( array $args, array $assoc_args ): void {
 		$request = self::request_from_args( $args, $assoc_args );
 		if ( 'error' === $request['action'] ) {
-			LocksOutput::error( $request['message'] );
+			\WP_CLI::error( $request['message'] );
 			return;
 		}
 
 		$inspection = Component::get_lock_inspection();
 		if ( null === $inspection ) {
-			LocksOutput::error( 'The background jobs lock-inspection service is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs lock-inspection service is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
 		$lanes = $inspection->inspect_lanes();
 		if ( $lanes->is_failure() ) {
-			LocksOutput::error( $lanes->error->message );
+			\WP_CLI::error( $lanes->error->message );
 			return;
 		}
 
@@ -66,8 +66,6 @@ final readonly class LocksCommand {
 
 	/**
 	 * Validates lock arguments without requiring WordPress or WP-CLI state.
-	 *
-	 * @internal Command decision seam.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

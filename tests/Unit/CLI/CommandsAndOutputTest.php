@@ -21,6 +21,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component as RuntimeComponent;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
@@ -217,6 +218,83 @@ final class CommandsAndOutputTest extends TestCase {
 		}
 		if ( isset( $assoc_args['scope'] ) ) {
 			self::assertStringNotContainsString( 'other-plugin:nightly', $result->stdout );
+		}
+	}
+
+	/**
+	 * Schedule listing and removal render the same unavailable-inspection error.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_list_and_remove_report_an_unavailable_inspection_service(): void {
+		$property   = new \ReflectionProperty( RuntimeComponent::class, 'inspection' );
+		$inspection = $property->getValue();
+		$property->setValue( null, null );
+		try {
+			$list   = CliHarness::run( 'schedules', array( 'list' ) );
+			$remove = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+		} finally {
+			$property->setValue( null, $inspection );
+		}
+
+		foreach ( array( $list, $remove ) as $result ) {
+			self::assertSame( 1, $result->exit_code );
+			self::assertSame( '', $result->stdout );
+			self::assertSame( "Error: The background jobs inspection service is unavailable; run the command after plugins_loaded.\n", $result->stderr );
+		}
+	}
+
+	/**
+	 * Schedule listing and removal render the same authoritative-read error.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_list_and_remove_report_an_authoritative_read_failure(): void {
+		foreach ( array( array( 'list' ), array( 'remove', 'consumer-plugin' ) ) as $args ) {
+			$this->rig->wpdb()->fail_next_read_at( 'reconnect_failed' );
+			$assoc_args = 'remove' === $args[0] ? array( 'yes' => true ) : array();
+
+			$result = CliHarness::run( 'schedules', $args, $assoc_args );
+
+			self::assertSame( 1, $result->exit_code );
+			self::assertSame( '', $result->stdout );
+			self::assertSame( "Error: Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.\n", $result->stderr );
+		}
+	}
+
+	/**
+	 * Schedule removal reports each unavailable mutation service before changing registrations.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_remove_reports_each_unavailable_mutation_service(): void {
+		$this->register_schedules();
+		$failures = array(
+			'engine'    => 'The background jobs engine is unavailable; run the command after plugins_loaded.',
+			'scheduler' => 'The background jobs scheduler is unavailable; run the command after plugins_loaded.',
+		);
+		foreach ( $failures as $property_name => $message ) {
+			$property = new \ReflectionProperty( RuntimeComponent::class, $property_name );
+			$service  = $property->getValue();
+			$property->setValue( null, null );
+			try {
+				$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+			} finally {
+				$property->setValue( null, $service );
+			}
+
+			self::assertSame( 1, $result->exit_code );
+			self::assertSame( '', $result->stdout );
+			self::assertSame( 'Error: ' . $message . "\n", $result->stderr );
 		}
 	}
 

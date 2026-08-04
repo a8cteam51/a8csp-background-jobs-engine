@@ -16,7 +16,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockInspection;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class LocksOutput {
+final class LocksOutput {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -60,20 +60,6 @@ final readonly class LocksOutput {
 		}
 
 		\WP_CLI\Utils\format_items( $format, $rows, self::FIELDS );
-	}
-
-	/**
-	 * Reports a fatal lock-command error.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $message Corrective error.
-	 *
-	 * @return  void
-	 */
-	public static function error( string $message ): void {
-		\WP_CLI::error( $message );
 	}
 
 	// endregion

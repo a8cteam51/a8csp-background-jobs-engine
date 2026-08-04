@@ -129,7 +129,7 @@ final class ThrowableContextNormalizer {
 	 *
 	 * @return  array{class: string, code: int|string, file: string, trace_hash: string}
 	 */
-	public static function project( \Throwable $throwable ): array {
+	private static function project( \Throwable $throwable ): array {
 		$code = $throwable->getCode();
 		if ( ! \is_int( $code ) ) {
 			$code = \get_debug_type( $code );

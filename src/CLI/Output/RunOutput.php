@@ -31,7 +31,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
  *     failed_store: 'failed store'|'—'
  * }
  */
-final readonly class RunOutput {
+final class RunOutput {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -68,151 +68,6 @@ final readonly class RunOutput {
 	// endregion
 
 	// region METHODS
-
-	/**
-	 * Shapes live run entries into their exact public columns.
-	 *
-	 * @internal Command formatting seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param list<LiveRunEntry> $entries
-	 *
-	 * @param   array $entries     Validated live-run entries.
-	 * @param   int   $observed_at Inspection timestamp.
-	 *
-	 * @phpstan-return list<LiveRunRow>
-	 *
-	 * @return  array
-	 */
-	public static function live_rows_from_entries( array $entries, int $observed_at ): array {
-		$rows = array();
-		foreach ( $entries as $entry ) {
-			$rows[] = array(
-				'run_id'    => $entry['run_id'],
-				'status'    => 'running',
-				'phase'     => $entry['executing'] ? 'executing' : 'waiting',
-				'attempts'  => $entry['attempts'],
-				'queue'     => $entry['queue_depth'] ?? ( $entry['queue_known'] ? '—' : 'unknown' ),
-				'heartbeat' => self::heartbeat_label( $entry['heartbeat_at'], $observed_at, $entry['stale'] ),
-			);
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Shapes bounded history entries into their exact public columns.
-	 *
-	 * @internal Command formatting seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param list<HistoryEntry> $entries
-	 *
-	 * @param   array $entries Validated recent-history entries.
-	 *
-	 * @phpstan-return list<HistoryRow>
-	 *
-	 * @return  array
-	 */
-	public static function history_rows_from_entries( array $entries ): array {
-		$rows = array();
-		foreach ( $entries as $entry ) {
-			$rows[] = array(
-				'run_id'       => $entry['run_id'],
-				'outcome'      => $entry['outcome'],
-				'failed_store' => $entry['failed_store'] ? 'failed store' : '—',
-			);
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Returns the corrective CLI error for a compromised live-run listing.
-	 *
-	 * @internal Command honesty seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   'enumeration_failed'|'read_failed'|null $error Inspection failure state.
-	 *
-	 * @return  string|null
-	 */
-	public static function error_message( ?string $error ): ?string {
-		return match ( $error ) {
-			'enumeration_failed' => 'Live-run state is unknown (run enumeration failed); resolve the database error and try again.',
-			'read_failed'        => 'Live-run state is unknown (run read failed); resolve the database error and try again.',
-			default              => null,
-		};
-	}
-
-	/**
-	 * Returns the warning carried by every output format when live-run inspection is truncated.
-	 *
-	 * @internal Command honesty seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $scanned     Number of matching run rows inspected.
-	 * @param   int $uninspected Number of matching run rows excluded by the cap.
-	 *
-	 * @return  string|null
-	 */
-	public static function truncation_message( int $scanned, int $uninspected ): ?string {
-		if ( 1 > $uninspected ) {
-			return null;
-		}
-
-		return \sprintf( 'Showing first %1$d matching run rows; %2$d more %3$s not inspected.', $scanned, $uninspected, 1 === $uninspected ? 'was' : 'were' );
-	}
-
-	/**
-	 * Returns the warning carried by every output format when live-run rows are unreadable.
-	 *
-	 * @internal Command honesty seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $unreadable Number of unreadable option rows omitted from inspection.
-	 *
-	 * @return  string|null
-	 */
-	public static function unreadable_message( int $unreadable ): ?string {
-		if ( 1 > $unreadable ) {
-			return null;
-		}
-
-		// A malformed name cannot be attributed to one identity: a longer sibling name shares the prefix, so the scope is the prefix rather than the requested identity.
-		return \sprintf( '%1$d unreadable option %2$s sharing this identity\'s run option-name prefix %3$s omitted; maintenance reclaims corrupt state, but repair malformed option names manually.', $unreadable, 1 === $unreadable ? 'row' : 'rows', 1 === $unreadable ? 'was' : 'were' );
-	}
-
-	/**
-	 * Formats one live heartbeat as a non-negative relative age and optional stale signal.
-	 *
-	 * @internal Command time seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int  $timestamp   Persisted heartbeat timestamp.
-	 * @param   int  $observed_at Inspection timestamp.
-	 * @param   bool $stale       Whether the effective window is strictly exceeded.
-	 *
-	 * @return  string
-	 */
-	public static function heartbeat_label( int $timestamp, int $observed_at, bool $stale ): string {
-		$age   = $timestamp > $observed_at ? 0 : RelativeTime::distance( $observed_at, $timestamp );
-		$label = RelativeTime::duration( $age ) . ' ago';
-
-		return $stale ? $label . ' (stale)' : $label;
-	}
 
 	/**
 	 * Renders one run snapshot through the format-specific public contract.
@@ -290,6 +145,143 @@ final readonly class RunOutput {
 		if ( null !== $truncation ) {
 			\WP_CLI::warning( $truncation );
 		}
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Shapes live run entries into their exact public columns.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<LiveRunEntry> $entries
+	 *
+	 * @param   array $entries     Validated live-run entries.
+	 * @param   int   $observed_at Inspection timestamp.
+	 *
+	 * @phpstan-return list<LiveRunRow>
+	 *
+	 * @return  array
+	 */
+	private static function live_rows_from_entries( array $entries, int $observed_at ): array {
+		$rows = array();
+		foreach ( $entries as $entry ) {
+			$rows[] = array(
+				'run_id'    => $entry['run_id'],
+				'status'    => 'running',
+				'phase'     => $entry['executing'] ? 'executing' : 'waiting',
+				'attempts'  => $entry['attempts'],
+				'queue'     => $entry['queue_depth'] ?? ( $entry['queue_known'] ? '—' : 'unknown' ),
+				'heartbeat' => self::heartbeat_label( $entry['heartbeat_at'], $observed_at, $entry['stale'] ),
+			);
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Shapes bounded history entries into their exact public columns.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<HistoryEntry> $entries
+	 *
+	 * @param   array $entries Validated recent-history entries.
+	 *
+	 * @phpstan-return list<HistoryRow>
+	 *
+	 * @return  array
+	 */
+	private static function history_rows_from_entries( array $entries ): array {
+		$rows = array();
+		foreach ( $entries as $entry ) {
+			$rows[] = array(
+				'run_id'       => $entry['run_id'],
+				'outcome'      => $entry['outcome'],
+				'failed_store' => $entry['failed_store'] ? 'failed store' : '—',
+			);
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Returns the corrective CLI error for a compromised live-run listing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   'enumeration_failed'|'read_failed'|null $error Inspection failure state.
+	 *
+	 * @return  string|null
+	 */
+	private static function error_message( ?string $error ): ?string {
+		return match ( $error ) {
+			'enumeration_failed' => 'Live-run state is unknown (run enumeration failed); resolve the database error and try again.',
+			'read_failed'        => 'Live-run state is unknown (run read failed); resolve the database error and try again.',
+			default              => null,
+		};
+	}
+
+	/**
+	 * Returns the warning carried by every output format when live-run inspection is truncated.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $scanned     Number of matching run rows inspected.
+	 * @param   int $uninspected Number of matching run rows excluded by the cap.
+	 *
+	 * @return  string|null
+	 */
+	private static function truncation_message( int $scanned, int $uninspected ): ?string {
+		if ( 1 > $uninspected ) {
+			return null;
+		}
+
+		return \sprintf( 'Showing first %1$d matching run rows; %2$d more %3$s not inspected.', $scanned, $uninspected, 1 === $uninspected ? 'was' : 'were' );
+	}
+
+	/**
+	 * Returns the warning carried by every output format when live-run rows are unreadable.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $unreadable Number of unreadable option rows omitted from inspection.
+	 *
+	 * @return  string|null
+	 */
+	private static function unreadable_message( int $unreadable ): ?string {
+		if ( 1 > $unreadable ) {
+			return null;
+		}
+
+		// A malformed name cannot be attributed to one identity: a longer sibling name shares the prefix, so the scope is the prefix rather than the requested identity.
+		return \sprintf( '%1$d unreadable option %2$s sharing this identity\'s run option-name prefix %3$s omitted; maintenance reclaims corrupt state, but repair malformed option names manually.', $unreadable, 1 === $unreadable ? 'row' : 'rows', 1 === $unreadable ? 'was' : 'were' );
+	}
+
+	/**
+	 * Formats one live heartbeat as a non-negative relative age and optional stale signal.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int  $timestamp   Persisted heartbeat timestamp.
+	 * @param   int  $observed_at Inspection timestamp.
+	 * @param   bool $stale       Whether the effective window is strictly exceeded.
+	 *
+	 * @return  string
+	 */
+	private static function heartbeat_label( int $timestamp, int $observed_at, bool $stale ): string {
+		$age   = $timestamp > $observed_at ? 0 : RelativeTime::distance( $observed_at, $timestamp );
+		$label = RelativeTime::duration( $age ) . ' ago';
+
+		return $stale ? $label . ' (stale)' : $label;
 	}
 
 	// endregion
