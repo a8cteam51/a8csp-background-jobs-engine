@@ -50,11 +50,11 @@ every surviving component is initialized before any hook can fire.
   graph is likewise `@internal`.
 - `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the
   request-local object graph, while `ScopeOperations.php` exposes its scope-bound verb surface to
-  the public portals; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the root
-  collaborators. `JobRegistry.php` keys registrations by full identity and retains each complete
-  `JobDefinition`. The single kind-handler registry resolves a definition's kind; the resolved
-  internal handler validates its execution role and owns invocation. Only engine-installed kinds
-  are accepted, and the handler SPI is internal.
+  the public portals; `Runs/Dispatcher.php`, `Schedules/ScheduleOperations.php`, `Inspection.php`,
+  and `JobRegistry.php` are the root collaborators. `JobRegistry.php` keys registrations by full
+  identity and retains each complete `JobDefinition`. The single kind-handler registry resolves a
+  definition's kind; the resolved internal handler validates its execution role and owns invocation.
+  Only engine-installed kinds are accepted, and the handler SPI is internal.
   `Backends/` (Action Scheduler preferred, WP-Cron fallback), `Schedules/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
   `Locks/` (CAS-fenced execution-overlap storage, the single overlap-identity authority that admission,

@@ -239,8 +239,8 @@ final readonly class SchedulesCommand {
 			return;
 		}
 
-		$engine = Component::get_engine();
-		if ( null === $engine ) {
+		$schedules = Component::get_schedules();
+		if ( null === $schedules ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
@@ -251,7 +251,7 @@ final readonly class SchedulesCommand {
 		}
 		$has_dormant_candidate = $scheduler->has_dormant_candidate();
 
-		$result = $engine->schedules->sync( $scope, array() );
+		$result = $schedules->sync( $scope, array() );
 		if ( $result->is_failure() ) {
 			ScheduleOutput::removal_error( $scope, $result->error->message );
 			return;

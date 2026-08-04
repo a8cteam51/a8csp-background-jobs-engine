@@ -2,12 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockInspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -103,23 +101,45 @@ final class EngineComponentTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The root is always needed and publishes every retained service.
+	 * The root is always needed and publishes a dispatcher that accepts registered work.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_initialize_publishes_the_complete_composition_root(): void {
+	public function test_initialize_publishes_a_dispatcher_that_accepts_registered_work(): void {
 		$component = new Component();
 
 		self::assertTrue( Component::should_load() );
 		$component->initialize();
+		$component->register_hooks();
+		$dispatcher = Component::get_dispatcher();
+		self::assertNotNull( $dispatcher );
+		$identity = Identity::compose( 'consumer-plugin', 'published-job' );
+		$dispatcher->register( $identity, ( new RecordingJob( 'published-job' ) )->definition() );
 
-		self::assertInstanceOf( EngineFacade::class, Component::get_engine() );
-		self::assertInstanceOf( Inspection::class, Component::get_inspection() );
-		self::assertInstanceOf( LockInspection::class, Component::get_lock_inspection() );
-		self::assertNotNull( Component::get_scheduler() );
+		self::assertInstanceOf( Success::class, $dispatcher->dispatch( $identity ) );
+		self::assertFalse( Component::get_scheduler()?->has_dormant_candidate() );
+		self::assertInstanceOf( Success::class, Component::get_lock_inspection()?->inspect_lanes() );
+	}
+
+	/**
+	 * The published schedule operations synchronize a client scope.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_initialize_publishes_schedule_operations_that_synchronize_a_scope(): void {
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
+		$schedules = Component::get_schedules();
+		self::assertNotNull( $schedules );
+
+		self::assertInstanceOf( Success::class, $schedules->sync( 'consumer-plugin', array() ) );
 	}
 
 	/**
@@ -134,7 +154,7 @@ final class EngineComponentTest extends TestCase {
 		$component = new Component();
 		$component->initialize();
 		$component->register_hooks();
-		$engine     = Component::get_engine();
+		$dispatcher = Component::get_dispatcher();
 		$inspection = Component::get_inspection();
 
 		$GLOBALS['a8csp_bgje_test_hooks']                = array();
@@ -145,7 +165,7 @@ final class EngineComponentTest extends TestCase {
 		$component->initialize();
 		$component->register_hooks();
 
-		self::assertNotSame( $engine, Component::get_engine() );
+		self::assertNotSame( $dispatcher, Component::get_dispatcher() );
 		self::assertNotSame( $inspection, Component::get_inspection() );
 		self::assertCount( 3, $this->action_registrations() );
 		self::assertCount( 1, $this->filter_registrations() );
@@ -182,11 +202,13 @@ final class EngineComponentTest extends TestCase {
 
 		$component = new Component();
 		$component->initialize();
-		$engine = Component::get_engine();
+		$dispatcher = Component::get_dispatcher();
+		$schedules  = Component::get_schedules();
 		$component->register_hooks();
 
 		self::assertTrue( $reentered );
-		self::assertSame( $engine, Component::get_engine() );
+		self::assertSame( $dispatcher, Component::get_dispatcher() );
+		self::assertSame( $schedules, Component::get_schedules() );
 		self::assertCount( 2, $this->action_registrations() );
 		self::assertCount( 2, $this->filter_registrations() );
 	}

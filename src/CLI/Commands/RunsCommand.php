@@ -421,7 +421,7 @@ final readonly class RunsCommand {
 	// region HELPERS
 
 	/**
-	 * Delegates cancellation to the internal engine facade and reports its result.
+	 * Delegates cancellation to the background-work admission coordinator and reports its result.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -432,13 +432,13 @@ final readonly class RunsCommand {
 	 * @return  void
 	 */
 	private function cancel_run( Identity $identity, RunId $run_id ): void {
-		$engine = Component::get_engine();
-		if ( null === $engine ) {
+		$dispatcher = Component::get_dispatcher();
+		if ( null === $dispatcher ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		$result = $engine->cancel( $identity, (string) $run_id );
+		$result = $dispatcher->cancel( $identity, (string) $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;
@@ -528,7 +528,7 @@ final readonly class RunsCommand {
 	}
 
 	/**
-	 * Delegates one retry to the internal engine facade and reports its result.
+	 * Delegates one retry to the background-work admission coordinator and reports its result.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -539,13 +539,13 @@ final readonly class RunsCommand {
 	 * @return  void
 	 */
 	private function retry_failed_run( Identity $identity, RunId $run_id ): void {
-		$engine = Component::get_engine();
-		if ( null === $engine ) {
+		$dispatcher = Component::get_dispatcher();
+		if ( null === $dispatcher ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		$result = $engine->retry_failed( $identity, (string) $run_id );
+		$result = $dispatcher->retry_failed( $identity, (string) $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;

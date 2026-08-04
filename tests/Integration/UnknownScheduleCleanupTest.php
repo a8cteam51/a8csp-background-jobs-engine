@@ -13,7 +13,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
@@ -194,9 +193,9 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 			'The public log hook must report deferred convergence for the unknown registration'
 		);
 
-		$engine = Component::get_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before maintenance convergence' );
-		$synced = $engine->schedules->sync_scope(
+		$schedules = Component::get_schedules();
+		self::assertNotNull( $schedules, 'The live plugin must publish schedule operations before maintenance convergence' );
+		$synced = $schedules->sync_scope(
 			'a8csp-bgje',
 			array(
 				self::MAINTENANCE_KEY => array(
@@ -208,8 +207,8 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $synced, 'The reserved maintenance schedule must re-synchronize' );
 		self::assertTrue( $synced->value );
 
-		$maintenance = $engine->schedules->dispatch_now( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ) );
-		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance job must be dispatchable through the schedule facade' );
+		$maintenance = $schedules->dispatch_now( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ) );
+		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance job must be dispatchable through the schedule operations' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance job' );
 
 		self::assertFalse( $scheduler->is_scheduled( self::HOOK, array( self::KEY ), self::KEY ), 'The maintenance sweep must converge the unknown recurring chain' );

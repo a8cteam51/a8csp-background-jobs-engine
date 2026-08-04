@@ -50,16 +50,6 @@ final class Component extends AbstractComponent {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Engine published by the successfully initialized component.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     EngineFacade|null
-	 */
-	private static ?EngineFacade $engine = null;
-
-	/**
 	 * Whether engine wiring is currently in flight.
 	 *
 	 * @since   1.0.0
@@ -164,7 +154,12 @@ final class Component extends AbstractComponent {
 	// region INHERITED METHODS
 
 	/**
-	 * Builds the engine graph and publishes its supported facades.
+	 * Builds the engine graph and publishes its supported services.
+	 *
+	 * The optional boundary parameters exist so the boot path itself can be exercised against
+	 * deterministic clock, randomness, logging, database and scheduler substitutes.
+	 *
+	 * @internal Engine wiring only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -240,13 +235,11 @@ final class Component extends AbstractComponent {
 			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery, $logger );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
 			$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $option_rows, $lock_windows, $clock );
-			$engine               = new EngineFacade( $schedule_api, $dispatcher );
 
 			$this->action_deliveries    = $action_deliveries;
 			$this->occurrence_delivery  = $occurrence_delivery;
 			$this->maintenance_schedule = $maintenance_schedule;
 
-			self::$engine          = $engine;
 			self::$inspection      = $inspection;
 			self::$lock_inspection = $lock_inspection;
 			self::$scheduler       = $scheduler;
@@ -311,7 +304,7 @@ final class Component extends AbstractComponent {
 		$schedules  = self::$schedules;
 		$dispatcher = self::$dispatcher;
 		$inspection = self::$inspection;
-		if ( null === self::$engine || null === $registry || null === $schedules || null === $dispatcher || null === $inspection ) {
+		if ( null === $registry || null === $schedules || null === $dispatcher || null === $inspection ) {
 			throw new EngineUnavailableException( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully; invoke engine operations from init or a later hook.' );
 		}
 
@@ -323,15 +316,17 @@ final class Component extends AbstractComponent {
 	// region GETTERS
 
 	/**
-	 * Returns the initialized engine, or null before component boot.
+	 * Returns the initialized background-work admission coordinator, or null before component boot.
+	 *
+	 * @internal CLI retained-run retry and cancellation only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  EngineFacade|null
+	 * @return  Dispatcher|null
 	 */
-	public static function get_engine(): ?EngineFacade {
-		return self::$engine;
+	public static function get_dispatcher(): ?Dispatcher {
+		return self::$dispatcher;
 	}
 
 	/**
@@ -360,6 +355,20 @@ final class Component extends AbstractComponent {
 	 */
 	public static function get_lock_inspection(): ?LockInspection {
 		return self::$lock_inspection;
+	}
+
+	/**
+	 * Returns the initialized schedule operations, or null before component boot.
+	 *
+	 * @internal Destructive CLI schedule operations only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  ScheduleOperations|null
+	 */
+	public static function get_schedules(): ?ScheduleOperations {
+		return self::$schedules;
 	}
 
 	/**

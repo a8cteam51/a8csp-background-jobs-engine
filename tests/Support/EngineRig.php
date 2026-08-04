@@ -9,9 +9,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use PHPUnit\Framework\Assert;
 
@@ -30,8 +30,11 @@ final class EngineRig {
 	/** @var non-empty-list<RecordingBackend> */
 	private array $backends;
 
-	private EngineFacade $engine;
+	/** Published read-only inspection service. */
 	private Inspection $inspection;
+
+	/** Published schedule operations. */
+	private ScheduleOperations $schedules;
 
 	// endregion.
 
@@ -48,22 +51,22 @@ final class EngineRig {
 	 * @param   RecordingBackend    $backend    Primary scheduler boundary.
 	 * @param   array               $backends   Every scheduler boundary.
 	 * @param   FixedClock          $clock      Clock boundary.
-	 * @param   EngineFacade        $engine     Published engine facade.
 	 * @param   HookRecorder        $hooks      Lifecycle observer.
 	 * @param   Inspection          $inspection Published inspection service.
 	 * @param   RecordingLogger     $logger     Logger boundary.
 	 * @param   RecordingRandomizer $randomizer Randomizer boundary.
+	 * @param   ScheduleOperations  $schedules  Published schedule operations.
 	 * @param   WpdbLockSpy         $wpdb       Database boundary.
 	 */
 	private function __construct(
 		private RecordingBackend $backend,
 		array $backends,
 		private FixedClock $clock,
-		EngineFacade $engine,
 		private HookRecorder $hooks,
 		Inspection $inspection,
 		private RecordingLogger $logger,
 		private RecordingRandomizer $randomizer,
+		ScheduleOperations $schedules,
 		private WpdbLockSpy $wpdb,
 	) {
 		if ( array() === $backends ) {
@@ -71,8 +74,8 @@ final class EngineRig {
 		}
 
 		$this->backends   = \array_values( $backends );
-		$this->engine     = $engine;
 		$this->inspection = $inspection;
+		$this->schedules  = $schedules;
 	}
 
 	// endregion.
@@ -133,13 +136,13 @@ final class EngineRig {
 		$component = new Component();
 		$component->initialize( clock: $clock, randomizer: $randomizer, logger: $logger, wpdb: $wpdb, backends: $backends );
 		$component->register_hooks();
-		$engine     = Component::get_engine();
 		$inspection = Component::get_inspection();
-		if ( null === $engine || null === $inspection ) {
-			throw new \LogicException( 'EngineRig requires the Component graph it boots to publish its facades.' );
+		$schedules  = Component::get_schedules();
+		if ( null === $inspection || null === $schedules ) {
+			throw new \LogicException( 'EngineRig requires the Component graph it boots to publish its retained services.' );
 		}
 
-		$rig = new self( $backend, $backends, $clock, $engine, $hooks, $inspection, $logger, $randomizer, $wpdb );
+		$rig = new self( $backend, $backends, $clock, $hooks, $inspection, $logger, $randomizer, $schedules, $wpdb );
 		$rig->activate_registered_hooks();
 		return $rig;
 	}
@@ -371,7 +374,7 @@ final class EngineRig {
 	 * @return  void
 	 */
 	public function run_maintenance(): void {
-		$result = $this->engine->schedules->dispatch_now( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ) );
+		$result = $this->schedules->dispatch_now( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ) );
 		Assert::assertInstanceOf( Success::class, $result, 'Expected the maintenance schedule to accept a manual dispatch.' );
 		$this->run_due();
 	}

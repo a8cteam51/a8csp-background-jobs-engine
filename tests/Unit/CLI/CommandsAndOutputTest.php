@@ -279,7 +279,7 @@ final class CommandsAndOutputTest extends TestCase {
 	public function test_schedule_remove_reports_each_unavailable_mutation_service(): void {
 		$this->register_schedules();
 		$failures = array(
-			'engine'    => 'The background jobs engine is unavailable; run the command after plugins_loaded.',
+			'schedules' => 'The background jobs engine is unavailable; run the command after plugins_loaded.',
 			'scheduler' => 'The background jobs scheduler is unavailable; run the command after plugins_loaded.',
 		);
 		foreach ( $failures as $property_name => $message ) {
@@ -692,7 +692,7 @@ final class CommandsAndOutputTest extends TestCase {
 	}
 
 	/**
-	 * Cancellation executes the real engine facade and reports the terminal outcome.
+	 * Cancellation reaches the live dispatcher and reports the terminal outcome.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
