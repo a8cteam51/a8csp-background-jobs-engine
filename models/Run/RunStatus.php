@@ -5,10 +5,9 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Public, stable projection of a run's lifecycle state.
+ * Public, stable vocabulary for a run's lifecycle state.
  *
- * The public ABI mirrors every case of the persisted vocabulary in `Runtime\Runs\RunStatus` because
- * models do not import `src/` internals.
+ * The backing values are persisted in run rows and run history, so an existing value can never change.
  *
  * Minor releases may add cases; consumers treat an unknown value as a generic
  * non-terminal or terminal state, as appropriate.

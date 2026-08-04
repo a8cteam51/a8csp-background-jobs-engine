@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -68,6 +68,23 @@ final class RunStateTest extends TestCase {
 		self::assertSame( $state->error, $next->error );
 		self::assertSame( $state->previous_completed_run_id, $next->previous_completed_run_id );
 		self::assertSame( $state->effects, $next->effects );
+	}
+
+	/**
+	 * The status mutator clones with the replacement lifecycle state and leaves the original untouched.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_with_status_clones_with_the_replacement_lifecycle_state(): void {
+		$state = $this->state( 'job' );
+		$next  = $state->with_status( RunStatus::Completed );
+
+		self::assertNotSame( $state, $next );
+		self::assertSame( RunStatus::Running, $state->status );
+		self::assertSame( RunStatus::Completed, $next->status );
 	}
 
 	/**

@@ -219,8 +219,7 @@ final readonly class ScopeOperations {
 			return new Success( null );
 		}
 
-		// The public projection covers every internal run status, so from() always resolves here.
-		return new Success( self::run( $identity, $run_id, RunStatus::from( $result->value->value ) ) );
+		return new Success( self::run( $identity, $run_id, $result->value ) );
 	}
 
 	/**

@@ -12,13 +12,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
-use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus as PublicRunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
@@ -111,7 +110,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Run::class, $result->value );
 		self::assertSame( self::IDENTITY, $result->value->identity );
 		self::assertSame( self::RUN_ID, (string) $result->value->id );
-		self::assertSame( PublicRunStatus::Running, $result->value->status );
+		self::assertSame( RunStatus::Running, $result->value->status );
 		$calls = $this->run_delivery_calls();
 		self::assertCount( 1, $calls );
 		self::assertSame( 23, $calls[0]['args']['priority'] ?? null );
@@ -137,7 +136,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Run::class, $result->value );
 		self::assertSame( self::CHUNKED_IDENTITY, $result->value->identity );
 		self::assertSame( self::RUN_ID, (string) $result->value->id );
-		self::assertSame( PublicRunStatus::Running, $result->value->status );
+		self::assertSame( RunStatus::Running, $result->value->status );
 		$calls = $this->chunked_start_calls();
 		self::assertCount( 1, $calls );
 		self::assertSame( 23, $calls[0]['args']['priority'] ?? null );
@@ -264,7 +263,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Run::class, $result->value );
 		self::assertSame( self::IDENTITY, $result->value->identity );
 		self::assertSame( self::RUN_ID, (string) $result->value->id );
-		self::assertSame( PublicRunStatus::Running, $result->value->status );
+		self::assertSame( RunStatus::Running, $result->value->status );
 		self::assertSame( self::INCUMBENT_RUN_ID, $this->lock_owner( $this->args_hash() ) );
 		$run = $this->option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
@@ -381,7 +380,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( Run::class, $result->value );
 		self::assertSame( self::IDENTITY, $result->value->identity );
 		self::assertSame( self::RUN_ID, (string) $result->value->id );
-		self::assertSame( PublicRunStatus::Running, $result->value->status );
+		self::assertSame( RunStatus::Running, $result->value->status );
 		self::assertSame( self::RUN_ID, $this->lock_owner( $this->args_hash() ) );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}
