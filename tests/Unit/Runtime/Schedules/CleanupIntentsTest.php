@@ -73,6 +73,7 @@ final class CleanupIntentsTest extends TestCase {
 	private CleanupIntents $cleanup_intents;
 	private OccurrenceDelivery $delivery;
 	private RecordingLogger $logger;
+	private RecordingRandomizer $randomizer;
 	private ScheduleRegistry $registry;
 	private WpdbLockSpy $wpdb;
 
@@ -124,14 +125,15 @@ final class CleanupIntentsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_cache_calls']           = array();
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
-		$this->backend  = new RecordingBackend();
-		$this->clock    = new FixedClock( self::NOW );
-		$this->logger   = new RecordingLogger();
-		$this->wpdb     = new WpdbLockSpy();
-		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ), $this->logger );
-		$scheduler      = new SchedulerFacade( array( $this->backend ) );
-		$this->delivery = $this->new_delivery( $this->registry, $scheduler );
-		$this->api      = new ScheduleOperations( $this->registry, $scheduler, $this->clock, $this->delivery, $this->logger );
+		$this->backend    = new RecordingBackend();
+		$this->clock      = new FixedClock( self::NOW );
+		$this->logger     = new RecordingLogger();
+		$this->randomizer = new RecordingRandomizer( 42 );
+		$this->wpdb       = new WpdbLockSpy();
+		$this->registry   = new ScheduleRegistry( new OptionRows( $this->wpdb ), $this->logger );
+		$scheduler        = new SchedulerFacade( array( $this->backend ) );
+		$this->delivery   = $this->new_delivery( $this->registry, $scheduler );
+		$this->api        = new ScheduleOperations( $this->registry, $scheduler, $this->clock, $this->delivery, $this->logger );
 	}
 
 	// endregion.
@@ -170,7 +172,7 @@ final class CleanupIntentsTest extends TestCase {
 		$lease_option        = OccurrenceLease::OPTION_PREFIX . $digest;
 		$intent_option       = CleanupIntents::OPTION_PREFIX . $digest;
 		$expected_lease_raw  = 'a:2:{s:11:"claim_token";s:19:"0000000000000000042";s:10:"claimed_at";i:1700000000;}';
-		$expected_intent_raw = 'a:2:{s:17:"schedule_identity";s:9:"malformed";s:10:"created_at";i:1700000000;}';
+		$expected_intent_raw = 'a:2:{s:17:"schedule_identity";s:9:"malformed";s:10:"generation";i:42;}';
 		$before              = $this->wpdb->rows;
 
 		$this->wpdb->before_next(
@@ -338,7 +340,7 @@ final class CleanupIntentsTest extends TestCase {
 			$raw              = \maybe_serialize(
 				array(
 					'schedule_identity' => $registration_key,
-					'created_at'        => self::NOW,
+					'generation'        => 42,
 				)
 			);
 			self::assertIsString( $raw );
@@ -367,7 +369,7 @@ final class CleanupIntentsTest extends TestCase {
 		unset( $this->backend->results['unschedule'] );
 		$this->backend->calls  = array();
 		$this->logger->records = array();
-		$resumed               = new CleanupIntents( $this->registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $this->clock, $this->logger );
+		$resumed               = new CleanupIntents( $this->registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $this->randomizer, $this->logger );
 
 		$resumed->converge_pending_intents();
 
@@ -440,7 +442,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_intent_sweep_logs_a_convergence_throwable_as_exception_context(): void {
-		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( self::NOW );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 42 );
 		self::assertSame( $this->intent_option_name(), $option_name );
 		$this->wpdb->put( $option_name, $raw );
 		$throwable = new \RuntimeException( 'Intent convergence secret.' );
@@ -469,7 +471,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_intent_sweep_skips_a_failed_row_read(): void {
-		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( self::NOW );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 42 );
 		self::assertSame( $this->intent_option_name(), $option_name );
 		$this->wpdb->put( $option_name, $raw );
 		$row_read_failures = 0;
@@ -518,7 +520,7 @@ final class CleanupIntentsTest extends TestCase {
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		$original_raw = $this->wpdb->rows[ $this->intent_option_name() ] ?? null;
 		self::assertIsString( $original_raw );
-		$this->clock->timestamp = self::NOW + 1;
+		$this->randomizer->value = 43;
 
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
@@ -554,9 +556,9 @@ final class CleanupIntentsTest extends TestCase {
 		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the first intent pending.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
-		$this->clock->timestamp = self::NOW + 1;
+		$this->randomizer->value = 43;
 
-		[ $replacement_name, $replacement_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( $this->clock->timestamp );
+		[ $replacement_name, $replacement_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( $this->randomizer->value );
 		self::assertSame( $this->intent_option_name(), $replacement_name );
 		$this->wpdb->before_next(
 			'delete',
@@ -569,6 +571,31 @@ final class CleanupIntentsTest extends TestCase {
 		$this->cleanup_intents->converge_pending_intents();
 
 		self::assertSame( $replacement_raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+	}
+
+	/**
+	 * A cleanup intent whose payload carries no integer generation is retained as malformed.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_classifies_a_row_without_a_generation_as_malformed(): void {
+		$legacy_raw = \maybe_serialize(
+			array(
+				'schedule_identity' => self::REGISTRATION_KEY,
+				'created_at'        => self::NOW,
+			)
+		);
+		self::assertIsString( $legacy_raw );
+		$this->wpdb->put( $this->intent_option_name(), $legacy_raw );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertSame( $legacy_raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 1, $this->logger->records[0]['context']['count'] ?? null );
+		self::assertSame( CleanupIntents::OPTION_PREFIX, $this->logger->records[0]['context']['option_prefix'] ?? null );
 	}
 
 	/**
@@ -683,7 +710,7 @@ final class CleanupIntentsTest extends TestCase {
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$dispatcher            = new Dispatcher( $job_registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $randomizer, $this->logger, $terminal_transitions );
-		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
+		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->randomizer, $this->logger );
 
 		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $this->cleanup_intents, $this->clock, $this->logger );
 	}

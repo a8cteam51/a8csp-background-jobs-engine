@@ -208,7 +208,7 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		);
 		$dispatcher           = new Dispatcher( $job_registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 		$occurrence_lease     = new OccurrenceLease( $rows, $clock, $randomizer );
-		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $clock, $logger );
+		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $randomizer, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 
 		return new ScheduleOperations( $registry, $scheduler, $clock, $occurrence_delivery, $logger );

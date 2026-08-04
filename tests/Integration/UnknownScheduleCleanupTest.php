@@ -12,10 +12,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -427,7 +427,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		self::assertIsArray( $re_recorded_intent );
 		self::assertCount( 2, $re_recorded_intent );
 		self::assertSame( self::KEY, $re_recorded_intent['schedule_identity'] ?? null );
-		self::assertIsInt( $re_recorded_intent['created_at'] ?? null );
+		self::assertIsInt( $re_recorded_intent['generation'] ?? null );
 	}
 
 	// endregion.
@@ -461,7 +461,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 				)
 			),
 			$rows,
-			new SystemClock(),
+			new Randomizer(),
 			$logger
 		);
 	}

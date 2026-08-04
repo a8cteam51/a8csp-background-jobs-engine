@@ -359,16 +359,16 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $created_at Intent timestamp.
+	 * @param   int $generation Intent generation.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function cleanup_intent( int $created_at ): array {
+	public function cleanup_intent( int $generation ): array {
 		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $created_at ): array {
+			function ( \wpdb $wpdb ) use ( $generation ): array {
 				$rows      = new OptionRows( $wpdb );
 				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
-				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
+				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new RecordingRandomizer( $generation ), new NullLogger() );
 				$intents->record_intent( (string) $this->identity );
 
 				return $this->only_row_under( $rows, $wpdb, CleanupIntents::OPTION_PREFIX );

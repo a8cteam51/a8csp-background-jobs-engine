@@ -228,7 +228,7 @@ final class Component extends AbstractComponent {
 			$dispatcher           = new Dispatcher( $registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
-			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
+			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $randomizer, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 			$maintenance_job      = new MaintenanceJob( $option_rows, $reconciliation, $guard, $stores, $cleanup_intents, $logger );
 			$dispatcher->register( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $maintenance_job ) );

@@ -183,7 +183,7 @@ final class RunReconciliationTest extends TestCase {
 		$this->lifecycle_deliveries = new ActionDeliveries( $this->handlers, $this->stores, $this->terminal_transitions, $this->logger );
 		$this->dispatcher           = new Dispatcher( $this->registry, $this->handlers, $delivery_scheduler, $guard, $overlap_identity, $this->stores, $this->clock, $randomizer, $this->logger, $this->terminal_transitions );
 		$reconciliation             = new RunReconciliation( $guard, $this->stores, $this->clock, $this->logger, $lock_windows, $this->terminal_transitions, $this->terminal_effects, $this->handlers, $delivery_scheduler );
-		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), $scheduler, $option_rows, $this->clock, $this->logger );
+		$cleanup_intents            = new CleanupIntents( new ScheduleRegistry( $option_rows, $this->logger ), $scheduler, $option_rows, $randomizer, $this->logger );
 		$this->maintenance          = new MaintenanceJob( $option_rows, $reconciliation, $guard, $this->stores, $cleanup_intents, $this->logger );
 	}
 
@@ -208,7 +208,7 @@ final class RunReconciliationTest extends TestCase {
 	public function test_sweep_converges_pending_unknown_chain_intent(): void {
 		$registration_key = 'orphan-scope:orphan-schedule';
 
-		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( self::NOW );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( 42 );
 		$this->wpdb->put( $option_name, $raw );
 
 		$this->run_maintenance();

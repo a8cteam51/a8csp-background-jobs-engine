@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+A cleanup intent for an unknown schedule chain is fenced by a random generation, so an hourly sweep and a concurrent delivery can no longer destroy each other's pending intent and leave a removed schedule's recurring occurrence in place. The durable intent row carries an integer `generation` rather than a creation timestamp.

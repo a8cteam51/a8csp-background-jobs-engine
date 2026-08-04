@@ -150,7 +150,7 @@ final class MaintenanceJobTest extends TestCase {
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
 		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $this->logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
-		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows, $this->logger ), $scheduler, $rows, $clock, $this->logger );
+		$cleanup_intents      = new CleanupIntents( new ScheduleRegistry( $rows, $this->logger ), $scheduler, $rows, $randomizer, $this->logger );
 		$this->maintenance    = new MaintenanceJob( $rows, $reconciliation, $guard, $stores, $cleanup_intents, $this->logger );
 		$this->run_context    = new RunContext( RunId::from( self::RUN_ID ), array() );
 	}

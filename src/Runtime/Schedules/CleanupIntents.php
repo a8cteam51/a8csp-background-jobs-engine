@@ -6,10 +6,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
-use Psr\Clock\ClockInterface;
 use Psr\Log\LogLevel;
 use Psr\Log\LoggerInterface;
 
@@ -76,17 +76,17 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ScheduleRegistry $registry    Per-scope schedule registry.
-	 * @param   SchedulerFacade  $scheduler   Scheduling backend facade.
-	 * @param   OptionRows       $option_rows Authoritative cleanup-intent row I/O.
-	 * @param   ClockInterface   $clock       Current-time source.
-	 * @param   LoggerInterface  $logger      Log event sink.
+	 * @param   ScheduleRegistry    $registry    Per-scope schedule registry.
+	 * @param   SchedulerFacade     $scheduler   Scheduling backend facade.
+	 * @param   OptionRows          $option_rows Authoritative cleanup-intent row I/O.
+	 * @param   RandomizerInterface $randomizer  Randomness source for generation fencing.
+	 * @param   LoggerInterface     $logger      Log event sink.
 	 */
 	public function __construct(
 		private ScheduleRegistry $registry,
 		private SchedulerFacade $scheduler,
 		private OptionRows $option_rows,
-		private ClockInterface $clock,
+		private RandomizerInterface $randomizer,
 		private LoggerInterface $logger,
 	) {}
 
@@ -110,7 +110,7 @@ final readonly class CleanupIntents {
 		$raw = \maybe_serialize(
 			array(
 				'schedule_identity' => $registration_key,
-				'created_at'        => $this->clock->now()->getTimestamp(),
+				'generation'        => $this->randomizer->int( 0, \PHP_INT_MAX ),
 			)
 		);
 		if ( ! \is_string( $raw ) ) {
@@ -347,7 +347,7 @@ final readonly class CleanupIntents {
 				! \is_array( $value )
 				|| 2 !== \count( $value )
 				|| ! \is_string( $registration_key )
-				|| ! \is_int( $value['created_at'] ?? null )
+				|| ! \is_int( $value['generation'] ?? null )
 				|| self::intent_option_name( $registration_key ) !== $option_name
 			) {
 				++$malformed_count;
