@@ -44,6 +44,21 @@ final readonly class PendingAction {
 	// region METHODS
 
 	/**
+	 * Returns whether the lifecycle delivery is asynchronous.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  bool
+	 *
+	 * @phpstan-assert-if-true null $this->fire_at
+	 * @phpstan-assert-if-false int $this->fire_at
+	 */
+	public function is_async(): bool {
+		return 'async' === $this->mode;
+	}
+
+	/**
 	 * Creates an immediate asynchronous lifecycle delivery.
 	 *
 	 * @since   1.0.0

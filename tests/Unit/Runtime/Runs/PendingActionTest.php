@@ -10,6 +10,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Pins the pending lifecycle-action value: stages obey the lexical grammar, not a whitelist.
  *
+ * @since   1.0.0
+ * @version 1.0.0
  */
 #[CoversClass( PendingAction::class )]
 final class PendingActionTest extends TestCase {
@@ -46,6 +48,7 @@ final class PendingActionTest extends TestCase {
 		self::assertSame( 'async', $pending->mode );
 		self::assertNull( $pending->fire_at );
 		self::assertSame( 23, $pending->priority );
+		self::assertTrue( $pending->is_async() );
 	}
 
 	/**
@@ -63,6 +66,7 @@ final class PendingActionTest extends TestCase {
 		self::assertSame( 'single', $pending->mode );
 		self::assertSame( 175, $pending->fire_at );
 		self::assertSame( 31, $pending->priority );
+		self::assertFalse( $pending->is_async() );
 	}
 
 	/**

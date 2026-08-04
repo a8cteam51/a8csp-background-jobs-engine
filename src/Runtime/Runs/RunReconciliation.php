@@ -451,7 +451,7 @@ final readonly class RunReconciliation {
 	 * @param   string   $run_id    Run identifier.
 	 * @param   RunState $state     Stale non-executing running state.
 	 *
-	 * @throws  \LogicException When a schema-valid descriptor conflicts with its scheduling mode.
+	 * @throws  \LogicException When the running row carries no durable pending-action descriptor.
 	 *
 	 * @return  AbstractResult<true, SchedulingError>
 	 */

@@ -544,8 +544,8 @@ final readonly class Dispatcher {
 		$takeover = $admission['takeover'];
 
 		$pending = $state->pending;
-		if ( null !== $pending && 'single' === $pending->mode ) {
-			$fire_at         = $pending->fire_at ?? throw new \LogicException( 'Pending single-action delivery requires an integer fire time.' );
+		if ( null !== $pending && ! $pending->is_async() ) {
+			$fire_at         = $pending->fire_at;
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $identity, $args_hash, $run_id, $fire_at ) ) {
 				HeartbeatOutcome::Owned => null,
 				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its timed action; dispatch it again against the current lock state.', $kind, (string) $identity ), reason: EngineErrorReason::AdmissionConflict, context: array( 'identity' => (string) $identity ), ),
