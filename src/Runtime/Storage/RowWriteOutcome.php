@@ -12,15 +12,17 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage;
  * @since   1.0.0
  * @version 1.0.0
  */
-enum RowWriteOutcome: string {
+enum RowWriteOutcome {
 	// region FIELDS AND CONSTANTS
 
-	case Won = 'won';
+	/** The guarded write landed and this caller owns the resulting row state. */
+	case Won;
 
 	/** The authoritative row state does not satisfy the guarded write predicate. */
-	case Lost = 'lost';
+	case Lost;
 
-	case WriteFailed = 'write_failed';
+	/** Storage did not answer, so whether the row changed is unknown. */
+	case WriteFailed;
 
 	// endregion
 }

@@ -307,33 +307,12 @@ final readonly class RunStore {
 	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, otherwise null.
 	 */
 	public function replace_if_raw_matches( string $run_id, string $expected_raw, RunState $replacement ): string|Failure|null {
-		$write = $this->replace_if_raw_matches_classified( $run_id, $expected_raw, $replacement );
+		$write = $this->replace_if_matches_classified( $run_id, $expected_raw, $replacement );
 		if ( $write instanceof Failure ) {
 			return $write;
 		}
 
 		return RowWriteOutcome::Won === $write['outcome'] ? $write['raw'] : null;
-	}
-
-	/**
-	 * Classifies an exact raw-state replacement without collapsing write failure into contention.
-	 *
-	 * @internal Engine terminalization only.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $run_id       Run identifier.
-	 * @param   string   $expected_raw Exact observed state.
-	 * @param   RunState $replacement  Replacement state.
-	 *
-	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
-	 *                          not serialize the run state to a string.
-	 *
-	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned or complete run state cannot cross the persistence boundary.
-	 */
-	public function replace_if_raw_matches_classified( string $run_id, string $expected_raw, RunState $replacement ): array|Failure {
-		return $this->replace_if_matches_classified( $run_id, $expected_raw, $replacement );
 	}
 
 	/**
@@ -354,7 +333,7 @@ final readonly class RunStore {
 	 * @return  string|Failure<EngineError>|null Exact replacement bytes when the write wins, payload rejection when the kind-owned or complete run state cannot cross the persistence boundary, otherwise null.
 	 */
 	public function replace_if_state_matches( string $run_id, RunState $expected, RunState $replacement ): string|Failure|null {
-		$write = $this->replace_if_state_matches_classified( $run_id, $expected, $replacement );
+		$write = $this->replace_if_matches_classified( $run_id, $expected, $replacement );
 		if ( $write instanceof Failure ) {
 			return $write;
 		}
@@ -363,24 +342,48 @@ final readonly class RunStore {
 	}
 
 	/**
-	 * Classifies a typed-state replacement without collapsing write failure into contention.
+	 * Classifies an exact replacement without collapsing write failure into contention.
 	 *
 	 * @internal Engine terminalization only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $run_id      Run identifier.
-	 * @param   RunState $expected    Complete state observed before the transition.
-	 * @param   RunState $replacement Complete replacement state.
+	 * @param   string          $run_id      Run identifier.
+	 * @param   string|RunState $expected    Exact raw or complete typed state observed before the transition.
+	 * @param   RunState        $replacement Complete replacement state.
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
 	 *                          not serialize the run state to a string.
 	 *
 	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned or complete run state cannot cross the persistence boundary.
 	 */
-	public function replace_if_state_matches_classified( string $run_id, RunState $expected, RunState $replacement ): array|Failure {
-		return $this->replace_if_matches_classified( $run_id, $expected, $replacement );
+	public function replace_if_matches_classified( string $run_id, string|RunState $expected, RunState $replacement ): array|Failure {
+		$is_running = RunStatus::Running === $replacement->status;
+		$rejected   = self::kind_state_failure( $replacement->kind_state, $is_running );
+		if ( null !== $rejected ) {
+			return $rejected;
+		}
+
+		$replacement_raw = self::serialize_state( $replacement );
+
+		// A terminal row is exempt from the byte ceilings, including one carrying a payload admitted under an
+		// earlier producer budget. It stays durable in the database, object-cache refusal only creates a
+		// persistent cache miss, and settled effects delete the row. Rejecting the write instead wedges the run
+		// and its overlap lock permanently.
+		if ( $is_running ) {
+			$rejected = self::serialized_row_failure( $replacement_raw );
+			if ( null !== $rejected ) {
+				return $rejected;
+			}
+		}
+
+		$expected_raw = $expected instanceof RunState ? self::serialize_state( $expected ) : $expected;
+
+		return array(
+			'outcome' => $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ),
+			'raw'     => $replacement_raw,
+		);
 	}
 
 	/**
@@ -539,49 +542,6 @@ final readonly class RunStore {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Returns one classified exact replacement and its deterministic replacement bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string          $run_id      Run identifier.
-	 * @param   string|RunState $expected    Exact raw or complete typed state observed before the transition.
-	 * @param   RunState        $replacement Complete replacement state.
-	 *
-	 * @throws  \LogicException When the current site differs from the bound site or WordPress does
-	 *                          not serialize the run state to a string.
-	 *
-	 * @return  array{outcome: RowWriteOutcome, raw: string}|Failure<EngineError> Exact write classification and replacement bytes, or payload rejection when the kind-owned or complete run state cannot cross the persistence boundary.
-	 */
-	private function replace_if_matches_classified( string $run_id, string|RunState $expected, RunState $replacement ): array|Failure {
-		$is_running = RunStatus::Running === $replacement->status;
-		$rejected   = self::kind_state_failure( $replacement->kind_state, $is_running );
-		if ( null !== $rejected ) {
-			return $rejected;
-		}
-
-		$replacement_raw = self::serialize_state( $replacement );
-
-		// A terminal row is exempt from the byte ceilings, including one carrying a payload admitted under an
-		// earlier producer budget. It stays durable in the database, object-cache refusal only creates a
-		// persistent cache miss, and settled effects delete the row. Rejecting the write instead wedges the run
-		// and its overlap lock permanently.
-		if ( $is_running ) {
-			$rejected = self::serialized_row_failure( $replacement_raw );
-			if ( null !== $rejected ) {
-				return $rejected;
-			}
-		}
-
-		$expected_raw = $expected instanceof RunState ? self::serialize_state( $expected ) : $expected;
-
-		return array(
-			'outcome' => $this->rows->compare_and_swap( RunIdentity::option_name( $this->identity, $run_id ), $expected_raw, $replacement_raw ),
-			'raw'     => $replacement_raw,
-		);
-	}
 
 	/**
 	 * Converts typed state to its persisted option shape.

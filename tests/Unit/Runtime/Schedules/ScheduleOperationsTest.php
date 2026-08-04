@@ -13,7 +13,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\UndeclaredOccurrenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -426,12 +425,12 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $nightly ) ) );
 		$registry = new ScheduleRegistry( new OptionRows( $this->rig->wpdb() ), $this->rig->logger() );
 		$identity = Identity::compose( 'scope-a', 'nightly' );
-		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
-		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
 		$this->rig->wpdb()->before_next(
 			'update',
 			static function () use ( $identity, $registry ): void {
-				self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
+				self::assertTrue( $registry->record_undeclared_occurrence( $identity, 3 ) );
 			}
 		);
 		$this->rig->backend()->results['schedule_recurring'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair scheduling and retry.' ) );
@@ -444,7 +443,7 @@ final class ScheduleOperationsTest extends TestCase {
 		self::assertIsArray( $escalated->value );
 		self::assertSame( 3, $escalated->value['undeclared_occurrences'] ?? null );
 		self::assertTrue( $escalated->value['undeclared_escalated'] ?? false );
-		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
 
 		unset( $this->rig->backend()->results['schedule_recurring'] );
 		$repaired = $this->client_a->sync( array( $nightly, $hourly ) );

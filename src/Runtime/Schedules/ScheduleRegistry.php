@@ -447,7 +447,7 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Classifies one undeclared delivery and atomically persists its pre-escalation aging transition.
+	 * Records one undeclared delivery and reports whether it won the escalation transition.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -455,12 +455,12 @@ final class ScheduleRegistry {
 	 * @param   Identity $identity          Complete scope-qualified schedule identity.
 	 * @param   int      $warning_threshold Consecutive undeclared occurrences required for escalation.
 	 *
-	 * @return  UndeclaredOccurrenceOutcome Fenced aging outcome.
+	 * @return  bool Whether this delivery won the escalation transition.
 	 */
-	#[\NoDiscard( 'an undeclared occurrence outcome must be handled, not dropped' )]
-	public function record_undeclared_occurrence( Identity $identity, int $warning_threshold ): UndeclaredOccurrenceOutcome {
+	#[\NoDiscard( 'the undeclared occurrence escalation result must be handled, not dropped' )]
+	public function record_undeclared_occurrence( Identity $identity, int $warning_threshold ): bool {
 		if ( 1 > $warning_threshold ) {
-			return UndeclaredOccurrenceOutcome::Failed;
+			return false;
 		}
 
 		$registration_key = (string) $identity;
@@ -469,60 +469,60 @@ final class ScheduleRegistry {
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$expected = $this->rows->read( $option_name );
 			if ( $expected->is_failure() ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 
 			$expected_raw = $expected->value;
 			if ( null === $expected_raw ) {
-				return UndeclaredOccurrenceOutcome::Pruned;
+				return false;
 			}
 
 			$stored = RawOptionDecoder::decode( $expected_raw );
 			if ( ! \is_array( $stored ) ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 			if ( ! \array_key_exists( $registration_key, $stored ) ) {
-				return UndeclaredOccurrenceOutcome::Pruned;
+				return false;
 			}
 
 			$current = self::registrations_from_rows( $scope, $stored )[ $registration_key ] ?? null;
 			if ( null === $current ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 			if ( $current['undeclared_escalated'] ) {
-				return UndeclaredOccurrenceOutcome::AlreadyEscalated;
+				return false;
 			}
 
 			$current['undeclared_occurrences'] = self::increment_counter( $current['undeclared_occurrences'] );
-			$outcome                           = UndeclaredOccurrenceOutcome::Recorded;
+			$escalated                         = false;
 			if ( $warning_threshold <= $current['undeclared_occurrences'] ) {
 				$current['undeclared_escalated'] = true;
-				$outcome                         = UndeclaredOccurrenceOutcome::Escalated;
+				$escalated                       = true;
 			}
 
 			$stored[ $registration_key ] = $current;
 			$replacement_raw             = self::serialize_registrations( $stored );
 			$write                       = $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw );
 			if ( RowWriteOutcome::Won === $write ) {
-				return $outcome;
+				return $escalated;
 			}
 			if ( RowWriteOutcome::WriteFailed === $write ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 
 			$current_row = $this->rows->read( $option_name );
 			if ( $current_row->is_failure() ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 			if ( null === $current_row->value ) {
-				return UndeclaredOccurrenceOutcome::Pruned;
+				return false;
 			}
 			if ( $current_row->value === $expected_raw ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 		}
 
-		return UndeclaredOccurrenceOutcome::Failed;
+		return false;
 	}
 
 	// endregion

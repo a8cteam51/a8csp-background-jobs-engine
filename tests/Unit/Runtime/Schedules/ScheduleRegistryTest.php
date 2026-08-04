@@ -12,7 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\UndeclaredOccurrenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -21,6 +20,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -239,11 +239,11 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertFalse( $reset->value['undeclared_escalated'] ?? true );
 		self::assertSame( array(), \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'schedule_recurring', 'unschedule' ), true ) ) ) );
 
-		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
-		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
-		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertTrue( $registry->record_undeclared_occurrence( $identity, 3 ) );
 		$this->rig->wpdb()->recorded_queries = array();
-		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
 		self::assertSame( array(), $this->queries_starting_with( 'UPDATE ' ) );
 		$fresh_episode = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $fresh_episode );
@@ -578,8 +578,8 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$outer = $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 );
 
-		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $nested );
-		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $outer );
+		self::assertTrue( $nested );
+		self::assertFalse( $outer );
 		$persisted = $this->registry()->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $persisted );
 		self::assertIsArray( $persisted->value );
@@ -606,10 +606,201 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		self::assertSame( UndeclaredOccurrenceOutcome::Failed, $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
+	 * An invalid aging threshold cannot produce an escalation or touch storage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_invalid_undeclared_aging_threshold_does_not_escalate_or_touch_storage(): void {
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 0 ) );
+		self::assertSame( array(), $this->rig->wpdb()->recorded_queries );
+	}
+
+	/**
+	 * An unreadable initial scope generation cannot produce an escalation or a write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_initial_read_failure_does_not_escalate_or_write(): void {
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted undeclared-aging read failure';
+			}
+		);
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
+	 * A missing or malformed selected registration cannot produce an escalation or a write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed>|string|null $stored Persisted scope value, or null for an absent row.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'unavailable_undeclared_registration_rows' )]
+	public function test_unavailable_undeclared_registration_does_not_escalate_or_write( array|string|null $stored ): void {
+		if ( null !== $stored ) {
+			$raw = \is_array( $stored ) ? StoreFixtureBuilder::corrupt_row( $stored ) : $stored;
+			$this->rig->wpdb()->put( ScheduleRegistry::option_name( 'scope-a' ), $raw );
+		}
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
+	 * A failed authoritative reread after contention cannot produce an escalation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_contention_reread_failure_does_not_escalate(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+		$rival    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 301 );
+
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$rival['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 301, undeclared_occurrences: 2 );
+		$fixture                                   = $this->fixtures->schedule_registration( $scope );
+		$rival_fixture                             = $this->fixtures->schedule_registration( $rival );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $rival_fixture ): void {
+				$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ): void {
+						$wpdb->last_error = 'scripted undeclared-aging reread failure';
+					}
+				);
+			}
+		);
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertSame( $rival_fixture[1], $this->raw_row() );
+	}
+
+	/**
+	 * A registration row removed at the aging fence cannot produce an escalation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_row_deletion_at_contention_does_not_escalate(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$fixture                                   = $this->fixtures->schedule_registration( $scope );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$option_name = ScheduleRegistry::option_name( 'scope-a' );
+				unset( $wpdb->rows[ $option_name ], $wpdb->autoload[ $option_name ] );
+			}
+		);
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
+	}
+
+	/**
+	 * An ABA restoration after a lost aging write cannot produce an escalation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_aba_restoration_after_contention_does_not_escalate(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+		$rival    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 301 );
+
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$rival['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 301, undeclared_occurrences: 2 );
+		$fixture                                   = $this->fixtures->schedule_registration( $scope );
+		$rival_fixture                             = $this->fixtures->schedule_registration( $rival );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $fixture, $rival_fixture ): void {
+				$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ) use ( $fixture ): void {
+						$wpdb->put( $fixture[0], $fixture[1] );
+					}
+				);
+			}
+		);
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+	}
+
+	/**
+	 * Permanent aging contention preserves the authoritative rival without escalating.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_permanent_contention_does_not_escalate_or_overwrite_the_rival(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$fixture                                   = $this->fixtures->schedule_registration( $scope );
+		$this->put_fixture( $fixture );
+
+		$generation       = 0;
+		$last_applied_raw = null;
+		$contend          = null;
+		$contend          = function ( WpdbLockSpy $wpdb ) use ( &$contend, &$generation, &$last_applied_raw, $schedule ): void {
+			++$generation;
+			$rival = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 + $generation );
+
+			$rival['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 + $generation, undeclared_occurrences: 2 );
+			$rival_fixture                             = $this->fixtures->schedule_registration( $rival );
+			$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+			$last_applied_raw = $rival_fixture[1];
+			$wpdb->before_next( 'update', $contend );
+		};
+		$this->rig->wpdb()->before_next( 'update', $contend );
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertIsString( $last_applied_raw );
+		self::assertSame( $last_applied_raw, $this->raw_row() );
 	}
 
 	/**
@@ -1022,6 +1213,25 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertSame( array(), $this->queries_starting_with( 'DELETE ' ) );
 		self::assertSame( $last_rival[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
+	}
+
+	// endregion.
+
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies absent and unreadable registration selections.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  iterable<string, array{array<array-key, mixed>|string|null}>
+	 */
+	public static function unavailable_undeclared_registration_rows(): iterable {
+		yield 'missing scope row' => array( null );
+		yield 'undecodable scope row' => array( 'poison-registry-row' );
+		yield 'missing selected registration' => array( array( 'scope-a:other' => StoreFixtureBuilder::schedule_registration_state( 'sibling-fingerprint', self::NOW + 300 ) ) );
+		yield 'malformed selected registration' => array( array( 'scope-a:nightly' => 'malformed' ) );
 	}
 
 	// endregion.

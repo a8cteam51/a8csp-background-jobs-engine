@@ -585,9 +585,7 @@ final readonly class RunTransitions {
 	 * @return  string|Failure<EngineError>|null Exact terminal snapshot bytes for cleanup, storage or payload failure, or null after a lost fence.
 	 */
 	private function claim_terminal_transition( string $run_id, RunState $expected, RunState $replacement, RunStore $run_store, ?string $expected_raw = null ): string|Failure|null {
-		$write = null === $expected_raw
-			? $run_store->replace_if_state_matches_classified( $run_id, $expected, $replacement )
-			: $run_store->replace_if_raw_matches_classified( $run_id, $expected_raw, $replacement );
+		$write = $run_store->replace_if_matches_classified( $run_id, $expected_raw ?? $expected, $replacement );
 		if ( $write instanceof Failure ) {
 			return $write;
 		}
