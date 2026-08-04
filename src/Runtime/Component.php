@@ -177,7 +177,7 @@ final class Component extends AbstractComponent {
 	 * @param   \wpdb|null               $wpdb       Database boundary, or null for the WordPress global.
 	 * @param   array|null               $backends   Scheduler boundaries, or null for production backends.
 	 *
-	 * @throws  \InvalidArgumentException When the scheduler backend list is empty or contains an invalid backend.
+	 * @throws  \InvalidArgumentException When the scheduler backend list is empty.
 	 * @throws  \Throwable                When wiring fails; the in-flight guard is cleared before the failure escapes.
 	 *
 	 * @return  void

@@ -95,6 +95,21 @@ final class SchedulerFacadeTest extends TestCase {
 	// region TESTS.
 
 	/**
+	 * A facade without any backend is refused at construction rather than at its first write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_construction_without_a_backend_is_refused(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'SchedulerFacade requires at least one backend; pass the WP-Cron backend as the final fallback.' );
+
+		new SchedulerFacade( array() );
+	}
+
+	/**
 	 * A ready Action Scheduler candidate accepts work without touching the WP-Cron fallback.
 	 *
 	 * @since   1.0.0

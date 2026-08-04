@@ -89,7 +89,7 @@ final readonly class ScheduleOperations {
 	 * @param   string $scope        Stable client identifier captured by the scope-bound facade.
 	 * @param   array  $declarations Complete schedule declaration keyed by scope-qualified identity.
 	 *
-	 * @throws  \InvalidArgumentException When the scope, declaration, schedule identity, or target identity is invalid.
+	 * @throws  \InvalidArgumentException When the scope is invalid, or a registration identity is invalid or belongs to another scope.
 	 *
 	 * @return  AbstractResult
 	 */
@@ -120,47 +120,12 @@ final readonly class ScheduleOperations {
 	 * @param   string $scope        Stable client or engine identifier.
 	 * @param   array  $declarations Complete schedule declaration keyed by scope-qualified identity.
 	 *
-	 * @throws  \InvalidArgumentException When the scope, declaration, schedule identity, or target identity is invalid.
+	 * @throws  \InvalidArgumentException When the scope is invalid, or a registration identity is invalid or belongs to another scope.
 	 *
 	 * @return  AbstractResult
 	 */
 	public function sync_scope( string $scope, array $declarations ): AbstractResult {
 		Identity::validate_scope( $scope, true );
-
-		$declared = array();
-		foreach ( $declarations as $schedule_identity => $declaration ) {
-			if ( ! \is_string( $schedule_identity ) ) {
-				throw new \InvalidArgumentException( 'Schedule sync declaration keys must be canonical scope-qualified schedule identities.' );
-			}
-
-			$identity = Identity::tryFrom( $schedule_identity );
-			if ( null === $identity || $scope !== $identity->scope() ) {
-				throw new \InvalidArgumentException( 'Schedule sync declaration identities must be canonical and belong to the bound scope.' );
-			}
-
-			$schedule = \is_array( $declaration ) ? ( $declaration['schedule'] ?? null ) : null;
-			if ( ! $schedule instanceof Schedule ) {
-				throw new \InvalidArgumentException( 'Schedule sync accepts only Schedule value objects; construct each declaration with new Schedule(...).' );
-			}
-
-			if ( $schedule->name !== $identity->name() ) {
-				throw new \InvalidArgumentException( 'Schedule sync declaration identities must match their Schedule value-object names.' );
-			}
-
-			$job = $declaration['job'] ?? null;
-			if ( ! $job instanceof Identity ) {
-				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical scope-qualified job identities.' );
-			}
-
-			if ( $scope !== $job->scope() || $schedule->job !== $job->name() ) {
-				throw new \InvalidArgumentException( 'Schedule sync target identities must be canonical, belong to the bound scope, and match their Schedule value-object job names.' );
-			}
-
-			$declared[ $schedule_identity ] = array(
-				'schedule' => $schedule,
-				'job'      => $job,
-			);
-		}
 
 		$registrations = $this->registry->registrations_for( $scope );
 		if ( $registrations->is_failure() ) {
@@ -175,7 +140,7 @@ final readonly class ScheduleOperations {
 		$fingerprint_matching_identities = array();
 		$interval_by_identity            = array();
 		$next_due_by_identity            = array();
-		foreach ( $declared as $schedule_identity => $declaration ) {
+		foreach ( $declarations as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$interval = $schedule->recurrence->interval;
 
@@ -206,7 +171,7 @@ final readonly class ScheduleOperations {
 
 		$next             = $existing;
 		$scheduled_chains = $this->scheduler->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, $fingerprint_matching_identities );
-		foreach ( $declared as $schedule_identity => $declaration ) {
+		foreach ( $declarations as $schedule_identity => $declaration ) {
 			$schedule = $declaration['schedule'];
 			$current  = $existing[ $schedule_identity ] ?? null;
 			if ( null !== $current && $schedule->fingerprint() === $current['fingerprint'] ) {
@@ -258,7 +223,7 @@ final readonly class ScheduleOperations {
 				'undeclared_occurrences' => 0,
 				'undeclared_escalated'   => false,
 			);
-			$replacement                = $this->registry->replace_scope( $scope, $declared, $next );
+			$replacement                = $this->registry->replace_scope( $scope, $declarations, $next );
 			if ( $replacement->is_failure() ) {
 				return $replacement;
 			}
@@ -272,21 +237,21 @@ final readonly class ScheduleOperations {
 			}
 		}
 
-		foreach ( \array_keys( \array_diff_key( $existing, $declared ) ) as $schedule_identity ) {
+		foreach ( \array_keys( \array_diff_key( $existing, $declarations ) ) as $schedule_identity ) {
 			$removed = $this->scheduler->unschedule( OccurrenceDelivery::SCHEDULE_HOOK, array( $schedule_identity ), $schedule_identity );
 			if ( $removed->is_failure() ) {
 				return $removed;
 			}
 
 			unset( $next[ $schedule_identity ] );
-			$replacement = $this->registry->replace_scope( $scope, $declared, $next );
+			$replacement = $this->registry->replace_scope( $scope, $declarations, $next );
 			if ( $replacement->is_failure() ) {
 				return $replacement;
 			}
 		}
 
 		// Backend convergence precedes marker reset so only a successful declaration refresh ends the zombie episode.
-		$replacement = $this->registry->replace_scope( $scope, $declared, $next, reset_undeclared_episodes: true );
+		$replacement = $this->registry->replace_scope( $scope, $declarations, $next, reset_undeclared_episodes: true );
 		if ( $replacement->is_failure() ) {
 			return $replacement;
 		}
