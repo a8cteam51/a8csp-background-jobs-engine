@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Reports the outcome of an occurrence-decision lease claim.
+ * Reports why an occurrence-decision lease claim yielded no handle.
  *
  * @internal
  *
@@ -15,9 +15,9 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules;
 enum OccurrenceLeaseOutcome: string {
 	// region FIELDS AND CONSTANTS
 
-	case Claimed       = 'claimed';
-	case NotClaimed    = 'not_claimed';
-	case Indeterminate = 'indeterminate';
+	case NotClaimed         = 'not_claimed';
+	case IndeterminateRead  = 'indeterminate_read';
+	case IndeterminateWrite = 'indeterminate_write';
 
 	// endregion
 }

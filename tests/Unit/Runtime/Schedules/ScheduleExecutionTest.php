@@ -2,7 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -306,6 +308,77 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertInstanceOf( Success::class, $result );
 		self::assertSame( self::NOW, $this->registration()['last_fired'] ?? null );
 		self::assertArrayNotHasKey( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
+	}
+
+	/**
+	 * A held occurrence lease rejects manual dispatch as an admission conflict.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_dispatch_rejects_a_held_occurrence_lease(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$raw = \maybe_serialize(
+			array(
+				'claim_token' => 'incumbent-claim',
+				'claimed_at'  => self::NOW,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $raw );
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
+		self::assertSame( ErrorCode::AdmissionConflict, $result->error->code );
+	}
+
+	/**
+	 * An unconfirmed occurrence-lease write identifies the failed manual-dispatch operation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_dispatch_reports_an_occurrence_lease_write_failure(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->wpdb()->script_result( 'insert', false );
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
+		self::assertSame( 'write', $result->error->context['storage_operation'] ?? null );
+	}
+
+	/**
+	 * An unconfirmed occurrence-lease read identifies the failed manual-dispatch operation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_dispatch_reports_an_occurrence_lease_read_failure(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted manual occurrence lease read failure';
+			}
+		);
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( BoundaryError::class, $result->error );
+		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
+		self::assertSame( 'read', $result->error->context['storage_operation'] ?? null );
 	}
 
 	/**

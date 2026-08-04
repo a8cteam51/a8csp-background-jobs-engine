@@ -5,7 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Reports the outcome of re-reading a claimed terminal run.
+ * Reports why re-reading a claimed terminal run yielded no trustworthy snapshot.
  *
  * @internal
  *
@@ -15,7 +15,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs;
 enum TerminalSnapshotRefreshOutcome: string {
 	// region FIELDS AND CONSTANTS
 
-	case Refreshed       = 'refreshed';
 	case Untrusted       = 'untrusted';
 	case AlreadyFinished = 'already_finished';
 

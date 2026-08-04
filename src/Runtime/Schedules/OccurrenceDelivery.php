@@ -101,16 +101,21 @@ final readonly class OccurrenceDelivery {
 	 */
 	public function handle_schedule_due( string $registration_key ): void {
 		$lease_claim = $this->lease->claim( $registration_key );
-		if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim->outcome ) {
-			$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'schedule_identity' => $registration_key ) );
+		if ( $lease_claim instanceof OccurrenceLeaseOutcome ) {
+			if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim ) {
+				$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'schedule_identity' => $registration_key ) );
 
-			return;
-		}
-		if ( OccurrenceLeaseOutcome::Indeterminate === $lease_claim->outcome ) {
-			$operation = $lease_claim->storage_operation ?? 'storage';
-			$message   = 'read' === $operation
-				? 'Schedule occurrence could not claim its decision lease because the authoritative read failed; repair WordPress option reads, then retry delivery.'
-				: 'Schedule occurrence could not claim its decision lease because the authoritative write failed; repair WordPress option writes, then retry delivery.';
+				return;
+			}
+
+			$operation = match ( $lease_claim ) {
+				OccurrenceLeaseOutcome::IndeterminateRead  => 'read',
+				OccurrenceLeaseOutcome::IndeterminateWrite => 'write',
+			};
+			$message = match ( $lease_claim ) {
+				OccurrenceLeaseOutcome::IndeterminateRead  => 'Schedule occurrence could not claim its decision lease because the authoritative read failed; repair WordPress option reads, then retry delivery.',
+				OccurrenceLeaseOutcome::IndeterminateWrite => 'Schedule occurrence could not claim its decision lease because the authoritative write failed; repair WordPress option writes, then retry delivery.',
+			};
 			$this->logger->warning(
 				$message,
 				array(
@@ -122,7 +127,7 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$lease_handle = $lease_claim->claimed_lease();
+		$lease_handle = $lease_claim;
 
 		try {
 			$this->handle_occurrence( $registration_key, $lease_handle );
@@ -157,19 +162,25 @@ final readonly class OccurrenceDelivery {
 		$name             = $identity->name();
 		$registration_key = (string) $identity;
 		$lease_claim      = $this->lease->claim( $registration_key );
-		if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim->outcome ) {
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Schedule "%1$s" for scope "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $scope ),
-					reason: EngineErrorReason::AdmissionConflict,
-					context: array(
-						'scope'    => $scope,
-						'schedule' => $name,
-					),
-				)
-			);
-		}
-		if ( OccurrenceLeaseOutcome::Indeterminate === $lease_claim->outcome ) {
+		if ( $lease_claim instanceof OccurrenceLeaseOutcome ) {
+			if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim ) {
+				return new Failure(
+					new EngineError(
+						\sprintf( 'Schedule "%1$s" for scope "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $scope ),
+						reason: EngineErrorReason::AdmissionConflict,
+						context: array(
+							'scope'    => $scope,
+							'schedule' => $name,
+						),
+					)
+				);
+			}
+
+			$operation = match ( $lease_claim ) {
+				OccurrenceLeaseOutcome::IndeterminateRead  => 'read',
+				OccurrenceLeaseOutcome::IndeterminateWrite => 'write',
+			};
+
 			return new Failure(
 				new EngineError(
 					\sprintf( 'Schedule "%1$s" for scope "%2$s" could not establish its occurrence lease because storage could not be read or written; repair WordPress option reads and writes, then retry.', $name, $scope ),
@@ -177,13 +188,13 @@ final readonly class OccurrenceDelivery {
 					context: array(
 						'scope'             => $scope,
 						'schedule'          => $name,
-						'storage_operation' => $lease_claim->storage_operation,
+						'storage_operation' => $operation,
 					),
 				)
 			);
 		}
 
-		$lease_handle = $lease_claim->claimed_lease();
+		$lease_handle = $lease_claim;
 
 		try {
 			return $this->dispatch_now( $identity, $scope, $name, $lease_handle );

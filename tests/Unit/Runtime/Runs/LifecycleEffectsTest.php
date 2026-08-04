@@ -304,6 +304,173 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}
 
+	/** A failed terminal effect refreshes authoritative state before later effects replay. */
+	public function test_effect_failure_refreshes_the_snapshot_before_later_effects_replay(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$failure      = new \RuntimeException( 'Scripted terminal hook failure.' );
+		$callbacks    = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/completed/' . self::IDENTITY ] = static function () use ( $failure ): void {
+			throw $failure;
+		};
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
+
+		try {
+			$this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
+			self::fail( 'The failed terminal hook was not rethrown.' );
+		} catch ( \RuntimeException $caught ) {
+			self::assertSame( $failure, $caught );
+		}
+
+		$remaining = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $remaining );
+		self::assertSame( array( 'history' ), $remaining->effects );
+		$this->assert_terminal_history( 'completed' );
+	}
+
+	/** An untrusted refresh after a later effect failure rethrows the first effect failure. */
+	public function test_later_effect_failure_with_an_untrusted_refresh_rethrows_the_first_failure(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$failure      = new \RuntimeException( 'Scripted terminal hook failure.' );
+		$callbacks    = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/completed/' . self::IDENTITY ] = static function () use ( $failure ): void {
+			throw $failure;
+		};
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
+		$this->wpdb->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->put( $this->run_option_name(), 'malformed' );
+				$wpdb->script_result( 'update', false );
+			}
+		);
+
+		try {
+			$this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
+			self::fail( 'The first failed terminal effect was not rethrown.' );
+		} catch ( \RuntimeException $caught ) {
+			self::assertSame( $failure, $caught );
+		}
+
+		$history = $this->option( RunHistory::OPTION_PREFIX . self::IDENTITY );
+		self::assertIsArray( $history );
+		self::assertSame( array(), $history['terminal'] ?? null );
+		self::assertSame( 'malformed', $this->wpdb->rows[ $this->run_option_name() ] ?? null );
+	}
+
+	/** An effect failure rethrows immediately when refreshed state is untrusted. */
+	public function test_effect_failure_with_an_untrusted_refresh_skips_later_effects(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$failure      = new \RuntimeException( 'Scripted terminal hook failure.' );
+		$callbacks    = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/completed/' . self::IDENTITY ] = function () use ( $failure ): void {
+			$this->wpdb->put( $this->run_option_name(), 'malformed' );
+
+			throw $failure;
+		};
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
+
+		try {
+			$this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null );
+			self::fail( 'The failed terminal hook was not rethrown.' );
+		} catch ( \RuntimeException $caught ) {
+			self::assertSame( $failure, $caught );
+		}
+
+		$history = $this->option( RunHistory::OPTION_PREFIX . self::IDENTITY );
+		self::assertIsArray( $history );
+		self::assertSame( array(), $history['terminal'] ?? null );
+		self::assertSame( 'malformed', $this->wpdb->rows[ $this->run_option_name() ] ?? null );
+	}
+
+	/** An authoritative refresh read failure cannot report terminal cleanup. */
+	public function test_refresh_read_failure_does_not_report_terminal_cleanup(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ): void {
+						$wpdb->last_error = 'scripted terminal refresh read failure';
+					}
+				);
+				$wpdb->script_result( 'update', false );
+			}
+		);
+
+		self::assertFalse( $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null ) );
+		self::assertSame( 'scripted terminal refresh read failure', $this->wpdb->last_error );
+	}
+
+	/** An untrusted refresh cannot report a terminal row as finished. */
+	public function test_untrusted_refresh_does_not_report_terminal_cleanup(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->put( $this->run_option_name(), 'malformed' );
+				$wpdb->script_result( 'update', false );
+			}
+		);
+
+		self::assertFalse( $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null ) );
+		self::assertSame( 'malformed', $this->wpdb->rows[ $this->run_option_name() ] ?? null );
+	}
+
+	/** A missing row found during refresh confirms another worker finished cleanup. */
+	public function test_refresh_confirms_terminal_cleanup_completed_by_another_worker(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::Completed )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$this->wpdb->before_next( 'update', static function (): void {} );
+		$this->wpdb->before_next(
+			'update',
+			function ( WpdbLockSpy $wpdb ): void {
+				unset( $wpdb->rows[ $this->run_option_name() ], $wpdb->autoload[ $this->run_option_name() ] );
+				$wpdb->script_result( 'update', false );
+			}
+		);
+
+		self::assertTrue( $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null ) );
+		self::assertArrayNotHasKey( $this->run_option_name(), $this->wpdb->rows );
+	}
+
 	/** Only the exact terminal snapshot carrying every required effect marker may be deleted. */
 	public function test_finish_claimed_transition_requires_every_effect_and_the_exact_latest_raw(): void {
 		$this->prepare_run_action();

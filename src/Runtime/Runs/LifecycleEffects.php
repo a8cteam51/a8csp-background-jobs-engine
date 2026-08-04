@@ -209,8 +209,7 @@ final readonly class LifecycleEffects {
 	 * @param   RunStore   $run_store      Active-run store.
 	 * @param   array|null $failure_detail Reconstructed internal and client failure detail.
 	 *
-	 * @throws  \LogicException When a refreshed outcome carries no trustworthy snapshot.
-	 * @throws  \Throwable      When an effect fails; a trustworthy refreshed snapshot permits the remaining effects and gated finish before rethrow, while a failed refresh causes an immediate rethrow.
+	 * @throws  \Throwable When an effect fails; a trustworthy refreshed snapshot permits the remaining effects and gated finish before rethrow, while a failed refresh causes an immediate rethrow.
 	 *
 	 * @return  bool Whether the run option is confirmed absent.
 	 */
@@ -233,32 +232,25 @@ final readonly class LifecycleEffects {
 			} catch ( \Throwable $throwable ) {
 				$effect_failure ??= $throwable;
 				$refreshed        = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
-				if ( TerminalSnapshotRefreshOutcome::Refreshed !== $refreshed->outcome ) {
+				if ( $refreshed instanceof TerminalSnapshotRefreshOutcome ) {
 					throw $effect_failure;
 				}
 
-				$snapshot = $refreshed->snapshot ?? throw new \LogicException( 'Only a refreshed terminal snapshot outcome carries trustworthy state.' );
+				$snapshot = $refreshed;
 				continue;
 			}
 
 			if ( ! $landed ) {
 				$refreshed = $this->refresh_terminal_snapshot( $run_id, $state->status, $run_store );
-				if ( TerminalSnapshotRefreshOutcome::AlreadyFinished === $refreshed->outcome ) {
+				if ( $refreshed instanceof TerminalSnapshotRefreshOutcome ) {
 					if ( null !== $effect_failure ) {
 						throw $effect_failure;
 					}
 
-					return true;
-				}
-				if ( TerminalSnapshotRefreshOutcome::Untrusted === $refreshed->outcome ) {
-					if ( null !== $effect_failure ) {
-						throw $effect_failure;
-					}
-
-					return false;
+					return TerminalSnapshotRefreshOutcome::AlreadyFinished === $refreshed;
 				}
 
-				$snapshot = $refreshed->snapshot ?? throw new \LogicException( 'Only a refreshed terminal snapshot outcome carries trustworthy state.' );
+				$snapshot = $refreshed;
 				continue;
 			}
 
@@ -356,25 +348,28 @@ final readonly class LifecycleEffects {
 	 * @param   RunStatus $status    Claimed terminal status.
 	 * @param   RunStore  $run_store Active-run store.
 	 *
-	 * @return  TerminalSnapshotRefreshResult Classified terminal refresh and its trustworthy snapshot when present.
+	 * @return  array{raw: string, state: RunState}|TerminalSnapshotRefreshOutcome Trustworthy snapshot or exceptional refresh classification.
 	 */
-	private function refresh_terminal_snapshot( string $run_id, RunStatus $status, RunStore $run_store ): TerminalSnapshotRefreshResult {
+	private function refresh_terminal_snapshot( string $run_id, RunStatus $status, RunStore $run_store ): array|TerminalSnapshotRefreshOutcome {
 		$inspected = $run_store->inspect( $run_id );
 		if ( $inspected->is_failure() ) {
-			return TerminalSnapshotRefreshResult::untrusted();
+			return TerminalSnapshotRefreshOutcome::Untrusted;
 		}
 
 		$snapshot = $inspected->value;
 		if ( null === $snapshot ) {
-			return TerminalSnapshotRefreshResult::already_finished();
+			return TerminalSnapshotRefreshOutcome::AlreadyFinished;
 		}
 
 		$state = $snapshot['state'];
 		if ( null === $state || $status !== $state->status ) {
-			return TerminalSnapshotRefreshResult::untrusted();
+			return TerminalSnapshotRefreshOutcome::Untrusted;
 		}
 
-		return TerminalSnapshotRefreshResult::refreshed( $snapshot['raw'], $state );
+		return array(
+			'raw'   => $snapshot['raw'],
+			'state' => $state,
+		);
 	}
 
 	/**
