@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Development-reset command output is emitted directly. The public API, persisted row shapes, and observable behaviour are unchanged.

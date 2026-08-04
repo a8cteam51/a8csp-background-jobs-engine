@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
@@ -102,28 +101,28 @@ final readonly class ResetCommand {
 	public function reset( array $args, array $assoc_args ): void {
 		$request = self::request_from_args( $args, $assoc_args );
 		if ( 'error' === $request['action'] ) {
-			ResetOutput::error( $request['message'] );
+			\WP_CLI::error( $request['message'] );
 			return;
 		}
 
-		ResetOutput::confirm( $assoc_args );
+		\WP_CLI::confirm( 'This development reset permanently deletes every engine option row and pending backend action. In-flight work cannot be recovered. Continue?', $assoc_args );
 
 		$option_rows = self::runtime_option_rows();
 		$scheduler   = Component::get_scheduler();
 		if ( null === $scheduler ) {
-			ResetOutput::error( 'The background jobs scheduler is unavailable; run the command after plugins_loaded.' );
+			\WP_CLI::error( 'The background jobs scheduler is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
 		$persisted_rows = self::persisted_rows( $option_rows );
 		if ( \is_string( $persisted_rows ) ) {
-			ResetOutput::error( $persisted_rows );
+			\WP_CLI::error( $persisted_rows );
 			return;
 		}
 
 		$clearance = $scheduler->unschedule_hooks( self::ACTION_HOOKS );
 		if ( $clearance->is_failure() ) {
-			ResetOutput::error( $clearance->error->message );
+			\WP_CLI::error( $clearance->error->message );
 			return;
 		}
 
@@ -136,14 +135,16 @@ final readonly class ResetCommand {
 				RowDeleteOutcome::DeleteFailed  => \sprintf( 'The database delete for engine option rows failed after %d deletions; repair the database error and retry the reset.', $deleted ),
 			};
 			if ( null !== $message ) {
-				ResetOutput::error( $message );
+				\WP_CLI::error( $message );
 				return;
 			}
 
 			++$deleted;
 		}
 
-		ResetOutput::report( $deleted, $clearance->value );
+		\WP_CLI::line( \sprintf( 'Option rows deleted: %d', $deleted ) );
+		\WP_CLI::line( \sprintf( 'Pending backend actions unscheduled: %d', $clearance->value ) );
+		\WP_CLI::success( 'Background jobs development state reset.' );
 	}
 
 	/**
