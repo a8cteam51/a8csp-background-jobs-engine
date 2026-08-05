@@ -48,12 +48,17 @@ final readonly class WPErrorStub {
 	/**
 	 * Returns the stored error data.
 	 *
+	 * WordPress stores data only when it is non-empty, so an error constructed with an empty array
+	 * reports no data at all; a stub that returned the array would let a test pin a shape production
+	 * never produces. The engine supplies an array or nothing, so those are the two empty forms
+	 * modelled here.
+	 *
 	 * @param   string|int $code Optional error code.
 	 *
 	 * @return  mixed
 	 */
 	public function get_error_data( string|int $code = '' ): mixed {
-		return $this->data;
+		return null === $this->data || array() === $this->data ? null : $this->data;
 	}
 
 	/**

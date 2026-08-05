@@ -267,7 +267,7 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( ErrorCode::PayloadRejected->value, $result->get_error_code() );
 		self::assertSame( 'Background-work "oversized" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $result->get_error_message() );
-		self::assertSame( array(), $result->get_error_data() );
+		self::assertNull( $result->get_error_data() );
 	}
 
 	/**
@@ -591,7 +591,7 @@ final class ScopeOperationsTest extends TestCase {
 	 * @return  void
 	 */
 	#[DataProvider( 'operation_failure_triples' )]
-	public function test_operations_return_wordpress_errors_without_changing_failure_triples( string $method, string $code, string $message, array $data ): void {
+	public function test_operations_return_wordpress_errors_without_changing_failure_triples( string $method, string $code, string $message, ?array $data ): void {
 		$client = $this->rig->operations( 'triple-tests' );
 		$run_id = '00000000001700000000-0000000000000000042';
 		if ( 'sync' === $method ) {
@@ -661,7 +661,7 @@ final class ScopeOperationsTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array<string, array{method: string, code: string, message: string, data: array<string, mixed>}>
+	 * @return  array<string, array{method: string, code: string, message: string, data: array<string, mixed>|null}>
 	 */
 	public static function operation_failure_triples(): array {
 		return array(
@@ -675,7 +675,7 @@ final class ScopeOperationsTest extends TestCase {
 				'method'  => 'sync',
 				'code'    => 'payload_rejected',
 				'message' => 'Schedule "oversized" arguments contain 8193 JSON bytes; the limit is 8192 bytes.',
-				'data'    => array(),
+				'data'    => null,
 			),
 			'dispatch now'       => array(
 				'method'  => 'dispatch_now',

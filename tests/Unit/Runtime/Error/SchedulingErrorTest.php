@@ -65,20 +65,20 @@ final class SchedulingErrorTest extends TestCase {
 	}
 
 	/**
-	 * Scheduling failures without safe structured detail expose an empty context.
+	 * Scheduling failures without safe structured detail expose no error data at all.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_context_defaults_to_an_empty_array(): void {
+	public function test_absent_context_reaches_the_boundary_as_no_error_data(): void {
 		$result = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' ) ) );
 
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( ErrorCode::BackendUnavailable->value, $result->get_error_code() );
 		self::assertSame( 'Load a supported scheduling backend.', $result->get_error_message() );
-		self::assertSame( array(), $result->get_error_data() );
+		self::assertNull( $result->get_error_data() );
 	}
 
 	/**
