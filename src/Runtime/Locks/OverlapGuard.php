@@ -20,8 +20,8 @@ use Psr\Log\LoggerInterface;
  *
  * A claim mutates only an absent row. Existing parseable rows are returned as exact snapshots so
  * the admission coordinator can fence the incumbent before transferring that same lock generation.
- * Unreadable or malformed selections are indeterminate and remain unchanged. Maintenance owns stale
- * deletion independently.
+ * Unreadable selections, unanswered writes whose row is absent, malformed rows, and exhausted claim
+ * attempts are all indeterminate and remain unchanged. Maintenance owns stale deletion independently.
  *
  * LockWindows resolves the 15-minute default, lock-staleness filter, and
  * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
@@ -95,6 +95,12 @@ final readonly class OverlapGuard {
 	/**
 	 * Claims an absent lock or selects an existing parseable row.
 	 *
+	 * A lost insert whose row is then absent is contention that resolved itself: an incumbent held the
+	 * lane when the insert ran and released it before the read, so the lane is free and the claim is
+	 * attempted again against it. Attempts are bounded, so a lane that keeps vanishing settles as
+	 * indeterminate rather than spinning. Nothing outside this method observes an intermediate attempt:
+	 * no run row exists yet, and a losing attempt writes nothing to undo.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -108,7 +114,8 @@ final readonly class OverlapGuard {
 		$key = $this->option_name( $identity, $args_hash );
 
 		// A fixed attempt list makes the bound independent of a mutable counter. The list is not monotonic
-		// below one because range() reverses, so the budget documents that lower limit.
+		// in the budget, though, because range() reverses when its start exceeds its end, which is why the
+		// budget is documented as one or greater.
 		foreach ( \range( 1, self::CLAIM_ATTEMPTS ) as $attempt ) {
 			if ( 1 < $attempt ) {
 				$this->logger->debug(
@@ -139,6 +146,9 @@ final readonly class OverlapGuard {
 					continue;
 				}
 
+				// Storage that did not answer a write is not asked for another one in the same request. The
+				// absent read has already excluded this claim's own row, so a further attempt could only
+				// re-ask degraded storage for the answer it just failed to give.
 				return LockClaimResult::indeterminate();
 			}
 
@@ -155,6 +165,18 @@ final readonly class OverlapGuard {
 
 			return LockClaimResult::contended( $lock['run_id'], $raw, self::is_stale( $lock, $now, $staleness_window ), $now );
 		}
+
+		// The caller presents an exhausted claim as a storage failure, which is the wrong cause for a lane
+		// that answered every query. This record is what tells an operator reading the log that the lane was
+		// contended rather than unreadable.
+		$this->logger->debug(
+			'An execution-overlap lock claim exhausted its attempts because the contended lane was released before every read.',
+			array(
+				'identity' => (string) $identity,
+				'run_id'   => $run_id,
+				'attempts' => self::CLAIM_ATTEMPTS,
+			)
+		);
 
 		return LockClaimResult::indeterminate();
 	}

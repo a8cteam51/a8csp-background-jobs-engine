@@ -203,14 +203,34 @@ final class OverlapGuardTest extends TestCase {
 
 	/** A claim stops after three lost inserts whose selected rows all disappear. */
 	public function test_claim_exhausts_its_lost_insert_retry_budget(): void {
+		$logger = new RecordingLogger();
 		$this->wpdb->script_result( 'insert', 0 );
 		$this->wpdb->script_result( 'insert', 0 );
 		$this->wpdb->script_result( 'insert', 0 );
 
-		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
+		$result = $this->guard_at( 200, $logger )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
 
 		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
 		self::assertCount( 6, $this->wpdb->recorded_queries );
+		self::assertSame( array( 'debug', 'debug', 'debug' ), \array_column( $logger->records, 'level' ) );
+		self::assertSame(
+			array(
+				'An execution-overlap lock claim lost an insert race and is being attempted again.',
+				'An execution-overlap lock claim lost an insert race and is being attempted again.',
+				'An execution-overlap lock claim exhausted its attempts because the contended lane was released before every read.',
+			),
+			\array_column( $logger->records, 'message' )
+		);
+		self::assertSame( 2, $logger->records[0]['context']['attempt'] ?? null );
+		self::assertSame( 3, $logger->records[1]['context']['attempt'] ?? null );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => 'run-rival',
+				'attempts' => 3,
+			),
+			$logger->records[2]['context']
+		);
 	}
 
 	/** An unanswered insert is not retried even when the selected row is absent. */
