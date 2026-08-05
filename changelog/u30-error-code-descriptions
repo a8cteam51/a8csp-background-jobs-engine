@@ -1,4 +1,4 @@
 Significance: patch
 Type: fixed
 
-Three `ErrorCode` case descriptions state what produces them. `overlap_held` is reported for a held overlap lock and never for a schedule's occurrence decision; `admission_conflict` means a lost admission race whatever the number of attempts behind it; and `unsupported_operation` names a state the engine cannot serve rather than a backend or version limitation. The cases and their values are unchanged.
+Three `ErrorCode` case descriptions state what produces them. `overlap_held` is reported for a held overlap lock and never for a schedule's occurrence decision; `admission_conflict` means a lost admission race whatever the number of attempts behind it, and how to respond depends on the entry point, which the admission documentation covers; and `unsupported_operation` names a run whose persisted state cannot serve the stage its delivery asked for, rather than a backend or version limitation. The admission documentation also names the occurrence decision a manual schedule dispatch can lose. The cases and their values are unchanged.

@@ -35,7 +35,7 @@ enum ErrorCode: string {
 	/** An overlap lock is held by a run that is still going; skip or wait. */
 	case OverlapHeld = 'overlap_held';
 
-	/** Admission lost a race and admitted nothing; retrying may succeed. */
+	/** Admission lost a race and admitted nothing. */
 	case AdmissionConflict = 'admission_conflict';
 
 	/** The supplied arguments or scheduling payload cannot be admitted. */
@@ -56,7 +56,7 @@ enum ErrorCode: string {
 	/** The requested run is terminal, executing, or otherwise beyond cancellation. */
 	case RunNotCancellable = 'run_not_cancellable';
 
-	/** The engine cannot perform the requested operation in the state it reached. */
+	/** A run's persisted state cannot serve the stage its delivery asked for. */
 	case UnsupportedOperation = 'unsupported_operation';
 
 	/** Execution, queue generation, retry preparation, or crash recovery failed the run. */
