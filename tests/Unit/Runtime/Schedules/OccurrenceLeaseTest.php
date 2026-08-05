@@ -148,13 +148,13 @@ final class OccurrenceLeaseTest extends TestCase {
 		self::assertCount( 1, $this->wpdb->recorded_queries );
 	}
 
-	/** A lost insert with authoritative absence reports an unconfirmed storage write. */
-	public function test_lost_insert_with_authoritative_absence_is_indeterminate(): void {
+	/** A lost insert after row removal is classified as a lost race. */
+	public function test_lost_insert_after_row_removal_is_not_claimed(): void {
 		$this->wpdb->script_result( 'insert', 0 );
 
 		$outcome = $this->lease->claim( self::KEY );
 
-		self::assertSame( OccurrenceLeaseOutcome::IndeterminateWrite, $outcome );
+		self::assertSame( OccurrenceLeaseOutcome::NotClaimed, $outcome );
 		self::assertArrayNotHasKey( self::option_name(), $this->wpdb->rows );
 		self::assertCount( 2, $this->wpdb->recorded_queries );
 	}

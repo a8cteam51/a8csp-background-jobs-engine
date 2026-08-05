@@ -104,7 +104,7 @@ final readonly class OccurrenceDelivery {
 		$lease_claim = $this->lease->claim( $registration_key );
 		if ( $lease_claim instanceof OccurrenceLeaseOutcome ) {
 			if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim ) {
-				$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'schedule_identity' => $registration_key ) );
+				$this->logger->debug( 'Schedule occurrence skipped because this delivery does not own its decision lease.', array( 'schedule_identity' => $registration_key ) );
 
 				return;
 			}
@@ -167,7 +167,7 @@ final readonly class OccurrenceDelivery {
 			if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim ) {
 				return new Failure(
 					new EngineError(
-						\sprintf( 'Schedule "%1$s" for scope "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $scope ),
+						\sprintf( 'Schedule "%1$s" for scope "%2$s" did not acquire its occurrence decision lease; retry.', $name, $scope ),
 						reason: EngineErrorReason::AdmissionConflict,
 						context: array(
 							'scope'    => $scope,

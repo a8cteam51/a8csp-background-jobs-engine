@@ -112,7 +112,7 @@ final readonly class OccurrenceLease {
 
 		$expected_raw = $selected->value;
 		if ( null === $expected_raw ) {
-			return OccurrenceLeaseOutcome::IndeterminateWrite;
+			return OccurrenceLeaseOutcome::NotClaimed;
 		}
 
 		$incumbent = self::parse( $expected_raw );

@@ -338,6 +338,25 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * A lost occurrence-lease insert race rejects manual dispatch as an admission conflict.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_dispatch_reports_a_lost_occurrence_lease_race_as_an_admission_conflict(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->wpdb()->script_result( 'insert', 0 );
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::AdmissionConflict->value, $result->get_error_code() );
+		self::assertSame( 'Schedule "nightly" for scope "scope-a" did not acquire its occurrence decision lease; retry.', $result->get_error_message() );
+	}
+
+	/**
 	 * An unconfirmed occurrence-lease write identifies the failed manual-dispatch operation.
 	 *
 	 * @since   1.0.0
@@ -916,6 +935,26 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
 		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
+	}
+
+	/**
+	 * A lost occurrence-lease insert race is benign delivery contention.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_lost_occurrence_lease_insert_race_logs_debug_and_drops_delivery(): void {
+		$this->sync_schedule( self::schedule() );
+		$this->rig->wpdb()->script_result( 'insert', 0 );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
+
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( 'Schedule occurrence skipped because this delivery does not own its decision lease.', $this->rig->logger()->records[0]['message'] ?? null );
 	}
 
 	/**

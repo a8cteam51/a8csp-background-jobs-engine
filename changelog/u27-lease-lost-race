@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+A manual schedule dispatch that loses its occurrence-decision race now reports `admission_conflict` instead of `storage_failed`.
