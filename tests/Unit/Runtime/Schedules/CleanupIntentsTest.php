@@ -159,6 +159,71 @@ final class CleanupIntentsTest extends TestCase {
 	}
 
 	/**
+	 * An indeterminate intent write that stored nothing reports no convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_indeterminate_intent_write_storing_nothing_reports_no_convergence(): void {
+		// The occurrence lease is inserted before the cleanup intent, so the failure is armed one insert late.
+		$this->wpdb->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
+		self::assertFalse( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * An indeterminate intent write whose row is nevertheless readable converges its leftover chain.
+	 *
+	 * @return  void
+	 */
+	public function test_indeterminate_intent_write_with_a_readable_row_still_converges(): void {
+		[ $intent_option, $intent_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 7 );
+		$this->wpdb->put( $intent_option, $intent_raw );
+		// The occurrence lease is inserted before the cleanup intent, so the failure is armed one insert late.
+		$this->wpdb->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $intent_option, $this->wpdb->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * An intent an earlier occurrence recorded is a determinate write, so its removal still reads as convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_concurrently_removed_incumbent_intent_reports_convergence_without_scheduler_access(): void {
+		[ $intent_option, $intent_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 7 );
+		self::assertSame( $this->intent_option_name(), $intent_option );
+		$this->wpdb->put( $intent_option, $intent_raw );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $intent_option, $intent_raw ): void {
+				self::assertSame( $intent_raw, $wpdb->rows[ $intent_option ] ?? null );
+				unset( $wpdb->rows[ $intent_option ], $wpdb->autoload[ $intent_option ] );
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $intent_option, $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
 	 * A concurrently removed written intent means another actor already converged the chain.
 	 *
 	 * @return  void

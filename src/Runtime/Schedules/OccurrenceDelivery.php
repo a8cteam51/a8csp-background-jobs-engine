@@ -12,7 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\SkippedJobDispatch;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -355,7 +354,7 @@ final readonly class OccurrenceDelivery {
 		$registration = $registration_read->value;
 		if ( null === $registration ) {
 			$recorded  = $this->cleanup_intents->record_intent( $registration_key );
-			$converged = RowWriteOutcome::WriteFailed !== $recorded && $this->cleanup_intents->converge_unknown_chain( $registration_key );
+			$converged = $this->cleanup_intents->converge_unknown_chain( $registration_key, $recorded );
 			$context   = array(
 				'schedule_identity' => $registration_key,
 				'converged'         => $converged,

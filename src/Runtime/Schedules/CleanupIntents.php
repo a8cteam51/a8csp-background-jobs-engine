@@ -127,11 +127,12 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{scope}:{name}` schedule identity.
+	 * @param   string          $registration_key `{scope}:{name}` schedule identity.
+	 * @param   RowWriteOutcome $recorded         Caller's own intent-write classification.
 	 *
 	 * @return  bool Whether the observed intent no longer needs convergence.
 	 */
-	public function converge_unknown_chain( string $registration_key ): bool {
+	public function converge_unknown_chain( string $registration_key, RowWriteOutcome $recorded ): bool {
 		$selected = $this->read_intent( $registration_key );
 		if ( $selected->is_failure() ) {
 			return false;
@@ -139,7 +140,9 @@ final readonly class CleanupIntents {
 
 		$expected_raw = $selected->value;
 		if ( null === $expected_raw ) {
-			return true;
+			// An absent row means another actor converged the chain, which only a determinate
+			// write establishes; an indeterminate one may simply never have stored anything.
+			return RowWriteOutcome::WriteFailed !== $recorded;
 		}
 
 		return $this->converge_selected_intent( $registration_key, $expected_raw );

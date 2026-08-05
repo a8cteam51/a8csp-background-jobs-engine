@@ -678,7 +678,7 @@ final class ScheduleExecutionTest extends TestCase {
 		unset( $this->rig->wpdb()->rows[ $registry_option ], $this->rig->wpdb()->autoload[ $registry_option ] );
 
 		// Schedule delivery inserts its occurrence lease before the cleanup intent.
-		$this->rig->wpdb()->before_next( 'insert', static fn( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
+		$this->rig->wpdb()->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 
 		$this->rig->run_due();
