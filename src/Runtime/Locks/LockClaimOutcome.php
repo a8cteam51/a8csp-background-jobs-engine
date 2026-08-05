@@ -19,7 +19,7 @@ enum LockClaimOutcome: string {
 	case Contended = 'contended';
 
 	/**
-	 * No lock this claim can act on: the authoritative row was unreadable, absent after a lost insert, or does not parse.
+	 * No lock this claim can act on: the authoritative row was unreadable, absent after an unanswered write or exhausted lost-insert retries, or does not parse.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

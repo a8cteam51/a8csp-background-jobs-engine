@@ -45,6 +45,18 @@ final readonly class OverlapGuard {
 	public const string OPTION_PREFIX = 'a8csp_bgje_overlap_lock_';
 
 	/**
+	 * Maximum claim attempts when a lost insert's incumbent row disappears.
+	 *
+	 * One or greater because range() reverses when its start exceeds its end.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int CLAIM_ATTEMPTS = 3;
+
+	/**
 	 * Prefix length retained from a raw-value digest in operator diagnostics.
 	 *
 	 * @since   1.0.0
@@ -93,36 +105,58 @@ final readonly class OverlapGuard {
 	 * @return  LockClaimResult Typed selection carrying the generation it decided under, with an exact contended snapshot when one was read.
 	 */
 	public function claim( Identity $identity, string $args_hash, string $run_id ): LockClaimResult {
-		$key      = $this->option_name( $identity, $args_hash );
-		$now      = $this->clock->now()->getTimestamp();
-		$new_lock = self::new_lock( $run_id, $now );
+		$key = $this->option_name( $identity, $args_hash );
 
-		if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
-			return LockClaimResult::claimed( $now );
+		// A fixed attempt list makes the bound independent of a mutable counter. The list is not monotonic
+		// below one because range() reverses, so the budget documents that lower limit.
+		foreach ( \range( 1, self::CLAIM_ATTEMPTS ) as $attempt ) {
+			if ( 1 < $attempt ) {
+				$this->logger->debug(
+					'An execution-overlap lock claim lost an insert race and is being attempted again.',
+					array(
+						'identity' => (string) $identity,
+						'run_id'   => $run_id,
+						'attempt'  => $attempt,
+					)
+				);
+			}
+
+			$now      = $this->clock->now()->getTimestamp();
+			$new_lock = self::new_lock( $run_id, $now );
+			$insert   = $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) );
+			if ( RowWriteOutcome::Won === $insert ) {
+				return LockClaimResult::claimed( $now );
+			}
+
+			$selected = $this->rows->read( $key );
+			if ( $selected->is_failure() ) {
+				return LockClaimResult::indeterminate();
+			}
+
+			$raw = $selected->value;
+			if ( null === $raw ) {
+				if ( RowWriteOutcome::Lost === $insert ) {
+					continue;
+				}
+
+				return LockClaimResult::indeterminate();
+			}
+
+			$lock = self::parse( $raw );
+			if ( null === $lock ) {
+				return LockClaimResult::indeterminate();
+			}
+
+			// Liveness is the incumbent's own policy: resolving the window from the contender would judge a healthy
+			// incumbent against a window it never declared. Resolving it applies consumer filters, so the age this
+			// decision uses is read afterwards.
+			$staleness_window = $this->lock_windows->lock_staleness( $identity, $lock['run_id'] );
+			$now              = $this->clock->now()->getTimestamp();
+
+			return LockClaimResult::contended( $lock['run_id'], $raw, self::is_stale( $lock, $now, $staleness_window ), $now );
 		}
 
-		$selected = $this->rows->read( $key );
-		if ( $selected->is_failure() ) {
-			return LockClaimResult::indeterminate();
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return LockClaimResult::indeterminate();
-		}
-
-		$lock = self::parse( $raw );
-		if ( null === $lock ) {
-			return LockClaimResult::indeterminate();
-		}
-
-		// Liveness is the incumbent's own policy: resolving the window from the contender would judge a healthy
-		// incumbent against a window it never declared. Resolving it applies consumer filters, so the age this
-		// decision uses is read afterwards.
-		$staleness_window = $this->lock_windows->lock_staleness( $identity, $lock['run_id'] );
-		$now              = $this->clock->now()->getTimestamp();
-
-		return LockClaimResult::contended( $lock['run_id'], $raw, self::is_stale( $lock, $now, $staleness_window ), $now );
+		return LockClaimResult::indeterminate();
 	}
 
 	/**

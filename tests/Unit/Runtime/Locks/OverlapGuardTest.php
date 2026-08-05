@@ -157,6 +157,110 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'insert' ), $this->operations() );
 	}
 
+	/** A claim retries against current storage when the incumbent disappears after a lost insert. */
+	public function test_claim_retries_a_lost_insert_when_the_selected_row_disappears(): void {
+		$logger = new RecordingLogger();
+		$this->wpdb->script_result( 'insert', 0 );
+
+		$result = $this->guard_at( 1_700_000_100, $logger )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockClaimOutcome::Claimed, $result->outcome );
+		self::assertSame( 1_700_000_100, $result->admitted_at );
+		self::assertSame( 'a:2:{s:6:"run_id";s:7:"run-new";s:12:"heartbeat_at";i:1700000100;}', $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertCount( 3, $this->wpdb->recorded_queries );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'An execution-overlap lock claim lost an insert race and is being attempted again.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => 'run-new',
+						'attempt'  => 2,
+					),
+				),
+			),
+			$logger->records
+		);
+	}
+
+	/** A retried claim selects the new incumbent that arrives after the vanished row. */
+	public function test_claim_retry_selects_a_new_incumbent(): void {
+		$new_incumbent_raw = self::fixture_lock_raw( 'run-new-owner', 100, 190 );
+		$this->wpdb->script_result( 'insert', 0 );
+		$this->wpdb->before_next(
+			'select',
+			static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->put( self::KEY, $new_incumbent_raw ) )
+		);
+
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
+
+		self::assertSame( LockClaimOutcome::Contended, $result->outcome );
+		self::assertSame( 'run-new-owner', $result->owner_run_id );
+		self::assertSame( $new_incumbent_raw, $result->raw );
+		self::assertCount( 4, $this->wpdb->recorded_queries );
+	}
+
+	/** A claim stops after three lost inserts whose selected rows all disappear. */
+	public function test_claim_exhausts_its_lost_insert_retry_budget(): void {
+		$this->wpdb->script_result( 'insert', 0 );
+		$this->wpdb->script_result( 'insert', 0 );
+		$this->wpdb->script_result( 'insert', 0 );
+
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
+
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertCount( 6, $this->wpdb->recorded_queries );
+	}
+
+	/** An unanswered insert is not retried even when the selected row is absent. */
+	public function test_claim_does_not_retry_a_failed_insert(): void {
+		$this->wpdb->script_result( 'insert', false );
+
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
+
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertSame( 1, \count( \array_filter( $this->operations(), static fn ( string $operation ): bool => 'insert' === $operation ) ) );
+	}
+
+	/** A successful retry persists and reports the retry attempt's later generation. */
+	public function test_claim_retry_recomputes_its_generation(): void {
+		$clock = new FixedClock( 100 );
+		$this->wpdb->script_result( 'insert', 0 );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $clock ): void {
+				$clock->timestamp = 200;
+			}
+		);
+		$guard = new OverlapGuard( $clock, new RecordingLogger(), $this->rows, new LockWindows( $clock, new RecordingLogger() ) );
+
+		$result = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockClaimOutcome::Claimed, $result->outcome );
+		self::assertSame( 200, $result->admitted_at );
+		self::assertSame( self::expected_lock_row( 'run-new', 200 ), $this->lock() );
+	}
+
+	/** A retry without a parseable incumbent does not resolve the incumbent-only staleness filter. */
+	public function test_claim_retry_without_an_incumbent_does_not_resolve_staleness(): void {
+		$staleness_calls = 0;
+		\add_filter(
+			'a8csp_bgje/lock_staleness',
+			static function ( int $window ) use ( &$staleness_calls ): int {
+				++$staleness_calls;
+
+				return $window;
+			}
+		);
+		$this->wpdb->script_result( 'insert', 0 );
+
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockClaimOutcome::Claimed, $result->outcome );
+		self::assertSame( 0, $staleness_calls );
+	}
+
 	/** A fresh foreign owner is selected with its exact raw row without mutation. */
 	public function test_claim_selects_a_fresh_foreign_lock_without_mutation(): void {
 		$raw = self::fixture_lock_raw( 'run-live', 1_700_000_000, 1_700_000_090 );

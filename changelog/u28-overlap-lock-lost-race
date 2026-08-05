@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+A dispatch that arrives as the previous run releases its overlap lane claims the available lane instead of failing with `storage_failed`.
