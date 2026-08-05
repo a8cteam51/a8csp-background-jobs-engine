@@ -159,6 +159,33 @@ final class CleanupIntentsTest extends TestCase {
 	}
 
 	/**
+	 * A concurrently removed written intent means another actor already converged the chain.
+	 *
+	 * @return  void
+	 */
+	public function test_concurrently_removed_written_intent_reports_convergence_without_scheduler_access(): void {
+		$intent_option = $this->intent_option_name();
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $intent_option ): void {
+				self::assertArrayHasKey( $intent_option, $wpdb->rows );
+				unset( $wpdb->rows[ $intent_option ], $wpdb->autoload[ $intent_option ] );
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $intent_option, $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
+		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
 	 * Malformed scheduler-wire bytes retain their exact lease, intent, cleanup, and diagnostic identity.
 	 *
 	 * @since   1.0.0

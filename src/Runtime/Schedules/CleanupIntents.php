@@ -10,6 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
 use Psr\Log\LogLevel;
 use Psr\Log\LoggerInterface;
 
@@ -104,9 +105,9 @@ final readonly class CleanupIntents {
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the intent to a string.
 	 *
-	 * @return  void
+	 * @return  RowWriteOutcome Exact cleanup-intent write classification.
 	 */
-	public function record_intent( string $registration_key ): void {
+	public function record_intent( string $registration_key ): RowWriteOutcome {
 		$raw = \maybe_serialize(
 			array(
 				'schedule_identity' => $registration_key,
@@ -117,7 +118,7 @@ final readonly class CleanupIntents {
 			throw new \LogicException( 'WordPress must serialize an unknown-schedule cleanup intent to a string.' );
 		}
 
-		$this->option_rows->insert_if_absent( self::intent_option_name( $registration_key ), $raw );
+		return $this->option_rows->insert_if_absent( self::intent_option_name( $registration_key ), $raw );
 	}
 
 	/**

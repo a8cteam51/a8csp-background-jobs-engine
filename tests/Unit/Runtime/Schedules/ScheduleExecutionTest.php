@@ -663,6 +663,45 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * A failed cleanup-intent write reports no convergence and retries on the next occurrence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_registration_intent_write_failure_defers_convergence_until_the_next_occurrence(): void {
+		$this->sync_schedule( self::schedule() );
+		$registry_option = ScheduleRegistry::option_name( self::SCOPE );
+		$intent_option   = CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
+		self::assertArrayHasKey( $registry_option, $this->rig->wpdb()->rows );
+		unset( $this->rig->wpdb()->rows[ $registry_option ], $this->rig->wpdb()->autoload[ $registry_option ] );
+
+		// Schedule delivery inserts its occurrence lease before the cleanup intent.
+		$this->rig->wpdb()->before_next( 'insert', static fn( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+
+		$this->rig->run_due();
+
+		self::assertArrayNotHasKey( $intent_option, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
+		self::assertFalse( $this->rig->logger()->records[0]['context']['converged'] ?? null );
+
+		$this->reset_observations();
+		$this->rig->clock()->timestamp = self::NOW + 2 * self::INTERVAL;
+
+		$this->rig->run_due();
+
+		self::assertArrayNotHasKey( $intent_option, $this->rig->wpdb()->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertTrue( $this->rig->logger()->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
 	 * A confirmed concurrent occurrence lease is benign delivery contention.
 	 *
 	 * @since   1.0.0
