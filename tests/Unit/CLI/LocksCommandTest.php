@@ -125,6 +125,60 @@ final class LocksCommandTest extends TestCase {
 	}
 
 	/**
+	 * Lock help names every accepted list format.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_locks_help_names_every_accepted_list_format(): void {
+		self::assertStringContainsString( ': Render list output as table, csv, json, count, or yaml. Defaults to table.', CliHarness::registered_subcommand_description( 'locks' ) );
+	}
+
+	/**
+	 * Count listing accepts the shared format and reports one persisted lane.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_locks_list_accepts_count_and_reports_a_non_empty_lane_count(): void {
+		$this->put_fixture( $this->fixtures->lock( self::ARGS_HASH, self::RUN_ID, self::NOW, self::NOW ) );
+
+		$request = LocksCommand::request_from_args( array( 'list' ), array( 'format' => 'count' ) );
+		$result  = CliHarness::run( 'locks', array( 'list' ), array( 'format' => 'count' ) );
+
+		self::assertSame(
+			array(
+				'action' => 'list',
+				'format' => 'count',
+			),
+			$request
+		);
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( '1', $result->stdout );
+		self::assertSame( '', $result->stderr );
+	}
+
+	/**
+	 * Empty count listing reports zero through WP-CLI's native formatter.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_locks_list_count_reports_zero_for_an_empty_lane_set(): void {
+		$result = CliHarness::run( 'locks', array( 'list' ), array( 'format' => 'count' ) );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( '0', $result->stdout );
+		self::assertSame( '', $result->stderr );
+	}
+
+	/**
 	 * CSV listing uses the same fixed public columns.
 	 *
 	 * @since   1.0.0
@@ -238,7 +292,7 @@ final class LocksCommandTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_lock_requests(): array {
-		$list_usage = 'Lock list accepts only --format; use wp a8csp-bgje locks list [--format=<table|json|csv|yaml>].';
+		$list_usage = 'Lock list accepts only --format; use wp a8csp-bgje locks list [--format=<format>].';
 
 		return array(
 			'missing action'      => array(
@@ -266,15 +320,15 @@ final class LocksCommandTest extends TestCase {
 				'assoc_args' => array( 'yes' => true ),
 				'message'    => $list_usage,
 			),
-			'list count'          => array(
+			'list ids'            => array(
 				'args'       => array( 'list' ),
-				'assoc_args' => array( 'format' => 'count' ),
-				'message'    => 'Lock list format is invalid; use table, json, csv, or yaml.',
+				'assoc_args' => array( 'format' => 'ids' ),
+				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
 			'list negated format' => array(
 				'args'       => array( 'list' ),
 				'assoc_args' => array( 'format' => false ),
-				'message'    => 'Lock list format is invalid; use table, json, csv, or yaml.',
+				'message'    => 'List format is invalid; use table, csv, json, count, or yaml.',
 			),
 		);
 	}

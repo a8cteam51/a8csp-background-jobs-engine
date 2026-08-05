@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\LocksOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 
@@ -27,7 +28,7 @@ final readonly class LocksCommand {
 	 * : Operation to perform: list.
 	 *
 	 * [--format=<format>]
-	 * : Render list output as table, json, csv, or yaml. Defaults to table.
+	 * : Render list output as table, csv, json, count, or yaml. Defaults to table.
 	 *
 	 * ## EXAMPLES
 	 *
@@ -93,15 +94,15 @@ final readonly class LocksCommand {
 		if ( 1 !== \count( $args ) || ! self::has_only_keys( $assoc_args, array( 'format' ) ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Lock list accepts only --format; use wp a8csp-bgje locks list [--format=<table|json|csv|yaml>].',
+				'message' => 'Lock list accepts only --format; use wp a8csp-bgje locks list [--format=<format>].',
 			);
 		}
 
 		$format = $assoc_args['format'] ?? 'table';
-		if ( ! \is_string( $format ) || ! \in_array( $format, array( 'table', 'json', 'csv', 'yaml' ), true ) ) {
+		if ( ! Format::is_supported( $format ) ) {
 			return array(
 				'action'  => 'error',
-				'message' => 'Lock list format is invalid; use table, json, csv, or yaml.',
+				'message' => 'List format is invalid; use table, csv, json, count, or yaml.',
 			);
 		}
 
