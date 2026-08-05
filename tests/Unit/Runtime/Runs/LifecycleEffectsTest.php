@@ -546,6 +546,7 @@ final class LifecycleEffectsTest extends TestCase {
 			self::assertSame( self::IDENTITY, $failure->identity );
 			self::assertSame( self::RUN_ID, (string) $failure->run_id );
 			self::assertSame( 1, $failure->attempts );
+			self::assertSame( array( $failure ), $actions[1]['args'] ?? null );
 			return;
 		}
 
@@ -564,6 +565,90 @@ final class LifecycleEffectsTest extends TestCase {
 			self::assertSame( self::PREVIOUS_RUN_ID, (string) $previous_run_id );
 			self::assertSame( $previous_run_id, $actions[1]['args'][3] ?? null );
 		}
+	}
+
+	/** Generic terminal hooks still fire after an identity-specific listener throws. */
+	#[DataProvider( 'terminal_hook_statuses' )]
+	public function test_generic_terminal_hook_fires_when_identity_specific_listener_throws( string $status ): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal = $running
+			->with_status( RunStatus::from( $status ) )
+			->with_heartbeat_at( $this->clock->now()->getTimestamp() )
+			->with_pending( null );
+		if ( 'failed' === $status ) {
+			$terminal = $terminal->with_failed_attempts( 1 )->with_error(
+				array(
+					'class'   => \RuntimeException::class,
+					'message' => 'Terminal failure.',
+					'stage'   => RunFailureStage::execution()->value,
+					'code'    => ErrorCode::ExecutionFailed->value,
+				)
+			);
+		}
+		$terminal_raw   = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$failure_detail = 'failed' === $status
+			? $this->terminal_effects->resolve_failure_detail( $this->identity, self::RUN_ID, $terminal, null )
+			: null;
+
+		$hook             = 'a8csp_bgje/' . $status;
+		$listener_failure = new \RuntimeException( 'Identity-specific terminal listener exploded.' );
+
+		$GLOBALS['a8csp_bgje_test_action_throwables'] = array(
+			$hook . '/' . self::IDENTITY => $listener_failure,
+		);
+
+		try {
+			$this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, $failure_detail );
+			self::fail( 'The identity-specific terminal listener failure was not rethrown.' );
+		} catch ( \RuntimeException $caught ) {
+			self::assertSame( $listener_failure, $caught );
+		}
+
+		self::assertSame(
+			array( $hook . '/' . self::IDENTITY, $hook ),
+			\array_column( $this->fired_actions(), 'hook_name' )
+		);
+	}
+
+	/** Started hooks retain their public names, ordering, and payloads. */
+	public function test_started_hooks_fire_unchanged_hook_payloads(): void {
+		$this->terminal_effects->fire_started( $this->identity, self::RUN_ID, self::ARGS );
+
+		$actions = $this->fired_actions();
+		self::assertSame(
+			array(
+				'a8csp_bgje/started/' . self::IDENTITY,
+				'a8csp_bgje/started',
+			),
+			\array_column( $actions, 'hook_name' )
+		);
+		$run_id = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunId::class, $run_id );
+		self::assertSame( self::RUN_ID, (string) $run_id );
+		self::assertSame( array( $run_id, self::ARGS ), $actions[0]['args'] ?? null );
+		self::assertSame( array( self::IDENTITY, $run_id, self::ARGS ), $actions[1]['args'] ?? null );
+	}
+
+	/** Retry-scheduled hooks retain their public names, ordering, and payloads. */
+	public function test_retry_scheduled_hooks_fire_unchanged_hook_payloads(): void {
+		$this->terminal_effects->fire_retry_scheduled( $this->identity, self::RUN_ID, self::ARGS, 1, 30 );
+
+		$actions = $this->fired_actions();
+		self::assertSame(
+			array(
+				'a8csp_bgje/retry_scheduled/' . self::IDENTITY,
+				'a8csp_bgje/retry_scheduled',
+			),
+			\array_column( $actions, 'hook_name' )
+		);
+		$run_id = $actions[0]['args'][0] ?? null;
+		self::assertInstanceOf( RunId::class, $run_id );
+		self::assertSame( self::RUN_ID, (string) $run_id );
+		self::assertSame( array( $run_id, self::ARGS, 1, 30 ), $actions[0]['args'] ?? null );
+		self::assertSame( array( self::IDENTITY, $run_id, self::ARGS, 1, 30 ), $actions[1]['args'] ?? null );
 	}
 
 	/** Terminal hook payloads share no reference containers with persisted start arguments. */
@@ -598,6 +683,40 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( $expected, $actions[1]['args'][2] ?? null );
 	}
 
+	/** Cancelled and superseded hook payloads share no reference containers with persisted start arguments. */
+	#[DataProvider( 'reference_stripping_terminal_statuses' )]
+	public function test_terminal_hooks_detach_referenced_start_arguments_for_each_emitter( string $status ): void {
+		$value      = 'accepted';
+		$start_args = array(
+			'value'  => &$value,
+			'mirror' => &$value,
+		);
+		$expected   = array(
+			'value'  => 'accepted',
+			'mirror' => 'accepted',
+		);
+		$this->prepare_run_action( $start_args );
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$running   = RunStoreInspector::state( $run_store, self::RUN_ID );
+		self::assertNotNull( $running );
+		$terminal     = $running->with_status( RunStatus::from( $status ) )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_pending( null );
+		$terminal_raw = $this->claim_terminal_state( $run_store, $running, $terminal );
+		$callbacks    = $GLOBALS['a8csp_bgje_test_action_callbacks'] ?? null;
+		self::assertIsArray( $callbacks );
+		$callbacks[ 'a8csp_bgje/' . $status . '/' . self::IDENTITY ] = static function ( RunId $run_id, array $hook_args ): void {
+			$hook_args['value'] = 'listener-mutated';
+		};
+
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
+
+		self::assertTrue( $this->terminal_effects->execute_claimed_transition( $this->identity, self::RUN_ID, $terminal, $terminal_raw, $run_store, null ) );
+
+		$actions = $this->fired_actions();
+		self::assertSame( 'accepted', $value );
+		self::assertSame( $expected, $actions[0]['args'][1] ?? null );
+		self::assertSame( $expected, $actions[1]['args'][2] ?? null );
+	}
+
 	/** Retry-scheduled hook payloads share no reference containers with persisted start arguments. */
 	public function test_retry_scheduled_hooks_detach_referenced_start_arguments_before_listener_access(): void {
 		$value      = 'accepted';
@@ -624,6 +743,18 @@ final class LifecycleEffectsTest extends TestCase {
 		self::assertSame( 'accepted', $value );
 		self::assertSame( $expected, $actions[0]['args'][1] ?? null );
 		self::assertSame( $expected, $actions[1]['args'][2] ?? null );
+	}
+
+	/**
+	 * Supplies terminal statuses with dedicated reference-stripping emitters.
+	 *
+	 * @return  array<string, array{status: string}>
+	 */
+	public static function reference_stripping_terminal_statuses(): array {
+		return array(
+			'cancelled'  => array( 'status' => 'cancelled' ),
+			'superseded' => array( 'status' => 'superseded' ),
+		);
 	}
 
 	/**

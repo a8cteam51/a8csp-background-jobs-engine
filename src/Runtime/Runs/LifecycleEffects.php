@@ -30,23 +30,6 @@ final readonly class LifecycleEffects {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Literal client lifecycle hooks keep their names greppable.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     array<string, string>
-	 */
-	private const array LIFECYCLE_HOOKS = array(
-		'started'         => 'a8csp_bgje/started',
-		'retry_scheduled' => 'a8csp_bgje/retry_scheduled',
-		'completed'       => 'a8csp_bgje/completed',
-		'failed'          => 'a8csp_bgje/failed',
-		'cancelled'       => 'a8csp_bgje/cancelled',
-		'superseded'      => 'a8csp_bgje/superseded',
-	);
-
-	/**
 	 * Required durable effects in their client-observable execution order.
 	 *
 	 * @since   1.0.0
@@ -121,7 +104,36 @@ final readonly class LifecycleEffects {
 	 * @return  void
 	 */
 	public function fire_started( Identity $identity, string $run_id, array $start_args ): void {
-		$this->fire_lifecycle_hooks( 'started', $identity, $run_id, $start_args );
+		$wire_identity = (string) $identity;
+		$public_run_id = RunId::from( $run_id );
+		$start_args    = PortableArguments::without_references( $start_args );
+
+		try {
+			/**
+			 * Fires when a work run starts.
+			 *
+			 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   RunId                   $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 */
+			\do_action( 'a8csp_bgje/started/' . $wire_identity, $public_run_id, $start_args );
+		} finally {
+			/**
+			 * Fires after the identity-specific started lifecycle hook.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $identity   Complete scope-qualified job or chunked job identity.
+			 * @param   RunId                   $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 */
+			\do_action( 'a8csp_bgje/started', $wire_identity, $public_run_id, $start_args );
+		}
 	}
 
 	/**
@@ -141,7 +153,40 @@ final readonly class LifecycleEffects {
 	 * @return  void
 	 */
 	public function fire_retry_scheduled( Identity $identity, string $run_id, array $start_args, int $attempt, int $delay ): void {
-		$this->fire_lifecycle_hooks( 'retry_scheduled', $identity, $run_id, $start_args, attempt: $attempt, delay: $delay );
+		$wire_identity = (string) $identity;
+		$public_run_id = RunId::from( $run_id );
+		$start_args    = PortableArguments::without_references( $start_args );
+
+		try {
+			/**
+			 * Fires after retry state is persisted for one failed work attempt.
+			 *
+			 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   RunId                   $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   int                     $attempt    One-indexed number of the failed attempt.
+			 * @param   int                     $delay      Delay before the next attempt in seconds.
+			 */
+			\do_action( 'a8csp_bgje/retry_scheduled/' . $wire_identity, $public_run_id, $start_args, $attempt, $delay );
+		} finally {
+			/**
+			 * Fires after the identity-specific retry-scheduled hook.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $identity   Complete scope-qualified job or chunked job identity.
+			 * @param   RunId                   $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 * @param   int                     $attempt    One-indexed number of the failed attempt.
+			 * @param   int                     $delay      Delay before the next attempt in seconds.
+			 */
+			\do_action( 'a8csp_bgje/retry_scheduled', $wire_identity, $public_run_id, $start_args, $attempt, $delay );
+		}
 	}
 
 	/**
@@ -457,14 +502,13 @@ final readonly class LifecycleEffects {
 	 * @return  true
 	 */
 	private function fire_terminal_hooks( Identity $identity, string $run_id, RunState $state, ?RunFailure $failure ): bool {
-		$event = match ( $state->status ) {
-			RunStatus::Completed  => 'completed',
-			RunStatus::Failed     => 'failed',
-			RunStatus::Cancelled  => 'cancelled',
-			RunStatus::Superseded => 'superseded',
+		match ( $state->status ) {
+			RunStatus::Completed  => $this->fire_completed( $identity, $run_id, $state->start_args, $state->previous_completed_run_id ),
+			RunStatus::Failed     => null === $failure ? null : $this->fire_failed( $identity, $failure ),
+			RunStatus::Cancelled  => $this->fire_cancelled( $identity, $run_id, $state->start_args ),
+			RunStatus::Superseded => $this->fire_superseded( $identity, $run_id, $state->start_args ),
 			RunStatus::Running    => throw new \LogicException( 'Terminal hooks require a terminal run state.' ),
 		};
-		$this->fire_lifecycle_hooks( $event, $identity, $run_id, $state->start_args, $failure, $state->previous_completed_run_id );
 
 		return true;
 	}
@@ -498,143 +542,67 @@ final readonly class LifecycleEffects {
 	}
 
 	/**
-	 * Fires the lifecycle hook sequence for one event.
+	 * Fires the completed lifecycle hooks for one run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @phpstan-param 'started'|'retry_scheduled'|'completed'|'failed'|'cancelled'|'superseded' $event
-	 *
-	 * @param   string                  $event                     Lifecycle event name.
 	 * @param   Identity                $identity                  Complete scope-qualified job or chunked job identity.
 	 * @param   string                  $run_id                    Run identifier.
 	 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
-	 * @param   RunFailure|null         $failure                   Failure detail for a failed event.
-	 * @param   string|null             $previous_completed_run_id Previous completed run identifier for a completed event, or null.
-	 * @param   int|null                $attempt                   One-indexed retry attempt, or null for another event.
-	 * @param   int|null                $delay                     Retry delay in seconds, or null for another event.
-	 *
-	 * @throws  \LogicException When retry-scheduled metadata is absent.
+	 * @param   string|null             $previous_completed_run_id Previous completed run identifier, or null.
 	 *
 	 * @return  void
 	 */
-	private function fire_lifecycle_hooks( string $event, Identity $identity, string $run_id, array $start_args, ?RunFailure $failure = null, ?string $previous_completed_run_id = null, ?int $attempt = null, ?int $delay = null ): void {
-		$hook                             = self::LIFECYCLE_HOOKS[ $event ];
+	private function fire_completed( Identity $identity, string $run_id, array $start_args, ?string $previous_completed_run_id ): void {
 		$wire_identity                    = (string) $identity;
 		$public_run_id                    = RunId::from( $run_id );
 		$public_previous_completed_run_id = null === $previous_completed_run_id ? null : RunId::from( $previous_completed_run_id );
-		if ( 'failed' !== $event ) {
-			$start_args = PortableArguments::without_references( $start_args );
+		$start_args                       = PortableArguments::without_references( $start_args );
+
+		try {
+			/**
+			 * Fires when a work run completes.
+			 *
+			 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   RunId                   $run_id                    Run identifier.
+			 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+			 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
+			 */
+			\do_action( 'a8csp_bgje/completed/' . $wire_identity, $public_run_id, $start_args, $public_previous_completed_run_id );
+		} finally {
+			/**
+			 * Fires after the identity-specific completed lifecycle hook.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $identity                  Complete scope-qualified job or chunked job identity.
+			 * @param   RunId                   $run_id                    Run identifier.
+			 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
+			 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
+			 */
+			\do_action( 'a8csp_bgje/completed', $wire_identity, $public_run_id, $start_args, $public_previous_completed_run_id );
 		}
+	}
 
-		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Map values are full prefixed lifecycle hook literals.
-		if ( 'completed' === $event ) {
-			try {
-				/**
-				 * Fires when a work run completes.
-				 *
-				 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
-				 *
-				 * @since   1.0.0
-				 * @version 1.0.0
-				 *
-				 * @param   RunId                   $run_id                    Run identifier.
-				 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
-				 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
-				 */
-				\do_action( $hook . '/' . $wire_identity, $public_run_id, $start_args, $public_previous_completed_run_id );
-			} finally {
-				/**
-				 * Fires after the identity-specific completed lifecycle hook.
-				 *
-				 * @since   1.0.0
-				 * @version 1.0.0
-				 *
-				 * @param   string                  $identity                  Complete scope-qualified job or chunked job identity.
-				 * @param   RunId                   $run_id                    Run identifier.
-				 * @param   array<array-key, mixed> $start_args                Arguments supplied when the run started.
-				 * @param   RunId|null              $previous_completed_run_id Previous completed run identifier for this identity, or null.
-				 */
-				\do_action( $hook, $wire_identity, $public_run_id, $start_args, $public_previous_completed_run_id );
-			}
-
-			return;
-		}
-
-		if ( 'retry_scheduled' === $event ) {
-			if ( null === $attempt || null === $delay ) {
-				throw new \LogicException( 'Retry-scheduled hooks require attempt and delay values.' );
-			}
-
-			try {
-				/**
-				 * Fires after retry state is persisted for one failed work attempt.
-				 *
-				 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
-				 *
-				 * @since   1.0.0
-				 * @version 1.0.0
-				 *
-				 * @param   RunId                   $run_id     Run identifier.
-				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-				 * @param   int                     $attempt    One-indexed number of the failed attempt.
-				 * @param   int                     $delay      Delay before the next attempt in seconds.
-				 */
-				\do_action( $hook . '/' . $wire_identity, $public_run_id, $start_args, $attempt, $delay );
-			} finally {
-				/**
-				 * Fires after the identity-specific retry-scheduled hook.
-				 *
-				 * @since   1.0.0
-				 * @version 1.0.0
-				 *
-				 * @param   string                  $identity   Complete scope-qualified job or chunked job identity.
-				 * @param   RunId                   $run_id     Run identifier.
-				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-				 * @param   int                     $attempt    One-indexed number of the failed attempt.
-				 * @param   int                     $delay      Delay before the next attempt in seconds.
-				 */
-				\do_action( $hook, $wire_identity, $public_run_id, $start_args, $attempt, $delay );
-			}
-
-			return;
-		}
-
-		if ( null === $failure ) {
-			try {
-				/**
-				 * Fires when a work run starts, is cancelled, or is superseded.
-				 *
-				 * The dynamic portion of the hook name, `$hook`, refers to the `started`, `cancelled`, or
-				 * `superseded` lifecycle event.
-				 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
-				 *
-				 * @since   1.0.0
-				 * @version 1.0.0
-				 *
-				 * @param   RunId                   $run_id     Run identifier.
-				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-				 */
-				\do_action( $hook . '/' . $wire_identity, $public_run_id, $start_args );
-			} finally {
-				/**
-				 * Fires after the identity-specific started, cancelled, or superseded lifecycle hook.
-				 *
-				 * The dynamic portion of the hook name, `$hook`, refers to the `started`, `cancelled`, or
-				 * `superseded` lifecycle event.
-				 *
-				 * @since   1.0.0
-				 * @version 1.0.0
-				 *
-				 * @param   string                  $identity   Complete scope-qualified job or chunked job identity.
-				 * @param   RunId                   $run_id     Run identifier.
-				 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-				 */
-				\do_action( $hook, $wire_identity, $public_run_id, $start_args );
-			}
-
-			return;
-		}
+	/**
+	 * Fires the failed lifecycle hooks for one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity   $identity Complete scope-qualified job or chunked job identity.
+	 * @param   RunFailure $failure  Reconstructed client failure value.
+	 *
+	 * @return  void
+	 */
+	private function fire_failed( Identity $identity, RunFailure $failure ): void {
+		$wire_identity = (string) $identity;
 
 		try {
 			/**
@@ -647,7 +615,7 @@ final readonly class LifecycleEffects {
 			 *
 			 * @param   RunFailure $failure Reconstructed client failure value.
 			 */
-			\do_action( $hook . '/' . $wire_identity, $failure );
+			\do_action( 'a8csp_bgje/failed/' . $wire_identity, $failure );
 		} finally {
 			/**
 			 * Fires after the identity-specific failed lifecycle hook.
@@ -657,9 +625,98 @@ final readonly class LifecycleEffects {
 			 *
 			 * @param   RunFailure $failure Reconstructed client failure value.
 			 */
-			\do_action( $hook, $failure );
+			\do_action( 'a8csp_bgje/failed', $failure );
 		}
-		// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound
+	}
+
+	/**
+	 * Fires the cancelled lifecycle hooks for one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity                $identity   Complete scope-qualified job or chunked job identity.
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 *
+	 * @return  void
+	 */
+	private function fire_cancelled( Identity $identity, string $run_id, array $start_args ): void {
+		$wire_identity = (string) $identity;
+		$public_run_id = RunId::from( $run_id );
+		$start_args    = PortableArguments::without_references( $start_args );
+
+		try {
+			/**
+			 * Fires when a work run is cancelled.
+			 *
+			 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   RunId                   $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 */
+			\do_action( 'a8csp_bgje/cancelled/' . $wire_identity, $public_run_id, $start_args );
+		} finally {
+			/**
+			 * Fires after the identity-specific cancelled lifecycle hook.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $identity   Complete scope-qualified job or chunked job identity.
+			 * @param   RunId                   $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 */
+			\do_action( 'a8csp_bgje/cancelled', $wire_identity, $public_run_id, $start_args );
+		}
+	}
+
+	/**
+	 * Fires the superseded lifecycle hooks for one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity                $identity   Complete scope-qualified job or chunked job identity.
+	 * @param   string                  $run_id     Run identifier.
+	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+	 *
+	 * @return  void
+	 */
+	private function fire_superseded( Identity $identity, string $run_id, array $start_args ): void {
+		$wire_identity = (string) $identity;
+		$public_run_id = RunId::from( $run_id );
+		$start_args    = PortableArguments::without_references( $start_args );
+
+		try {
+			/**
+			 * Fires when a work run is superseded.
+			 *
+			 * The dynamic portion of the hook name, `$identity`, refers to the scope-qualified work identity.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   RunId                   $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 */
+			\do_action( 'a8csp_bgje/superseded/' . $wire_identity, $public_run_id, $start_args );
+		} finally {
+			/**
+			 * Fires after the identity-specific superseded lifecycle hook.
+			 *
+			 * @since   1.0.0
+			 * @version 1.0.0
+			 *
+			 * @param   string                  $identity   Complete scope-qualified job or chunked job identity.
+			 * @param   RunId                   $run_id     Run identifier.
+			 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
+			 */
+			\do_action( 'a8csp_bgje/superseded', $wire_identity, $public_run_id, $start_args );
+		}
 	}
 
 	// endregion

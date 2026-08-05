@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Lifecycle hook consumers retain the same names, payloads, order, and behaviour; event delivery is organised around a dedicated internal emission path for each lifecycle event.
