@@ -31,6 +31,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
@@ -1588,6 +1589,39 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * A started-history persistence failure leaves the accepted run scheduled and reports its recovery path.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_warns_when_started_history_cannot_be_persisted(): void {
+		$identity = Identity::compose( self::SCOPE, self::NAME );
+		$history  = new RunHistory( $identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() );
+		self::assertTrue( $history->record_started( self::OTHER_RUN_ID, $this->args_hash() ) );
+		$this->rig->logger()->records = array();
+		$this->rig->wpdb()->fail_updates_targeting( RunHistory::OPTION_PREFIX . self::IDENTITY );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Started run history could not be persisted; the run-history store does not report why. Repair WordPress option reads and writes before relying on inspection data.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
 	 * Failed-run retry rejects a malformed run identifier at the engine boundary.
 	 *
 	 * @since   1.0.0
@@ -1809,6 +1843,21 @@ final class DispatcherTest extends TestCase {
 
 		$first = $this->client->retry_failed( self::NAME, self::RUN_ID );
 		self::assertInstanceOf( Run::class, $first );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Retried run "00000000001700000000-0000000000000000042" could not be removed from retained failed-run data; the failed-run store does not report why. Repair WordPress option reads and writes, then purge that identity\'s failed-run data before retrying the same retained run.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+		$this->rig->logger()->records = array();
+
 		$cancelled = $this->client->cancel( self::NAME, (string) $first->id );
 		self::assertInstanceOf( Run::class, $cancelled );
 		$this->rig->clock()->timestamp = self::NOW + 101;

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+Warnings name the storage operation that failed and carry a remedy the operator can act on, and a delivery for a malformed schedule key is no longer told to re-declare a schedule that key cannot belong to. The unknown-schedule warning carries an `intent_recorded` context field separating a cleanup that was attempted from one that was never recorded. Failed-run lists reject an invalid `--format` with the same message as the other list commands.

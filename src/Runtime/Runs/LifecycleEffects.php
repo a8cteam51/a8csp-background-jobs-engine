@@ -474,7 +474,7 @@ final readonly class LifecycleEffects {
 		}
 
 		$this->logger->warning(
-			\sprintf( 'Failed run "%s" could not be retained for manual retry.', $run_id ),
+			\sprintf( 'Failed run "%s" could not be retained for manual retry; the failed-run store does not report why. Maintenance keeps the terminal row and retries retention, so no action is needed unless the warning recurs.', $run_id ),
 			array(
 				'identity' => (string) $identity,
 				'run_id'   => $run_id,
@@ -531,7 +531,7 @@ final readonly class LifecycleEffects {
 		}
 
 		$this->logger->warning(
-			'Terminal run history could not be persisted; inspection data may be incomplete.',
+			'Terminal run history could not be persisted; the run-history store does not report why. Maintenance keeps the terminal row and retries history, so no action is needed unless the warning recurs.',
 			array(
 				'identity' => (string) $identity,
 				'run_id'   => $run_id,

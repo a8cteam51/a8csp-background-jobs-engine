@@ -680,7 +680,7 @@ final class RunStoreTest extends TestCase {
 
 		self::assertInstanceOf( Failure::class, $result );
 		self::assertInstanceOf( EngineError::class, $result->error );
-		self::assertSame( 'Run "' . self::RUN_ID . '" for acme.export "' . self::IDENTITY . '" could not be persisted; remove the conflicting run option before retrying.', $result->error->message );
+		self::assertSame( 'Run "' . self::RUN_ID . '" for acme.export "' . self::IDENTITY . '" could not be persisted because storage did not answer the option write; repair WordPress option writes before retrying.', $result->error->message );
 		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame(
 			array(

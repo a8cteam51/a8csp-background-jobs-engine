@@ -178,10 +178,16 @@ final readonly class RunStore {
 			return $rejected;
 		}
 
-		if ( RowWriteOutcome::Won !== $this->rows->insert_if_absent( RunIdentity::option_name( $this->identity, $run_id ), $raw ) ) {
+		$write = $this->rows->insert_if_absent( RunIdentity::option_name( $this->identity, $run_id ), $raw );
+		if ( RowWriteOutcome::Won !== $write ) {
+			$message = match ( $write ) {
+				RowWriteOutcome::Lost        => 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.',
+				RowWriteOutcome::WriteFailed => 'Run "%1$s" for %2$s "%3$s" could not be persisted because storage did not answer the option write; repair WordPress option writes before retrying.',
+			};
+
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, (string) $this->identity ),
+					\sprintf( $message, $run_id, $kind, (string) $this->identity ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
 						'identity' => (string) $this->identity,

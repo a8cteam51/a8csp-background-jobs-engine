@@ -330,7 +330,7 @@ final readonly class Dispatcher {
 		$result        = $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $entry['start_args'], null, $entry['priority'], $retry_overlap, resolved_args_hash: $args_hash ) );
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
-				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
+				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data; the failed-run store does not report why. Repair WordPress option reads and writes, then purge that identity\'s failed-run data before retrying the same retained run.', $run_id ),
 				array(
 					'identity' => (string) $identity,
 					'run_id'   => $run_id,
@@ -645,7 +645,7 @@ final readonly class Dispatcher {
 			$on_accepted?->__invoke();
 			if ( ! $this->stores->run_history( $identity )->record_started( $run_id, $args_hash ) ) {
 				$this->logger->warning(
-					'Started run history could not be persisted; inspection data may be incomplete.',
+					'Started run history could not be persisted; the run-history store does not report why. Repair WordPress option reads and writes before relying on inspection data.',
 					array(
 						'identity' => (string) $identity,
 						'run_id'   => $run_id,

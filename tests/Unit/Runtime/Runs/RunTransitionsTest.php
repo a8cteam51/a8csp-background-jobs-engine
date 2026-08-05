@@ -979,6 +979,41 @@ final class RunTransitionsTest extends TestCase {
 	}
 
 	/**
+	 * A failed run-history read freezes a null predecessor and reports the next safe retry point.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_complete_run_warns_when_the_previous_completion_cannot_be_read(): void {
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$state     = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+		self::assertInstanceOf( RunState::class, $state );
+		$this->logger->records = array();
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted previous-completion history read failure';
+			}
+		);
+
+		$this->terminal_transitions->complete_run( $this->handler, $this->identity, self::RUN_ID, $state, $run_store );
+
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Previous completed run could not be read while freezing completion hook state because the authoritative run-history read failed; repair WordPress option reads before the next completion.',
+					'context' => array( 'identity' => self::IDENTITY ),
+				),
+			),
+			$this->logger->records
+		);
+	}
+
+	/**
 	 * A failed latest-pointer repair does not revoke an otherwise valid delivery claim.
 	 *
 	 * @since   1.0.0
@@ -999,7 +1034,7 @@ final class RunTransitionsTest extends TestCase {
 			array(
 				array(
 					'level'   => 'warning',
-					'message' => 'Latest-run pointer repair failed; discovery metadata may remain stale.',
+					'message' => 'Latest-run pointer repair failed; the latest-run pointer store does not report why. Repair WordPress option reads and writes before relying on discovery metadata.',
 					'context' => array(
 						'identity' => self::IDENTITY,
 						'run_id'   => self::RUN_ID,

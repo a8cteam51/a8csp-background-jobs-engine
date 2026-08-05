@@ -221,7 +221,7 @@ final readonly class RunTransitions {
 		// The lock CAS is authoritative because a bounded pointer can be evicted or lag a concurrent start commit.
 		if ( $run_id !== $latest_run_id && ! $latest_pointer->record( $run_id, $state->args_hash ) ) {
 			$this->logger->warning(
-				'Latest-run pointer repair failed; discovery metadata may remain stale.',
+				'Latest-run pointer repair failed; the latest-run pointer store does not report why. Repair WordPress option reads and writes before relying on discovery metadata.',
 				array(
 					'identity' => (string) $identity,
 					'run_id'   => $run_id,
@@ -617,7 +617,7 @@ final readonly class RunTransitions {
 	private function last_completed_run_id( Identity $identity ): ?string {
 		$entries = $this->stores->run_history( $identity )->terminal_entries();
 		if ( null === $entries ) {
-			$this->logger->warning( 'Previous completed run could not be read while freezing completion hook state.', array( 'identity' => (string) $identity ) );
+			$this->logger->warning( 'Previous completed run could not be read while freezing completion hook state because the authoritative run-history read failed; repair WordPress option reads before the next completion.', array( 'identity' => (string) $identity ) );
 
 			return null;
 		}

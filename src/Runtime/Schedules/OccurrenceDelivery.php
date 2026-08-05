@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\SkippedJobDispatch;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -183,7 +184,7 @@ final readonly class OccurrenceDelivery {
 
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Schedule "%1$s" for scope "%2$s" could not establish its occurrence lease because storage could not be read or written; repair WordPress option reads and writes, then retry.', $name, $scope ),
+					\sprintf( 'Schedule "%1$s" for scope "%2$s" could not establish its occurrence lease because the authoritative %3$s failed; repair WordPress option %3$ss, then retry.', $name, $scope, $operation ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
 						'scope'             => $scope,
@@ -358,9 +359,11 @@ final readonly class OccurrenceDelivery {
 			$context   = array(
 				'schedule_identity' => $registration_key,
 				'converged'         => $converged,
+				'intent_recorded'   => RowWriteOutcome::WriteFailed !== $recorded,
 			);
+			$message   = null === Identity::tryFrom( $registration_key ) ? \sprintf( 'Malformed schedule registration "%s" was delivered; remove the leftover occurrence.', $registration_key ) : \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key );
 
-			$this->logger->warning( \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key ), $context );
+			$this->logger->warning( $message, $context );
 
 			return;
 		}

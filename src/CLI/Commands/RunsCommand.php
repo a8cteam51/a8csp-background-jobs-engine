@@ -197,14 +197,6 @@ final readonly class RunsCommand {
 	 *
 	 * [--format=<format>]
 	 * : Render list output in the selected format. Defaults to table.
-	 * ---
-	 * options:
-	 *   - table
-	 *   - csv
-	 *   - json
-	 *   - count
-	 *   - yaml
-	 * ---
 	 *
 	 * ## EXAMPLES
 	 *

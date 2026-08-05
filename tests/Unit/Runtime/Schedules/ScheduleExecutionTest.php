@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -13,6 +14,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
@@ -350,6 +353,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'Schedule "nightly" for scope "scope-a" could not establish its occurrence lease because the authoritative write failed; repair WordPress option writes, then retry.', $result->get_error_message() );
 		$data = $result->get_error_data();
 		self::assertIsArray( $data );
 		self::assertSame( 'write', $data['storage_operation'] ?? null );
@@ -376,6 +380,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'Schedule "nightly" for scope "scope-a" could not establish its occurrence lease because the authoritative read failed; repair WordPress option reads, then retry.', $result->get_error_message() );
 		$data = $result->get_error_data();
 		self::assertIsArray( $data );
 		self::assertSame( 'read', $data['storage_operation'] ?? null );
@@ -685,10 +690,20 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertArrayNotHasKey( $intent_option, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->rig->backend()->calls );
-		self::assertCount( 1, $this->rig->logger()->records );
-		self::assertSame( 'warning', $this->rig->logger()->records[0]['level'] ?? null );
-		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
-		self::assertFalse( $this->rig->logger()->records[0]['context']['converged'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Unknown schedule registration "scope-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
+					'context' => array(
+						'schedule_identity' => self::REGISTRATION_KEY,
+						'converged'         => false,
+						'intent_recorded'   => false,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
 
 		$this->reset_observations();
 		$this->rig->clock()->timestamp = self::NOW + 2 * self::INTERVAL;
@@ -697,8 +712,121 @@ final class ScheduleExecutionTest extends TestCase {
 
 		self::assertArrayNotHasKey( $intent_option, $this->rig->wpdb()->rows );
 		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
-		self::assertCount( 1, $this->rig->logger()->records );
-		self::assertTrue( $this->rig->logger()->records[0]['context']['converged'] ?? null );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Unknown schedule registration "scope-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
+					'context' => array(
+						'schedule_identity' => self::REGISTRATION_KEY,
+						'converged'         => true,
+						'intent_recorded'   => true,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
+	 * An attempted unknown-chain cleanup reports separately from an indeterminate intent write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_registration_reports_an_attempted_convergence_failure(): void {
+		$this->sync_schedule( self::schedule() );
+		$registry_option = ScheduleRegistry::option_name( self::SCOPE );
+		$intent_option   = CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
+		unset( $this->rig->wpdb()->rows[ $registry_option ], $this->rig->wpdb()->autoload[ $registry_option ] );
+		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the scheduler before retrying convergence.' ) );
+		$this->rig->clock()->timestamp               = self::NOW + self::INTERVAL;
+
+		$this->rig->run_due();
+
+		self::assertArrayHasKey( $intent_option, $this->rig->wpdb()->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertCount( 2, $this->rig->logger()->records );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Unknown schedule registration "scope-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
+				'context' => array(
+					'schedule_identity' => self::REGISTRATION_KEY,
+					'converged'         => false,
+					'intent_recorded'   => true,
+				),
+			),
+			$this->rig->logger()->records[1]
+		);
+	}
+
+	/**
+	 * Malformed scheduler-wire bytes retain their exact lease, intent, cleanup, and diagnostic identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_drives_exact_raw_schedule_cleanup(): void {
+		$registration_key    = 'malformed';
+		$digest              = '60ec9bb7299d85e0cdd35d4058fabd7cb6bdc9b788c6efde44427e9bb9234e13';
+		$lease_option        = OccurrenceLease::OPTION_PREFIX . $digest;
+		$intent_option       = CleanupIntents::OPTION_PREFIX . $digest;
+		$expected_lease_raw  = 'a:2:{s:11:"claim_token";s:19:"0000000000000000042";s:10:"claimed_at";i:1700000000;}';
+		$expected_intent_raw = 'a:2:{s:17:"schedule_identity";s:9:"malformed";s:10:"generation";i:42;}';
+		$before              = $this->rig->wpdb()->rows;
+
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $lease_option, $expected_lease_raw ): void {
+				self::assertSame( $expected_lease_raw, $wpdb->rows[ $lease_option ] ?? null );
+			}
+		);
+		$this->rig->backend()->before_next(
+			'unschedule',
+			function () use ( $intent_option, $expected_intent_raw ): void {
+				self::assertSame( $expected_intent_raw, $this->rig->wpdb()->rows[ $intent_option ] ?? null );
+			}
+		);
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, $registration_key );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'is_ready',
+					'args' => array(),
+				),
+				array(
+					'verb' => 'unschedule',
+					'args' => array(
+						'hook'  => OccurrenceDelivery::SCHEDULE_HOOK,
+						'args'  => array( $registration_key ),
+						'group' => $registration_key,
+					),
+				),
+			),
+			$this->rig->backend()->calls
+		);
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Malformed schedule registration "malformed" was delivered; remove the leftover occurrence.',
+					'context' => array(
+						'schedule_identity' => $registration_key,
+						'converged'         => true,
+						'intent_recorded'   => true,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
 	}
 
 	/**

@@ -307,7 +307,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 		self::assertInstanceOf( \WP_Error::class, $result );
 		$error = $result;
 		self::assertSame( ErrorCode::StorageFailed->value, $error->get_error_code() );
-		self::assertStringContainsString( 'repair WordPress option reads and writes', $error->get_error_message() );
+		self::assertSame( 'Schedule "email-digest-schedule" for scope "runs-tests" could not establish its occurrence lease because the authoritative write failed; repair WordPress option writes, then retry.', $error->get_error_message() );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 

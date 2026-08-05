@@ -188,6 +188,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 				static fn ( array $record ): bool => 'warning' === $record[0] && array(
 					'schedule_identity' => self::KEY,
 					'converged'         => false,
+					'intent_recorded'   => true,
 				) === $record[2]
 			),
 			'The public log hook must report deferred convergence for the unknown registration'
@@ -322,6 +323,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 				static fn ( array $record ): bool => 'warning' === $record[0] && array(
 					'schedule_identity' => self::WP_CRON_KEY,
 					'converged'         => true,
+					'intent_recorded'   => true,
 				) === $record[2]
 			),
 			'The public log hook must report authoritative inline convergence'
