@@ -117,7 +117,7 @@ final class RecordingBackendTest extends TestCase {
 		$recurring = new Failure( new SchedulingError( SchedulingErrorReason::InvalidTimeInput, 'Use a positive interval.' ) );
 		$single    = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the single schedule and retry.' ) );
 		$async     = new Success( true );
-		$clear     = new Failure( new SchedulingError( SchedulingErrorReason::UnsupportedGroup, 'Drop the unsupported group.' ) );
+		$clear     = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair schedule clearance.' ) );
 		$run_clear = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair run clearance.' ) );
 
 		$backend->results = array(

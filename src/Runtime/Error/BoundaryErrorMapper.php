@@ -140,17 +140,15 @@ final class BoundaryErrorMapper {
 		}
 
 		return match ( $error->reason ) {
-			EngineErrorReason::EngineUnavailable    => ErrorCode::EngineUnavailable,
-			EngineErrorReason::UnknownJob           => ErrorCode::UnknownJob,
-			EngineErrorReason::UnknownSchedule      => ErrorCode::UnknownSchedule,
-			EngineErrorReason::OverlapHeld          => ErrorCode::OverlapHeld,
-			EngineErrorReason::AdmissionConflict    => ErrorCode::AdmissionConflict,
-			EngineErrorReason::PayloadRejected      => ErrorCode::PayloadRejected,
-			EngineErrorReason::StorageFailure       => ErrorCode::StorageFailed,
-			EngineErrorReason::RunNotRetained       => ErrorCode::RunNotRetained,
-			EngineErrorReason::RunNotCancellable    => ErrorCode::RunNotCancellable,
-			EngineErrorReason::UnsupportedOperation => ErrorCode::UnsupportedOperation,
-			EngineErrorReason::ExecutionFailed      => ErrorCode::ExecutionFailed,
+			EngineErrorReason::UnknownJob        => ErrorCode::UnknownJob,
+			EngineErrorReason::UnknownSchedule   => ErrorCode::UnknownSchedule,
+			EngineErrorReason::OverlapHeld       => ErrorCode::OverlapHeld,
+			EngineErrorReason::AdmissionConflict => ErrorCode::AdmissionConflict,
+			EngineErrorReason::PayloadRejected   => ErrorCode::PayloadRejected,
+			EngineErrorReason::StorageFailure    => ErrorCode::StorageFailed,
+			EngineErrorReason::RunNotRetained    => ErrorCode::RunNotRetained,
+			EngineErrorReason::RunNotCancellable => ErrorCode::RunNotCancellable,
+			EngineErrorReason::ExecutionFailed   => ErrorCode::ExecutionFailed,
 		};
 	}
 

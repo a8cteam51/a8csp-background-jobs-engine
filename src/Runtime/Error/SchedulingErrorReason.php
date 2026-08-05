@@ -10,7 +10,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
  * Machine-readable reason a scheduling request could not be accepted.
  *
  * Carried by {@see SchedulingError} so callers can branch on the cause without parsing
- * prose; the backing values remain stable once released, so they are safe in log context.
+ * prose. A value an operator can observe never changes meaning, so it is safe in log
+ * context; a case whose producer is gone leaves with it, because nothing can have logged it.
  *
  * @internal
  *
@@ -20,8 +21,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 enum SchedulingErrorReason: string {
 	// region FIELDS AND CONSTANTS
 
-	case BackendNotReady  = 'backend_not_ready';
-	case UnsupportedGroup = 'unsupported_group';
+	case BackendNotReady = 'backend_not_ready';
 
 	/**
 	 * A scheduling interval or timestamp is outside the supported positive range.
@@ -56,12 +56,11 @@ enum SchedulingErrorReason: string {
 	 */
 	public function api_code(): ErrorCode {
 		return match ( $this ) {
-			self::BackendNotReady  => ErrorCode::BackendUnavailable,
-			self::UnsupportedGroup => ErrorCode::UnsupportedOperation,
+			self::BackendNotReady => ErrorCode::BackendUnavailable,
 			self::InvalidTimeInput,
-			self::InvalidPayload   => ErrorCode::PayloadRejected,
-			self::ScheduleFailed   => ErrorCode::BackendRejected,
-			self::StorageFailure   => ErrorCode::StorageFailed,
+			self::InvalidPayload  => ErrorCode::PayloadRejected,
+			self::ScheduleFailed  => ErrorCode::BackendRejected,
+			self::StorageFailure  => ErrorCode::StorageFailed,
 		};
 	}
 

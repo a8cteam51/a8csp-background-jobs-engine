@@ -25,6 +25,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( AbstractPortal::class )]
 #[CoversClass( BoundaryErrorMapper::class )]
+#[CoversClass( SchedulingErrorReason::class )]
 #[UsesClass( BoundaryError::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( Failure::class )]
@@ -261,47 +262,39 @@ final class BoundaryErrorMapperTest extends TestCase {
 	 */
 	public static function engine_failure_codes(): array {
 		return array(
-			'engine unavailable'    => array(
-				'reason'        => 'engine_unavailable',
-				'expected_code' => 'engine_unavailable',
-			),
-			'unknown work'          => array(
+			'unknown work'        => array(
 				'reason'        => 'unknown_job',
 				'expected_code' => 'unknown_job',
 			),
-			'unknown schedule'      => array(
+			'unknown schedule'    => array(
 				'reason'        => 'unknown_schedule',
 				'expected_code' => 'unknown_schedule',
 			),
-			'overlap held'          => array(
+			'overlap held'        => array(
 				'reason'        => 'overlap_held',
 				'expected_code' => 'overlap_held',
 			),
-			'admission conflict'    => array(
+			'admission conflict'  => array(
 				'reason'        => 'admission_conflict',
 				'expected_code' => 'admission_conflict',
 			),
-			'payload rejected'      => array(
+			'payload rejected'    => array(
 				'reason'        => 'payload_rejected',
 				'expected_code' => 'payload_rejected',
 			),
-			'storage failure'       => array(
+			'storage failure'     => array(
 				'reason'        => 'storage_failed',
 				'expected_code' => 'storage_failed',
 			),
-			'run not retained'      => array(
+			'run not retained'    => array(
 				'reason'        => 'run_not_retained',
 				'expected_code' => 'run_not_retained',
 			),
-			'run not cancellable'   => array(
+			'run not cancellable' => array(
 				'reason'        => 'run_not_cancellable',
 				'expected_code' => 'run_not_cancellable',
 			),
-			'unsupported operation' => array(
-				'reason'        => 'unsupported_operation',
-				'expected_code' => 'unsupported_operation',
-			),
-			'execution failed'      => array(
+			'execution failed'    => array(
 				'reason'        => 'execution_failed',
 				'expected_code' => 'execution_failed',
 			),
@@ -321,10 +314,6 @@ final class BoundaryErrorMapperTest extends TestCase {
 			'backend not ready'  => array(
 				'reason'        => 'backend_not_ready',
 				'expected_code' => 'backend_unavailable',
-			),
-			'unsupported group'  => array(
-				'reason'        => 'unsupported_group',
-				'expected_code' => 'unsupported_operation',
 			),
 			'invalid time input' => array(
 				'reason'        => 'invalid_time_input',
