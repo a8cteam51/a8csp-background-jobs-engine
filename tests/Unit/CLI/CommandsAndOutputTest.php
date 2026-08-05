@@ -4,12 +4,11 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\LocksCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\RunsCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\SchedulesCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\LocksOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ScheduleOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -46,11 +45,10 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( Component::class )]
-#[CoversClass( LocksCommand::class )]
 #[CoversClass( RunsCommand::class )]
 #[CoversClass( SchedulesCommand::class )]
 #[CoversClass( FailedRunOutput::class )]
-#[CoversClass( LocksOutput::class )]
+#[CoversClass( Format::class )]
 #[CoversClass( RunOutput::class )]
 #[CoversClass( ScheduleOutput::class )]
 final class CommandsAndOutputTest extends TestCase {

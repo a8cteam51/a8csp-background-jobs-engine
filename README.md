@@ -714,12 +714,12 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 | Purge every failed-run store | `wp a8csp-bgje failed-runs purge --all` |
 | Cancel a retained run | `wp a8csp-bgje runs cancel <identity> <run_id>` |
 | List runs and recent history | `wp a8csp-bgje runs list <identity> [--format=<format>]` |
-| List execution-overlap locks | `wp a8csp-bgje locks list [--format=<table\|json\|csv\|yaml>]` |
+| List execution-overlap locks | `wp a8csp-bgje locks list [--format=<format>]` |
 | List schedules | `wp a8csp-bgje schedules list [--scope=<scope>] [--format=<format>]` |
 | Remove every schedule in one scope | `wp a8csp-bgje schedules remove <scope> [--yes]` |
 | Destroy all engine state (development reset) | `wp a8csp-bgje reset [--yes]` |
 
-Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. `failed-runs list`, `runs list`, and `schedules list` accept `table`, `csv`, `json`, `count`, or `yaml`; `locks list` accepts `table`, `json`, `csv`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
+Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
 
 ## Releasing
 

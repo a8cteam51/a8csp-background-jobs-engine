@@ -133,7 +133,27 @@ final class LocksCommandTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_locks_help_names_every_accepted_list_format(): void {
-		self::assertStringContainsString( ': Render list output as table, csv, json, count, or yaml. Defaults to table.', CliHarness::registered_subcommand_description( 'locks' ) );
+		$parser = new \WP_CLI\DocParser( CliHarness::registered_subcommand_description( 'locks' ) );
+
+		self::assertSame( 'Render list output as table, csv, json, count, or yaml. Defaults to table.', $parser->get_param_desc( 'format' ) );
+	}
+
+	/**
+	 * Default table listing renders a persisted lane instead of the empty-set sentence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_locks_list_renders_a_persisted_lane_as_a_default_table(): void {
+		$this->put_fixture( $this->fixtures->lock( self::ARGS_HASH, self::RUN_ID, self::NOW, self::NOW ) );
+
+		$result = CliHarness::run( 'locks', array( 'list' ) );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( "identity\targs_hash\tstate\traw_length\traw_sha256\n" . self::IDENTITY . "\t" . self::ARGS_HASH . "\towned\t\t\n", $result->stdout );
+		self::assertSame( '', $result->stderr );
 	}
 
 	/**
