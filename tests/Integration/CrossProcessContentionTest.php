@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
@@ -263,7 +262,7 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 
 				// A rival completes a takeover of its own while the first is held mid-flight.
 				$result = Component::operations( self::SCOPE )->dispatch( self::WINDOW_NAME );
-				$rival  = $result instanceof Success && $result->value instanceof Run ? (string) $result->value->id : 'failure';
+				$rival  = $result instanceof Run ? (string) $result->id : 'failure';
 			}
 		);
 
@@ -317,10 +316,9 @@ final class CrossProcessContentionTest extends AbstractIntegrationTestCase {
 	 */
 	private function dispatch_here( string $name ): string {
 		$result = Component::operations( self::SCOPE )->dispatch( $name );
-		self::assertInstanceOf( Success::class, $result, 'The incumbent must be admitted through the public API' );
-		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( Run::class, $result, 'The incumbent must be admitted through the public API' );
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**

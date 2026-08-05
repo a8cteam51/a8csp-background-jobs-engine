@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -454,9 +453,8 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertInstanceOf( Success::class, $stored );
 		self::assertSame( array(), $stored->value );
-		self::assertInstanceOf( Failure::class, $retried );
-		self::assertInstanceOf( BoundaryError::class, $retried->error );
-		self::assertSame( ErrorCode::RunNotRetained, $retried->error->code );
+		self::assertInstanceOf( \WP_Error::class, $retried );
+		self::assertSame( ErrorCode::RunNotRetained->value, $retried->get_error_code() );
 		self::assertSame( array(), $this->rig->backend()->calls );
 	}
 
@@ -477,12 +475,11 @@ final class FailedRunStoreTest extends TestCase {
 
 		$retried = $this->client->retry_failed( self::NAME, $failed );
 
-		self::assertInstanceOf( Success::class, $retried );
-		self::assertInstanceOf( Run::class, $retried->value );
+		self::assertInstanceOf( Run::class, $retried );
 		$deliveries = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] ) );
 		self::assertCount( 1, $deliveries );
 		self::assertSame( 42, $deliveries[0]['args']['priority'] ?? null );
-		$run_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . (string) $retried->value->id;
+		$run_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . (string) $retried->id;
 		$run        = \get_option( $run_option );
 		self::assertIsArray( $run );
 		$pending = $run['pending'] ?? null;
@@ -597,18 +594,16 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertCount( 20, \array_filter( $retained ) );
 
 		$evicted = $this->client->retry_failed( self::NAME, $run_ids[0] );
-		self::assertInstanceOf( Failure::class, $evicted );
-		self::assertInstanceOf( BoundaryError::class, $evicted->error );
-		self::assertSame( ErrorCode::RunNotRetained, $evicted->error->code );
+		self::assertInstanceOf( \WP_Error::class, $evicted );
+		self::assertSame( ErrorCode::RunNotRetained->value, $evicted->get_error_code() );
 
 		$this->job->throwable           = null;
 		$this->rig->randomizer()->value = 99;
 		$retried                        = $this->client->retry_failed( self::NAME, $run_ids[1] );
-		self::assertInstanceOf( Success::class, $retried );
+		self::assertInstanceOf( Run::class, $retried );
 		$consumed = $this->client->retry_failed( self::NAME, $run_ids[1] );
-		self::assertInstanceOf( Failure::class, $consumed );
-		self::assertInstanceOf( BoundaryError::class, $consumed->error );
-		self::assertSame( ErrorCode::RunNotRetained, $consumed->error->code );
+		self::assertInstanceOf( \WP_Error::class, $consumed );
+		self::assertSame( ErrorCode::RunNotRetained->value, $consumed->get_error_code() );
 		$this->rig->run_due();
 		self::assertSame( array( 'index' => 1 ), $this->job->calls[21] ?? null );
 	}
@@ -631,9 +626,8 @@ final class FailedRunStoreTest extends TestCase {
 		$this->rig->randomizer()->value = 8;
 
 		$retried = $this->client->retry_failed( self::NAME, $failed );
-		self::assertInstanceOf( Success::class, $retried );
-		self::assertInstanceOf( Run::class, $retried->value );
-		self::assertNotSame( $failed, (string) $retried->value->id );
+		self::assertInstanceOf( Run::class, $retried );
+		self::assertNotSame( $failed, (string) $retried->id );
 		$this->rig->run_due();
 
 		self::assertSame( array( $args, $args ), $this->job->calls );
@@ -659,9 +653,8 @@ final class FailedRunStoreTest extends TestCase {
 		$snapshot = $this->rig->inspection()->runs( $this->identity );
 		self::assertSame( array(), $snapshot['history'] );
 		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::RunNotRetained->value, $result->get_error_code() );
 	}
 
 	/**
@@ -772,7 +765,7 @@ final class FailedRunStoreTest extends TestCase {
 		self::assertIsArray( $error );
 		self::assertSame( 'acme.export_sync', $error['stage'] ?? null );
 		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 	}
 
 	/**
@@ -793,9 +786,8 @@ final class FailedRunStoreTest extends TestCase {
 
 		self::assertSame( array(), $this->rig->inspection()->runs( $this->identity )['history'] );
 		$result = $this->client->retry_failed( self::NAME, self::RUN_ID );
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::RunNotRetained, $result->error->code );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::RunNotRetained->value, $result->get_error_code() );
 	}
 
 	// endregion.
@@ -1093,12 +1085,11 @@ final class FailedRunStoreTest extends TestCase {
 	private function fail_job( array $args, int $randomness, ?int $priority = null ): string {
 		$this->rig->randomizer()->value = $randomness;
 		$result                         = $this->client->dispatch( self::NAME, $args, priority: $priority );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( Run::class, $result );
 		$this->rig->run_due();
 		$this->rig->assert_failed( ErrorCode::ExecutionFailed );
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**

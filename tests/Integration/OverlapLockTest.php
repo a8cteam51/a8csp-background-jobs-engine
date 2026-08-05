@@ -2,9 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
@@ -92,9 +89,8 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 			\remove_filter( 'a8csp_bgje/lock_staleness/' . self::FILTER_IDENTITY, $specific_filter, 10 );
 		}
 
-		self::assertInstanceOf( Failure::class, $result, 'The identity-specific day-long window must keep the hour-old incumbent lock held' );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::OverlapHeld, $result->error->code );
+		self::assertInstanceOf( \WP_Error::class, $result, 'The identity-specific day-long window must keep the hour-old incumbent lock held' );
+		self::assertSame( ErrorCode::OverlapHeld->value, $result->get_error_code() );
 		self::assertSame(
 			array(
 				array( 'generic', 15 * \MINUTE_IN_SECONDS, self::FILTER_IDENTITY ),
@@ -172,11 +168,10 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		$action_count_before = (int) $store->query_actions( array(), 'count' );
 		$result              = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE )->dispatch( self::REJECT_NAME, $start_args );
 
-		self::assertInstanceOf( Failure::class, $result, 'Reject must refuse a second start under the fresh lock' );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::OverlapHeld, $result->error->code );
-		self::assertSame( array( 'run_id' => $run_a ), $result->error->context );
-		self::assertSame( \sprintf( 'chunked_job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', self::REJECT_IDENTITY, $run_a ), $result->error->message, 'The rejected held-lock failure must identify the incumbent run exactly' );
+		self::assertInstanceOf( \WP_Error::class, $result, 'Reject must refuse a second start under the fresh lock' );
+		self::assertSame( ErrorCode::OverlapHeld->value, $result->get_error_code() );
+		self::assertSame( array( 'run_id' => $run_a ), $result->get_error_data() );
+		self::assertSame( \sprintf( 'chunked_job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', self::REJECT_IDENTITY, $run_a ), $result->get_error_message(), 'The rejected held-lock failure must identify the incumbent run exactly' );
 		self::assertSame( $action_count_before, (int) $store->query_actions( array(), 'count' ), 'A rejected start must not create an Action Scheduler row' );
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );
@@ -481,10 +476,9 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 	 */
 	private function start( string $name, array $start_args ): string {
 		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::SCOPE )->dispatch( $name, $start_args );
-		self::assertInstanceOf( Success::class, $result, 'The chunked job must start through the public API' );
-		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( Run::class, $result, 'The chunked job must start through the public API' );
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**

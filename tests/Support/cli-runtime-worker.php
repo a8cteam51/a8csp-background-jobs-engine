@@ -1,8 +1,8 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
@@ -37,7 +37,7 @@ try {
 				$operations = $rig->operations( $scope );
 				$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
 				$result = $operations->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
-				if ( ! $result instanceof Success ) {
+				if ( true !== $result ) {
 					throw new \LogicException( 'The CLI worker could not register its schedule fixture.' );
 				}
 			}
@@ -51,7 +51,7 @@ try {
 			$operations = $rig->operations( 'consumer-plugin' );
 			$operations->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 			$enqueued = $operations->dispatch( 'email-digest' );
-			if ( ! $enqueued instanceof Success ) {
+			if ( ! $enqueued instanceof Run ) {
 				throw new \LogicException( 'The CLI worker could not register its run fixture.' );
 			}
 			$result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'csv' ) );
@@ -68,7 +68,7 @@ try {
 			$operations = $rig->operations( 'consumer-plugin' );
 			$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			$synced = $operations->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
-			if ( ! $synced instanceof Success ) {
+			if ( true !== $synced ) {
 				throw new \LogicException( 'The CLI worker could not seed schedule-removal fixtures.' );
 			}
 			$before = array(
@@ -121,7 +121,7 @@ try {
 			$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			$enqueued = $operations->dispatch( 'refresh', array( 'site_id' => 7 ) );
 			$synced   = $operations->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
-			if ( ! $enqueued instanceof Success || ! $synced instanceof Success ) {
+			if ( ! $enqueued instanceof Run || true !== $synced ) {
 				throw new \LogicException( 'The CLI worker could not seed reset fixtures.' );
 			}
 			$rig->backend()->pending_actions[ ActionDeliveries::DELIVER_HOOK ] = 5;

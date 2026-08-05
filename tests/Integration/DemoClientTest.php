@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
@@ -226,9 +225,8 @@ final class DemoClientTest extends AbstractIntegrationTestCase {
 
 		$manual_args = array( 'transient' => self::MANUAL_SNAPSHOT_TRANSIENT );
 		$manual      = $api->dispatch( SiteHealthPingJob::NAME, $manual_args );
-		self::assertInstanceOf( Success::class, $manual, 'The demo job must enqueue through the scope-bound facade' );
-		self::assertInstanceOf( Run::class, $manual->value );
-		$manual_run_id = (string) $manual->value->id;
+		self::assertInstanceOf( Run::class, $manual, 'The demo job must enqueue through the scope-bound facade' );
+		$manual_run_id = (string) $manual->id;
 		self::assertSame( array( array( $manual_run_id, $manual_args ) ), $job_started_named );
 		self::assertSame( array( array( self::JOB_IDENTITY, $manual_run_id, $manual_args ) ), $job_started_generic );
 
@@ -256,7 +254,7 @@ final class DemoClientTest extends AbstractIntegrationTestCase {
 		self::assertContains( array( $scheduled_run_id, $scheduled_args ), $job_started_named );
 
 		$stopped_schedule = $api->sync( array() );
-		self::assertInstanceOf( Success::class, $stopped_schedule, 'Public scope sync must stop the one-second proof recurrence after its occurrence fires' );
+		self::assertTrue( $stopped_schedule, 'Public scope sync must stop the one-second proof recurrence after its occurrence fires' );
 		self::assertSame( 1, $this->run_next_engine_action(), 'The scheduler must execute the scheduled demo job' );
 		$this->assert_site_health_snapshot( SiteHealthPingJob::SNAPSHOT_TRANSIENT );
 		self::assertSame(
@@ -288,9 +286,8 @@ final class DemoClientTest extends AbstractIntegrationTestCase {
 
 		$chunked_job_args = array( 'post_type' => self::POST_TYPE );
 		$chunked_job      = $api->dispatch( CommentCountRecountChunkedJob::NAME, $chunked_job_args );
-		self::assertInstanceOf( Success::class, $chunked_job, 'The demo chunked job must start through the scope-bound facade' );
-		self::assertInstanceOf( Run::class, $chunked_job->value );
-		$chunked_job_run_id = (string) $chunked_job->value->id;
+		self::assertInstanceOf( Run::class, $chunked_job, 'The demo chunked job must start through the scope-bound facade' );
+		$chunked_job_run_id = (string) $chunked_job->id;
 
 		for ( $step = 1; 4 >= $step; ++$step ) {
 			self::assertSame( 1, $this->run_next_engine_action(), \sprintf( 'The scheduler must execute demo chunked job action %d of 4.', $step ) );

@@ -2,8 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\AbstractPortal;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -23,10 +21,8 @@ use PHPUnit\Framework\TestCase;
  * @since   1.0.0
  * @version 1.0.0
  */
-#[CoversClass( AbstractPortal::class )]
 #[CoversClass( BoundaryErrorMapper::class )]
 #[CoversClass( SchedulingErrorReason::class )]
-#[UsesClass( BoundaryError::class )]
 #[UsesClass( EngineError::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingError::class )]
@@ -69,13 +65,23 @@ final class BoundaryErrorMapperTest extends TestCase {
 	 */
 	#[DataProvider( 'engine_failure_codes' )]
 	public function test_engine_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
-		$result = BoundaryErrorMapper::map( new Failure( new EngineError( message: 'Engine-authored corrective detail.', reason: EngineErrorReason::from( $reason ), context: array( 'run_id' => 'run-7' ), ) ) );
+		$result = BoundaryErrorMapper::map(
+			new Failure(
+				new EngineError(
+					message: 'Engine-authored corrective detail.',
+					reason: EngineErrorReason::from( $reason ),
+					context: array(
+						'run_id'    => 'run-7',
+						'args_hash' => 'private-overlap-identity',
+					),
+				)
+			)
+		);
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
-		self::assertSame( 'Engine-authored corrective detail.', $result->error->message );
-		self::assertSame( array( 'run_id' => 'run-7' ), $result->error->context );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( $expected_code, $result->get_error_code() );
+		self::assertSame( 'Engine-authored corrective detail.', $result->get_error_message() );
+		self::assertSame( array( 'run_id' => 'run-7' ), $result->get_error_data() );
 	}
 
 	/**
@@ -96,11 +102,10 @@ final class BoundaryErrorMapperTest extends TestCase {
 	public function test_scheduling_failure_scenarios_expose_public_codes( string $reason, string $expected_code ): void {
 		$result = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::from( $reason ), 'Engine-authored scheduling detail.', array( 'hook' => 'a8csp_bgje/internal/deliver' ) ) ) );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::from( $expected_code ), $result->error->code );
-		self::assertSame( 'Engine-authored scheduling detail.', $result->error->message );
-		self::assertSame( array( 'hook' => 'a8csp_bgje/internal/deliver' ), $result->error->context );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( $expected_code, $result->get_error_code() );
+		self::assertSame( 'Engine-authored scheduling detail.', $result->get_error_message() );
+		self::assertSame( array( 'hook' => 'a8csp_bgje/internal/deliver' ), $result->get_error_data() );
 	}
 
 	/**
@@ -111,10 +116,10 @@ final class BoundaryErrorMapperTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_preserves_a_success_result_instance(): void {
+	public function test_preserves_a_success_value(): void {
 		$success = new Success( 'run-7' );
 
-		self::assertSame( $success, BoundaryErrorMapper::map( $success ) );
+		self::assertSame( 'run-7', BoundaryErrorMapper::map( $success ) );
 	}
 
 	/**
@@ -158,10 +163,9 @@ final class BoundaryErrorMapperTest extends TestCase {
 			)
 		);
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( array( 'identity' => 'consumer-plugin:missing' ), $result->error->context );
-		self::assertArrayNotHasKey( 'name', $result->error->context );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( array( 'identity' => 'consumer-plugin:missing' ), $result->get_error_data() );
+		self::assertArrayNotHasKey( 'name', $result->get_error_data() );
 	}
 
 	/**
@@ -187,30 +191,15 @@ final class BoundaryErrorMapperTest extends TestCase {
 			)
 		);
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		$portal         = new readonly class( 'boundary-error-mapper-test' ) extends AbstractPortal {
-			/**
-			 * Exposes the consumer error conversion seam.
-			 *
-			 * @param   BoundaryError $error Boundary failure.
-			 *
-			 * @return  \WP_Error
-			 */
-			public function expose( BoundaryError $error ): \WP_Error {
-				return self::wp_error( $error );
-			}
-		};
-		$consumer_error = $portal->expose( $result->error );
-
-		self::assertSame( ErrorCode::PayloadRejected->value, $consumer_error->get_error_code() );
-		self::assertSame( 'Run kind state contains 990032 persisted serialization bytes; the limit is 983616 bytes.', $consumer_error->get_error_message() );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::PayloadRejected->value, $result->get_error_code() );
+		self::assertSame( 'Run kind state contains 990032 persisted serialization bytes; the limit is 983616 bytes.', $result->get_error_message() );
 		self::assertSame(
 			array(
 				'actual_bytes' => 990_032,
 				'limit_bytes'  => 983_616,
 			),
-			$consumer_error->get_error_data()
+			$result->get_error_data()
 		);
 	}
 
@@ -241,11 +230,10 @@ final class BoundaryErrorMapperTest extends TestCase {
 			)
 		);
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( array( 'scope' => 'consumer-plugin' ), $result->error->context );
-		self::assertArrayNotHasKey( 'storage_error', $result->error->context );
-		self::assertArrayNotHasKey( 'wp_error', $result->error->context );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( array( 'scope' => 'consumer-plugin' ), $result->get_error_data() );
+		self::assertArrayNotHasKey( 'storage_error', $result->get_error_data() );
+		self::assertArrayNotHasKey( 'wp_error', $result->get_error_data() );
 	}
 
 	// endregion.

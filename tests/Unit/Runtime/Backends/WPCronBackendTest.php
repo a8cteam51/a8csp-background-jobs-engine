@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Backends;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -400,7 +399,7 @@ final class WPCronBackendTest extends TestCase {
 	 * Arbitrary WP_Error text is removed before a scheduling failure reaches a consumer.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale WordPress extensions can place credentials or user data in WP_Error messages; the public admission mapper must not expose that external text in BoundaryError context or prose.
+	 * @pin-rationale WordPress extensions can place credentials or user data in WP_Error messages; the public admission mapper must not expose that external text in error data or prose.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -419,11 +418,12 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $internal );
 		self::assertInstanceOf( SchedulingError::class, $internal->error );
 		self::assertSame( $secret, $internal->error->context['wp_error'] ?? null );
-		self::assertInstanceOf( Failure::class, $public );
-		self::assertInstanceOf( BoundaryError::class, $public->error );
-		self::assertSame( ErrorCode::BackendRejected, $public->error->code );
-		self::assertArrayNotHasKey( 'wp_error', $public->error->context );
-		self::assertStringNotContainsString( $secret, $public->error->message );
+		self::assertInstanceOf( \WP_Error::class, $public );
+		self::assertSame( ErrorCode::BackendRejected->value, $public->get_error_code() );
+		$data = $public->get_error_data();
+		self::assertIsArray( $data );
+		self::assertArrayNotHasKey( 'wp_error', $data );
+		self::assertStringNotContainsString( $secret, $public->get_error_message() );
 	}
 
 	/**

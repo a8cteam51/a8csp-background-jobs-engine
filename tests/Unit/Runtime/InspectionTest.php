@@ -116,7 +116,7 @@ final class InspectionTest extends TestCase {
 		$client->register( $job->definition( $options ) );
 
 		$schedule = new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index', array( 'scope' => 'all' ) );
-		self::assertInstanceOf( Success::class, $client->sync( array( $schedule ) ) );
+		self::assertTrue( $client->sync( array( $schedule ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'scope-a:refresh-index' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -179,12 +179,11 @@ final class InspectionTest extends TestCase {
 		);
 		$job    = new RecordingChunkedJob( 'catalog-sync' );
 		$client->register( $job->definition( new JobOptions() ) );
-		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'catalog-sync', $args ) ) ) );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'catalog-sync', $args ) ) ) );
 
 		$dispatched = $client->dispatch( 'catalog-sync', $args );
 
-		self::assertInstanceOf( Success::class, $dispatched );
-		self::assertInstanceOf( Run::class, $dispatched->value );
+		self::assertInstanceOf( Run::class, $dispatched );
 		$lock_option = OverlapGuard::OPTION_PREFIX . 'scope:catalog-sync_' . StoreFixtureBuilder::for_identity( 'scope:catalog-sync' )->args_hash( $args );
 		self::assertArrayHasKey( $lock_option, $this->rig->wpdb()->rows );
 		$snapshot = $this->rig->inspection()->schedules( 'scope' );
@@ -192,7 +191,7 @@ final class InspectionTest extends TestCase {
 		self::assertSame(
 			array(
 				'state'  => 'held',
-				'run_id' => (string) $dispatched->value->id,
+				'run_id' => (string) $dispatched->id,
 				'stale'  => false,
 			),
 			$snapshot['entries'][0]['lock'] ?? null
@@ -227,7 +226,7 @@ final class InspectionTest extends TestCase {
 			);
 			$registrations[ 'scope:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
-		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
+		self::assertTrue( $client->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'scope:invalid-job' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -274,7 +273,7 @@ final class InspectionTest extends TestCase {
 		$client = $this->rig->operations( 'scope' );
 		$job    = new RecordingJob( 'faulting-overlap-key' );
 		$client->register( $job->definition( new JobOptions( overlap_key: $resolver ) ) );
-		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'faulting-overlap-key', array( 'site_id' => 7 ) ) ) ) );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'faulting-overlap-key', array( 'site_id' => 7 ) ) ) ) );
 
 		$snapshot = $this->rig->inspection()->schedules( 'scope' );
 
@@ -324,7 +323,7 @@ final class InspectionTest extends TestCase {
 			$during = $this->rig->inspection()->runs( $work_identity )['live'][0] ?? null;
 		};
 		$client->register( $job->definition() );
-		self::assertInstanceOf( Success::class, $client->dispatch( 'email-digest' ) );
+		self::assertInstanceOf( Run::class, $client->dispatch( 'email-digest' ) );
 
 		$waiting = $this->rig->inspection()->runs( $work_identity )['live'][0];
 		self::assertFalse( $waiting['executing'] );

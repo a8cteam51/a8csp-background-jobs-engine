@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
@@ -320,9 +321,9 @@ final class EngineComponentTest extends TestCase {
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		$client->register( ( new RecordingChunkedJob( 'catalog-sync' ) )->definition() );
 
-		self::assertInstanceOf( Success::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->dispatch( 'catalog-sync', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		self::assertInstanceOf( Run::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertInstanceOf( Run::class, $client->dispatch( 'catalog-sync', array( 'site_id' => 7 ) ) );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 
 		$cron = \get_option( 'cron', array() );
 		self::assertIsArray( $cron );
@@ -357,7 +358,7 @@ final class EngineComponentTest extends TestCase {
 		$result = $client->dispatch( 'preferred' );
 
 		$as_calls = $GLOBALS['a8csp_bgje_test_as_calls'] ?? null;
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 		self::assertIsArray( $as_calls );
 		self::assertSame( array( 'as_enqueue_async_action' ), \array_column( $as_calls, 'function' ) );
 		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_cron_calls'] );

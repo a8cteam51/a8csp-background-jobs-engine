@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
@@ -286,11 +285,10 @@ final class KindDeliveryTest extends TestCase {
 		$client = $this->rig->operations( self::SCOPE );
 		$client->register( ( new RecordingJob( self::NAME ) )->definition() );
 		$result = $client->dispatch( self::NAME );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertInstanceOf( RunId::class, $result->id );
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**

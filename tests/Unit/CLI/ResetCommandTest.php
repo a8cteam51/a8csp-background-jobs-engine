@@ -2,9 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
@@ -179,7 +179,7 @@ final class ResetCommandTest extends TestCase {
 			'delete',
 			function (): void {
 				$client = $this->rig->operations( 'reset-tests' );
-				self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
+				self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
 			}
 		);
 
@@ -275,8 +275,8 @@ final class ResetCommandTest extends TestCase {
 	private function seed_engine_state(): void {
 		$client = $this->rig->operations( 'reset-tests' );
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		self::assertInstanceOf( Run::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}
 
 	/**

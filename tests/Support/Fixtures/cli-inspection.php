@@ -20,7 +20,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 				new Schedule( 'inspection-schedule', Recurrence::every( 300 ), 'integration-cli-inspection-job', array( 'source' => 'schedule' ) ),
 			)
 		);
-		if ( $result->is_failure() ) {
+		if ( $result instanceof \WP_Error ) {
 			\WP_CLI::error( 'The CLI inspection fixture could not synchronize its schedule.' );
 		}
 	}

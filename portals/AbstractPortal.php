@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\EngineUnavailableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
@@ -10,7 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Shared scope resolution and error conversion for the public verb portals.
+ * Shared scope resolution for the public verb portals.
  *
  * @internal
  *
@@ -49,20 +48,6 @@ abstract readonly class AbstractPortal {
 	 */
 	protected function operations(): ScopeOperations {
 		return Component::operations( $this->scope );
-	}
-
-	/**
-	 * Converts one boundary failure to the WordPress error boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   BoundaryError $error Boundary failure.
-	 *
-	 * @return  \WP_Error
-	 */
-	protected static function wp_error( BoundaryError $error ): \WP_Error {
-		return new \WP_Error( $error->code->value, $error->message, $error->context );
 	}
 
 	// endregion

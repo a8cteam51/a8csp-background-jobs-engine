@@ -2,9 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
@@ -121,7 +118,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
 		$this->client->register( $chunked_job->definition() );
 		$result = $this->client->dispatch( 'hook-registration-probe', self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
 		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
 			$this->rig->run_due();
@@ -129,10 +126,9 @@ final class ActionDeliveriesTest extends TestCase {
 
 		self::assertSame( array( self::ARGS ), $chunked_job->generate_calls );
 		self::assertCount( 1, $chunked_job->generate_contexts );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertInstanceOf( RunId::class, $result->id );
 		self::assertInstanceOf( RunId::class, $chunked_job->generate_contexts[0]->get_run_id() );
-		self::assertSame( (string) $result->value->id, (string) $chunked_job->generate_contexts[0]->get_run_id() );
+		self::assertSame( (string) $result->id, (string) $chunked_job->generate_contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $chunked_job->generate_contexts[0]->get_start_args() );
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] );
@@ -226,7 +222,7 @@ final class ActionDeliveriesTest extends TestCase {
 			'mode'    => 'delta',
 		);
 		$first          = $this->client->dispatch( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $first );
+		self::assertInstanceOf( Run::class, $first );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
 		$duplicate                     = $this->client->dispatch( self::NAME, $successor_args );
@@ -237,7 +233,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->clock()->timestamp = self::NOW + 2;
 		$reused                        = $this->client->dispatch( self::NAME, $successor_args );
-		self::assertInstanceOf( Success::class, $reused );
+		self::assertInstanceOf( Run::class, $reused );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS, $successor_args ), $this->job->calls );
 	}
@@ -302,7 +298,7 @@ final class ActionDeliveriesTest extends TestCase {
 		};
 
 		$result = $this->client->dispatch( self::NAME, $start_args );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
 		$this->rig->run_due();
 
@@ -580,8 +576,7 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		$last_completed = $this->client->last_completed_run( self::NAME );
-		self::assertInstanceOf( Success::class, $last_completed );
-		self::assertNull( $last_completed->value );
+		self::assertNull( $last_completed );
 	}
 
 	// endregion.
@@ -679,12 +674,11 @@ final class ActionDeliveriesTest extends TestCase {
 	 */
 	private function enqueue_job(): string {
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
-		self::assertSame( self::RUN_ID, (string) $result->value->id );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertInstanceOf( RunId::class, $result->id );
+		self::assertSame( self::RUN_ID, (string) $result->id );
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**
@@ -892,15 +886,13 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @param   mixed     $result Facade result.
 	 * @param   ErrorCode $code   Expected public code.
 	 *
-	 * @return  BoundaryError
+	 * @return  \WP_Error
 	 */
-	private function assert_failure_code( mixed $result, ErrorCode $code ): BoundaryError {
-		self::assertInstanceOf( Failure::class, $result );
-		$error = $result->error;
-		self::assertInstanceOf( BoundaryError::class, $error );
-		self::assertSame( $code, $error->code );
+	private function assert_failure_code( mixed $result, ErrorCode $code ): \WP_Error {
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( $code->value, $result->get_error_code() );
 
-		return $error;
+		return $result;
 	}
 
 	/**

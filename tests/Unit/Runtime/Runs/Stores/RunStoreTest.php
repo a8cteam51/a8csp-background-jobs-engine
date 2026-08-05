@@ -9,6 +9,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
@@ -144,7 +145,7 @@ final class RunStoreTest extends TestCase {
 			$during_execution = $this->single_live_run();
 		};
 		$result               = $this->client->dispatch( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
 		$queued = $this->single_live_run();
 		self::assertSame( self::RUN_ID, $queued['run_id'] );
@@ -175,7 +176,7 @@ final class RunStoreTest extends TestCase {
 		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
 		$result                         = $this->client->dispatch( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
 		$this->rig->run_due();
 

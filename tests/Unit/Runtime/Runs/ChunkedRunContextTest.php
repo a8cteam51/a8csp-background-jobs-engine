@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
@@ -467,13 +466,12 @@ final class ChunkedRunContextTest extends TestCase {
 		$this->client->register( $definition );
 		$result = $this->client->dispatch( $definition->name, $start_args );
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertInstanceOf( RunId::class, $result->id );
 		$this->rig->run_due();
 		$this->rig->run_due();
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**

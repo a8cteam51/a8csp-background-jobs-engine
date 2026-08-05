@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
@@ -122,9 +121,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$result = $client->dispatch( self::NAME, $start_args );
-		self::assertInstanceOf( Success::class, $result, 'The registered chunked job must start through the public API' );
-		self::assertInstanceOf( Run::class, $result->value );
-		$run_id = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result, 'The registered chunked job must start through the public API' );
+		$run_id = (string) $result->id;
 
 		self::assertSame( array(), $chunked_job->generate_calls, 'Starting a chunked job must not generate its queue inline' );
 
@@ -174,9 +172,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$last_completed = $client->last_completed_run( self::NAME );
-		self::assertInstanceOf( Success::class, $last_completed );
-		self::assertInstanceOf( Run::class, $last_completed->value );
-		self::assertSame( $run_id, (string) $last_completed->value->id );
+		self::assertInstanceOf( Run::class, $last_completed );
+		self::assertSame( $run_id, (string) $last_completed->id );
 		$runs = $this->inspection()->runs( Identity::compose( self::SCOPE, self::NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal chunked job completion must leave no live run' );
 		self::assertSame(
@@ -241,9 +238,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$result = $client->dispatch( self::QUEUE_FILTER_NAME, $start_args );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		$run_id = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result );
+		$run_id = (string) $result->id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate and filter the chunk queue' );
 		$run_state       = \get_option( RunStore::OPTION_PREFIX . self::QUEUE_FILTER_IDENTITY . '_' . $run_id, null );
@@ -306,9 +302,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$result = $client->dispatch( self::CONTINUE_DELAY_FILTER_NAME, array() );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		$run_id = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result );
+		$run_id = (string) $result->id;
 		$this->expect_option( RunStore::OPTION_PREFIX . self::CONTINUE_DELAY_FILTER_IDENTITY . '_' . $run_id );
 		$this->expect_option( OverlapGuard::OPTION_PREFIX . self::CONTINUE_DELAY_FILTER_IDENTITY . '_' . self::args_hash( array() ) );
 
@@ -385,9 +380,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$result = $client->dispatch( self::FIDELITY_NAME, array() );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		$run_id = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result );
+		$run_id = (string) $result->id;
 		$group  = self::FIDELITY_IDENTITY;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the float chunk' );

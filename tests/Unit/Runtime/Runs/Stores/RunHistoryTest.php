@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
@@ -490,30 +489,28 @@ final class RunHistoryTest extends TestCase {
 			$name     = self::NAME . '-chunked-job';
 			$identity = self::SCOPE . ':' . $name;
 			$first    = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
-			self::assertInstanceOf( Success::class, $first );
-			self::assertInstanceOf( Run::class, $first->value );
+			self::assertInstanceOf( Run::class, $first );
 			$this->rig->randomizer()->value = 8;
 			$second                         = $this->client->dispatch( $name, array( 'scope' => 'all' ) );
-			self::assertInstanceOf( Success::class, $second );
+			self::assertInstanceOf( Run::class, $second );
 			$this->rig->run_due();
 
-			return array( $identity, (string) $first->value->id );
+			return array( $identity, (string) $first->id );
 		}
 
 		if ( 'failed' === $status ) {
 			$this->job->throwable = new \RuntimeException( 'Database unavailable.' );
 		}
 		$result = $this->client->dispatch( self::NAME, array( 'scope' => $status ) );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
+		self::assertInstanceOf( Run::class, $result );
 		if ( 'cancelled' === $status ) {
-			$cancelled = $this->client->cancel( self::NAME, (string) $result->value->id );
-			self::assertInstanceOf( Success::class, $cancelled );
+			$cancelled = $this->client->cancel( self::NAME, (string) $result->id );
+			self::assertInstanceOf( Run::class, $cancelled );
 		} else {
 			$this->rig->run_due();
 		}
 
-		return array( self::IDENTITY, (string) $result->value->id );
+		return array( self::IDENTITY, (string) $result->id );
 	}
 
 	/**
@@ -532,9 +529,8 @@ final class RunHistoryTest extends TestCase {
 		foreach ( \range( 1, $count ) as $index ) {
 			$this->rig->randomizer()->value = $offset + $index;
 			$result                         = $this->client->dispatch( self::NAME, array( 'index' => $offset + $index ) );
-			self::assertInstanceOf( Success::class, $result );
-			self::assertInstanceOf( Run::class, $result->value );
-			$run_ids[] = (string) $result->value->id;
+			self::assertInstanceOf( Run::class, $result );
+			$run_ids[] = (string) $result->id;
 			$this->rig->run_due();
 		}
 

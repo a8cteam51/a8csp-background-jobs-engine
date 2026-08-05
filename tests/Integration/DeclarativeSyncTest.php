@@ -278,8 +278,7 @@ final class DeclarativeSyncTest extends AbstractIntegrationTestCase {
 		self::assertSame( 1, $gap_callback_calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $gap_status );
 		self::assertFalse( $gap_visible );
-		self::assertInstanceOf( Success::class, $gap_sync );
-		self::assertTrue( $gap_sync->value );
+		self::assertTrue( $gap_sync );
 		self::assertIsArray( $gap_entries );
 		self::assertCount( 1, $gap_entries );
 
@@ -368,8 +367,7 @@ final class DeclarativeSyncTest extends AbstractIntegrationTestCase {
 	 */
 	private function assert_sync_succeeds( string $scope, array $schedules ): void {
 		$result = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( $scope )->sync( $schedules );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertTrue( $result->value );
+		self::assertTrue( $result );
 	}
 
 	/**

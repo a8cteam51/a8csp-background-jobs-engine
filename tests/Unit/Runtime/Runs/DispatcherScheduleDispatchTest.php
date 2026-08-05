@@ -2,10 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\ErrorInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
@@ -106,11 +103,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertSame( self::IDENTITY, $result->value->identity );
-		self::assertSame( self::RUN_ID, (string) $result->value->id );
-		self::assertSame( RunStatus::Running, $result->value->status );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame( self::IDENTITY, $result->identity );
+		self::assertSame( self::RUN_ID, (string) $result->id );
+		self::assertSame( RunStatus::Running, $result->status );
 		$calls = $this->run_delivery_calls();
 		self::assertCount( 1, $calls );
 		self::assertSame( 23, $calls[0]['args']['priority'] ?? null );
@@ -132,11 +128,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::CHUNKED_SCHEDULE );
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertSame( self::CHUNKED_IDENTITY, $result->value->identity );
-		self::assertSame( self::RUN_ID, (string) $result->value->id );
-		self::assertSame( RunStatus::Running, $result->value->status );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame( self::CHUNKED_IDENTITY, $result->identity );
+		self::assertSame( self::RUN_ID, (string) $result->id );
+		self::assertSame( RunStatus::Running, $result->status );
 		$calls = $this->chunked_start_calls();
 		self::assertCount( 1, $calls );
 		self::assertSame( 23, $calls[0]['args']['priority'] ?? null );
@@ -153,15 +148,15 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	 */
 	public function test_dispatch_now_rejects_an_unregistered_target_without_a_kind_fallback(): void {
 		$result = $this->client->sync( array( new Schedule( 'missing-target-schedule', Recurrence::every( 300 ), 'missing-target', self::ARGS ) ) );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result );
 		$this->rig->backend()->calls = array();
 
 		$result = $this->client->dispatch_now( 'missing-target-schedule' );
 
-		self::assertInstanceOf( Failure::class, $result );
-		$error = $this->boundary_error( $result );
-		self::assertSame( ErrorCode::UnknownJob, $error->code );
-		self::assertSame( 'Background-work "runs-tests:missing-target" is not registered; register it before dispatching.', $error->message );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		$error = $result;
+		self::assertSame( ErrorCode::UnknownJob->value, $error->get_error_code() );
+		self::assertSame( 'Background-work "runs-tests:missing-target" is not registered; register it before dispatching.', $error->get_error_message() );
 		self::assertSame( array(), $this->rig->backend()->calls );
 	}
 
@@ -197,7 +192,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 		self::assertTrue( $observed );
 		self::assertSame(
 			array(
@@ -233,7 +228,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::CHUNKED_SCHEDULE );
 
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 		self::assertTrue( $observed );
 		self::assertArrayHasKey( RunHistory::OPTION_PREFIX . self::CHUNKED_IDENTITY, $this->rig->wpdb()->rows );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/started/' . self::CHUNKED_IDENTITY ) );
@@ -259,11 +254,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertSame( self::IDENTITY, $result->value->identity );
-		self::assertSame( self::RUN_ID, (string) $result->value->id );
-		self::assertSame( RunStatus::Running, $result->value->status );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame( self::IDENTITY, $result->identity );
+		self::assertSame( self::RUN_ID, (string) $result->id );
+		self::assertSame( RunStatus::Running, $result->status );
 		self::assertSame( self::INCUMBENT_RUN_ID, $this->lock_owner( $this->args_hash() ) );
 		$run = $this->option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
@@ -283,7 +277,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	public function test_allow_dispatch_reports_a_forced_run_id_collision(): void {
 		$this->sync_schedule( OverlapPolicy::Allow );
 		$first = $this->client->dispatch_now( self::SCHEDULE );
-		self::assertInstanceOf( Success::class, $first );
+		self::assertInstanceOf( Run::class, $first );
 		$run = $this->option( 'a8csp_bgje_active_run_' . self::IDENTITY . '_' . self::RUN_ID );
 		self::assertIsArray( $run );
 		$salted_hash = $run['args_hash'] ?? null;
@@ -292,10 +286,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$collision = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Failure::class, $collision );
-		$error = $this->boundary_error( $collision );
-		self::assertSame( ErrorCode::AdmissionConflict, $error->code );
-		self::assertStringContainsString( 'duplicate per-run overlap identity', $error->message );
+		self::assertInstanceOf( \WP_Error::class, $collision );
+		$error = $collision;
+		self::assertSame( ErrorCode::AdmissionConflict->value, $error->get_error_code() );
+		self::assertStringContainsString( 'duplicate per-run overlap identity', $error->get_error_message() );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}
 
@@ -310,10 +304,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Failure::class, $result );
-		$error = $this->boundary_error( $result );
-		self::assertSame( ErrorCode::StorageFailed, $error->code );
-		self::assertStringContainsString( 'repair WordPress option reads and writes', $error->message );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		$error = $result;
+		self::assertSame( ErrorCode::StorageFailed->value, $error->get_error_code() );
+		self::assertStringContainsString( 'repair WordPress option reads and writes', $error->get_error_message() );
 		self::assertSame( array(), $this->run_delivery_calls() );
 	}
 
@@ -330,10 +324,12 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Failure::class, $result );
-		$error = $this->boundary_error( $result );
-		self::assertSame( ErrorCode::OverlapHeld, $error->code );
-		self::assertSame( self::INCUMBENT_RUN_ID, $error->context['run_id'] ?? null );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		$error = $result;
+		$data  = $error->get_error_data();
+		self::assertIsArray( $data );
+		self::assertSame( ErrorCode::OverlapHeld->value, $error->get_error_code() );
+		self::assertSame( self::INCUMBENT_RUN_ID, $data['run_id'] ?? null );
 		self::assertSame( array(), $this->run_delivery_calls() );
 		self::assertSame( self::INCUMBENT_RUN_ID, $this->lock_owner( $this->args_hash() ) );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
@@ -357,10 +353,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Failure::class, $result );
-		$error = $this->boundary_error( $result );
-		self::assertSame( ErrorCode::StorageFailed, $error->code );
-		self::assertStringContainsString( 'could not read a valid authoritative overlap lock row', $error->message );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		$error = $result;
+		self::assertSame( ErrorCode::StorageFailed->value, $error->get_error_code() );
+		self::assertStringContainsString( 'could not read a valid authoritative overlap lock row', $error->get_error_message() );
 		self::assertSame( array(), $this->run_delivery_calls() );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 	}
@@ -376,11 +372,10 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertSame( self::IDENTITY, $result->value->identity );
-		self::assertSame( self::RUN_ID, (string) $result->value->id );
-		self::assertSame( RunStatus::Running, $result->value->status );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame( self::IDENTITY, $result->identity );
+		self::assertSame( self::RUN_ID, (string) $result->id );
+		self::assertSame( RunStatus::Running, $result->status );
 		self::assertSame( self::RUN_ID, $this->lock_owner( $this->args_hash() ) );
 		self::assertCount( 1, $this->run_delivery_calls() );
 	}
@@ -397,7 +392,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( 'run-rival', $this->lock_owner( $this->args_hash() ) );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
 		self::assertSame( array(), $this->run_delivery_calls() );
@@ -433,8 +428,8 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertSame( ErrorCode::AdmissionConflict, $this->boundary_error( $result )->code );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::AdmissionConflict->value, $result->get_error_code() );
 		self::assertSame( 'run-rival', $this->lock_owner( $this->args_hash() ) );
 		$preserved = $this->option( $run_option );
 		self::assertIsArray( $preserved );
@@ -454,9 +449,9 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::SCHEDULE );
 
-		self::assertInstanceOf( Failure::class, $result );
-		$error = $this->boundary_error( $result );
-		self::assertSame( ErrorCode::BackendRejected, $error->code );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		$error = $result;
+		self::assertSame( ErrorCode::BackendRejected->value, $error->get_error_code() );
 		self::assertNull( $this->lock_owner( $this->args_hash() ) );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID ) );
 		self::assertNull( $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::RUN_ID ) );
@@ -475,7 +470,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	private function sync_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
 		$this->client->register( $this->job->definition( new JobOptions( overlap: $policy ) ) );
 		$result = $this->client->sync( array( new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::NAME, self::ARGS, priority: $priority ) ) );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result );
 	}
 
 	/**
@@ -492,7 +487,7 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 	private function sync_chunked_schedule( OverlapPolicy $policy, int $priority = 10 ): void {
 		$this->client->register( $this->chunked_job->definition( new JobOptions( overlap: $policy ) ) );
 		$result = $this->client->sync( array( new Schedule( self::CHUNKED_SCHEDULE, Recurrence::every( 300 ), self::CHUNKED_NAME, self::ARGS, priority: $priority ) ) );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result );
 	}
 
 	/** Stores one valid incumbent lock and latest pointer. */
@@ -624,20 +619,6 @@ final class DispatcherScheduleDispatchTest extends TestCase {
 				}
 			)
 		);
-	}
-
-	/**
-	 * Returns one facade-mapped API error.
-	 *
-	 * @phpstan-param Failure<ErrorInterface> $result
-	 *
-	 * @param Failure $result Failed facade result.
-	 */
-	private function boundary_error( Failure $result ): BoundaryError {
-		$error = $result->error;
-		self::assertInstanceOf( BoundaryError::class, $error );
-
-		return $error;
 	}
 
 	// endregion.

@@ -12,9 +12,6 @@
  * @package A8C\SpecialProjects\BackgroundJobsEngine
  */
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
@@ -65,15 +62,15 @@ if ( '' !== $a8csp_bgje_token ) {
 $a8csp_bgje_result = $a8csp_bgje_operations->dispatch( $a8csp_bgje_name );
 $a8csp_bgje_report = array( 'outcome' => 'unexpected' );
 
-if ( $a8csp_bgje_result instanceof Success && $a8csp_bgje_result->value instanceof Run ) {
+if ( $a8csp_bgje_result instanceof Run ) {
 	$a8csp_bgje_report = array(
 		'outcome' => 'success',
-		'run_id'  => (string) $a8csp_bgje_result->value->id,
+		'run_id'  => (string) $a8csp_bgje_result->id,
 	);
-} elseif ( $a8csp_bgje_result instanceof Failure && $a8csp_bgje_result->error instanceof BoundaryError ) {
+} elseif ( $a8csp_bgje_result instanceof \WP_Error ) {
 	$a8csp_bgje_report = array(
 		'outcome' => 'failure',
-		'code'    => $a8csp_bgje_result->error->code->value,
+		'code'    => $a8csp_bgje_result->get_error_code(),
 	);
 }
 

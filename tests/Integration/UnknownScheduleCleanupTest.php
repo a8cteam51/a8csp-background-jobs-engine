@@ -249,8 +249,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		$client->register( $job->definition() );
 		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), CatchUpPolicy::RunOnce );
 		$synced   = $client->sync( array( $schedule ) );
-		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
-		self::assertTrue( $synced->value );
+		self::assertTrue( $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $unknown_successor_id ), 'Redeclaration must cancel the stale unknown-chain successor before creating its live chain' );
 
 		$live_action_ids = $this->pending_schedule_action_ids( self::KEY );

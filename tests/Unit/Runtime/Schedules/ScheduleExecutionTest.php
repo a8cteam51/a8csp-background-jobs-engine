@@ -2,15 +2,14 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
@@ -166,7 +165,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$explicit    = new Schedule( 'explicit-default', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'explicit' ), priority: 10 );
 		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow ) ) );
 
-		self::assertInstanceOf( Success::class, $this->client->sync( array( $unspecified, $explicit ) ) );
+		self::assertTrue( $this->client->sync( array( $unspecified, $explicit ) ) );
 		$recurring_calls = $this->calls( 'schedule_recurring' );
 		self::assertCount( 2, $recurring_calls );
 		self::assertSame( array( 0, 0 ), \array_column( \array_column( $recurring_calls, 'args' ), 'priority' ) );
@@ -195,7 +194,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$job_priority      = new Schedule( 'job-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'job' ) );
 		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow, priority: 41 ) ) );
 
-		self::assertInstanceOf( Success::class, $this->client->sync( array( $schedule_priority, $job_priority ) ) );
+		self::assertTrue( $this->client->sync( array( $schedule_priority, $job_priority ) ) );
 		$this->reset_observations();
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 		$this->rig->run_due();
@@ -219,7 +218,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$urgent = new Schedule( 'urgent-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'urgent' ), priority: 0 );
 		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow, priority: 41 ) ) );
 
-		self::assertInstanceOf( Success::class, $this->client->sync( array( $urgent ) ) );
+		self::assertTrue( $this->client->sync( array( $urgent ) ) );
 		$this->reset_observations();
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 		$this->rig->run_due();
@@ -305,7 +304,7 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::NAME );
 
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 		self::assertSame( self::NOW, $this->registration()['last_fired'] ?? null );
 		self::assertArrayNotHasKey( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
 	}
@@ -331,9 +330,8 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::NAME );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::AdmissionConflict, $result->error->code );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::AdmissionConflict->value, $result->get_error_code() );
 	}
 
 	/**
@@ -350,10 +348,11 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::NAME );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'write', $result->error->context['storage_operation'] ?? null );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		$data = $result->get_error_data();
+		self::assertIsArray( $data );
+		self::assertSame( 'write', $data['storage_operation'] ?? null );
 	}
 
 	/**
@@ -375,10 +374,11 @@ final class ScheduleExecutionTest extends TestCase {
 
 		$result = $this->client->dispatch_now( self::NAME );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'read', $result->error->context['storage_operation'] ?? null );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		$data = $result->get_error_data();
+		self::assertIsArray( $data );
+		self::assertSame( 'read', $data['storage_operation'] ?? null );
 	}
 
 	/**
@@ -843,7 +843,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( $replacement, &$replacement_raw ): void {
-				self::assertInstanceOf( Success::class, $this->client->sync( array( $replacement ) ) );
+				self::assertTrue( $this->client->sync( array( $replacement ) ) );
 				$replacement_raw = $wpdb->rows[ ScheduleRegistry::option_name( self::SCOPE ) ] ?? null;
 				self::assertIsString( $replacement_raw );
 			}
@@ -1043,7 +1043,7 @@ final class ScheduleExecutionTest extends TestCase {
 		};
 		$this->client->register( $execution->definition( $options ) );
 
-		self::assertInstanceOf( Success::class, $this->client->sync( array( $schedule ) ) );
+		self::assertTrue( $this->client->sync( array( $schedule ) ) );
 		$this->reset_observations();
 	}
 

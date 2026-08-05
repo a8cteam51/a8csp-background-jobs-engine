@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
@@ -951,14 +950,13 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 		$client->register( $job->definition() );
 		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_JOB, array( 'source' => 'schedule' ) );
 		$synced   = $client->sync( array( $schedule ) );
-		self::assertInstanceOf( Success::class, $synced );
+		self::assertTrue( $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
 		\add_filter( 'a8csp_bgje/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
 		$enqueued = $client->dispatch( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
-		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertInstanceOf( Run::class, $enqueued->value );
-		$run_id = (string) $enqueued->value->id;
+		self::assertInstanceOf( Run::class, $enqueued );
+		$run_id = (string) $enqueued->id;
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::INSPECTION_JOB_IDENTITY );
 
 		try {
@@ -1007,7 +1005,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 			self::assertSame( 'started', $history_rows[0]['outcome'] ?? null );
 		} finally {
 			$cancelled = $client->cancel( self::INSPECTION_JOB, $run_id );
-			self::assertInstanceOf( Success::class, $cancelled );
+			self::assertInstanceOf( Run::class, $cancelled );
 		}
 	}
 

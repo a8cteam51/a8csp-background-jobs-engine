@@ -293,9 +293,8 @@ final class EngineRig {
 		$operations = $this->operations[ $work_identity->scope() ] ?? null;
 		Assert::assertInstanceOf( ScopeOperations::class, $operations );
 		$result = $operations->last_completed_run( $work_identity->name() );
-		Assert::assertInstanceOf( Success::class, $result );
-		Assert::assertInstanceOf( Run::class, $result->value );
-		Assert::assertSame( (string) $run_id, (string) $result->value->id );
+		Assert::assertInstanceOf( Run::class, $result );
+		Assert::assertSame( (string) $run_id, (string) $result->id );
 	}
 
 	/**
