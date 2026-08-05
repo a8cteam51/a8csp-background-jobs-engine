@@ -1,4 +1,4 @@
 Significance: patch
 Type: fixed
 
-A manual schedule dispatch that loses its occurrence-decision race now reports `admission_conflict` instead of `storage_failed`.
+A manual schedule dispatch that loses its occurrence-decision race reports `admission_conflict` rather than `storage_failed`. Both the manual-dispatch error and the scheduled-delivery log record state only that the delivery did not acquire the lease, which also changes what a held lease reports. The scheduled-delivery record for that state is a `debug` event, so it reaches `a8csp_bgje/log` but not the default error-log sink.
