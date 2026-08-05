@@ -304,11 +304,11 @@ final class CleanupIntentsTest extends TestCase {
 			array(
 				array(
 					'level'   => 'warning',
-					'message' => 'Malformed schedule registration "malformed" was delivered; remove the leftover occurrence.',
+					'message' => 'Malformed schedule registration "malformed" was delivered; no cleanup is outstanding.',
 					'context' => array(
 						'schedule_identity' => $registration_key,
 						'converged'         => true,
-						'intent_recorded'   => true,
+						'intent_confirmed'  => true,
 					),
 				),
 			),

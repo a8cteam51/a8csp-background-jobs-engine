@@ -359,9 +359,13 @@ final readonly class OccurrenceDelivery {
 			$context   = array(
 				'schedule_identity' => $registration_key,
 				'converged'         => $converged,
-				'intent_recorded'   => RowWriteOutcome::WriteFailed !== $recorded,
+				'intent_confirmed'  => RowWriteOutcome::WriteFailed !== $recorded,
 			);
-			$message   = null === Identity::tryFrom( $registration_key ) ? \sprintf( 'Malformed schedule registration "%s" was delivered; remove the leftover occurrence.', $registration_key ) : \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key );
+			if ( null === Identity::tryFrom( $registration_key ) ) {
+				$message = $converged ? \sprintf( 'Malformed schedule registration "%s" was delivered; no cleanup is outstanding.', $registration_key ) : \sprintf( 'Malformed schedule registration "%s" was delivered; remove the leftover occurrence.', $registration_key );
+			} else {
+				$message = $converged ? \sprintf( 'Unknown schedule registration "%s" was delivered, and no cleanup is outstanding; re-declare the schedule only if it is still wanted.', $registration_key ) : \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key );
+			}
 
 			$this->logger->warning( $message, $context );
 

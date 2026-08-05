@@ -698,7 +698,7 @@ final class ScheduleExecutionTest extends TestCase {
 					'context' => array(
 						'schedule_identity' => self::REGISTRATION_KEY,
 						'converged'         => false,
-						'intent_recorded'   => false,
+						'intent_confirmed'  => false,
 					),
 				),
 			),
@@ -716,15 +716,46 @@ final class ScheduleExecutionTest extends TestCase {
 			array(
 				array(
 					'level'   => 'warning',
-					'message' => 'Unknown schedule registration "scope-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
+					'message' => 'Unknown schedule registration "scope-a:nightly" was delivered, and no cleanup is outstanding; re-declare the schedule only if it is still wanted.',
 					'context' => array(
 						'schedule_identity' => self::REGISTRATION_KEY,
 						'converged'         => true,
-						'intent_recorded'   => true,
+						'intent_confirmed'  => true,
 					),
 				),
 			),
 			$this->rig->logger()->records
+		);
+	}
+
+	/**
+	 * An incumbent cleanup intent is confirmed when this delivery loses the insert race.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_registration_confirms_an_incumbent_cleanup_intent(): void {
+		$intent = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 7 );
+		$this->put_fixture( $intent );
+		self::assertArrayHasKey( $intent[0], $this->rig->wpdb()->rows );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $intent[0], $this->rig->wpdb()->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Unknown schedule registration "scope-a:nightly" was delivered, and no cleanup is outstanding; re-declare the schedule only if it is still wanted.',
+				'context' => array(
+					'schedule_identity' => self::REGISTRATION_KEY,
+					'converged'         => true,
+					'intent_confirmed'  => true,
+				),
+			),
+			$this->rig->logger()->records[0] ?? null
 		);
 	}
 
@@ -756,10 +787,41 @@ final class ScheduleExecutionTest extends TestCase {
 				'context' => array(
 					'schedule_identity' => self::REGISTRATION_KEY,
 					'converged'         => false,
-					'intent_recorded'   => true,
+					'intent_confirmed'  => true,
 				),
 			),
 			$this->rig->logger()->records[1]
+		);
+	}
+
+	/**
+	 * A malformed identity reports the scheduler cleanup that remains outstanding.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_reports_outstanding_scheduler_cleanup(): void {
+		$registration_key                            = 'malformed';
+		$intent_option                               = CleanupIntents::OPTION_PREFIX . \hash( 'sha256', $registration_key );
+		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the scheduler before retrying convergence.' ) );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, $registration_key );
+
+		self::assertArrayHasKey( $intent_option, $this->rig->wpdb()->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Malformed schedule registration "malformed" was delivered; remove the leftover occurrence.',
+				'context' => array(
+					'schedule_identity' => $registration_key,
+					'converged'         => false,
+					'intent_confirmed'  => true,
+				),
+			),
+			$this->rig->logger()->records[1] ?? null
 		);
 	}
 
@@ -817,11 +879,11 @@ final class ScheduleExecutionTest extends TestCase {
 			array(
 				array(
 					'level'   => 'warning',
-					'message' => 'Malformed schedule registration "malformed" was delivered; remove the leftover occurrence.',
+					'message' => 'Malformed schedule registration "malformed" was delivered; no cleanup is outstanding.',
 					'context' => array(
 						'schedule_identity' => $registration_key,
 						'converged'         => true,
-						'intent_recorded'   => true,
+						'intent_confirmed'  => true,
 					),
 				),
 			),

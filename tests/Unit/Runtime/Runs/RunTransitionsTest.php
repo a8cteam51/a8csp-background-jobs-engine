@@ -1071,6 +1071,7 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( self::RUN_ID, $result->value );
 		self::assertCount( 1, $this->logger->records );
 		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Latest-run pointer repair failed; the latest-run pointer store does not report why. Repair WordPress option reads and writes before relying on discovery metadata.', $this->logger->records[0]['message'] ?? null );
 		self::assertSame( self::IDENTITY, $this->logger->records[0]['context']['identity'] ?? null );
 		self::assertSame( self::RUN_ID, $this->logger->records[0]['context']['run_id'] ?? null );
 	}

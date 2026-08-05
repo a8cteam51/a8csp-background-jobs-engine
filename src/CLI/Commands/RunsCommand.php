@@ -196,7 +196,7 @@ final readonly class RunsCommand {
 	 * : Show only failed runs belonging to the exact scope. Valid only with list.
 	 *
 	 * [--format=<format>]
-	 * : Render list output in the selected format. Defaults to table.
+	 * : Render list output as table, csv, json, count, or yaml. Defaults to table.
 	 *
 	 * ## EXAMPLES
 	 *

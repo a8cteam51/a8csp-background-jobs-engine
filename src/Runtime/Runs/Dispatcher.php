@@ -587,7 +587,7 @@ final readonly class Dispatcher {
 
 		if ( ! $latest_pointer->record( $run_id, $args_hash ) ) {
 			$this->logger->warning(
-				'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
+				'Latest-run pointer repair failed; the latest-run pointer store does not report why. Repair WordPress option reads and writes before relying on discovery metadata.',
 				array(
 					'identity' => (string) $identity,
 					'run_id'   => $run_id,

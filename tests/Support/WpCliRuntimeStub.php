@@ -175,6 +175,20 @@ final class CliHarness {
 		return \array_keys( $root->get_subcommands() );
 	}
 
+	/**
+	 * Returns one registered subcommand's parsed long description.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $subcommand Spoken subcommand below a8csp-bgje.
+	 *
+	 * @return  string
+	 */
+	public static function registered_subcommand_description( string $subcommand ): string {
+		return self::subcommand( $subcommand )->get_longdesc();
+	}
+
 	// endregion.
 
 	// region METHODS.

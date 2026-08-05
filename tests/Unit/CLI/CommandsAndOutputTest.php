@@ -129,6 +129,18 @@ final class CommandsAndOutputTest extends TestCase {
 	}
 
 	/**
+	 * Failed-run help names every accepted list format.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_failed_run_help_names_every_accepted_list_format(): void {
+		self::assertStringContainsString( ': Render list output as table, csv, json, count, or yaml. Defaults to table.', CliHarness::registered_subcommand_description( 'failed-runs' ) );
+	}
+
+	/**
 	 * Run command requests retain typed identities while their rendered bytes stay unchanged.
 	 *
 	 * @since   1.0.0

@@ -161,6 +161,45 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * A latest-pointer write failure warns without rejecting the admitted run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_warns_and_continues_when_latest_pointer_persistence_fails(): void {
+		// The overlap-lock and active-run inserts succeed before every latest-pointer attempt fails.
+		$this->rig->wpdb()->before_next( 'insert', static function (): void {} );
+		$this->rig->wpdb()->before_next( 'insert', static function (): void {} );
+		for ( $attempt = 0; 5 > $attempt; ++$attempt ) {
+			$this->rig->wpdb()->before_next(
+				'insert',
+				static function ( WpdbLockSpy $wpdb ): void {
+					$wpdb->script_result( 'insert', false );
+				}
+			);
+		}
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Latest-run pointer repair failed; the latest-run pointer store does not report why. Repair WordPress option reads and writes before relying on discovery metadata.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => self::RUN_ID,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
 	 * A started listener that supersedes the admitted run must not leave the caller holding a running run.
 	 *
 	 * @since   1.0.0
