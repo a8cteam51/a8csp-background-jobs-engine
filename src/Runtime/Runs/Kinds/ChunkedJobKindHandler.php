@@ -7,7 +7,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
@@ -84,7 +83,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @param   FailureLifecycle  $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
-		private JobRegistry $registry,
+		JobRegistry $registry,
 		private DeliveryScheduler $delivery_scheduler,
 		LoggerInterface $logger,
 		ClockInterface $clock,
@@ -93,7 +92,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		private LifecycleEffects $terminal_effects,
 		private FailureLifecycle $failure_lifecycle,
 	) {
-		parent::__construct( $logger, $clock, $lock_windows, $terminal_transitions );
+		parent::__construct( $registry, $logger, $clock, $lock_windows, $terminal_transitions );
 	}
 
 	// endregion
@@ -111,127 +110,6 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	#[\Override]
 	public function key(): string {
 		return self::KIND;
-	}
-
-	/**
-	 * Validates and registers a chunked-job definition.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity      $identity   Complete scope-qualified chunked-job identity.
-	 * @param   JobDefinition $definition Definition resolved to this handler.
-	 *
-	 * @throws  \InvalidArgumentException When the execution object does not implement ChunkedJobExecutionInterface.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public function register( Identity $identity, JobDefinition $definition ): void {
-		if ( ! $definition->execution instanceof ChunkedJobExecutionInterface ) {
-			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, ChunkedJobExecutionInterface::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-		}
-
-		$this->registry->register( $identity, $definition );
-	}
-
-	/**
-	 * Returns the registered chunked-job execution for an identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete scope-qualified chunked-job identity.
-	 *
-	 * @return  ChunkedJobExecutionInterface|null
-	 */
-	#[\Override]
-	public function execution( Identity $identity ): ?ChunkedJobExecutionInterface {
-		$execution = $this->registry->definition_for_kind( $identity, self::KIND )?->execution;
-
-		return $execution instanceof ChunkedJobExecutionInterface ? $execution : null;
-	}
-
-	/**
-	 * Returns the registered chunked-job policy declaration.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete scope-qualified chunked-job identity.
-	 *
-	 * @return  JobOptions|null
-	 */
-	#[\Override]
-	public function options( Identity $identity ): ?JobOptions {
-		return $this->registry->definition_for_kind( $identity, self::KIND )?->options;
-	}
-
-	/**
-	 * Returns whether the stage belongs to chunked-job delivery.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string|null $stage Persisted lifecycle stage, or null.
-	 *
-	 * @return  bool
-	 */
-	#[\Override]
-	public function owns_stage( ?string $stage ): bool {
-		return \in_array( $stage, array( 'start', 'continue' ), true );
-	}
-
-	/**
-	 * Seeds the handler-owned bare-list queue payload empty until the start delivery generates chunks.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 *
-	 * @return  list<array<array-key, mixed>>
-	 */
-	#[\Override]
-	public function initial_kind_state( array $start_args ): array {
-		return array();
-	}
-
-	/**
-	 * Returns the initial start delivery for an admitted chunked job.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int|null $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
-	 * @param   int      $now      Admission timestamp.
-	 * @param   int      $priority Scheduler priority.
-	 *
-	 * @return  PendingAction
-	 */
-	#[\Override]
-	public function initial_pending( ?int $fire_at, int $now, int $priority ): PendingAction {
-		return null === $fire_at || $fire_at <= $now
-			? PendingAction::async( 'start', $priority )
-			: PendingAction::single( 'start', $fire_at, $priority );
-	}
-
-	/**
-	 * Defers started effects until the generated queue is durably persisted.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
-	 * @param   string   $run_id    Run identifier.
-	 * @param   RunState $state     Persisted running state.
-	 * @param   RunStore $run_store Active-run store.
-	 *
-	 * @return  EngineError|null
-	 */
-	#[\Override]
-	public function after_dispatch( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError {
-		return null;
 	}
 
 	/**
@@ -257,43 +135,6 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		}
 
 		return new EngineError( \sprintf( 'Run "%s" has no chunks left to process; the pending continuation completes it.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), );
-	}
-
-	/**
-	 * Returns the bounded execution lease for a registered chunked job.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete scope-qualified chunked-job identity.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Persisted chunked-job stage state.
-	 *
-	 * @return  int|null Null when no registered definition can declare an execution lease.
-	 */
-	#[\Override]
-	public function delivery_liveness_at( Identity $identity, string $run_id, RunState $state ): ?int {
-		$options = $this->options( $identity );
-		if ( null === $options ) {
-			return null;
-		}
-
-		return $this->execution_lease_at( $options );
-	}
-
-	/**
-	 * Preserves chunked-job retry state when a drained continuation completes the run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   RunState $state Fenced executing state.
-	 *
-	 * @return  RunState
-	 */
-	#[\Override]
-	public function completion_state( RunState $state ): RunState {
-		return $state;
 	}
 
 	/**
@@ -391,6 +232,32 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		$queue = $this->queue_for_state( $state );
 
 		return $queue instanceof EngineError ? null : \count( $queue );
+	}
+
+	/**
+	 * Returns the execution role a chunked-job definition must implement.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  class-string
+	 */
+	#[\Override]
+	protected function execution_role(): string {
+		return ChunkedJobExecutionInterface::class;
+	}
+
+	/**
+	 * Returns the lifecycle stages owned by chunked-job delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  non-empty-list<string>
+	 */
+	#[\Override]
+	protected function stages(): array {
+		return array( 'start', 'continue' );
 	}
 
 	// endregion
@@ -790,7 +657,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 */
 	private function execution_for_action( Identity $identity, string $run_id, string $stage ): ?ChunkedJobExecutionInterface {
 		$execution = $this->execution( $identity );
-		if ( null === $execution ) {
+		if ( ! $execution instanceof ChunkedJobExecutionInterface ) {
 			$this->logger->warning(
 				'chunked_job delivery references an unregistered execution; register the chunked job before dispatching its action.',
 				array(
@@ -799,6 +666,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 					'stage'    => $stage,
 				)
 			);
+
+			return null;
 		}
 
 		return $execution;

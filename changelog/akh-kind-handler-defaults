@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Persisted run-kind registration and lifecycle defaults are consolidated. The public API, persisted row shapes, and observable behaviour are unchanged.
