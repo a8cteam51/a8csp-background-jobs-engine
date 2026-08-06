@@ -60,7 +60,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$GLOBALS['a8csp_bgje_test_as_calls']    = array();
 		$GLOBALS['a8csp_bgje_test_as_results']  = array();
-		$GLOBALS['a8csp_bgje_test_as_version']  = '4.0.0';
+		$GLOBALS['a8csp_bgje_test_as_version']  = '4.1.0';
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
@@ -119,11 +119,11 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 */
 	public static function elected_versions(): array {
 		return array(
-			'below the floor'   => array( '3.9.3', false ),
-			'one patch below'   => array( '3.99.99', false ),
-			'exactly the floor' => array( '4.0.0', true ),
-			'above the floor'   => array( '4.1.0', true ),
-			'a later major'     => array( '5.0.0', true ),
+			'clearly below the floor'   => array( '3.9.3', false ),
+			'one minor below the floor' => array( '4.0.0', false ),
+			'exactly the floor'         => array( '4.1.0', true ),
+			'one patch above the floor' => array( '4.1.1', true ),
+			'a later major'             => array( '5.0.0', true ),
 		);
 	}
 

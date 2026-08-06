@@ -85,6 +85,9 @@ trait ActionSchedulerIsolationTrait {
 				throw new \RuntimeException( \sprintf( 'Action Scheduler table cleanup failed for "%s": %s. Fix the database error before rerunning the integration suite.', $table_name, $wpdb->last_error ) );
 			}
 		}
+
+		// Empty tables are not an isolated store while resolved group IDs remain cached: a stale ID orphans every action row written afterwards.
+		\ActionScheduler::store()->flush_caches();
 	}
 
 	// endregion.

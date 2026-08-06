@@ -33,7 +33,7 @@ if ( ! \class_exists( 'ActionScheduler_Versions' ) ) {
 		 * @return  string|false
 		 */
 		public function latest_version(): string|false {
-			$version = $GLOBALS['a8csp_bgje_test_as_version'] ?? '4.0.0';
+			$version = $GLOBALS['a8csp_bgje_test_as_version'] ?? '4.1.0';
 
 			return \is_string( $version ) ? $version : false;
 		}
