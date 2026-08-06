@@ -243,7 +243,7 @@ final class MaintenanceJobTest extends TestCase {
 	}
 
 	/**
-	 * A failed authoritative lock read preserves the row and reports its exact storage cause.
+	 * A failed authoritative lock read leaves the row untouched and reports its decisive phase.
 	 *
 	 * @return  void
 	 */
@@ -283,6 +283,9 @@ final class MaintenanceJobTest extends TestCase {
 
 	/**
 	 * A failed lock read does not stop later rows in the same page from reconciling.
+	 *
+	 * @load-bearing bounded-retry-liveness
+	 * @pin-rationale A per-row lock-inspection failure must skip only its own row, because aborting instead strands every later phase of that sweep invocation behind one unreadable lock.
 	 *
 	 * @return  void
 	 */
