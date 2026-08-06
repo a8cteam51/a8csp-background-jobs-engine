@@ -294,7 +294,7 @@ final readonly class RunsCommand {
 					}
 				}
 
-				// WP-CLI injects documented YAML defaults into every action, so the fallback stays code-only.
+				// No subcommand synopsis declares a YAML default for --format, so the default lives here.
 				$format = $assoc_args['format'] ?? 'table';
 				if ( ! Format::is_supported( $format ) ) {
 					return array(

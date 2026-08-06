@@ -55,7 +55,6 @@ final class BoundaryErrorMapper {
 		'limit_bytes'                        => true,
 		'maximum_depth'                      => true,
 		'maximum_json_length'                => true,
-		'missing_function'                   => true,
 		'option_name'                        => true,
 		'priority'                           => true,
 		'run_at'                             => true,

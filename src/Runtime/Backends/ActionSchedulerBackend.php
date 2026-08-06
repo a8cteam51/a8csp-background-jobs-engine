@@ -17,8 +17,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason
  * plugin, so several partial or competing copies can be present and the elected version decides
  * which one answers. Readiness derives from that complete procedural table, the elected version, and
  * the action_scheduler_init lifecycle state. WordPress init remains part of failure context, while
- * the complete table is gated before every procedural call because PHP function availability is
- * monotone within a request.
+ * the complete table is gated once per scheduling operation: PHP function availability is monotone
+ * within a request, so one gate answers for every procedural call behind it.
  *
  * @internal
  *
