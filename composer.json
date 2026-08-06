@@ -44,7 +44,7 @@
     "phpunit/phpunit": "^13",
     "wp-cli/i18n-command": "^2",
 
-    "wp-plugin/action-scheduler": "4.0.*",
+    "wp-plugin/action-scheduler": "^4",
 
     "roave/security-advisories": "dev-latest"
   },

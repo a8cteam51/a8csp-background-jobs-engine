@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e410f7233ac34a2d1effe9accfb5336e",
+    "content-hash": "8a4fed83bb5daf4d757534c6d97570e7",
     "packages": [
         {
             "name": "psr/clock",
@@ -111,7 +111,7 @@
             "version": "dev-trunk",
             "source": {
                 "type": "git",
-                "url": "https://github.com/a8cteam51/a8csp-configs.git",
+                "url": "git@github.com:a8cteam51/a8csp-configs.git",
                 "reference": "4e324b18ca1671decb3afb5e02c4e840b3eb96e2"
             },
             "dist": {
@@ -172,10 +172,6 @@
                 }
             ],
             "description": "The canonical collection of shared configuration files and reusable CI workflows for A8C Special Projects repositories.",
-            "support": {
-                "source": "https://github.com/a8cteam51/a8csp-configs/tree/trunk",
-                "issues": "https://github.com/a8cteam51/a8csp-configs/issues"
-            },
             "time": "2026-08-01T09:00:52+00:00"
         },
         {
@@ -2620,11 +2616,11 @@
         },
         {
             "name": "phpstan/phpstan",
-            "version": "2.2.7",
+            "version": "2.2.8",
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/phpstan/phpstan/zipball/692db47b9dddb0487934e5236e77d48594aef921",
-                "reference": "692db47b9dddb0487934e5236e77d48594aef921",
+                "url": "https://api.github.com/repos/phpstan/phpstan/zipball/e285254e60f33c21902efef4a926ca0987c06804",
+                "reference": "e285254e60f33c21902efef4a926ca0987c06804",
                 "shasum": ""
             },
             "require": {
@@ -2680,7 +2676,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-07-29T17:39:32+00:00"
+            "time": "2026-08-04T22:21:45+00:00"
         },
         {
             "name": "phpstan/phpstan-deprecation-rules",
@@ -3391,12 +3387,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Roave/SecurityAdvisories.git",
-                "reference": "87faae4ca4b824c493788fac487f2e212be4fd22"
+                "reference": "50bd2d8224ed2c0a6db8a050790c9c1b9e8acf26"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Roave/SecurityAdvisories/zipball/87faae4ca4b824c493788fac487f2e212be4fd22",
-                "reference": "87faae4ca4b824c493788fac487f2e212be4fd22",
+                "url": "https://api.github.com/repos/Roave/SecurityAdvisories/zipball/50bd2d8224ed2c0a6db8a050790c9c1b9e8acf26",
+                "reference": "50bd2d8224ed2c0a6db8a050790c9c1b9e8acf26",
                 "shasum": ""
             },
             "conflict": {
@@ -4167,8 +4163,8 @@
                 "silverstripe/versioned-admin": ">=1,<1.11.1",
                 "simogeo/filemanager": "<=2.5",
                 "simple-updates/phpwhois": "<=1",
-                "simplesamlphp/saml2": "<=4.20.2|>=5,<5.0.6|>=6,<6.2.1",
-                "simplesamlphp/saml2-legacy": "<=4.20.2",
+                "simplesamlphp/saml2": "<4.19.3|>=4.20,<=4.20.2|>=5,<5.0.6|>=6,<6.2.1",
+                "simplesamlphp/saml2-legacy": "<4.19.3|>=4.20,<=4.20.2",
                 "simplesamlphp/simplesamlphp": "<=2.4.6|>=2.5,<=2.5.1",
                 "simplesamlphp/simplesamlphp-module-casserver": "<=7.0.2",
                 "simplesamlphp/simplesamlphp-module-infocard": "<1.0.1",
@@ -4509,7 +4505,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-03T22:59:19+00:00"
+            "time": "2026-08-05T12:51:34+00:00"
         },
         {
             "name": "sanmai/di-container",
@@ -5894,16 +5890,16 @@
         },
         {
             "name": "squizlabs/php_codesniffer",
-            "version": "3.13.5",
+            "version": "3.13.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/PHPCSStandards/PHP_CodeSniffer.git",
-                "reference": "0ca86845ce43291e8f5692c7356fccf3bcf02bf4"
+                "reference": "4c378e1a528ea066890fc2397cbdd2f94eb2fc91"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/PHPCSStandards/PHP_CodeSniffer/zipball/0ca86845ce43291e8f5692c7356fccf3bcf02bf4",
-                "reference": "0ca86845ce43291e8f5692c7356fccf3bcf02bf4",
+                "url": "https://api.github.com/repos/PHPCSStandards/PHP_CodeSniffer/zipball/4c378e1a528ea066890fc2397cbdd2f94eb2fc91",
+                "reference": "4c378e1a528ea066890fc2397cbdd2f94eb2fc91",
                 "shasum": ""
             },
             "require": {
@@ -5969,7 +5965,7 @@
                     "type": "thanks_dev"
                 }
             ],
-            "time": "2025-11-04T16:30:35+00:00"
+            "time": "2026-08-06T00:17:32+00:00"
         },
         {
             "name": "staabm/side-effects-detector",
@@ -7867,15 +7863,15 @@
         },
         {
             "name": "wp-plugin/action-scheduler",
-            "version": "4.0.0",
+            "version": "4.1.0",
             "source": {
                 "type": "svn",
                 "url": "https://plugins.svn.wordpress.org/action-scheduler/",
-                "reference": "tags/4.0.0"
+                "reference": "tags/4.1.0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://downloads.wordpress.org/plugin/action-scheduler.4.0.0.zip"
+                "url": "https://downloads.wordpress.org/plugin/action-scheduler.4.1.0.zip"
             },
             "require": {
                 "composer/installers": "~1.0|~2.0"
@@ -7894,7 +7890,7 @@
                 "issues": "https://wordpress.org/support/plugin/action-scheduler",
                 "source": "https://plugins.svn.wordpress.org/action-scheduler"
             },
-            "time": "2026-06-16T15:05:50+00:00"
+            "time": "2026-08-05T21:46:00+00:00"
         }
     ],
     "aliases": [],
