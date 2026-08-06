@@ -17,8 +17,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason
  * plugin, so several partial or competing copies can be present and the elected version decides
  * which one answers. Readiness derives from that complete procedural table, the elected version, and
  * the action_scheduler_init lifecycle state. WordPress init remains part of failure context, while
- * the complete table is gated once per scheduling operation: PHP function availability is monotone
- * within a request, so one gate answers for every procedural call behind it.
+ * the complete table is gated once per scheduling operation, and once per queried identity in the
+ * occurrence census: PHP function availability is monotone within a request, so one gate answers for
+ * every procedural call behind it.
  *
  * @internal
  *
@@ -276,9 +277,10 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * {@inheritDoc}
 	 *
 	 * Action Scheduler cannot query multiple exact argument-and-group pairs together, so each identity
-	 * costs one exact query either way. Reading a cadence needs the action itself rather than its ID,
-	 * and an identity's own query matches only its own chain, so hydration stays proportional to the
-	 * chains a scope declares instead of every pending action sharing the hook.
+	 * costs its own exact query plus one hydration per occurrence that query matched. Reading a cadence
+	 * needs the action itself rather than its ID, and an identity's own query matches only its own
+	 * chain, so hydration stays proportional to the chains a scope declares instead of every pending
+	 * action sharing the hook.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
