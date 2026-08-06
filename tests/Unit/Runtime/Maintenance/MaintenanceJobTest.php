@@ -243,6 +243,74 @@ final class MaintenanceJobTest extends TestCase {
 	}
 
 	/**
+	 * A failed authoritative lock read preserves the row and reports its exact storage cause.
+	 *
+	 * @return  void
+	 */
+	public function test_lock_inspection_read_failure_is_logged_and_preserved(): void {
+		$lock_name = self::lock_name( 0 );
+		$lock_raw  = $this->stale_lock_raw();
+		$this->wpdb->put( $lock_name, $lock_raw );
+		$fail_lock_read = static function ( WpdbLockSpy $database ) use ( $lock_name, &$fail_lock_read ): void {
+			if ( \str_contains( (string) \end( $database->recorded_queries ), $lock_name ) ) {
+				$database->last_error = 'scripted lock inspection read failure';
+
+				return;
+			}
+
+			$database->before_next( 'select', $fail_lock_read );
+		};
+		$this->wpdb->before_next( 'select', $fail_lock_read );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $lock_name ] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		$record = $this->logger->records[0];
+		self::assertSame( 'warning', $record['level'] );
+		self::assertSame( 'Skipped an execution-overlap lock during maintenance sweep because its row could not be read; repair WordPress option reads and retry the sweep.', $record['message'] );
+		self::assertSame(
+			array(
+				'identity'     => 'sweep-tests:lock-000',
+				'args_hash'    => self::ARGS_HASH,
+				'phase'        => 'lock-inspection',
+				'error_class'  => EngineError::class,
+				'error_reason' => EngineErrorReason::StorageFailure->value,
+			),
+			$record['context']
+		);
+	}
+
+	/**
+	 * A failed lock read does not stop later rows in the same page from reconciling.
+	 *
+	 * @return  void
+	 */
+	public function test_lock_inspection_read_failure_does_not_stop_later_lock_reconciliation(): void {
+		$first_lock  = self::lock_name( 0 );
+		$second_lock = self::lock_name( 1 );
+		$lock_raw    = $this->stale_lock_raw();
+		$this->wpdb->put( $first_lock, $lock_raw );
+		$this->wpdb->put( $second_lock, $lock_raw );
+		$fail_lock_read = static function ( WpdbLockSpy $database ) use ( $first_lock, &$fail_lock_read ): void {
+			if ( \str_contains( (string) \end( $database->recorded_queries ), $first_lock ) ) {
+				$database->last_error = 'scripted lock inspection read failure';
+
+				return;
+			}
+
+			$database->before_next( 'select', $fail_lock_read );
+		};
+		$this->wpdb->before_next( 'select', $fail_lock_read );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( $lock_raw, $this->wpdb->rows[ $first_lock ] ?? null );
+		self::assertArrayNotHasKey( $second_lock, $this->wpdb->rows );
+		self::assertSame( 'Skipped an execution-overlap lock during maintenance sweep because its row could not be read; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+	}
+
+	/**
 	 * A malformed lock without a Running run is reclaimed and reported with redacted correlation.
 	 *
 	 * @return  void

@@ -257,8 +257,23 @@ final class MaintenanceJob implements JobExecutionInterface {
 				$run_id = null;
 				try {
 					$inspected = $this->guard->inspect_persisted_lock( $identity, $args_hash );
-					$snapshot  = $inspected->is_success() ? $inspected->value : null;
-					$run_id    = $snapshot['lock']['run_id'] ?? null;
+					if ( $inspected->is_failure() ) {
+						$this->logger->warning(
+							'Skipped an execution-overlap lock during maintenance sweep because its row could not be read; repair WordPress option reads and retry the sweep.',
+							array(
+								'identity'     => (string) $identity,
+								'args_hash'    => $args_hash,
+								'phase'        => 'lock-inspection',
+								'error_class'  => $inspected->error::class,
+								'error_reason' => $inspected->error->reason?->value,
+							)
+						);
+
+						continue;
+					}
+
+					$snapshot = $inspected->value;
+					$run_id   = $snapshot['lock']['run_id'] ?? null;
 					if ( null !== $snapshot && null === $run_id ) {
 						$correlation  = OverlapGuard::raw_correlation( $snapshot['raw'] );
 						$identity_key = (string) $identity;
