@@ -448,53 +448,32 @@ final readonly class CleanupIntents {
 	 * @return  void
 	 */
 	private function persist_sweep_cursor( ?string $cursor, ?string $cursor_raw ): void {
+		$outcome_name = null;
+
 		if ( null === $cursor ) {
 			if ( null !== $cursor_raw ) {
-				$outcome = $this->option_rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
-				if ( RowDeleteOutcome::Deleted !== $outcome ) {
-					$this->log_pending_intent(
-						'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
-						array(
-							'phase'   => 'intent-cursor-write',
-							'cursor'  => $cursor,
-							'outcome' => $outcome->name,
-						)
-					);
-				}
-			}
-
-			return;
-		}
-
-		$replacement_raw = \maybe_serialize( array( 'after_name' => $cursor ) );
-		if ( ! \is_string( $replacement_raw ) ) {
-			throw new \LogicException( 'WordPress must serialize the cleanup-intent sweep cursor to a string.' );
-		}
-
-		if ( null === $cursor_raw ) {
-			$outcome = $this->option_rows->insert_if_absent( self::SWEEP_CURSOR_OPTION, $replacement_raw );
-			if ( RowWriteOutcome::Won !== $outcome ) {
-				$this->log_pending_intent(
-					'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
-					array(
-						'phase'   => 'intent-cursor-write',
-						'cursor'  => $cursor,
-						'outcome' => $outcome->name,
-					)
-				);
+				$delete_outcome = $this->option_rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
+				$outcome_name   = RowDeleteOutcome::Deleted === $delete_outcome ? null : $delete_outcome->name;
 			}
 		} else {
-			$outcome = $this->option_rows->compare_and_swap( self::SWEEP_CURSOR_OPTION, $cursor_raw, $replacement_raw );
-			if ( RowWriteOutcome::Won !== $outcome ) {
-				$this->log_pending_intent(
-					'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
-					array(
-						'phase'   => 'intent-cursor-write',
-						'cursor'  => $cursor,
-						'outcome' => $outcome->name,
-					)
-				);
+			$replacement_raw = \maybe_serialize( array( 'after_name' => $cursor ) );
+			if ( ! \is_string( $replacement_raw ) ) {
+				throw new \LogicException( 'WordPress must serialize the cleanup-intent sweep cursor to a string.' );
 			}
+
+			$write_outcome = null === $cursor_raw ? $this->option_rows->insert_if_absent( self::SWEEP_CURSOR_OPTION, $replacement_raw ) : $this->option_rows->compare_and_swap( self::SWEEP_CURSOR_OPTION, $cursor_raw, $replacement_raw );
+			$outcome_name  = RowWriteOutcome::Won === $write_outcome ? null : $write_outcome->name;
+		}
+
+		if ( null !== $outcome_name ) {
+			$this->log_pending_intent(
+				'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
+				array(
+					'phase'   => 'intent-cursor-write',
+					'cursor'  => $cursor,
+					'outcome' => $outcome_name,
+				)
+			);
 		}
 	}
 
