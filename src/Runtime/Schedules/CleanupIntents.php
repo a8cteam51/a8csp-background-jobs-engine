@@ -135,6 +135,16 @@ final readonly class CleanupIntents {
 	public function converge_unknown_chain( string $registration_key, RowWriteOutcome $recorded ): bool {
 		$selected = $this->read_intent( $registration_key );
 		if ( $selected->is_failure() ) {
+			$this->log_pending_intent(
+				'Unknown-schedule cleanup intent could not be selected; a later occurrence or sweep can retry cleanup.',
+				array(
+					'schedule_identity' => $registration_key,
+					'phase'             => 'intent-select',
+					'error_class'       => $selected->error::class,
+					'error_reason'      => $selected->error->reason?->value,
+				)
+			);
+
 			return false;
 		}
 
@@ -274,6 +284,16 @@ final readonly class CleanupIntents {
 	private function converge_selected_intent( string $registration_key, string $expected_raw ): bool {
 		$registration = $this->registry->registration( $registration_key );
 		if ( $registration->is_failure() ) {
+			$this->log_pending_intent(
+				'Unknown-schedule cleanup intent could not be resolved against the schedule registry; a later occurrence or sweep can retry cleanup.',
+				array(
+					'schedule_identity' => $registration_key,
+					'phase'             => 'intent-registry-read',
+					'error_class'       => $registration->error::class,
+					'error_reason'      => $registration->error->reason?->value,
+				)
+			);
+
 			return false;
 		}
 
@@ -324,6 +344,16 @@ final readonly class CleanupIntents {
 
 		$selected = $this->read_intent( $registration_key );
 		if ( $selected->is_failure() ) {
+			$this->log_pending_intent(
+				'Unknown-schedule cleanup intent could not be confirmed cleared; a later sweep can retry any intent that remains pending.',
+				array(
+					'schedule_identity' => $registration_key,
+					'phase'             => 'intent-clear-readback',
+					'error_class'       => $selected->error::class,
+					'error_reason'      => $selected->error->reason?->value,
+				)
+			);
+
 			return false;
 		}
 
@@ -420,7 +450,17 @@ final readonly class CleanupIntents {
 	private function persist_sweep_cursor( ?string $cursor, ?string $cursor_raw ): void {
 		if ( null === $cursor ) {
 			if ( null !== $cursor_raw ) {
-				$this->option_rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
+				$outcome = $this->option_rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
+				if ( RowDeleteOutcome::Deleted !== $outcome ) {
+					$this->log_pending_intent(
+						'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
+						array(
+							'phase'   => 'intent-cursor-write',
+							'cursor'  => $cursor,
+							'outcome' => $outcome->name,
+						)
+					);
+				}
 			}
 
 			return;
@@ -432,9 +472,29 @@ final readonly class CleanupIntents {
 		}
 
 		if ( null === $cursor_raw ) {
-			$this->option_rows->insert_if_absent( self::SWEEP_CURSOR_OPTION, $replacement_raw );
+			$outcome = $this->option_rows->insert_if_absent( self::SWEEP_CURSOR_OPTION, $replacement_raw );
+			if ( RowWriteOutcome::Won !== $outcome ) {
+				$this->log_pending_intent(
+					'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
+					array(
+						'phase'   => 'intent-cursor-write',
+						'cursor'  => $cursor,
+						'outcome' => $outcome->name,
+					)
+				);
+			}
 		} else {
-			$this->option_rows->compare_and_swap( self::SWEEP_CURSOR_OPTION, $cursor_raw, $replacement_raw );
+			$outcome = $this->option_rows->compare_and_swap( self::SWEEP_CURSOR_OPTION, $cursor_raw, $replacement_raw );
+			if ( RowWriteOutcome::Won !== $outcome ) {
+				$this->log_pending_intent(
+					'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
+					array(
+						'phase'   => 'intent-cursor-write',
+						'cursor'  => $cursor,
+						'outcome' => $outcome->name,
+					)
+				);
+			}
 		}
 	}
 
