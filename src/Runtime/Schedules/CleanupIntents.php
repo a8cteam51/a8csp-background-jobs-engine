@@ -162,6 +162,15 @@ final readonly class CleanupIntents {
 		try {
 			$selected_cursor = $this->option_rows->read( self::SWEEP_CURSOR_OPTION );
 			if ( $selected_cursor->is_failure() ) {
+				$this->log_pending_intent(
+					'Unknown-schedule cleanup sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.',
+					array(
+						'phase'        => 'intent-cursor-read',
+						'error_class'  => $selected_cursor->error::class,
+						'error_reason' => $selected_cursor->error->reason?->value,
+					)
+				);
+
 				return;
 			}
 
@@ -173,11 +182,29 @@ final readonly class CleanupIntents {
 			while ( $scanned < self::INTENT_SWEEP_BUDGET ) {
 				$page = $this->option_rows->option_names_after( self::OPTION_PREFIX, $cursor, self::SWEEP_PAGE_SIZE );
 				if ( $page->is_failure() ) {
+					$this->log_pending_intent(
+						'Unknown-schedule cleanup sweep aborted while enumerating intent rows; repair WordPress option reads and retry the sweep.',
+						array(
+							'phase'        => 'intent-enumeration',
+							'error_class'  => $page->error::class,
+							'error_reason' => $page->error->reason?->value,
+						)
+					);
+
 					return;
 				}
 
 				$intents = $this->intents_for_names( $page->value['names'] );
 				if ( $intents->is_failure() ) {
+					$this->log_pending_intent(
+						'Unknown-schedule cleanup sweep aborted while reading a page of intent rows; repair WordPress option reads and retry the sweep.',
+						array(
+							'phase'        => 'intent-read',
+							'error_class'  => $intents->error::class,
+							'error_reason' => $intents->error->reason?->value,
+						)
+					);
+
 					return;
 				}
 

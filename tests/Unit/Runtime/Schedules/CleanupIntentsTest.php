@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
@@ -479,6 +480,37 @@ final class CleanupIntentsTest extends TestCase {
 	}
 
 	/**
+	 * A failed cleanup-intent cursor read reports the aborted sweep without scheduler or row mutation.
+	 *
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_failed_cursor_read(): void {
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 42 );
+		self::assertSame( $this->intent_option_name(), $option_name );
+		$this->wpdb->put( $option_name, $raw );
+		$before = $this->wpdb->rows;
+		$this->wpdb->fail_next_read_at( 'query_filtered' );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertSame( $before, $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'phase'        => 'intent-cursor-read',
+				'error_class'  => EngineError::class,
+				'error_reason' => 'storage_failed',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
 	 * A failed authoritative intent-name scan skips the sweep without scheduler or row mutation.
 	 *
 	 * @return  void
@@ -488,7 +520,9 @@ final class CleanupIntentsTest extends TestCase {
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
 		$this->backend->calls         = array();
+		$this->logger->records        = array();
 		$this->wpdb->recorded_queries = array();
+		$before                       = $this->wpdb->rows;
 		$scan_failures                = 0;
 		$this->wpdb->before_next(
 			'scan',
@@ -501,9 +535,21 @@ final class CleanupIntentsTest extends TestCase {
 		$this->cleanup_intents->converge_pending_intents();
 
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( $before, $this->wpdb->rows );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 1, $scan_failures );
 		self::assertCount( 2, $this->wpdb->recorded_queries );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep aborted while enumerating intent rows; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'phase'        => 'intent-enumeration',
+				'error_class'  => EngineError::class,
+				'error_reason' => 'storage_failed',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
 	}
 
 	/**
@@ -567,6 +613,10 @@ final class CleanupIntentsTest extends TestCase {
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 42 );
 		self::assertSame( $this->intent_option_name(), $option_name );
 		$this->wpdb->put( $option_name, $raw );
+		$cursor_raw = \maybe_serialize( array( 'after_name' => CleanupIntents::OPTION_PREFIX ) );
+		self::assertIsString( $cursor_raw );
+		$this->wpdb->put( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_raw );
+		$before            = $this->wpdb->rows;
 		$row_read_failures = 0;
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
@@ -580,8 +630,20 @@ final class CleanupIntentsTest extends TestCase {
 		$this->cleanup_intents->converge_pending_intents();
 
 		self::assertSame( $raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+		self::assertSame( $before, $this->wpdb->rows );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 1, $row_read_failures );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep aborted while reading a page of intent rows; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'phase'        => 'intent-read',
+				'error_class'  => EngineError::class,
+				'error_reason' => 'storage_failed',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
 	}
 
 	/**
