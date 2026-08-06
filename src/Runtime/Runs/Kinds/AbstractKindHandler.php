@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\KindExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
@@ -41,7 +42,7 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	 * @param   RunTransitions  $terminal_transitions Fenced terminal-write coordinator.
 	 */
 	public function __construct(
-		protected JobRegistry $registry,
+		private JobRegistry $registry,
 		protected LoggerInterface $logger,
 		protected ClockInterface $clock,
 		protected LockWindows $lock_windows,
@@ -55,8 +56,8 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	/**
 	 * Returns the opaque persisted kind key.
 	 *
-	 * Every default below resolves the registry through this key, so a kind declares it here rather
-	 * than in a constant the compiler cannot require.
+	 * Every default that resolves a registration looks it up under this key, so a kind declares it
+	 * here rather than in a constant the compiler cannot require.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -82,7 +83,7 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	#[\Override]
 	public function register( Identity $identity, JobDefinition $definition ): void {
 		$execution_role = $this->execution_role();
-		if ( ! \is_a( $definition->execution, $execution_role ) ) {
+		if ( ! $definition->execution instanceof $execution_role ) {
 			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', $this->key(), $execution_role, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
 
@@ -329,7 +330,7 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  class-string
+	 * @return  class-string<KindExecutionInterface>
 	 */
 	abstract protected function execution_role(): string;
 
@@ -337,7 +338,9 @@ abstract readonly class AbstractKindHandler implements KindHandlerInterface {
 	 * Returns the lifecycle stages owned by this kind.
 	 *
 	 * The first stage is the admission stage used by `initial_pending()`. A kind whose admission
-	 * stage is not its first declared stage overrides `initial_pending()`.
+	 * stage is not its first declared stage overrides `initial_pending()`. Every stage listed here
+	 * needs a `deliver()` arm: a stage this predicate claims and delivery ignores leaves its run
+	 * marked executing until the staleness window expires.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
