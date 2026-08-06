@@ -502,6 +502,9 @@ final readonly class LifecycleEffects {
 	 * @return  true
 	 */
 	private function fire_terminal_hooks( Identity $identity, string $run_id, RunState $state, ?RunFailure $failure ): bool {
+		// A failed transition always arrives with a detail, so the null arm below fires nothing rather than
+		// fabricating a failure: resolve_failure_detail() cannot return null, and maintenance omits a detail
+		// only for a row whose hooks effect is already marked, which the effect loop skips.
 		match ( $state->status ) {
 			RunStatus::Completed  => $this->fire_completed( $identity, $run_id, $state->start_args, $state->previous_completed_run_id ),
 			RunStatus::Failed     => null === $failure ? null : $this->fire_failed( $identity, $failure ),
