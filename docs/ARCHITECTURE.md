@@ -127,8 +127,9 @@ whose fingerprint matches its registration enters the occurrence census. Priorit
 fingerprint, so a priority-only declaration edit preserves an already-converged tick. The recurring
 chain stores no priority; occurrence admission reads the current request's declaration. Exactly
 one tick is the unchanged fast path, a missing tick is recreated, and duplicated ticks are cleared
-and recreated. Action Scheduler obtains the count with one identity-scoped query per
-matching declaration; WP-Cron buckets the requested identities from one cron snapshot.
+and recreated. Action Scheduler obtains the count with one identity-scoped query per matching
+declaration and one hydration per occurrence that query matched; WP-Cron buckets the requested
+identities from one cron snapshot.
 
 Active-run rows admit at most 1,000,000 persisted serialization bytes. Kind-owned state, including
 a chunk queue, receives 983,616 bytes after the 16,384-byte row-envelope reserve; terminal rows are
