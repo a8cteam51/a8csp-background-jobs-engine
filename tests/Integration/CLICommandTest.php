@@ -943,7 +943,17 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 */
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
-		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
+		\add_action(
+			'a8csp_bgje/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
 		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::INSPECTION_SCOPE );
 		$job            = new RecordingJob( self::INSPECTION_JOB );
 		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
@@ -1007,6 +1017,11 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 			$cancelled = $client->cancel( self::INSPECTION_JOB, $run_id );
 			self::assertInstanceOf( Run::class, $cancelled );
 		}
+
+		self::assertTrue(
+			\array_any( $log_records, static fn ( array $record ): bool => \str_contains( $record[1], 'Run attempt failed and was scheduled for retry' ) ),
+			'The published log must carry the engine message because the seeded waiting run must be reported as scheduled for retry'
+		);
 	}
 
 	// endregion.

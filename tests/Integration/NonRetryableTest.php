@@ -46,7 +46,17 @@ final class NonRetryableTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_non_retryable_exception_is_terminal_on_attempt_one(): void {
-		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
+		\add_action(
+			'a8csp_bgje/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
 		$args           = array(
 			'record_id' => 404,
 			'operation' => 'delete',
@@ -125,6 +135,11 @@ final class NonRetryableTest extends AbstractIntegrationTestCase {
 			),
 			$runs['history'],
 			'Inspection must expose the retained failed outcome for manual retry'
+		);
+
+		self::assertTrue(
+			\array_any( $log_records, static fn ( array $record ): bool => \str_contains( $record[1], 'Run failed permanently; correct the cause' ) ),
+			'The published log must carry the engine message because a non-retryable failure must be reported as permanent'
 		);
 	}
 

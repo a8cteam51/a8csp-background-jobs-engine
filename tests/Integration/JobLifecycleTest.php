@@ -126,7 +126,17 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_non_retryable_job_failure_is_terminal_on_attempt_one(): void {
-		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
+		\add_action(
+			'a8csp_bgje/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
 		$args           = array(
 			'account_id' => 84,
 			'mode'       => 'delete',
@@ -187,6 +197,11 @@ final class JobLifecycleTest extends AbstractIntegrationTestCase {
 			),
 			$runs['history'],
 			'Inspection must expose the retained failed outcome for manual retry'
+		);
+
+		self::assertTrue(
+			\array_any( $log_records, static fn ( array $record ): bool => \str_contains( $record[1], 'Run failed permanently; correct the cause' ) ),
+			'The published log must carry the engine message because a non-retryable job failure must be reported as permanent'
 		);
 	}
 

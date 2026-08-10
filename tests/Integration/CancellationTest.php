@@ -136,7 +136,17 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_cancel_during_backoff_clears_the_retry_and_records_cancelled_history(): void {
-		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
+		\add_action(
+			'a8csp_bgje/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
 		$args           = array( 'account_id' => 42 );
 		$job            = new RecordingJob( self::BACKOFF_NAME );
 		$job->throwable = new \RuntimeException( 'Retry after the upstream recovers.' );
@@ -193,6 +203,11 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 			self::terminal_entries( self::BACKOFF_IDENTITY )
 		);
 		self::assert_run_storage_cleared( self::BACKOFF_IDENTITY, $run_id, $args );
+
+		self::assertTrue(
+			\array_any( $log_records, static fn ( array $record ): bool => \str_contains( $record[1], 'Run attempt failed and was scheduled for retry' ) ),
+			'The published log must carry the engine message because the attempt preceding cancellation must be reported as scheduled for retry'
+		);
 	}
 
 	/**

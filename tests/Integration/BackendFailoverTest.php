@@ -152,7 +152,17 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		self::assertIsArray( $registration_before );
 
 		// Synchronizing a consumer scope against an unready backend reports the dormant occurrences it leaves behind.
-		$this->expectOutputRegex( '/Schedule synchronization ran while a scheduling backend was not ready/' );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
+		\add_action(
+			'a8csp_bgje/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
 		$action_scheduler->ready = false;
 		$fallback                = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $fallback );
@@ -166,6 +176,11 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		self::assertSame( 1, $action_scheduler_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
 		self::assertSame( 0, $wp_cron_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
 		self::assertSame( $registration_before, \get_option( $registry_option, null ) );
+
+		self::assertTrue(
+			\array_any( $log_records, static fn ( array $record ): bool => \str_contains( $record[1], 'Schedule synchronization ran while a scheduling backend was not ready' ) ),
+			'The published log must carry the engine message because the sync must report that a backend was not ready'
+		);
 	}
 
 	// endregion.

@@ -67,7 +67,17 @@ final class ProceduralFacadeHooksTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_failed_hooks_fire_identity_specific_then_generic_with_the_same_run_failure(): void {
-		$this->expectOutputRegex( '/Run failed permanently; correct the cause/' );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
+		\add_action(
+			'a8csp_bgje/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
 		$name     = 'failed-job';
 		$identity = self::SCOPE . ':' . $name;
 		$args     = array( 'site_id' => 8 );
@@ -128,6 +138,11 @@ final class ProceduralFacadeHooksTest extends AbstractIntegrationTestCase {
 		self::assertNull( $observed[0]->details );
 		self::assertSame( 1, \did_action( 'a8csp_bgje/failed/' . $identity ) );
 		self::assertSame( 1, \did_action( 'a8csp_bgje/failed' ) );
+
+		self::assertTrue(
+			\array_any( $log_records, static fn ( array $record ): bool => \str_contains( $record[1], 'Run failed permanently; correct the cause' ) ),
+			'The published log must carry the engine message because the procedural facade must report a permanent failure'
+		);
 	}
 
 	// endregion.
