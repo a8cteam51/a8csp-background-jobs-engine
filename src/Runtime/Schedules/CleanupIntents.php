@@ -448,12 +448,12 @@ final readonly class CleanupIntents {
 	 * @return  void
 	 */
 	private function persist_sweep_cursor( ?string $cursor, ?string $cursor_raw ): void {
-		$outcome_name = null;
+		$outcome_value = null;
 
 		if ( null === $cursor ) {
 			if ( null !== $cursor_raw ) {
 				$delete_outcome = $this->option_rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
-				$outcome_name   = RowDeleteOutcome::Deleted === $delete_outcome ? null : $delete_outcome->name;
+				$outcome_value  = RowDeleteOutcome::Deleted === $delete_outcome ? null : $delete_outcome->value;
 			}
 		} else {
 			$replacement_raw = \maybe_serialize( array( 'after_name' => $cursor ) );
@@ -462,16 +462,16 @@ final readonly class CleanupIntents {
 			}
 
 			$write_outcome = null === $cursor_raw ? $this->option_rows->insert_if_absent( self::SWEEP_CURSOR_OPTION, $replacement_raw ) : $this->option_rows->compare_and_swap( self::SWEEP_CURSOR_OPTION, $cursor_raw, $replacement_raw );
-			$outcome_name  = RowWriteOutcome::Won === $write_outcome ? null : $write_outcome->name;
+			$outcome_value = RowWriteOutcome::Won === $write_outcome ? null : $write_outcome->value;
 		}
 
-		if ( null !== $outcome_name ) {
+		if ( null !== $outcome_value ) {
 			$this->log_pending_intent(
 				'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
 				array(
 					'phase'   => 'intent-cursor-write',
 					'cursor'  => $cursor,
-					'outcome' => $outcome_name,
+					'outcome' => $outcome_value,
 				)
 			);
 		}

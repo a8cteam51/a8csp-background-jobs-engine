@@ -871,7 +871,7 @@ final class CleanupIntentsTest extends TestCase {
 			array(
 				'phase'   => 'intent-cursor-write',
 				'cursor'  => $cursor,
-				'outcome' => 'WriteFailed',
+				'outcome' => 'write_failed',
 			),
 			$this->logger->records[0]['context'] ?? null
 		);
@@ -901,7 +901,7 @@ final class CleanupIntentsTest extends TestCase {
 			array(
 				'phase'   => 'intent-cursor-write',
 				'cursor'  => $cursor,
-				'outcome' => 'Lost',
+				'outcome' => 'lost',
 			),
 			$this->logger->records[0]['context'] ?? null
 		);
@@ -933,7 +933,7 @@ final class CleanupIntentsTest extends TestCase {
 			array(
 				'phase'   => 'intent-cursor-write',
 				'cursor'  => $cursor,
-				'outcome' => 'Lost',
+				'outcome' => 'lost',
 			),
 			$this->logger->records[0]['context'] ?? null
 		);
@@ -964,7 +964,7 @@ final class CleanupIntentsTest extends TestCase {
 			array(
 				'phase'   => 'intent-cursor-write',
 				'cursor'  => $cursor,
-				'outcome' => 'WriteFailed',
+				'outcome' => 'write_failed',
 			),
 			$this->logger->records[0]['context'] ?? null
 		);
@@ -999,7 +999,7 @@ final class CleanupIntentsTest extends TestCase {
 			array(
 				'phase'   => 'intent-cursor-write',
 				'cursor'  => null,
-				'outcome' => 'DeleteFailed',
+				'outcome' => 'delete_failed',
 			),
 			$this->logger->records[0]['context'] ?? null
 		);
@@ -1035,7 +1035,7 @@ final class CleanupIntentsTest extends TestCase {
 			array(
 				'phase'   => 'intent-cursor-write',
 				'cursor'  => null,
-				'outcome' => 'ValueMismatch',
+				'outcome' => 'value_mismatch',
 			),
 			$this->logger->records[0]['context'] ?? null
 		);
