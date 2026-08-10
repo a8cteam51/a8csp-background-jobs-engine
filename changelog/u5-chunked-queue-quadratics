@@ -1,4 +1,0 @@
-Significance: patch
-Type: changed
-
-Large Chunked Job queues no longer reserialize the whole growing queue for every generated or context-added chunk, reducing queue-generation and processing latency. A queue mutation whose exact size exceeds the limit only within the list-index envelope is rejected when the attempt commits instead of from the mutation call. That rejection stays terminal and non-retryable, but it reports `payload_rejected` at the scheduling stage rather than `execution_failed` at the execution stage, and carries no `failed_chunk` detail.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-An authoritative option read that failed without a database error message is now reported as a storage failure instead of an absent row, so maintenance sweeps no longer treat an unanswered query as a completed scan.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-A dispatch that arrives as the previous run releases its overlap lane claims the available lane instead of failing with `storage_failed`. Each further attempt, and a lane that stays unclaimable across all of them, is published as a `debug` event, so both reach `a8csp_bgje/log` but not the default error-log sink.

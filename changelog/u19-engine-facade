@@ -1,4 +1,0 @@
-Significance: patch
-Type: changed
-
-WP-CLI users need no changes: run-management and schedule-removal behaviour is preserved while each command addresses its dedicated runtime service directly.

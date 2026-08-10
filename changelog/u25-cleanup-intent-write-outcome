@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-Unknown-schedule delivery reports `converged` as false when the durable cleanup-intent write is indeterminate, and leaves the recurring chain for a later occurrence or the maintenance sweep to clear. The published warning context matches what happened to the chain.

@@ -1,6 +1,0 @@
-Significance: patch
-Type: changed
-
-Execution-overlap lock rows now store only the owner run ID and latest heartbeat. Existing rows containing the former claim timestamp or other additional fields remain readable and are normalized on their next write.
-
-A lane holding such a row is therefore reported by `wp a8csp-bgje locks list` as owned or stale rather than malformed, is ineligible for malformed-lock reclamation, and no longer causes a maintenance warning.

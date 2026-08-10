@@ -1,4 +1,0 @@
-Significance: patch
-Type: changed
-
-Consumers see the same error codes, persisted values, command output and behaviour; three internal failure classifications that no operation could emit are no longer carried by the engine.

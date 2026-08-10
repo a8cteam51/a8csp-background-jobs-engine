@@ -1,4 +1,0 @@
-Significance: patch
-Type: changed
-
-The Action Scheduler backend checks readiness once per scheduling operation instead of re-checking each procedural function behind that gate. WP-Cron resolves one hook's occurrences through a single shared traversal. The scheduler composite is no longer itself a backend implementation, so the backend contract describes only the two backends that implement it. No supported behaviour changes.

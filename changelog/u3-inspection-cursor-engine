@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-Listing runs reports corrupt option rows that an exact-length database filter previously hid, and its warning states that the count covers every row sharing the identity's run option-name prefix, which a longer sibling identity also shares.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-A cleanup-intent sweep that cannot read its cursor, enumerate intent rows, or read a page emits a warning naming the failed phase and directs operators to repair WordPress option reads before retrying the sweep. The two page-level warnings also report the cursor the pass had reached, so repeated failures can be told apart.

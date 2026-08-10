@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-Storage warnings identify the affected store, occurrence-lease failures identify the failed read or write, and their guidance either names the repair or explains that maintenance replays the effect without operator action. Unknown-schedule warnings publish `intent_confirmed` alongside `converged` so consumers can distinguish a confirmed intent from outstanding cleanup; they request scheduler removal for malformed keys only when cleanup remains necessary. Run creation returns distinct `WP_Error` messages that direct a conflicting run option to removal and an unanswered option write to WordPress storage repair. Failed-run help names table, CSV, JSON, count, and YAML output, and invalid formats use the same guidance as run and schedule lists.

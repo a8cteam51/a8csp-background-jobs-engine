@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-Schedule synchronization now directs failed registry reads to WordPress option-read repair, and cancelling a run logs a warning when pending deliveries cannot be cleared after its terminal state is committed.

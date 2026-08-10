@@ -1,4 +1,0 @@
-Significance: patch
-Type: changed
-
-Malformed scheduler-wire deliveries are rejected before run or lock storage is accessed and now emit one warning with bounded identity and run-identifier correlation instead of a quiet debug stale-delivery message. Operators should correct the queued delivery bytes before retrying it.

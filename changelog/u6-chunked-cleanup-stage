@@ -1,6 +1,0 @@
-Significance: minor
-Type: changed
-
-A Chunked Job completes one scheduler delivery earlier once its queue drains, so its overlap lock is released sooner and a waiting dispatch is admitted where it previously saw the lane held.
-
-Cancelling a Chunked Job whose queue has drained is refused only while a continuation is actually pending to complete it. A run left without one is cancellable rather than reported as completing on its own.
