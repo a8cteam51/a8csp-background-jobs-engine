@@ -39,7 +39,7 @@ final class ErrorCodeTest extends TestCase {
 	 * The required vocabulary and additive execution classification retain stable backing values.
 	 *
 	 * @load-bearing durability
-	 * @pin-rationale Failed-run rows persist these exact bytes and are parsed back through ErrorCode::from() and tryFrom(), so a renamed or removed value passes every gate and surfaces only as a hydration ValueError or a row silently reclassified malformed on a live site.
+	 * @pin-rationale Failed-run rows persist these exact bytes and hydrate through ErrorCode::tryFrom(), so the closed backing-value set must stay decodable independent of declaration order; only this test reddens when a case is added.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
