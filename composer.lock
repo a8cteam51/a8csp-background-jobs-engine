@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e410f7233ac34a2d1effe9accfb5336e",
+    "content-hash": "41970276d187d89476a5245f681e33a2",
     "packages": [
         {
             "name": "psr/clock",
@@ -7864,15 +7864,15 @@
         },
         {
             "name": "wp-plugin/action-scheduler",
-            "version": "4.0.0",
+            "version": "4.1.0",
             "source": {
                 "type": "svn",
                 "url": "https://plugins.svn.wordpress.org/action-scheduler/",
-                "reference": "tags/4.0.0"
+                "reference": "tags/4.1.0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://downloads.wordpress.org/plugin/action-scheduler.4.0.0.zip"
+                "url": "https://downloads.wordpress.org/plugin/action-scheduler.4.1.0.zip"
             },
             "require": {
                 "composer/installers": "~1.0|~2.0"
@@ -7891,7 +7891,7 @@
                 "issues": "https://wordpress.org/support/plugin/action-scheduler",
                 "source": "https://plugins.svn.wordpress.org/action-scheduler"
             },
-            "time": "2026-06-16T15:05:50+00:00"
+            "time": "2026-08-05T21:46:00+00:00"
         }
     ],
     "aliases": [],
@@ -7903,7 +7903,7 @@
         "phpcompatibility/phpcompatibility-wp": 15,
         "roave/security-advisories": 20
     },
-    "prefer-stable": true,
+    "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
         "php": ">=8.5",
