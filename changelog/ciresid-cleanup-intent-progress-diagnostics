@@ -1,4 +1,4 @@
 Significance: patch
 Type: fixed
 
-A cleanup intent skipped because a read fails emits a warning naming the failed phase and what can retry the cleanup. A sweep whose cursor update is unconfirmed emits a warning naming the outcome that denied it and explaining that the next sweep resumes from the durable cursor state.
+A cleanup intent skipped because a read fails emits a warning naming the failed phase and what can retry the cleanup. A sweep whose cursor update is unconfirmed emits a warning naming the outcome that denied it — `lost`, `write_failed`, `value_mismatch` or `delete_failed` — and explaining that the next sweep resumes from the durable cursor state.

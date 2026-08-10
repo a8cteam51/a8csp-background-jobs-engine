@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-Consumers of `a8csp_bgje/log` receive cleanup-intent sweep cursor-warning `outcome` values in the engine's snake-case vocabulary: `lost`, `write_failed`, `value_mismatch`, or `delete_failed`, instead of PHP enum case names.
