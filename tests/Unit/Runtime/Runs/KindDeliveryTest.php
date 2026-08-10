@@ -3,13 +3,13 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -28,6 +28,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( ActionDeliveries::class )]
 #[CoversClass( Inspection::class )]
 #[CoversClass( RunStore::class )]
+#[CoversClass( RunTransitions::class )]
 final class KindDeliveryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -284,11 +285,10 @@ final class KindDeliveryTest extends TestCase {
 		$client = $this->rig->operations( self::SCOPE );
 		$client->register( ( new RecordingJob( self::NAME ) )->definition() );
 		$result = $client->dispatch( self::NAME );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertInstanceOf( RunId::class, $result->id );
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**
@@ -300,7 +300,7 @@ final class KindDeliveryTest extends TestCase {
 	 * @return  RunStore
 	 */
 	private function run_store(): RunStore {
-		return new RunStore( self::IDENTITY, $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
+		return new RunStore( $this->identity, $this->rig->clock(), new OptionRows( $this->rig->wpdb() ) );
 	}
 
 	/**

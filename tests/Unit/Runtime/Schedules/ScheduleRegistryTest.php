@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
@@ -12,8 +11,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\RegistrationUpdateOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\UndeclaredOccurrenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -22,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 
@@ -50,7 +48,6 @@ final class ScheduleRegistryWakeupProbe {
  * @version 1.0.0
  */
 #[CoversClass( ScheduleRegistry::class )]
-#[CoversClass( ScopeReplacementOutcome::class )]
 #[UsesClass( EngineLogger::class )]
 final class ScheduleRegistryTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
@@ -133,8 +130,8 @@ final class ScheduleRegistryTest extends TestCase {
 	public function test_scope_sync_and_removal_are_visible_through_schedule_inspection(): void {
 		$nightly = self::schedule( 'nightly', 300 );
 		$hourly  = self::schedule( 'hourly', 3_600 );
-		self::assertInstanceOf( Success::class, $this->client_b->sync( array( $hourly ) ) );
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $nightly ) ) );
+		self::assertTrue( $this->client_b->sync( array( $hourly ) ) );
+		self::assertTrue( $this->client_a->sync( array( $nightly ) ) );
 
 		$scope_a = $this->scope_entries( 'scope-a' );
 		$scope_b = $this->scope_entries( 'scope-b' );
@@ -145,12 +142,12 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertSame( 3_600, $scope_b[0]['recurrence'] );
 
 		$replacement = self::schedule( 'nightly', 600 );
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $replacement ) ) );
+		self::assertTrue( $this->client_a->sync( array( $replacement ) ) );
 		$scope_a = $this->scope_entries( 'scope-a' );
 		self::assertSame( 600, $scope_a[0]['recurrence'] );
 		self::assertSame( self::NOW + 600, $scope_a[0]['next_due'] );
 
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array() ) );
+		self::assertTrue( $this->client_a->sync( array() ) );
 		self::assertSame( array(), $this->scope_entries( 'scope-a' ) );
 		self::assertSame( array( 'scope-b:hourly' ), \array_column( $this->scope_entries( 'scope-b' ), 'identity' ) );
 	}
@@ -166,8 +163,8 @@ final class ScheduleRegistryTest extends TestCase {
 	public function test_scope_sync_persists_one_registration_row_per_scope(): void {
 		$nightly = self::schedule( 'nightly', 300 );
 		$hourly  = self::schedule( 'hourly', 3_600 );
-		self::assertInstanceOf( Success::class, $this->client_b->sync( array( $hourly ) ) );
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $nightly ) ) );
+		self::assertTrue( $this->client_b->sync( array( $hourly ) ) );
+		self::assertTrue( $this->client_a->sync( array( $nightly ) ) );
 
 		$scope_a = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgje_schedule_registrations_scope-a'] ?? null );
 		$scope_b = \maybe_unserialize( $this->rig->wpdb()->rows['a8csp_bgje_schedule_registrations_scope-b'] ?? null );
@@ -190,7 +187,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_occurrence_delivery_advances_registration_effects_behaviorally(): void {
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( self::schedule( 'nightly', 300 ) ) ) );
+		self::assertTrue( $this->client_a->sync( array( self::schedule( 'nightly', 300 ) ) ) );
 
 		$this->rig->run_due();
 
@@ -212,7 +209,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_successful_redeclaration_resets_inactive_episode_markers_without_rewinding_timing(): void {
 		$schedule = self::schedule( 'nightly', 300 );
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
+		self::assertTrue( $this->client_a->sync( array( $schedule ) ) );
 		$registry     = $this->registry();
 		$registration = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $registration );
@@ -228,7 +225,7 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertTrue( $persisted->value['undeclared_escalated'] ?? false );
 
 		$this->rig->backend()->calls = array();
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
+		self::assertTrue( $this->client_a->sync( array( $schedule ) ) );
 
 		$reset = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $reset );
@@ -241,11 +238,11 @@ final class ScheduleRegistryTest extends TestCase {
 		self::assertFalse( $reset->value['undeclared_escalated'] ?? true );
 		self::assertSame( array(), \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'schedule_recurring', 'unschedule' ), true ) ) ) );
 
-		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
-		self::assertSame( UndeclaredOccurrenceOutcome::Recorded, $registry->record_undeclared_occurrence( $identity, 3 ) );
-		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertTrue( $registry->record_undeclared_occurrence( $identity, 3 ) );
 		$this->rig->wpdb()->recorded_queries = array();
-		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $registry->record_undeclared_occurrence( $identity, 3 ) );
+		self::assertFalse( $registry->record_undeclared_occurrence( $identity, 3 ) );
 		self::assertSame( array(), $this->queries_starting_with( 'UPDATE ' ) );
 		$fresh_episode = $registry->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $fresh_episode );
@@ -282,7 +279,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'], reset_undeclared_episodes: true ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'], reset_undeclared_episodes: true ) );
 
 		$expected = $scope;
 
@@ -304,7 +301,7 @@ final class ScheduleRegistryTest extends TestCase {
 	public function test_numeric_scope_and_schedule_components_remain_canonical_strings(): void {
 		$client = $this->rig->operations( '123' );
 		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->sync( array( self::schedule( '456', 300 ) ) ) );
+		self::assertTrue( $client->sync( array( self::schedule( '456', 300 ) ) ) );
 
 		self::assertSame( array( '123:456' ), \array_column( $this->scope_entries( '123' ), 'identity' ) );
 	}
@@ -322,7 +319,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 */
 	public function test_malformed_registry_rows_are_tolerated_without_constructing_classes(): void {
 		$schedule = self::schedule( 'nightly', 300 );
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( $schedule ) ) );
+		self::assertTrue( $this->client_a->sync( array( $schedule ) ) );
 		$raw = \maybe_serialize(
 			array(
 				'scope-a:nightly' => self::registration( $schedule, self::NOW + 300 ),
@@ -349,7 +346,7 @@ final class ScheduleRegistryTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_sync_reports_authoritative_read_failure_without_changing_registry_bytes(): void {
-		self::assertInstanceOf( Success::class, $this->client_a->sync( array( self::schedule( 'nightly', 300 ) ) ) );
+		self::assertTrue( $this->client_a->sync( array( self::schedule( 'nightly', 300 ) ) ) );
 		$option_name = ScheduleRegistry::option_name( 'scope-a' );
 		$before      = $this->rig->wpdb()->rows[ $option_name ] ?? null;
 		self::assertIsString( $before );
@@ -364,9 +361,8 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$result = $this->client_a->sync( array( self::schedule( 'nightly', 300 ) ) );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
 		self::assertSame( array(), \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => \in_array( $call['verb'], array( 'schedule_recurring', 'unschedule' ), true ) ) ) );
 		self::assertSame( $before, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 		self::assertSame( array(), $this->write_queries() );
@@ -391,9 +387,41 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'] );
 
-		self::assertSame( ScopeReplacementOutcome::ReadFailed, $outcome );
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be read; repair WordPress option reads and retry.', $outcome->error->message );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
+	 * Scope removal reports the re-read after a lost delete as a read failure, not write contention.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_scope_removal_reports_read_failure_after_a_lost_delete(): void {
+		$scope_a = self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 );
+		$this->put_fixture( $this->fixtures->schedule_registration( $scope_a ) );
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->wpdb()->script_result( 'delete', 0 );
+		$this->rig->wpdb()->before_next( 'select', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted registry re-read failure';
+			}
+		);
+		$registry = $this->registry();
+
+		$outcome = $registry->replace_scope( 'scope-a', array(), array() );
+
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be read; repair WordPress option reads and retry.', $outcome->error->message );
+		self::assertArrayHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
 	}
 
 	/**
@@ -410,7 +438,9 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope['declarations'] ), $scope['registrations'] );
 
-		self::assertSame( ScopeReplacementOutcome::Corrupt, $outcome );
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( $option_name, $outcome->error->context['option_name'] ?? null );
 		self::assertSame( $poison, $this->rig->wpdb()->rows[ $option_name ] ?? null );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
 	}
@@ -478,6 +508,9 @@ final class ScheduleRegistryTest extends TestCase {
 	/**
 	 * A listener inspecting the same corrupt row cannot recursively emit its warning.
 	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
 	 * @return  void
 	 */
 	public function test_corrupt_scope_warning_is_guarded_against_reentrant_listeners(): void {
@@ -543,8 +576,8 @@ final class ScheduleRegistryTest extends TestCase {
 
 		$outer = $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 );
 
-		self::assertSame( UndeclaredOccurrenceOutcome::Escalated, $nested );
-		self::assertSame( UndeclaredOccurrenceOutcome::AlreadyEscalated, $outer );
+		self::assertTrue( $nested );
+		self::assertFalse( $outer );
 		$persisted = $this->registry()->registration( 'scope-a:nightly' );
 		self::assertInstanceOf( Success::class, $persisted );
 		self::assertIsArray( $persisted->value );
@@ -571,10 +604,201 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$this->rig->wpdb()->script_result( 'update', false );
 
-		self::assertSame( UndeclaredOccurrenceOutcome::Failed, $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertCount( 1, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 1, $this->queries_starting_with( 'UPDATE ' ) );
+	}
+
+	/**
+	 * An invalid aging threshold cannot produce an escalation or touch storage.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_invalid_undeclared_aging_threshold_does_not_escalate_or_touch_storage(): void {
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 0 ) );
+		self::assertSame( array(), $this->rig->wpdb()->recorded_queries );
+	}
+
+	/**
+	 * An unreadable initial scope generation cannot produce an escalation or a write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_initial_read_failure_does_not_escalate_or_write(): void {
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted undeclared-aging read failure';
+			}
+		);
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
+	 * A missing or malformed selected registration cannot produce an escalation or a write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed>|string|null $stored Persisted scope value, or null for an absent row.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'unavailable_undeclared_registration_rows' )]
+	public function test_unavailable_undeclared_registration_does_not_escalate_or_write( array|string|null $stored ): void {
+		if ( null !== $stored ) {
+			$raw = \is_array( $stored ) ? StoreFixtureBuilder::corrupt_row( $stored ) : $stored;
+			$this->rig->wpdb()->put( ScheduleRegistry::option_name( 'scope-a' ), $raw );
+		}
+		$this->rig->wpdb()->recorded_queries = array();
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertSame( array(), $this->write_queries() );
+	}
+
+	/**
+	 * A failed authoritative reread after contention cannot produce an escalation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_contention_reread_failure_does_not_escalate(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+		$rival    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 301 );
+
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$rival['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 301, undeclared_occurrences: 2 );
+		$fixture                                   = $this->fixtures->schedule_registration( $scope );
+		$rival_fixture                             = $this->fixtures->schedule_registration( $rival );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $rival_fixture ): void {
+				$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ): void {
+						$wpdb->last_error = 'scripted undeclared-aging reread failure';
+					}
+				);
+			}
+		);
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertSame( $rival_fixture[1], $this->raw_row() );
+	}
+
+	/**
+	 * A registration row removed at the aging fence cannot produce an escalation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_row_deletion_at_contention_does_not_escalate(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$fixture                                   = $this->fixtures->schedule_registration( $scope );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$option_name = ScheduleRegistry::option_name( 'scope-a' );
+				unset( $wpdb->rows[ $option_name ], $wpdb->autoload[ $option_name ] );
+			}
+		);
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
+	}
+
+	/**
+	 * An ABA restoration after a lost aging write cannot produce an escalation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_aba_restoration_after_contention_does_not_escalate(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+		$rival    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 301 );
+
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$rival['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 301, undeclared_occurrences: 2 );
+		$fixture                                   = $this->fixtures->schedule_registration( $scope );
+		$rival_fixture                             = $this->fixtures->schedule_registration( $rival );
+		$this->put_fixture( $fixture );
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function ( WpdbLockSpy $wpdb ) use ( $fixture, $rival_fixture ): void {
+				$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ) use ( $fixture ): void {
+						$wpdb->put( $fixture[0], $fixture[1] );
+					}
+				);
+			}
+		);
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertSame( $fixture[1], $this->raw_row() );
+	}
+
+	/**
+	 * Permanent aging contention preserves the authoritative rival without escalating.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_undeclared_aging_permanent_contention_does_not_escalate_or_overwrite_the_rival(): void {
+		$schedule = self::schedule( 'nightly', 300 );
+		$scope    = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 );
+
+		$scope['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300, undeclared_occurrences: 2 );
+		$fixture                                   = $this->fixtures->schedule_registration( $scope );
+		$this->put_fixture( $fixture );
+
+		$generation       = 0;
+		$last_applied_raw = null;
+		$contend          = null;
+		$contend          = function ( WpdbLockSpy $wpdb ) use ( &$contend, &$generation, &$last_applied_raw, $schedule ): void {
+			++$generation;
+			$rival = self::scope_fixture( 'scope-a', $schedule, self::NOW + 300 + $generation );
+
+			$rival['registrations']['scope-a:nightly'] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 + $generation, undeclared_occurrences: 2 );
+			$rival_fixture                             = $this->fixtures->schedule_registration( $rival );
+			$wpdb->put( $rival_fixture[0], $rival_fixture[1] );
+			$last_applied_raw = $rival_fixture[1];
+			$wpdb->before_next( 'update', $contend );
+		};
+		$this->rig->wpdb()->before_next( 'update', $contend );
+
+		self::assertFalse( $this->registry()->record_undeclared_occurrence( self::identity( 'nightly' ), 3 ) );
+		self::assertIsString( $last_applied_raw );
+		self::assertSame( $last_applied_raw, $this->raw_row() );
 	}
 
 	/**
@@ -598,13 +822,13 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
 		self::assertSame( self::registration_bytes( $scope_a['registrations'] ), $this->raw_row() );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'UPDATE ' )[0] );
 
 		$this->put_fixture( $this->fixtures->schedule_registration( $scope_a ) );
 		$this->rig->wpdb()->recorded_queries = array();
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', array(), array() ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', array(), array() ) );
 		self::assertArrayNotHasKey( ScheduleRegistry::option_name( 'scope-a' ), $this->rig->wpdb()->rows );
 		self::assertStringContainsString( 'BINARY `option_value` = BINARY ', $this->queries_starting_with( 'DELETE ' )[0] );
 	}
@@ -636,11 +860,11 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function () use ( $next_b ): void {
-				self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-b', self::internal_declarations( $next_b['declarations'] ), $next_b['registrations'] ) );
+				self::assertInstanceOf( Success::class, $this->registry()->replace_scope( 'scope-b', self::internal_declarations( $next_b['declarations'] ), $next_b['registrations'] ) );
 			}
 		);
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
+		self::assertInstanceOf( Success::class, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row( 'scope-a' ) );
@@ -679,7 +903,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
 
 		$expected                                     = $replacement;
 		$expected['registrations']['scope-a:nightly'] = $advanced;
@@ -725,7 +949,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->recorded_queries = array();
 		$registry                            = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $stale['declarations'] ), $stale['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $stale['declarations'] ), $stale['registrations'] ) );
 
 		self::assertSame( array(), $this->write_queries() );
 		self::assertSame( $fixture[1], $this->raw_row() );
@@ -745,7 +969,7 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->put_fixture( $this->fixtures->schedule_registration( $stored ) );
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $replacement['declarations'] ), $replacement['registrations'] ) );
 
 		$registrations = $registry->registrations_for( 'scope-a' );
 		self::assertInstanceOf( Success::class, $registrations );
@@ -780,7 +1004,7 @@ final class ScheduleRegistryTest extends TestCase {
 			}
 		);
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
+		self::assertInstanceOf( Success::class, $this->registry()->replace_scope( 'scope-a', self::internal_declarations( $next_a['declarations'] ), $next_a['registrations'] ) );
 
 		self::assertSame( self::registration_bytes( $next_a['registrations'] ), $this->raw_row() );
 		self::assertSame( $scope_b_raw, $this->raw_row( 'scope-b' ) );
@@ -895,7 +1119,10 @@ final class ScheduleRegistryTest extends TestCase {
 		$this->rig->wpdb()->script_result( 'update', false );
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::CasFailed, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] );
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $outcome->error->message );
 
 		self::assertSame( $fixture[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
@@ -936,7 +1163,7 @@ final class ScheduleRegistryTest extends TestCase {
 		);
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
 		self::assertCount( 2, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 2, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( self::registration_bytes( $scope_a['registrations'] ), $this->raw_row() );
@@ -974,13 +1201,35 @@ final class ScheduleRegistryTest extends TestCase {
 		}
 		$registry = $this->registry();
 
-		self::assertSame( ScopeReplacementOutcome::CasFailed, $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] ) );
+		$outcome = $registry->replace_scope( 'scope-a', self::internal_declarations( $scope_a['declarations'] ), $scope_a['registrations'] );
+		self::assertInstanceOf( Failure::class, $outcome );
+		self::assertInstanceOf( SchedulingError::class, $outcome->error );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $outcome->error->message );
 		self::assertCount( 5, $this->queries_starting_with( 'SELECT ' ) );
 		self::assertCount( 5, $this->queries_starting_with( 'UPDATE ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'INSERT ' ) );
 		self::assertSame( array(), $this->queries_starting_with( 'DELETE ' ) );
 		self::assertSame( $last_rival[1], $this->raw_row() );
 		self::assertNull( $registry->declaration( self::identity( 'nightly' ) ) );
+	}
+
+	// endregion.
+
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies absent and unreadable registration selections.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  iterable<string, array{array<array-key, mixed>|string|null}>
+	 */
+	public static function unavailable_undeclared_registration_rows(): iterable {
+		yield 'missing scope row' => array( null );
+		yield 'undecodable scope row' => array( 'poison-registry-row' );
+		yield 'missing selected registration' => array( array( 'scope-a:other' => StoreFixtureBuilder::schedule_registration_state( 'sibling-fingerprint', self::NOW + 300 ) ) );
+		yield 'malformed selected registration' => array( array( 'scope-a:nightly' => 'malformed' ) );
 	}
 
 	// endregion.

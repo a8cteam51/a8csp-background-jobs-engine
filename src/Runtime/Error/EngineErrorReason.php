@@ -17,17 +17,15 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error;
 enum EngineErrorReason: string {
 	// region FIELDS AND CONSTANTS
 
-	case EngineUnavailable    = 'engine_unavailable';
-	case UnknownJob           = 'unknown_job';
-	case UnknownSchedule      = 'unknown_schedule';
-	case OverlapHeld          = 'overlap_held';
-	case AdmissionConflict    = 'admission_conflict';
-	case PayloadRejected      = 'payload_rejected';
-	case StorageFailure       = 'storage_failed';
-	case RunNotRetained       = 'run_not_retained';
-	case RunNotCancellable    = 'run_not_cancellable';
-	case UnsupportedOperation = 'unsupported_operation';
-	case ExecutionFailed      = 'execution_failed';
+	case UnknownJob        = 'unknown_job';
+	case UnknownSchedule   = 'unknown_schedule';
+	case OverlapHeld       = 'overlap_held';
+	case AdmissionConflict = 'admission_conflict';
+	case PayloadRejected   = 'payload_rejected';
+	case StorageFailure    = 'storage_failed';
+	case RunNotRetained    = 'run_not_retained';
+	case RunNotCancellable = 'run_not_cancellable';
+	case ExecutionFailed   = 'execution_failed';
 
 	// endregion
 }

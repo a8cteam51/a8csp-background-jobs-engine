@@ -33,7 +33,8 @@ final readonly class RunsCommand {
 	 *
 	 * Table, JSON, and YAML include live state plus bounded recent history. CSV includes live state
 	 * only, and count is the number of live runs. Every format reports omitted unreadable rows on
-	 * STDERR without adding diagnostic prose to rendered data.
+	 * STDERR without adding diagnostic prose to rendered data; that count covers every corrupt row
+	 * sharing this identity's run option-name prefix, which a longer sibling identity also shares.
 	 *
 	 * ## OPTIONS
 	 *
@@ -195,15 +196,7 @@ final readonly class RunsCommand {
 	 * : Show only failed runs belonging to the exact scope. Valid only with list.
 	 *
 	 * [--format=<format>]
-	 * : Render list output in the selected format. Defaults to table.
-	 * ---
-	 * options:
-	 *   - table
-	 *   - csv
-	 *   - json
-	 *   - count
-	 *   - yaml
-	 * ---
+	 * : Render list output as table, csv, json, count, or yaml. Defaults to table.
 	 *
 	 * ## EXAMPLES
 	 *
@@ -301,7 +294,7 @@ final readonly class RunsCommand {
 					}
 				}
 
-				// WP-CLI injects documented YAML defaults into every action, so the fallback stays code-only.
+				// No subcommand synopsis declares a YAML default for --format, so the default lives here.
 				$format = $assoc_args['format'] ?? 'table';
 				if ( ! Format::is_supported( $format ) ) {
 					return array(
@@ -420,7 +413,7 @@ final readonly class RunsCommand {
 	// region HELPERS
 
 	/**
-	 * Delegates cancellation to the internal engine facade and reports its result.
+	 * Delegates cancellation to the background-work admission coordinator and reports its result.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -431,13 +424,13 @@ final readonly class RunsCommand {
 	 * @return  void
 	 */
 	private function cancel_run( Identity $identity, RunId $run_id ): void {
-		$engine = Component::get_engine();
-		if ( null === $engine ) {
+		$dispatcher = Component::get_dispatcher();
+		if ( null === $dispatcher ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		$result = $engine->cancel( $identity, (string) $run_id );
+		$result = $dispatcher->cancel( $identity, (string) $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;
@@ -527,7 +520,7 @@ final readonly class RunsCommand {
 	}
 
 	/**
-	 * Delegates one retry to the internal engine facade and reports its result.
+	 * Delegates one retry to the background-work admission coordinator and reports its result.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -538,13 +531,13 @@ final readonly class RunsCommand {
 	 * @return  void
 	 */
 	private function retry_failed_run( Identity $identity, RunId $run_id ): void {
-		$engine = Component::get_engine();
-		if ( null === $engine ) {
+		$dispatcher = Component::get_dispatcher();
+		if ( null === $dispatcher ) {
 			\WP_CLI::error( 'The background jobs engine is unavailable; run the command after plugins_loaded.' );
 			return;
 		}
 
-		$result = $engine->retry_failed( $identity, (string) $run_id );
+		$result = $dispatcher->retry_failed( $identity, (string) $run_id );
 		if ( $result->is_failure() ) {
 			\WP_CLI::error( $result->error->message );
 			return;
@@ -612,12 +605,12 @@ final readonly class RunsCommand {
 		 *
 		 * @var \wpdb $wpdb
 		 */
-		$option_names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( FailedRunStore::OPTION_PREFIX ) . '%' ) );
-		if ( '' !== $wpdb->last_error ) {
+		$selected = new OptionRows( $wpdb )->option_names( FailedRunStore::OPTION_PREFIX );
+		if ( $selected->is_failure() ) {
 			return null;
 		}
 
-		return self::identities_from_option_names( $option_names );
+		return self::identities_from_option_names( $selected->value );
 	}
 
 	/**

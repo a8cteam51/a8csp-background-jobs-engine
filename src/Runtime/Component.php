@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBac
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockRepair;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockInspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
@@ -50,16 +50,6 @@ final class Component extends AbstractComponent {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Engine published by the successfully initialized component.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @var     EngineFacade|null
-	 */
-	private static ?EngineFacade $engine = null;
-
-	/**
 	 * Whether engine wiring is currently in flight.
 	 *
 	 * @since   1.0.0
@@ -80,14 +70,14 @@ final class Component extends AbstractComponent {
 	private static ?Inspection $inspection = null;
 
 	/**
-	 * Explicit malformed-lock repair service published by the initialized component.
+	 * Read-only lock inspection service published by the initialized component.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     LockRepair|null
+	 * @var     LockInspection|null
 	 */
-	private static ?LockRepair $lock_repair = null;
+	private static ?LockInspection $lock_inspection = null;
 
 	/**
 	 * Registered background-work definitions published by the initialized component.
@@ -164,7 +154,12 @@ final class Component extends AbstractComponent {
 	// region INHERITED METHODS
 
 	/**
-	 * Builds the engine graph and publishes its supported facades.
+	 * Builds the engine graph and publishes its supported services.
+	 *
+	 * The optional boundary parameters exist so the boot path itself can be exercised against
+	 * deterministic clock, randomness, logging, database and scheduler substitutes.
+	 *
+	 * @internal Engine wiring only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -177,7 +172,7 @@ final class Component extends AbstractComponent {
 	 * @param   \wpdb|null               $wpdb       Database boundary, or null for the WordPress global.
 	 * @param   array|null               $backends   Scheduler boundaries, or null for production backends.
 	 *
-	 * @throws  \InvalidArgumentException When the scheduler backend list is empty or contains an invalid backend.
+	 * @throws  \InvalidArgumentException When the scheduler backend list is empty.
 	 * @throws  \Throwable                When wiring fails; the in-flight guard is cleared before the failure escapes.
 	 *
 	 * @return  void
@@ -213,15 +208,15 @@ final class Component extends AbstractComponent {
 			$guard                = new OverlapGuard( $clock, $logger, $option_rows, $lock_windows );
 			$overlap_identity     = new OverlapIdentity();
 			$stores               = new StoreFactory( $clock, $option_rows, $logger );
-			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
-			$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
-			$lock_repair          = new LockRepair( $option_rows, $guard, $stores, $lock_windows, $terminal_transitions );
 			$backends           ??= array(
 				new ActionSchedulerBackend(),
 				new WPCronBackend(),
 			);
 			$scheduler            = new SchedulerFacade( $backends );
 			$delivery_scheduler   = new DeliveryScheduler( $scheduler, $clock );
+			$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
+			$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $delivery_scheduler, $logger, $terminal_effects );
+			$lock_inspection      = new LockInspection( $option_rows, $guard, $lock_windows );
 			$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 			$job_handler          = new JobKindHandler( $registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 			$chunked_job_handler  = new ChunkedJobKindHandler( $registry, $delivery_scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
@@ -229,30 +224,28 @@ final class Component extends AbstractComponent {
 				$job_handler->key()         => $job_handler,
 				$chunked_job_handler->key() => $chunked_job_handler,
 			);
-			$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-			$dispatcher           = new Dispatcher( $registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
+			$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions, $logger );
+			$dispatcher           = new Dispatcher( $registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 			$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
 			$occurrence_lease     = new OccurrenceLease( $option_rows, $clock, $randomizer );
-			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $clock, $logger );
+			$cleanup_intents      = new CleanupIntents( $schedules, $scheduler, $option_rows, $randomizer, $logger );
 			$occurrence_delivery  = new OccurrenceDelivery( $schedules, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
-			$maintenance_job      = new MaintenanceJob( $option_rows, $reconciliation, $guard, $cleanup_intents, $logger );
+			$maintenance_job      = new MaintenanceJob( $option_rows, $reconciliation, $guard, $stores, $cleanup_intents, $logger );
 			$dispatcher->register( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ), JobDefinition::job( MaintenanceJob::NAME, $maintenance_job ) );
 			$schedule_api         = new ScheduleOperations( $schedules, $scheduler, $clock, $occurrence_delivery, $logger );
 			$maintenance_schedule = new MaintenanceSchedule( $schedule_api, $logger );
 			$inspection           = new Inspection( $schedules, $registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $option_rows, $lock_windows, $clock );
-			$engine               = new EngineFacade( $schedule_api, $dispatcher );
 
 			$this->action_deliveries    = $action_deliveries;
 			$this->occurrence_delivery  = $occurrence_delivery;
 			$this->maintenance_schedule = $maintenance_schedule;
 
-			self::$engine      = $engine;
-			self::$inspection  = $inspection;
-			self::$lock_repair = $lock_repair;
-			self::$scheduler   = $scheduler;
-			self::$registry    = $registry;
-			self::$schedules   = $schedule_api;
-			self::$dispatcher  = $dispatcher;
+			self::$inspection      = $inspection;
+			self::$lock_inspection = $lock_inspection;
+			self::$scheduler       = $scheduler;
+			self::$registry        = $registry;
+			self::$schedules       = $schedule_api;
+			self::$dispatcher      = $dispatcher;
 		} catch ( \Throwable $throwable ) {
 			self::$booting = false;
 
@@ -311,7 +304,7 @@ final class Component extends AbstractComponent {
 		$schedules  = self::$schedules;
 		$dispatcher = self::$dispatcher;
 		$inspection = self::$inspection;
-		if ( null === self::$engine || null === $registry || null === $schedules || null === $dispatcher || null === $inspection ) {
+		if ( null === $registry || null === $schedules || null === $dispatcher || null === $inspection ) {
 			throw new EngineUnavailableException( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully; invoke engine operations from init or a later hook.' );
 		}
 
@@ -323,15 +316,17 @@ final class Component extends AbstractComponent {
 	// region GETTERS
 
 	/**
-	 * Returns the initialized engine, or null before component boot.
+	 * Returns the initialized background-work admission coordinator, or null before component boot.
+	 *
+	 * @internal CLI retained-run retry and cancellation only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  EngineFacade|null
+	 * @return  Dispatcher|null
 	 */
-	public static function get_engine(): ?EngineFacade {
-		return self::$engine;
+	public static function get_dispatcher(): ?Dispatcher {
+		return self::$dispatcher;
 	}
 
 	/**
@@ -349,17 +344,31 @@ final class Component extends AbstractComponent {
 	}
 
 	/**
-	 * Returns the initialized malformed-lock repair service, or null before component boot.
+	 * Returns the initialized lock inspection service, or null before component boot.
 	 *
-	 * @internal Explicit CLI lock repair only.
+	 * @internal CLI lock inspection only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  LockRepair|null
+	 * @return  LockInspection|null
 	 */
-	public static function get_lock_repair(): ?LockRepair {
-		return self::$lock_repair;
+	public static function get_lock_inspection(): ?LockInspection {
+		return self::$lock_inspection;
+	}
+
+	/**
+	 * Returns the initialized schedule operations, or null before component boot.
+	 *
+	 * @internal Destructive CLI schedule operations only.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  ScheduleOperations|null
+	 */
+	public static function get_schedules(): ?ScheduleOperations {
+		return self::$schedules;
 	}
 
 	/**

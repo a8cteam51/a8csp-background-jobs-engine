@@ -73,9 +73,9 @@ final class MaintenanceScheduleTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_corrupt_registry_preserves_the_chain_until_reclaim_and_next_sync(): void {
-		$engine = Component::get_engine();
-		self::assertNotNull( $engine );
-		$maintenance = new MaintenanceSchedule( $engine->schedules, $this->rig->logger() );
+		$schedules = Component::get_schedules();
+		self::assertNotNull( $schedules );
+		$maintenance = new MaintenanceSchedule( $schedules, $this->rig->logger() );
 		$option_name = ScheduleRegistry::option_name( Identity::ENGINE_SCOPE );
 		$poison      = 'poison-maintenance-registry-row';
 		$this->rig->wpdb()->put( $option_name, $poison );
@@ -120,9 +120,9 @@ final class MaintenanceScheduleTest extends TestCase {
 	public function test_dormant_backend_does_not_warn_during_engine_maintenance_sync(): void {
 		$this->rig->tear_down();
 		$this->rig = EngineRig::set_up( self::NOW, 2 );
-		$engine    = Component::get_engine();
-		self::assertNotNull( $engine );
-		$maintenance                  = new MaintenanceSchedule( $engine->schedules, $this->rig->logger() );
+		$schedules = Component::get_schedules();
+		self::assertNotNull( $schedules );
+		$maintenance                  = new MaintenanceSchedule( $schedules, $this->rig->logger() );
 		$backends                     = $this->rig->backends();
 		$backends[0]->ready           = false;
 		$this->rig->logger()->records = array();

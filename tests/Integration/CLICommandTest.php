@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
@@ -10,10 +9,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -178,14 +178,14 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 */
 	public function test_cancel_surfaces_the_zero_chunk_completeness_refusal(): void {
 		$this->expect_option( self::cancel_chunked_job_run_option_name() );
-		$option_name = $this->seed_cancel_chunked_job_pending_cleanup();
+		$option_name = $this->seed_cancel_chunked_job_awaiting_its_continuation();
 
 		$result = self::run_command_with_globals( 'runs', array( '--require=' . self::CANCEL_CHUNKED_JOB_BOOTSTRAP ), 'cancel', self::CANCEL_CHUNKED_JOB_NAME, self::RUN_ID );
 		self::assertTrue( \delete_option( $option_name ), 'The completeness fixture must remain retained after refusal' );
 
 		self::assertSame( 1, $result['exit_code'] );
 		self::assertSame( '', $result['stdout'] );
-		self::assertSame( 'Error: Run "' . self::RUN_ID . '" has no chunks left to process; the pending cleanup completes it.' . "\n", $result['stderr'] );
+		self::assertSame( 'Error: Run "' . self::RUN_ID . '" has no chunks left to process; the pending continuation completes it.' . "\n", $result['stderr'] );
 	}
 
 	/**
@@ -450,20 +450,19 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * The real lock commands list redacted corruption and repair the maintenance lane directly.
+	 * The real lock command lists malformed corruption with redacted correlation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_locks_list_preserves_and_repair_clears_a_malformed_lock_after_superseding_its_run(): void {
+	public function test_locks_list_reports_a_malformed_lock_without_exposing_its_bytes(): void {
 		$args      = array( 'source' => 'cli-boundary' );
 		$builder   = StoreFixtureBuilder::for_identity( self::CANCEL_NAME );
 		$args_hash = $builder->args_hash( $args );
 		$lock_name = OverlapGuard::OPTION_PREFIX . self::CANCEL_NAME . '_' . $args_hash;
 		$lock_raw  = 'integration-secret-malformed-lock';
-		$run_name  = $this->seed_cancel_run();
 		self::assertTrue( \update_option( $lock_name, $lock_raw, false ) );
 
 		try {
@@ -484,26 +483,8 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 			self::assertSame( \substr( \hash( 'sha256', $lock_raw ), 0, 16 ), $row['raw_sha256'] ?? null );
 			self::assertStringNotContainsString( $lock_raw, $listed['stdout'] );
 			self::assertSame( $lock_raw, \get_option( $lock_name ) );
-
-			$repaired = self::run_locks_command( 'repair', self::CANCEL_NAME, '--args-hash=' . $args_hash, '--yes' );
-
-			self::assertSame( 0, $repaired['exit_code'] );
-			self::assertSame( '', $repaired['stderr'] );
-			self::assertStringContainsString( 'identity=' . self::CANCEL_NAME . "\n", $repaired['stdout'] );
-			self::assertStringContainsString( 'args_hash=' . $args_hash . "\n", $repaired['stdout'] );
-			self::assertStringContainsString( "runs_superseded=1\n", $repaired['stdout'] );
-			self::assertStringContainsString( "lock_cleared=true\n", $repaired['stdout'] );
-			self::assertStringNotContainsString( $lock_raw, $repaired['stdout'] );
-			\wp_cache_delete( $lock_name, 'options' );
-			\wp_cache_delete( $run_name, 'options' );
-			self::assertFalse( \get_option( $lock_name, false ) );
-			$run = \get_option( $run_name );
-			self::assertIsArray( $run );
-			self::assertSame( RunStatus::Superseded->value, $run['status'] ?? null );
-			self::assertArrayNotHasKey( 'pending', $run );
 		} finally {
 			\delete_option( $lock_name );
-			\delete_option( $run_name );
 		}
 	}
 
@@ -962,21 +943,30 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 */
 	#[Group( 'degraded' )]
 	public function test_seeded_waiting_run_renders_through_normal_and_degraded_backends(): void {
-		$this->expectOutputRegex( '/Run attempt failed and was scheduled for retry/' );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
+		\add_action(
+			'a8csp_bgje/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
 		$client         = \A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component::operations( self::INSPECTION_SCOPE );
 		$job            = new RecordingJob( self::INSPECTION_JOB );
 		$job->throwable = new \RuntimeException( 'Retry the inspection fixture.' );
 		$client->register( $job->definition() );
 		$schedule = new Schedule( self::INSPECTION_SCHEDULE, Recurrence::every( 300 ), self::INSPECTION_JOB, array( 'source' => 'schedule' ) );
 		$synced   = $client->sync( array( $schedule ) );
-		self::assertInstanceOf( Success::class, $synced );
+		self::assertTrue( $synced );
 		$retry_policy = new RetryPolicy( max_attempts: 2, base_delay: 60, multiplier: 1, max_delay: 60 );
 		\add_filter( 'a8csp_bgje/retry_policy/' . self::INSPECTION_JOB_IDENTITY, static fn (): RetryPolicy => $retry_policy );
 
 		$enqueued = $client->dispatch( self::INSPECTION_JOB, array( 'source' => 'manual' ) );
-		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertInstanceOf( Run::class, $enqueued->value );
-		$run_id = (string) $enqueued->value->id;
+		self::assertInstanceOf( Run::class, $enqueued );
+		$run_id = (string) $enqueued->id;
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::INSPECTION_JOB_IDENTITY );
 
 		try {
@@ -1025,8 +1015,13 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 			self::assertSame( 'started', $history_rows[0]['outcome'] ?? null );
 		} finally {
 			$cancelled = $client->cancel( self::INSPECTION_JOB, $run_id );
-			self::assertInstanceOf( Success::class, $cancelled );
+			self::assertInstanceOf( Run::class, $cancelled );
 		}
+
+		self::assertTrue(
+			\array_any( $log_records, static fn ( array $record ): bool => \str_contains( $record[1], 'Run attempt failed and was scheduled for retry' ) ),
+			'The published log must carry the engine message because the seeded waiting run must be reported as scheduled for retry'
+		);
 	}
 
 	// endregion.
@@ -1202,18 +1197,18 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * Persists one materialized zero-chunk chunked job waiting for cleanup.
+	 * Persists one materialized zero-chunk chunked job whose continuation is still pending.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  string Active-run option name.
 	 */
-	private function seed_cancel_chunked_job_pending_cleanup(): string {
+	private function seed_cancel_chunked_job_awaiting_its_continuation(): string {
 		$args    = array( 'source' => 'cli-completeness-boundary' );
 		$builder = StoreFixtureBuilder::for_identity( self::CANCEL_CHUNKED_JOB_NAME );
 		$now     = \time();
-		$state   = new RunState( RunStatus::Running, 'chunked_job', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now );
+		$state   = new RunState( RunStatus::Running, 'chunked_job', false, $args, $builder->args_hash( $args ), array(), 0, 2, $now, $now, PendingAction::single( 'continue', $now + 60, 10 ) );
 		$fixture = $builder->run( self::RUN_ID, $state );
 		self::persist_store_fixture( $fixture );
 

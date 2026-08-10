@@ -41,7 +41,7 @@ cd a8csp-background-jobs-engine
 composer install --no-dev
 ```
 
-Action Scheduler is optional and preferred when ready; when absent, the engine runs on WP-Cron alone. **Action Scheduler 4.0.0 is the supported floor.** Chunked Jobs schedule each successor as a unique action that differs from the running one only in its sequence argument, and Action Scheduler made unique scheduling args-aware in 4.0.0. An older initialized copy is treated as unusable rather than trusted: the engine runs on WP-Cron and reports the unsupported version in its scheduling diagnostics. Action Scheduler elects the highest version among every bundled copy on the site, so the deciding version is not necessarily the one shipped beside any single plugin.
+Action Scheduler is optional and preferred when ready; when absent, the engine runs on WP-Cron alone. **Action Scheduler 4.1.0 is the supported floor.** Chunked Jobs schedule each successor as a unique action that differs from the running one only in its sequence argument, and Action Scheduler made unique scheduling args-aware in 4.0.0; that is the functional requirement. The floor sits above it because 4.1.0 hardened deserialization of stored schedule data, and the engine declines to drive an elected copy below that. An initialized copy below 4.1.0 is treated as unusable rather than trusted: the engine runs on WP-Cron and flags the elected copy as unsupported in its scheduling diagnostics. Action Scheduler elects the highest version among every bundled copy on the site, so the deciding version is not necessarily the one shipped beside any single plugin.
 
 ## Depending on the engine
 
@@ -238,6 +238,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 
 final class RecountCommentsExecution implements ChunkedJobExecutionInterface {
 	public const string NAME = 'recount-comments';
@@ -308,9 +309,20 @@ function my_plugin_dispatch_recount(): void {
 
 	update_option( 'my_plugin_last_recount_run', (string) $run->id );
 }
+
+add_action(
+	'a8csp_bgje/completed/my-plugin:recount-comments',
+	static function ( RunId $run_id, array $start_args ): void {
+		my_plugin_cleanup_recount( (string) $run_id, $start_args );
+	},
+	10,
+	2
+);
 ```
 
 Chunks run one at a time with a short pause between them. `ChunkedRunContextInterface` also exposes `prepend_chunk()`, `get_run_id()`, and `get_start_args()`. A failed chunked job starts a fresh run from its retained arguments and retained priority through `runs()->retry_failed()`; the retry replays both values directly instead of resolving priority again. A retained entry without a priority field uses engine default 10.
+
+`ChunkedJobExecutionInterface` defines queue generation and chunk processing; post-queue work belongs on the completed hook above, whose payload and delivery guarantees are covered in [Reacting to run lifecycles](#4-reacting-to-run-lifecycles).
 
 ### 4. Reacting to run lifecycles
 
@@ -382,7 +394,7 @@ live in the CLI — see "WP-CLI".
 
 ### 5. Handling failures
 
-The identity-specific `a8csp_bgje/failed/{identity}` hook fires before the generic `a8csp_bgje/failed` hook; both receive the same `RunFailure` object. Crash-recovery replay can reconstruct an equivalent value. Throw `NonRetryableException` from `handle()`, `generate_queue()`, or `process_chunk()` to fail permanently without consuming the remaining automatic attempts. An uncaught portability or size rejection from the chunked run context, for a chunk or resulting queue, is also deterministic: the failing invocation counts once, the engine schedules no automatic retry, and the remaining allowance stays unused.
+The identity-specific `a8csp_bgje/failed/{identity}` hook fires before the generic `a8csp_bgje/failed` hook; both receive the same `RunFailure` object. Crash-recovery replay can reconstruct an equivalent value. Throw `NonRetryableException` from `handle()`, `generate_queue()`, or `process_chunk()` to fail permanently without consuming the remaining automatic attempts. An uncaught portability or size rejection is also deterministic: the failing invocation counts once, the engine schedules no automatic retry, and the remaining allowance stays unused. A queue that crosses the byte limit by more than its index envelope is refused by the chunked run context as the mutation is made; one that crosses it only within that envelope is refused when the attempt commits, and reports `payload_rejected` at the scheduling stage.
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
@@ -525,7 +537,11 @@ The `job()` and `chunked_job()` constructors bind the built-in kind to its typed
 
 `JobExecutionInterface` requires exactly `handle( array $start_args, RunContextInterface $context ): void`. The definition supplies the name and policy, so the execution role carries no naming, policy, or lifecycle-reaction methods. A normal return succeeds. A handler that catches its own failure and returns normally therefore records no failed attempt and leaves the retry budget untouched. Only a throwable that escapes the handler fails the attempt and follows the retry policy, except `NonRetryableException`, which fails permanently.
 
-`JobOptions` carries five independent optional policies: `max_runtime`, `retry`, `overlap`, `overlap_key`, and `priority`. Null uses the documented default for each policy except priority, where it leaves the other resolution rungs operative. `max_runtime` supplies the per-invocation crash-reclamation credit: the engine credits the handler for this duration before its heartbeat begins aging through a separately resolved lock-staleness window. It never interrupts the handler. `jobs()->register()` rejects a non-null value below one second, so `0` is invalid rather than unlimited. Null selects 300 seconds, and declarations above 21,600 seconds (6 hours) remain valid but clamp to that effective credit. An unlimited credit would leave a crashed run's valid lock unreclaimable: under the default `OverlapPolicy::Reject`, every later matching dispatch would be refused, and `locks repair` could not clear the lock because it repairs malformed locks only.
+`JobOptions` carries five independent optional policies: `max_runtime`, `retry`, `overlap`, `overlap_key`, and `priority`. Null uses the documented default for each policy except priority, where it leaves the other resolution rungs operative. `max_runtime` supplies the per-invocation crash-reclamation credit: the engine credits the handler for this duration before its heartbeat begins aging through a separately resolved lock-staleness window. It never interrupts the handler. `jobs()->register()` rejects a non-null value below one second, so `0` is invalid rather than unlimited. Null selects 300 seconds, and declarations above 21,600 seconds (6 hours) remain valid but clamp to that effective credit. An unlimited credit would leave a crashed run's valid lock unreclaimable: under the default `OverlapPolicy::Reject`, every later matching dispatch would be refused because maintenance could never classify the valid lock as stale.
+
+Maintenance also crash-fails a persisted `Running`, executing run when schema-invalid lock bytes hide its lock heartbeat and its run-row heartbeat is stale. Delivery ownership stamps the lock and run row from the same credited timestamp, so the run-row heartbeat is valid liveness evidence in that case. A stale non-executing run with no pending-action descriptor follows the same recovery path; a fresh row remains preserved. The later lock phase reads active-run values in bounded batches, retains only unreadable-row and Running-lane liveness, and exact-deletes an inspected malformed generation only when no Running row occupies its lane. An unreadable active-run row preserves every malformed lane for that identity. A changed or absent generation loses the exact-delete fence silently, while an option-delete failure emits a redacted operator warning.
+
+While a non-executing row is fresh and preserved, `wp a8csp-bgje runs cancel` can resolve it only when the identity has a live executable registration matching the persisted kind; otherwise cancellation returns `unknown_job`. Once the heartbeat is stale, maintenance can crash-reclaim the engine-installed `job` and `chunked_job` kinds without that consumer registration and then reclaim the orphaned malformed lock.
 
 Neither `JobOptions` nor `Schedule` validates priority during construction. `jobs()->register()` rejects an out-of-range job default, `schedules()->sync()` rejects an out-of-range schedule value, and `jobs()->dispatch()` rejects an out-of-range explicit argument. The remaining defaults are a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
 
@@ -576,7 +592,7 @@ Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guar
 
 ## Admission, overlap, and catch-up policies
 
-Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. `overlap_held` and `admission_conflict` are different answers. `overlap_held` means a run owns the lane and is doing the work, so skipping is correct. `admission_conflict` means admission lost a race to a rival dispatch and admitted nothing. **Dispatch admits again on your behalf when that happens**, up to three attempts in total, because a lost attempt leaves the lane exactly as it found it and never reaches your handler; an attempt that follows also takes custody of replaying a supersession the losing attempt could not restore. `admission_conflict` therefore reaches you only when a lane stayed contended across every attempt, which makes it worth logging rather than retrying by hand. Re-admission is logged at debug level. Scheduled occurrence delivery admits once, because the scheduler redelivers a due occurrence on its own. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
+Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. `overlap_held` and `admission_conflict` are different answers. `overlap_held` means a run owns the lane and is doing the work, so skipping is correct. `admission_conflict` means admission lost a race to a rival dispatch and admitted nothing. **Dispatch admits again on your behalf when that happens**, up to three attempts in total, because a lost attempt leaves the lane exactly as it found it and never reaches your handler; an attempt that follows also takes custody of replaying a supersession the losing attempt could not restore. Where dispatch re-admits on your behalf, `admission_conflict` therefore reaches you only when a lane stayed contended across every attempt, which makes it worth logging rather than retrying by hand. Re-admission is logged at debug level. Scheduled occurrence delivery admits once, because the scheduler redelivers a due occurrence on its own. Manual schedule dispatch also admits once, and nothing redelivers it, so that caller owns the retry; it also reports `admission_conflict` before any admission is attempted when another delivery holds that schedule's occurrence decision. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
 
 | Overlap | `run_once` catch-up (default) | `skip` catch-up |
 | --- | --- | --- |
@@ -667,8 +683,8 @@ This table covers engine-enforced identity, payload, scheduling-admission, stora
 
 The engine is designed for a handful of plugins with tens of jobs and schedules each. Its supported operating envelope is:
 
-- **Schedules per scope:** low tens. Each scope's registrations live in one option row that every occurrence rewrites, so co-firing hundreds of schedules for one scope adds contention. For declarations whose fingerprints match, synchronization censuses every ready backend. Action Scheduler issues one identity-scoped, identifier-only occurrence query per declaration, while WP-Cron buckets the requested identities from one cron snapshot. The aggregate count lets the unchanged-declaration fast path distinguish exactly one tick from a missing or duplicated chain.
-- **Chunked Job chunk count:** thousands is fine; the queue is capped at 983,616 persisted serialization bytes, but chunk *count* is not. Queue generation serializes each growing candidate queue, and each context mutation serializes its candidate queue, so tens of thousands of tiny chunks is expensive. Prefer fewer, larger chunks or paginate a parent chunked job.
+- **Schedules per scope:** low tens. Each scope's registrations live in one option row that every occurrence rewrites, so co-firing hundreds of schedules for one scope adds contention. For declarations whose fingerprints match, synchronization censuses every ready backend. Action Scheduler issues one identity-scoped occurrence query per declaration and then hydrates each occurrence it matched, so a converged chain costs two queries per declaration and a duplicated one costs a further query per surplus occurrence; WP-Cron buckets the requested identities from one cron snapshot. The aggregate count lets the unchanged-declaration fast path distinguish exactly one tick from a missing or duplicated chain.
+- **Chunked Job chunk count:** thousands is fine; the queue is capped at 983,616 persisted serialization bytes, but chunk *count* is not. Each chunk is measured once as it is generated and each context mutation measures only its own chunk, so the queue cost is linear in chunk count. Prefer fewer, larger chunks anyway: every chunk is a separate scheduled delivery, and that overhead dominates.
 - **`history_size` filter:** the default 30 is generous; there is no hard maximum, so a very large value grows the per-identity history row.
 - **Action Scheduler group rows:** the engine creates one AS group per scope-qualified Job or Chunked Job identity. Action Scheduler does not garbage-collect groups, so retired identities leave rows behind, but lifetime run count does not increase this table.
 
@@ -698,13 +714,12 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 | Purge every failed-run store | `wp a8csp-bgje failed-runs purge --all` |
 | Cancel a retained run | `wp a8csp-bgje runs cancel <identity> <run_id>` |
 | List runs and recent history | `wp a8csp-bgje runs list <identity> [--format=<format>]` |
-| List execution-overlap locks | `wp a8csp-bgje locks list [--format=<table\|json\|csv\|yaml>]` |
-| Repair a malformed execution-overlap lock | `wp a8csp-bgje locks repair <identity> [--args-hash=<hash>] [--yes]` |
+| List execution-overlap locks | `wp a8csp-bgje locks list [--format=<format>]` |
 | List schedules | `wp a8csp-bgje schedules list [--scope=<scope>] [--format=<format>]` |
 | Remove every schedule in one scope | `wp a8csp-bgje schedules remove <scope> [--yes]` |
 | Destroy all engine state (development reset) | `wp a8csp-bgje reset [--yes]` |
 
-Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. `failed-runs list`, `runs list`, and `schedules list` accept `table`, `csv`, `json`, `count`, or `yaml`; `locks list` accepts `table`, `json`, `csv`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Maintenance preserves malformed lock rows and logs redacted correlation for review; `locks repair` fences matching Running rows before exact-deleting the reviewed malformed generation and prompts unless `--yes`. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
+Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
 
 ## Releasing
 

@@ -11,7 +11,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\BackendInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
@@ -91,7 +91,6 @@ final readonly class Dispatcher {
 	 *
 	 * @param   JobRegistry         $registry               Registered work definitions.
 	 * @param   array               $handlers               Kind handlers keyed by their persisted keys.
-	 * @param   BackendInterface    $scheduler              Scheduling facade boundary.
 	 * @param   DeliveryScheduler   $delivery_scheduler     Lifecycle-delivery scheduler.
 	 * @param   OverlapGuard        $overlap_guard          Execution-overlap guard.
 	 * @param   OverlapIdentity     $overlap_identity       Stable single-flight identity resolver.
@@ -104,7 +103,6 @@ final readonly class Dispatcher {
 	public function __construct(
 		private JobRegistry $registry,
 		private array $handlers,
-		private BackendInterface $scheduler,
 		private DeliveryScheduler $delivery_scheduler,
 		private OverlapGuard $overlap_guard,
 		private OverlapIdentity $overlap_identity,
@@ -224,15 +222,12 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
 	public function dispatch( Identity $identity, array $args = array(), ?int $fire_at = null, ?int $priority = null ): AbstractResult {
-		$kind = $this->registry->kind( $identity );
-		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
+		$registration = $this->resolve_registration( $identity );
+		if ( $registration instanceof Failure ) {
+			return $registration;
 		}
-		$handler = $this->handler( $kind );
-		$options = $handler->options( $identity );
-		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
-		}
+		$handler = $registration['handler'];
+		$options = $registration['options'];
 
 		return $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $args, $fire_at, $priority, $options->overlap ?? OverlapPolicy::Reject ) );
 	}
@@ -253,15 +248,12 @@ final readonly class Dispatcher {
 	 */
 	#[\NoDiscard( 'a scheduled-target dispatch failure must be handled, not dropped' )]
 	public function dispatch_scheduled_target( Identity $identity, array $args, ?int $priority = null, ?\Closure $on_accepted = null, bool $terminalize_overlap_key_failure = false ): AbstractResult {
-		$kind = $this->registry->kind( $identity );
-		if ( null === $kind ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
+		$registration = $this->resolve_registration( $identity );
+		if ( $registration instanceof Failure ) {
+			return $registration;
 		}
-		$handler = $this->handler( $kind );
-		$options = $handler->options( $identity );
-		if ( null === $handler->execution( $identity ) || null === $options ) {
-			return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
-		}
+		$handler = $registration['handler'];
+		$options = $registration['options'];
 
 		return $this->dispatch_resolved( $handler, $options, $identity, $args, null, $priority, $options->overlap ?? OverlapPolicy::Reject, $on_accepted, terminalize_overlap_key_failure: $terminalize_overlap_key_failure );
 	}
@@ -338,7 +330,7 @@ final readonly class Dispatcher {
 		$result        = $this->imperative_result( $this->dispatch_resolved( $handler, $options, $identity, $entry['start_args'], null, $entry['priority'], $retry_overlap, resolved_args_hash: $args_hash ) );
 		if ( $result->is_success() && ! $failed_store->remove( $run_id ) ) {
 			$this->logger->warning(
-				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data.', $run_id ),
+				\sprintf( 'Retried run "%s" could not be removed from retained failed-run data; the failed-run store does not report why. Repair WordPress option reads and writes, then purge that identity\'s failed-run data before retrying the same retained run.', $run_id ),
 				array(
 					'identity' => (string) $identity,
 					'run_id'   => $run_id,
@@ -422,7 +414,7 @@ final readonly class Dispatcher {
 			return new Failure( $cancellation_error );
 		}
 
-		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'], fn () => $this->scheduler->unschedule_run( ActionDeliveries::DELIVER_HOOK, (string) $identity, $run_id ) );
+		$cancelled = $this->terminal_transitions->cancel_run( $handler, $identity, $run_id, $state, $run_store, $snapshot['raw'] );
 		if ( $cancelled instanceof Failure ) {
 			return $cancelled;
 		}
@@ -514,11 +506,8 @@ final readonly class Dispatcher {
 		// The guard decides liveness against the incumbent's own window and reports the generation it decided
 		// under, which is what the admitted run is stamped with.
 		$claim      = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
-		$created_at = $claim->claimed_at ?? $created_at;
-		if (
-			LockClaimOutcome::Malformed === $claim->outcome
-			|| LockClaimOutcome::Indeterminate === $claim->outcome
-		) {
+		$created_at = $claim->admitted_at ?? $created_at;
+		if ( LockClaimOutcome::Indeterminate === $claim->outcome ) {
 			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}
 		if ( LockClaimOutcome::Contended === $claim->outcome ) {
@@ -556,8 +545,8 @@ final readonly class Dispatcher {
 		$takeover = $admission['takeover'];
 
 		$pending = $state->pending;
-		if ( null !== $pending && 'single' === $pending->mode ) {
-			$fire_at         = $pending->fire_at ?? throw new \LogicException( 'Pending single-action delivery requires an integer fire time.' );
+		if ( null !== $pending && ! $pending->is_async() ) {
+			$fire_at         = $pending->fire_at;
 			$heartbeat_error = match ( $this->overlap_guard->heartbeat( $identity, $args_hash, $run_id, $fire_at ) ) {
 				HeartbeatOutcome::Owned => null,
 				HeartbeatOutcome::Lost, HeartbeatOutcome::GenerationMismatch => new EngineError( \sprintf( '%1$s "%2$s" lost lock ownership while preparing its timed action; dispatch it again against the current lock state.', $kind, (string) $identity ), reason: EngineErrorReason::AdmissionConflict, context: array( 'identity' => (string) $identity ), ),
@@ -598,7 +587,7 @@ final readonly class Dispatcher {
 
 		if ( ! $latest_pointer->record( $run_id, $args_hash ) ) {
 			$this->logger->warning(
-				'Latest-run pointer persistence failed; discovery metadata may lag until a later repair.',
+				'Latest-run pointer repair failed; the latest-run pointer store does not report why. Repair WordPress option reads and writes before relying on discovery metadata.',
 				array(
 					'identity' => (string) $identity,
 					'run_id'   => $run_id,
@@ -656,7 +645,7 @@ final readonly class Dispatcher {
 			$on_accepted?->__invoke();
 			if ( ! $this->stores->run_history( $identity )->record_started( $run_id, $args_hash ) ) {
 				$this->logger->warning(
-					'Started run history could not be persisted; inspection data may be incomplete.',
+					'Started run history could not be persisted; the run-history store does not report why. Repair WordPress option reads and writes before relying on inspection data.',
 					array(
 						'identity' => (string) $identity,
 						'run_id'   => $run_id,
@@ -697,11 +686,8 @@ final readonly class Dispatcher {
 		// A resolver failure has no trustworthy client overlap lane, so its diagnostic run cannot contend with working admissions.
 		$args_hash = $this->salted_args_hash( $args_hash, $run_id );
 		$claim     = $this->overlap_guard->claim( $identity, $args_hash, $run_id );
-		$now       = $claim->claimed_at ?? $now;
-		if (
-			LockClaimOutcome::Malformed === $claim->outcome
-			|| LockClaimOutcome::Indeterminate === $claim->outcome
-		) {
+		$now       = $claim->admitted_at ?? $now;
+		if ( LockClaimOutcome::Indeterminate === $claim->outcome ) {
 			return $this->invalid_lock_selection_failure( $kind, $identity, $run_id );
 		}
 		if ( LockClaimOutcome::Claimed !== $claim->outcome ) {
@@ -715,22 +701,6 @@ final readonly class Dispatcher {
 
 			return $state;
 		}
-		if ( null === $state ) {
-			$this->overlap_guard->release( $identity, $args_hash, $run_id );
-
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, (string) $identity ),
-					reason: EngineErrorReason::StorageFailure,
-					context: array(
-						'identity' => (string) $identity,
-						'run_id'   => $run_id,
-						'kind'     => $kind,
-					),
-				)
-			);
-		}
-
 		$on_accepted?->__invoke();
 		$terminalized = $this->terminal_transitions->fail_run( $handler, $identity, $run_id, $state, $run_store, $error, 1, RunFailureStage::execution(), ErrorCode::ExecutionFailed, $handler->failure_details( $state ) );
 		if ( ! $terminalized ) {
@@ -782,23 +752,6 @@ final readonly class Dispatcher {
 			}
 
 			return $state;
-		}
-		if ( null === $state ) {
-			if ( LockClaimOutcome::Claimed === $claim->outcome ) {
-				$this->overlap_guard->release( $identity, $args_hash, $run_id );
-			}
-
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Run "%1$s" for %2$s "%3$s" could not be persisted; remove the conflicting run option before retrying.', $run_id, $kind, (string) $identity ),
-					reason: EngineErrorReason::StorageFailure,
-					context: array(
-						'identity' => (string) $identity,
-						'run_id'   => $run_id,
-						'kind'     => $kind,
-					),
-				)
-			);
 		}
 		if ( LockClaimOutcome::Claimed === $claim->outcome ) {
 			return array(
@@ -1041,6 +994,49 @@ final readonly class Dispatcher {
 	}
 
 	/**
+	 * Returns the dispatch failure for an absent or incomplete live registration.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete scope-qualified work identity.
+	 *
+	 * @return  Failure<EngineError>
+	 */
+	private function unregistered_dispatch_failure( Identity $identity ): Failure {
+		return new Failure( new EngineError( \sprintf( 'Background-work "%s" is not registered; register it before dispatching.', (string) $identity ), reason: EngineErrorReason::UnknownJob, context: array( 'identity' => (string) $identity ), ) );
+	}
+
+	/**
+	 * Resolves one live registration and its policy declaration for dispatch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete scope-qualified work identity.
+	 *
+	 * @throws  \LogicException When the engine graph has no handler for the installed kind.
+	 *
+	 * @return  array{handler: KindHandlerInterface, options: JobOptions}|Failure<EngineError>
+	 */
+	private function resolve_registration( Identity $identity ): array|Failure {
+		$kind = $this->registry->kind( $identity );
+		if ( null === $kind ) {
+			return $this->unregistered_dispatch_failure( $identity );
+		}
+		$handler = $this->handler( $kind );
+		$options = $handler->options( $identity );
+		if ( null === $handler->execution( $identity ) || null === $options ) {
+			return $this->unregistered_dispatch_failure( $identity );
+		}
+
+		return array(
+			'handler' => $handler,
+			'options' => $options,
+		);
+	}
+
+	/**
 	 * Resolves a persisted kind and verifies that the live identity still belongs to it.
 	 *
 	 * @since   1.0.0
@@ -1054,8 +1050,10 @@ final readonly class Dispatcher {
 	 * @return  KindHandlerInterface|Failure<EngineError>
 	 */
 	private function registered_handler_for_persisted_kind( Identity $identity, string $run_id, string $kind, string $operation ): KindHandlerInterface|Failure {
+		// Kind agreement follows from the handler map being keyed by each handler's own key, because every
+		// execution() resolves through a lookup filtered on that same key.
 		$handler = $this->handlers[ $kind ] ?? null;
-		if ( null === $handler || $kind !== $this->registry->kind( $identity ) || null === $handler->execution( $identity ) ) {
+		if ( null === $handler || null === $handler->execution( $identity ) ) {
 			return $this->incompatible_kind_registration( $identity, $run_id, $kind, $operation );
 		}
 

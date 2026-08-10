@@ -15,9 +15,15 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 enum LockClaimOutcome: string {
 	// region FIELDS AND CONSTANTS
 
-	case Claimed       = 'claimed';
-	case Contended     = 'contended';
-	case Malformed     = 'malformed';
+	case Claimed   = 'claimed';
+	case Contended = 'contended';
+
+	/**
+	 * No lock this claim can act on: the authoritative row was unreadable, absent after an unanswered write or exhausted lost-insert retries, or does not parse.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	case Indeterminate = 'indeterminate';
 
 	// endregion

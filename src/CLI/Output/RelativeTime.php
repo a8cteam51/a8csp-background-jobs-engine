@@ -12,7 +12,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class RelativeTime {
+final class RelativeTime {
 	// region FIELDS AND CONSTANTS
 
 	/**

@@ -31,16 +31,10 @@ final readonly class Failure extends AbstractResult {
 	 * @version 1.0.0
 	 *
 	 * @param   TError $error Error carried by the failure.
-	 *
-	 * @throws  \LogicException When the supplied value does not implement the error contract.
 	 */
 	public function __construct(
-		public mixed $error,
-	) {
-		if ( ! $this->error instanceof ErrorInterface ) {
-			throw new \LogicException( 'A failed result requires an error implementing ErrorInterface.' );
-		}
-	}
+		public ErrorInterface $error,
+	) {}
 
 	// endregion
 

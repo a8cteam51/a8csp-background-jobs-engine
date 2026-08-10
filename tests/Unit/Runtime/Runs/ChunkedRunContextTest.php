@@ -3,11 +3,12 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ChunkedRunContext;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -285,9 +286,172 @@ final class ChunkedRunContextTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A back insertion crossing the aggregate byte ceiling is refused and reports the exact queue size.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_append_chunk_rejects_a_mutation_crossing_the_persisted_byte_ceiling(): void {
+		$chunk   = self::ceiling_chunk();
+		$base    = self::queue_just_under_the_ceiling( $chunk );
+		$context = new ChunkedRunContext( 'run-id', array( 'site_id' => 7 ), $base );
+		$caught  = null;
+
+		try {
+			$context->append_chunk( $chunk );
+		} catch ( InvalidChunkException $exception ) {
+			$caught = $exception;
+		}
+
+		self::assertInstanceOf( InvalidChunkException::class, $caught );
+		self::assertSame( \sprintf( 'Chunked Job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', self::persisted_bytes( array( ...$base, $chunk ) ), RunStore::MAX_KIND_STATE_BYTES ), $caught->getMessage() );
+	}
+
+	/**
+	 * A front insertion crossing the aggregate byte ceiling is refused and reports the exact queue size.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_prepend_chunk_rejects_a_mutation_crossing_the_persisted_byte_ceiling(): void {
+		$chunk   = self::ceiling_chunk();
+		$base    = self::queue_just_under_the_ceiling( $chunk );
+		$context = new ChunkedRunContext( 'run-id', array( 'site_id' => 7 ), $base );
+		$caught  = null;
+
+		try {
+			$context->prepend_chunk( $chunk );
+		} catch ( InvalidChunkException $exception ) {
+			$caught = $exception;
+		}
+
+		self::assertInstanceOf( InvalidChunkException::class, $caught );
+		self::assertSame( \sprintf( 'Chunked Job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', self::persisted_bytes( array( ...$base, $chunk ) ), RunStore::MAX_KIND_STATE_BYTES ), $caught->getMessage() );
+	}
+
+	/**
+	 * A refused mutation is never buffered, so it does not consume the remaining queue allowance.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_refused_mutation_leaves_the_remaining_queue_allowance_intact(): void {
+		$accepted = array( 'accepted' => true );
+		$context  = new ChunkedRunContext( 'run-id', array( 'site_id' => 7 ), self::queue_just_under_the_ceiling( self::ceiling_chunk() ) );
+
+		try {
+			$context->append_chunk( self::ceiling_chunk() );
+		} catch ( InvalidChunkException ) {
+			$context->append_chunk( $accepted );
+		}
+
+		self::assertSame( $accepted, \array_slice( $context->get_queue(), -1 )[0] ?? null );
+	}
+
+	/**
+	 * Buffered mutations accumulate, so chunks that each fit are refused once together they do not.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_buffered_mutations_accumulate_against_the_persisted_byte_ceiling(): void {
+		$chunk   = self::ceiling_chunk();
+		$base    = self::queue_just_under_the_ceiling( self::ceiling_chunk() );
+		$context = new ChunkedRunContext( 'run-id', array( 'site_id' => 7 ), \array_slice( $base, 0, \count( $base ) - 1 ) );
+		$caught  = null;
+
+		$context->append_chunk( $chunk );
+
+		try {
+			$context->append_chunk( $chunk );
+		} catch ( InvalidChunkException $exception ) {
+			$caught = $exception;
+		}
+
+		self::assertInstanceOf( InvalidChunkException::class, $caught );
+		self::assertCount( \count( $base ), $context->get_queue() );
+	}
+
+	/**
+	 * A queue over the ceiling only within its index envelope is admitted and settled at commit.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_queue_over_the_ceiling_only_within_its_index_envelope_is_admitted(): void {
+		$base    = self::queue_just_under_the_ceiling( self::ceiling_chunk() );
+		$padding = self::chunk_filling( RunStore::MAX_KIND_STATE_BYTES - self::persisted_bytes( $base ) );
+		self::assertLessThanOrEqual( RunStore::MAX_KIND_STATE_BYTES, self::persisted_bytes( $base ) + self::persisted_bytes( $padding ) );
+		self::assertGreaterThan( RunStore::MAX_KIND_STATE_BYTES, self::persisted_bytes( array( ...$base, $padding ) ) );
+
+		$context = new ChunkedRunContext( 'run-id', array( 'site_id' => 7 ), $base );
+		$context->append_chunk( $padding );
+
+		self::assertSame( $padding, \array_slice( $context->get_queue(), -1 )[0] ?? null );
+	}
+
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Returns one chunk sized just inside the per-chunk portable payload limit.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private static function ceiling_chunk(): array {
+		return self::chunk_filling( 8_000 );
+	}
+
+	/**
+	 * Returns one chunk whose persisted representation is at most the requested byte length.
+	 *
+	 * @param   int $bytes Target persisted byte length.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private static function chunk_filling( int $bytes ): array {
+		$payload = \max( 1, $bytes - 32 );
+		while ( self::persisted_bytes( array( 'payload' => \str_repeat( 'a', $payload ) ) ) > $bytes && 1 < $payload ) {
+			--$payload;
+		}
+
+		return array( 'payload' => \str_repeat( 'a', $payload ) );
+	}
+
+	/**
+	 * Returns a base queue whose serialization leaves room for less than one further ceiling chunk.
+	 *
+	 * @param   array<array-key, mixed> $chunk Repeated queue member.
+	 *
+	 * @return  list<array<array-key, mixed>>
+	 */
+	private static function queue_just_under_the_ceiling( array $chunk ): array {
+		return \array_fill( 0, \intdiv( RunStore::MAX_KIND_STATE_BYTES, self::persisted_bytes( $chunk ) ), $chunk );
+	}
+
+	/**
+	 * Returns the byte length of one argument array's persisted representation.
+	 *
+	 * @param   array<array-key, mixed> $arguments Portable argument array.
+	 *
+	 * @return  int
+	 */
+	private static function persisted_bytes( array $arguments ): int {
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- The fixture measures the same serialization grammar the run store persists.
+		return \strlen( \serialize( $arguments ) );
+	}
 
 	/**
 	 * Starts one chunked job and drives its start and first continuation actions through registered hooks.
@@ -302,13 +466,12 @@ final class ChunkedRunContextTest extends TestCase {
 		$this->client->register( $definition );
 		$result = $this->client->dispatch( $definition->name, $start_args );
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertInstanceOf( RunId::class, $result->id );
 		$this->rig->run_due();
 		$this->rig->run_due();
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**
@@ -340,10 +503,11 @@ final class ChunkedRunContextTest extends TestCase {
 		};
 
 		$this->start_and_deliver_first_chunk( $chunked_job, array( 'site_id' => 7 ) );
-		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 2; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
+		$this->rig->assert_completed();
 		self::assertInstanceOf( \InvalidArgumentException::class, $caught );
 		self::assertSame( 'Chunked Job chunk arguments must contain only null, scalar, or nested array values.', $caught->getMessage() );
 		self::assertCount( 2, $chunked_job->process_calls );

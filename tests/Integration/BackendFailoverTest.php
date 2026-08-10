@@ -146,26 +146,41 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 
 		$preferred = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $preferred );
-		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 0, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
+		self::assertSame( 0, $wp_cron_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
 		$registration_before = \get_option( $registry_option, null );
 		self::assertIsArray( $registration_before );
 
 		// Synchronizing a consumer scope against an unready backend reports the dormant occurrences it leaves behind.
-		$this->expectOutputRegex( '/Schedule synchronization ran while a scheduling backend was not ready/' );
+		/** @var list<array{string, string, array<array-key, mixed>}> $log_records */
+		$log_records = array();
+		\add_filter( 'a8csp_bgje/log_to_error_log', static fn (): bool => false );
+		\add_action(
+			'a8csp_bgje/log',
+			static function ( string $level, string $message, array $context ) use ( &$log_records ): void {
+				$log_records[] = array( $level, $message, $context );
+			},
+			10,
+			3
+		);
 		$action_scheduler->ready = false;
 		$fallback                = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 		self::assertInstanceOf( Success::class, $fallback );
-		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 1, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
+		self::assertSame( 1, $wp_cron_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
 
 		$action_scheduler->ready = true;
 		$converged               = $schedules->sync( self::CONVERGENCE_SCOPE, $declarations );
 
 		self::assertInstanceOf( Success::class, $converged );
-		self::assertSame( 1, $action_scheduler_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
-		self::assertSame( 0, $wp_cron_probe->scheduled_count( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ), self::CONVERGENCE_IDENTITY ) );
+		self::assertSame( 1, $action_scheduler_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
+		self::assertSame( 0, $wp_cron_probe->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, array( self::CONVERGENCE_IDENTITY ) )[ self::CONVERGENCE_IDENTITY ]['count'] );
 		self::assertSame( $registration_before, \get_option( $registry_option, null ) );
+
+		self::assertTrue(
+			\array_any( $log_records, static fn ( array $record ): bool => \str_contains( $record[1], 'Schedule synchronization ran while a scheduling backend was not ready' ) ),
+			'The published log must carry the engine message because the sync must report that a backend was not ready'
+		);
 	}
 
 	// endregion.
@@ -197,8 +212,8 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock, $logger );
 		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
-		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 		$delivery_scheduler   = new DeliveryScheduler( $scheduler, $clock );
+		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $delivery_scheduler, $logger, $terminal_effects );
 		$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 		$job_handler          = new JobKindHandler( $job_registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$chunked_job_handler  = new ChunkedJobKindHandler( $job_registry, $delivery_scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
@@ -206,9 +221,9 @@ final class BackendFailoverTest extends AbstractIntegrationTestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 		$occurrence_lease     = new OccurrenceLease( $rows, $clock, $randomizer );
-		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $clock, $logger );
+		$cleanup_intents      = new CleanupIntents( $registry, $scheduler, $rows, $randomizer, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 
 		return new ScheduleOperations( $registry, $scheduler, $clock, $occurrence_delivery, $logger );

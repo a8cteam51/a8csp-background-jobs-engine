@@ -71,7 +71,10 @@ final class ScheduleRegistry {
 	/**
 	 * Corrupt-row warnings currently crossing the logger boundary, keyed by exact option name.
 	 *
-	 * @var array<string, true>
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     array<string, true>
 	 */
 	private array $corrupt_warnings_in_flight = array();
 
@@ -214,10 +217,10 @@ final class ScheduleRegistry {
 	 *
 	 * @throws  \InvalidArgumentException When a registration identity is invalid or belongs to another scope.
 	 *
-	 * @return  ScopeReplacementOutcome Classified persistence outcome.
+	 * @return  AbstractResult<true, SchedulingError>
 	 */
 	#[\NoDiscard( 'a schedule-registry persistence failure must be handled, not dropped' )]
-	public function replace_scope( string $scope, array $schedules, array $registrations, bool $reset_undeclared_episodes = false ): ScopeReplacementOutcome {
+	public function replace_scope( string $scope, array $schedules, array $registrations, bool $reset_undeclared_episodes = false ): AbstractResult {
 		$scope_registrations = self::scope_registrations( $scope, $registrations );
 		if ( null === $scope_registrations ) {
 			throw new \InvalidArgumentException( 'Schedule registration identities must be canonical and belong to the bound scope.' );
@@ -236,7 +239,7 @@ final class ScheduleRegistry {
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$read = $this->rows->read( $option_name );
 			if ( $read->is_failure() ) {
-				return ScopeReplacementOutcome::ReadFailed;
+				return new Failure( SchedulingError::registry_read_failure( $scope ) );
 			}
 
 			$expected_raw = $read->value;
@@ -244,14 +247,14 @@ final class ScheduleRegistry {
 				if ( array() === $scope_registrations ) {
 					$this->retain_scope( $scope, $schedules );
 
-					return ScopeReplacementOutcome::Persisted;
+					return new Success( true );
 				}
 
 				$replacement_raw = self::serialize_registrations( $replacement_baseline );
 				if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $option_name, $replacement_raw ) ) {
 					$this->retain_scope( $scope, $schedules );
 
-					return ScopeReplacementOutcome::Persisted;
+					return new Success( true );
 				}
 
 				continue;
@@ -259,7 +262,7 @@ final class ScheduleRegistry {
 
 			$stored = RawOptionDecoder::decode( $expected_raw );
 			if ( ! \is_array( $stored ) ) {
-				return ScopeReplacementOutcome::Corrupt;
+				return new Failure( SchedulingError::registry_corrupt( $scope, $option_name ) );
 			}
 
 			$replacement_registrations = $replacement_baseline;
@@ -279,19 +282,19 @@ final class ScheduleRegistry {
 			if ( $replacement_registrations === $stored ) {
 				$this->retain_scope( $scope, $schedules );
 
-				return ScopeReplacementOutcome::Persisted;
+				return new Success( true );
 			}
 
 			if ( array() === $scope_registrations ) {
 				if ( RowDeleteOutcome::Deleted === $this->rows->delete_if_value_matches( $option_name, $expected_raw ) ) {
 					$this->retain_scope( $scope, $schedules );
 
-					return ScopeReplacementOutcome::Persisted;
+					return new Success( true );
 				}
 
 				$current = $this->rows->read( $option_name );
 				if ( $current->is_failure() ) {
-					return ScopeReplacementOutcome::ReadFailed;
+					return new Failure( SchedulingError::registry_read_failure( $scope ) );
 				}
 
 				// A lost delete whose row is already gone means another writer reached the goal state first.
@@ -299,10 +302,10 @@ final class ScheduleRegistry {
 				if ( null === $current_raw ) {
 					$this->retain_scope( $scope, $schedules );
 
-					return ScopeReplacementOutcome::Persisted;
+					return new Success( true );
 				}
 				if ( $current_raw === $expected_raw ) {
-					return ScopeReplacementOutcome::CasFailed;
+					return new Failure( SchedulingError::registry_persist_failure( $scope ) );
 				}
 
 				continue;
@@ -313,14 +316,14 @@ final class ScheduleRegistry {
 			if ( RowWriteOutcome::Won === $write ) {
 				$this->retain_scope( $scope, $schedules );
 
-				return ScopeReplacementOutcome::Persisted;
+				return new Success( true );
 			}
 			if ( RowWriteOutcome::WriteFailed === $write ) {
-				return ScopeReplacementOutcome::CasFailed;
+				return new Failure( SchedulingError::registry_persist_failure( $scope ) );
 			}
 		}
 
-		return ScopeReplacementOutcome::CasFailed;
+		return new Failure( SchedulingError::registry_persist_failure( $scope ) );
 	}
 
 	// endregion
@@ -444,7 +447,7 @@ final class ScheduleRegistry {
 	}
 
 	/**
-	 * Classifies one undeclared delivery and atomically persists its pre-escalation aging transition.
+	 * Records one undeclared delivery and reports whether it won the escalation transition.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -452,12 +455,12 @@ final class ScheduleRegistry {
 	 * @param   Identity $identity          Complete scope-qualified schedule identity.
 	 * @param   int      $warning_threshold Consecutive undeclared occurrences required for escalation.
 	 *
-	 * @return  UndeclaredOccurrenceOutcome Fenced aging outcome.
+	 * @return  bool Whether this delivery won the escalation transition.
 	 */
-	#[\NoDiscard( 'an undeclared occurrence outcome must be handled, not dropped' )]
-	public function record_undeclared_occurrence( Identity $identity, int $warning_threshold ): UndeclaredOccurrenceOutcome {
+	#[\NoDiscard( 'the undeclared occurrence escalation result must be handled, not dropped' )]
+	public function record_undeclared_occurrence( Identity $identity, int $warning_threshold ): bool {
 		if ( 1 > $warning_threshold ) {
-			return UndeclaredOccurrenceOutcome::Failed;
+			return false;
 		}
 
 		$registration_key = (string) $identity;
@@ -466,60 +469,60 @@ final class ScheduleRegistry {
 		for ( $attempt = 0; $attempt < self::UPDATE_ATTEMPTS; ++$attempt ) {
 			$expected = $this->rows->read( $option_name );
 			if ( $expected->is_failure() ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 
 			$expected_raw = $expected->value;
 			if ( null === $expected_raw ) {
-				return UndeclaredOccurrenceOutcome::Pruned;
+				return false;
 			}
 
 			$stored = RawOptionDecoder::decode( $expected_raw );
 			if ( ! \is_array( $stored ) ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 			if ( ! \array_key_exists( $registration_key, $stored ) ) {
-				return UndeclaredOccurrenceOutcome::Pruned;
+				return false;
 			}
 
 			$current = self::registrations_from_rows( $scope, $stored )[ $registration_key ] ?? null;
 			if ( null === $current ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 			if ( $current['undeclared_escalated'] ) {
-				return UndeclaredOccurrenceOutcome::AlreadyEscalated;
+				return false;
 			}
 
 			$current['undeclared_occurrences'] = self::increment_counter( $current['undeclared_occurrences'] );
-			$outcome                           = UndeclaredOccurrenceOutcome::Recorded;
+			$escalated                         = false;
 			if ( $warning_threshold <= $current['undeclared_occurrences'] ) {
 				$current['undeclared_escalated'] = true;
-				$outcome                         = UndeclaredOccurrenceOutcome::Escalated;
+				$escalated                       = true;
 			}
 
 			$stored[ $registration_key ] = $current;
 			$replacement_raw             = self::serialize_registrations( $stored );
 			$write                       = $this->rows->compare_and_swap( $option_name, $expected_raw, $replacement_raw );
 			if ( RowWriteOutcome::Won === $write ) {
-				return $outcome;
+				return $escalated;
 			}
 			if ( RowWriteOutcome::WriteFailed === $write ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 
 			$current_row = $this->rows->read( $option_name );
 			if ( $current_row->is_failure() ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 			if ( null === $current_row->value ) {
-				return UndeclaredOccurrenceOutcome::Pruned;
+				return false;
 			}
 			if ( $current_row->value === $expected_raw ) {
-				return UndeclaredOccurrenceOutcome::Failed;
+				return false;
 			}
 		}
 
-		return UndeclaredOccurrenceOutcome::Failed;
+		return false;
 	}
 
 	// endregion

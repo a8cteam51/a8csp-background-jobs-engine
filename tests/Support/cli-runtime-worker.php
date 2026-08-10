@@ -1,17 +1,14 @@
 <?php declare( strict_types=1 );
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -40,7 +37,7 @@ try {
 				$operations = $rig->operations( $scope );
 				$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
 				$result = $operations->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
-				if ( ! $result instanceof Success ) {
+				if ( true !== $result ) {
 					throw new \LogicException( 'The CLI worker could not register its schedule fixture.' );
 				}
 			}
@@ -54,67 +51,24 @@ try {
 			$operations = $rig->operations( 'consumer-plugin' );
 			$operations->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 			$enqueued = $operations->dispatch( 'email-digest' );
-			if ( ! $enqueued instanceof Success ) {
+			if ( ! $enqueued instanceof Run ) {
 				throw new \LogicException( 'The CLI worker could not register its run fixture.' );
 			}
 			$result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), array( 'format' => 'csv' ) );
 			break;
 
 		case 'locks':
-			$identity  = 'repair-tests:reports';
+			$identity  = 'inspection-tests:reports';
 			$args_hash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 			$rig->wpdb()->put( OverlapGuard::OPTION_PREFIX . $identity . '_' . $args_hash, 'malformed-lock' );
 			$result = CliHarness::run( 'locks', array( 'list' ), array( 'format' => 'csv' ) );
-			break;
-
-		case 'locks-repair-declined':
-			$identity  = 'repair-tests:reports';
-			$args_hash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-			$run_id    = '00000000000000086400-0000000000000000001';
-			$fixtures  = StoreFixtureBuilder::for_identity( $identity );
-			$rig->wpdb()->put( OverlapGuard::OPTION_PREFIX . $identity . '_' . $args_hash, 'malformed-lock' );
-			[ $run_name, $run_raw ] = $fixtures->run(
-				$run_id,
-				new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: $args_hash, kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: $now, heartbeat_at: $now, pending: PendingAction::async( 'run', 10 ) )
-			);
-			$rig->wpdb()->put( $run_name, $run_raw );
-			$before = array(
-				'wpdb'    => $rig->wpdb()->rows,
-				'options' => $GLOBALS['a8csp_bgje_test_options'],
-			);
-
-			$probe = \fopen( 'php://fd/3', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- File descriptor 3 is the parent's isolated test probe.
-			if ( false === $probe ) {
-				throw new \RuntimeException( 'The CLI worker probe stream is unavailable.' );
-			}
-			\register_shutdown_function(
-				static function () use ( $rig, $before, $probe ): void {
-					$after   = array(
-						'wpdb'    => $rig->wpdb()->rows,
-						'options' => $GLOBALS['a8csp_bgje_test_options'],
-					);
-					$encoded = \wp_json_encode(
-						array(
-							'before' => $before,
-							'after'  => $after,
-						),
-						\JSON_THROW_ON_ERROR
-					);
-					if ( ! \is_string( $encoded ) ) {
-						throw new \RuntimeException( 'The CLI worker probe could not encode its mutation evidence.' );
-					}
-					\fwrite( $probe, $encoded ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- File descriptor 3 carries test-only mutation evidence.
-					\fclose( $probe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- File descriptor 3 is a native process resource.
-				}
-			);
-			$result = CliHarness::run( 'locks', array( 'repair', $identity ) );
 			break;
 
 		case 'schedules-remove-declined':
 			$operations = $rig->operations( 'consumer-plugin' );
 			$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			$synced = $operations->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
-			if ( ! $synced instanceof Success ) {
+			if ( true !== $synced ) {
 				throw new \LogicException( 'The CLI worker could not seed schedule-removal fixtures.' );
 			}
 			$before = array(
@@ -167,7 +121,7 @@ try {
 			$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
 			$enqueued = $operations->dispatch( 'refresh', array( 'site_id' => 7 ) );
 			$synced   = $operations->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) );
-			if ( ! $enqueued instanceof Success || ! $synced instanceof Success ) {
+			if ( ! $enqueued instanceof Run || true !== $synced ) {
 				throw new \LogicException( 'The CLI worker could not seed reset fixtures.' );
 			}
 			$rig->backend()->pending_actions[ ActionDeliveries::DELIVER_HOOK ] = 5;

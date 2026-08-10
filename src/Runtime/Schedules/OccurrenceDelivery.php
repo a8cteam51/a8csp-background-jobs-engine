@@ -12,6 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\SkippedJobDispatch;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -101,16 +102,21 @@ final readonly class OccurrenceDelivery {
 	 */
 	public function handle_schedule_due( string $registration_key ): void {
 		$lease_claim = $this->lease->claim( $registration_key );
-		if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim->outcome ) {
-			$this->logger->debug( 'Schedule occurrence skipped because its decision lease is held by a concurrent delivery.', array( 'schedule_identity' => $registration_key ) );
+		if ( $lease_claim instanceof OccurrenceLeaseOutcome ) {
+			if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim ) {
+				$this->logger->debug( 'Schedule occurrence skipped because this delivery does not own its decision lease.', array( 'schedule_identity' => $registration_key ) );
 
-			return;
-		}
-		if ( OccurrenceLeaseOutcome::Indeterminate === $lease_claim->outcome ) {
-			$operation = $lease_claim->storage_operation ?? 'storage';
-			$message   = 'read' === $operation
-				? 'Schedule occurrence could not claim its decision lease because the authoritative read failed; repair WordPress option reads, then retry delivery.'
-				: 'Schedule occurrence could not claim its decision lease because the authoritative write failed; repair WordPress option writes, then retry delivery.';
+				return;
+			}
+
+			$operation = match ( $lease_claim ) {
+				OccurrenceLeaseOutcome::IndeterminateRead  => 'read',
+				OccurrenceLeaseOutcome::IndeterminateWrite => 'write',
+			};
+			$message = match ( $lease_claim ) {
+				OccurrenceLeaseOutcome::IndeterminateRead  => 'Schedule occurrence could not claim its decision lease because the authoritative read failed; repair WordPress option reads, then retry delivery.',
+				OccurrenceLeaseOutcome::IndeterminateWrite => 'Schedule occurrence could not claim its decision lease because the authoritative write failed; repair WordPress option writes, then retry delivery.',
+			};
 			$this->logger->warning(
 				$message,
 				array(
@@ -122,7 +128,7 @@ final readonly class OccurrenceDelivery {
 			return;
 		}
 
-		$lease_handle = $lease_claim->claimed_lease();
+		$lease_handle = $lease_claim;
 
 		try {
 			$this->handle_occurrence( $registration_key, $lease_handle );
@@ -157,33 +163,39 @@ final readonly class OccurrenceDelivery {
 		$name             = $identity->name();
 		$registration_key = (string) $identity;
 		$lease_claim      = $this->lease->claim( $registration_key );
-		if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim->outcome ) {
+		if ( $lease_claim instanceof OccurrenceLeaseOutcome ) {
+			if ( OccurrenceLeaseOutcome::NotClaimed === $lease_claim ) {
+				return new Failure(
+					new EngineError(
+						\sprintf( 'Schedule "%1$s" for scope "%2$s" did not acquire its occurrence decision lease; retry.', $name, $scope ),
+						reason: EngineErrorReason::AdmissionConflict,
+						context: array(
+							'scope'    => $scope,
+							'schedule' => $name,
+						),
+					)
+				);
+			}
+
+			$operation = match ( $lease_claim ) {
+				OccurrenceLeaseOutcome::IndeterminateRead  => 'read',
+				OccurrenceLeaseOutcome::IndeterminateWrite => 'write',
+			};
+
 			return new Failure(
 				new EngineError(
-					\sprintf( 'Schedule "%1$s" for scope "%2$s" already has an occurrence decision in flight; retry after that dispatch persists its state.', $name, $scope ),
-					reason: EngineErrorReason::AdmissionConflict,
-					context: array(
-						'scope'    => $scope,
-						'schedule' => $name,
-					),
-				)
-			);
-		}
-		if ( OccurrenceLeaseOutcome::Indeterminate === $lease_claim->outcome ) {
-			return new Failure(
-				new EngineError(
-					\sprintf( 'Schedule "%1$s" for scope "%2$s" could not establish its occurrence lease because storage could not be read or written; repair WordPress option reads and writes, then retry.', $name, $scope ),
+					\sprintf( 'Schedule "%1$s" for scope "%2$s" could not establish its occurrence lease because the authoritative %3$s failed; repair WordPress option %3$ss, then retry.', $name, $scope, $operation ),
 					reason: EngineErrorReason::StorageFailure,
 					context: array(
 						'scope'             => $scope,
 						'schedule'          => $name,
-						'storage_operation' => $lease_claim->storage_operation,
+						'storage_operation' => $operation,
 					),
 				)
 			);
 		}
 
-		$lease_handle = $lease_claim->claimed_lease();
+		$lease_handle = $lease_claim;
 
 		try {
 			return $this->dispatch_now( $identity, $scope, $name, $lease_handle );
@@ -247,6 +259,31 @@ final readonly class OccurrenceDelivery {
 				'error' => $error->message,
 			)
 		);
+	}
+
+	/**
+	 * Returns an accepted-occurrence commit that releases its decision lease even when persistence throws.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array{fingerprint: string, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, undeclared_occurrences: int, undeclared_escalated: bool} $accepted_registration
+	 *
+	 * @param   Identity              $identity              Complete scope-qualified schedule identity.
+	 * @param   string                $scope                 Stable client identifier.
+	 * @param   array                 $accepted_registration Accepted registration timing state.
+	 * @param   OccurrenceLeaseHandle $lease_handle          Claimed occurrence-lease handle.
+	 *
+	 * @return  \Closure
+	 */
+	private function commit_accepted_occurrence( Identity $identity, string $scope, array $accepted_registration, OccurrenceLeaseHandle $lease_handle ): \Closure {
+		return function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
+			try {
+				$this->persist_delivery_state( $identity, $scope, $accepted_registration );
+			} finally {
+				$lease_handle->release();
+			}
+		};
 	}
 
 	/**
@@ -317,14 +354,20 @@ final readonly class OccurrenceDelivery {
 
 		$registration = $registration_read->value;
 		if ( null === $registration ) {
-			$this->cleanup_intents->record_intent( $registration_key );
-			$converged = $this->cleanup_intents->converge_unknown_chain( $registration_key );
+			$recorded  = $this->cleanup_intents->record_intent( $registration_key );
+			$converged = $this->cleanup_intents->converge_unknown_chain( $registration_key, $recorded );
 			$context   = array(
 				'schedule_identity' => $registration_key,
 				'converged'         => $converged,
+				'intent_confirmed'  => RowWriteOutcome::WriteFailed !== $recorded,
 			);
+			if ( null === Identity::tryFrom( $registration_key ) ) {
+				$message = $converged ? \sprintf( 'Malformed schedule registration "%s" was delivered; no cleanup is outstanding.', $registration_key ) : \sprintf( 'Malformed schedule registration "%s" was delivered; remove the leftover occurrence.', $registration_key );
+			} else {
+				$message = $converged ? \sprintf( 'Unknown schedule registration "%s" was delivered, and no cleanup is outstanding; re-declare the schedule only if it is still wanted.', $registration_key ) : \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key );
+			}
 
-			$this->logger->warning( \sprintf( 'Unknown schedule registration "%s" was delivered; re-declare the schedule or remove the leftover occurrence.', $registration_key ), $context );
+			$this->logger->warning( $message, $context );
 
 			return;
 		}
@@ -335,8 +378,8 @@ final readonly class OccurrenceDelivery {
 		if ( null === $declaration ) {
 			$this->logger->debug( 'Schedule registration is inactive in this request; leave its recurring occurrence unchanged.', array( 'schedule_identity' => $registration_key ) );
 			// Aging is best-effort because a lost fenced increment never affects delivery and a later occurrence retries it.
-			$aging = $this->registry->record_undeclared_occurrence( $identity, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
-			if ( UndeclaredOccurrenceOutcome::Escalated === $aging ) {
+			$escalated = $this->registry->record_undeclared_occurrence( $identity, self::INACTIVE_WARNING_DELIVERY_THRESHOLD );
+			if ( $escalated ) {
 				$this->logger->warning(
 					\sprintf( 'Schedule registration "%1$s" fired undeclared for %2$d consecutive occurrences. If the consumer plugin was deactivated, reinstate it, have it call schedules()->sync() on deactivation, or run "wp a8csp-bgje schedules remove %3$s".', $registration_key, self::INACTIVE_WARNING_DELIVERY_THRESHOLD, $identity->scope() ),
 					array(
@@ -502,13 +545,7 @@ final readonly class OccurrenceDelivery {
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority,
-			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
-				try {
-					$this->persist_delivery_state( $identity, $scope, $accepted_registration );
-				} finally {
-					$lease_handle->release();
-				}
-			},
+			$this->commit_accepted_occurrence( $identity, $scope, $accepted_registration, $lease_handle ),
 			terminalize_overlap_key_failure: true
 		);
 		if ( $dispatched->is_failure() ) {
@@ -611,13 +648,7 @@ final readonly class OccurrenceDelivery {
 			$declaration['job'],
 			$schedule->args,
 			$schedule->priority,
-			function () use ( $identity, $scope, $accepted_registration, $lease_handle ): void {
-				try {
-					$this->persist_delivery_state( $identity, $scope, $accepted_registration );
-				} finally {
-					$lease_handle->release();
-				}
-			}
+			$this->commit_accepted_occurrence( $identity, $scope, $accepted_registration, $lease_handle )
 		);
 		if ( $dispatched->is_failure() ) {
 			return $dispatched;

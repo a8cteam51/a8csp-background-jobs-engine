@@ -2,20 +2,18 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -32,6 +30,7 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( ActionDeliveries::class )]
+#[CoversClass( RunTransitions::class )]
 final class ActionDeliveriesTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -107,7 +106,7 @@ final class ActionDeliveriesTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The registered start, continue, and cleanup actions complete one real chunked job.
+	 * The registered start and continuation actions complete one real chunked job.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -119,18 +118,17 @@ final class ActionDeliveriesTest extends TestCase {
 		$chunked_job->queue = array( array( 'chunk' => 'only' ) );
 		$this->client->register( $chunked_job->definition() );
 		$result = $this->client->dispatch( 'hook-registration-probe', self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
-		for ( $delivery = 0; $delivery < 4; ++$delivery ) {
+		for ( $delivery = 0; $delivery < 3; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
 		self::assertSame( array( self::ARGS ), $chunked_job->generate_calls );
 		self::assertCount( 1, $chunked_job->generate_contexts );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
+		self::assertInstanceOf( RunId::class, $result->id );
 		self::assertInstanceOf( RunId::class, $chunked_job->generate_contexts[0]->get_run_id() );
-		self::assertSame( (string) $result->value->id, (string) $chunked_job->generate_contexts[0]->get_run_id() );
+		self::assertSame( (string) $result->id, (string) $chunked_job->generate_contexts[0]->get_run_id() );
 		self::assertSame( self::ARGS, $chunked_job->generate_contexts[0]->get_start_args() );
 		self::assertCount( 1, $chunked_job->process_calls );
 		self::assertSame( array( 'chunk' => 'only' ), $chunked_job->process_calls[0]['chunk_args'] );
@@ -138,42 +136,73 @@ final class ActionDeliveriesTest extends TestCase {
 	}
 
 	/**
-	 * A malformed lifecycle-action identity performs the exact raw lookup before stale-drop handling.
+	 * A malformed lifecycle-action identity is rejected before storage access.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_malformed_wire_identity_uses_the_exact_raw_lookup_before_stale_drop(): void {
-		$identity = 'malformed';
-		$before   = $this->rig->wpdb()->rows;
+	public function test_malformed_wire_identity_is_rejected_before_storage_access(): void {
+		$identity = \str_repeat( 'malformed', 128 );
 
-		$this->rig->wpdb()->recorded_queries = array();
-		$this->rig->logger()->records        = array();
-
-		\do_action( ActionDeliveries::DELIVER_HOOK, $identity, self::RUN_ID, 1 );
-
-		self::assertSame(
+		$this->assert_malformed_wire_delivery_is_rejected(
+			$identity,
+			self::RUN_ID,
+			'identity',
 			array(
-				"SELECT `option_value` FROM `wp_options` WHERE `option_name` = 'a8csp_bgje_active_run_malformed_" . self::RUN_ID . "' LIMIT 1",
-			),
-			$this->rig->wpdb()->recorded_queries
+				'identity_length' => \strlen( $identity ),
+				'identity_sha256' => \substr( \hash( 'sha256', $identity ), 0, 16 ),
+				'run_id'          => self::RUN_ID,
+			)
 		);
-		self::assertSame( $before, $this->rig->wpdb()->rows );
-		self::assertSame( array(), $this->job->calls );
-		self::assertSame(
+	}
+
+	/**
+	 * A malformed lifecycle-action run identifier is rejected before storage access.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_run_id_is_rejected_before_storage_access(): void {
+		$run_id = \str_repeat( 'malformed', 128 );
+
+		$this->assert_malformed_wire_delivery_is_rejected(
+			self::IDENTITY,
+			$run_id,
+			'run identifier',
 			array(
-				array(
-					'level'   => 'debug',
-					'message' => 'Stale delivery for a finished or cancelled run was dropped.',
-					'context' => array(
-						'identity' => $identity,
-						'run_id'   => self::RUN_ID,
-					),
-				),
-			),
-			$this->rig->logger()->records
+				'identity'      => self::IDENTITY,
+				'run_id_length' => \strlen( $run_id ),
+				'run_id_sha256' => \substr( \hash( 'sha256', $run_id ), 0, 16 ),
+			)
+		);
+	}
+
+	/**
+	 * Malformed lifecycle-action identity and run identifier bytes are both reported without storage access.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_and_run_id_are_rejected_before_storage_access(): void {
+		$identity = \str_repeat( 'malformed-identity', 128 );
+		$run_id   = \str_repeat( 'malformed-run-id', 128 );
+
+		$this->assert_malformed_wire_delivery_is_rejected(
+			$identity,
+			$run_id,
+			'identity and run identifier',
+			array(
+				'identity_length' => \strlen( $identity ),
+				'identity_sha256' => \substr( \hash( 'sha256', $identity ), 0, 16 ),
+				'run_id_length'   => \strlen( $run_id ),
+				'run_id_sha256'   => \substr( \hash( 'sha256', $run_id ), 0, 16 ),
+			)
 		);
 	}
 
@@ -193,7 +222,7 @@ final class ActionDeliveriesTest extends TestCase {
 			'mode'    => 'delta',
 		);
 		$first          = $this->client->dispatch( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $first );
+		self::assertInstanceOf( Run::class, $first );
 
 		$this->rig->clock()->timestamp = self::NOW + 1;
 		$duplicate                     = $this->client->dispatch( self::NAME, $successor_args );
@@ -204,7 +233,7 @@ final class ActionDeliveriesTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls );
 		$this->rig->clock()->timestamp = self::NOW + 2;
 		$reused                        = $this->client->dispatch( self::NAME, $successor_args );
-		self::assertInstanceOf( Success::class, $reused );
+		self::assertInstanceOf( Run::class, $reused );
 		$this->rig->run_due();
 		self::assertSame( array( self::ARGS, $successor_args ), $this->job->calls );
 	}
@@ -269,7 +298,7 @@ final class ActionDeliveriesTest extends TestCase {
 		};
 
 		$result = $this->client->dispatch( self::NAME, $start_args );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
 		$this->rig->run_due();
 
@@ -547,13 +576,48 @@ final class ActionDeliveriesTest extends TestCase {
 		$this->rig->assert_superseded();
 		self::assertSame( 'run-newer', $this->lock()['run_id'] ?? null );
 		$last_completed = $this->client->last_completed_run( self::NAME );
-		self::assertInstanceOf( Success::class, $last_completed );
-		self::assertNull( $last_completed->value );
+		self::assertNull( $last_completed );
 	}
 
 	// endregion.
 
 	// region HELPERS.
+
+	/**
+	 * Asserts malformed scheduler bytes stop before storage and emit bounded correlation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string               $identity           Scheduler-wire work identity.
+	 * @param   string               $run_id             Scheduler-wire run identifier.
+	 * @param   string               $rejected_component Rejected wire component description.
+	 * @param   array<string, mixed> $context            Expected diagnostic context.
+	 *
+	 * @return  void
+	 */
+	private function assert_malformed_wire_delivery_is_rejected( string $identity, string $run_id, string $rejected_component, array $context ): void {
+		$before = $this->rig->wpdb()->rows;
+
+		$this->rig->wpdb()->recorded_queries = array();
+		$this->rig->logger()->records        = array();
+
+		\do_action( ActionDeliveries::DELIVER_HOOK, $identity, $run_id, 1 );
+
+		self::assertSame( array(), $this->rig->wpdb()->recorded_queries );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->job->calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => \sprintf( 'Background-work delivery carried a malformed %s and was dropped before storage access; correct the scheduler delivery arguments before retrying.', $rejected_component ),
+					'context' => $context,
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
 
 	/**
 	 * Boots the deterministic graph with one job definition.
@@ -610,12 +674,11 @@ final class ActionDeliveriesTest extends TestCase {
 	 */
 	private function enqueue_job(): string {
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
-		self::assertSame( self::RUN_ID, (string) $result->value->id );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertInstanceOf( RunId::class, $result->id );
+		self::assertSame( self::RUN_ID, (string) $result->id );
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**
@@ -823,15 +886,13 @@ final class ActionDeliveriesTest extends TestCase {
 	 * @param   mixed     $result Facade result.
 	 * @param   ErrorCode $code   Expected public code.
 	 *
-	 * @return  BoundaryError
+	 * @return  \WP_Error
 	 */
-	private function assert_failure_code( mixed $result, ErrorCode $code ): BoundaryError {
-		self::assertInstanceOf( Failure::class, $result );
-		$error = $result->error;
-		self::assertInstanceOf( BoundaryError::class, $error );
-		self::assertSame( $code, $error->code );
+	private function assert_failure_code( mixed $result, ErrorCode $code ): \WP_Error {
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( $code->value, $result->get_error_code() );
 
-		return $error;
+		return $result;
 	}
 
 	/**

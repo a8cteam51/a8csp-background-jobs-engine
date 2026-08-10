@@ -8,6 +8,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
@@ -73,6 +75,7 @@ final class CleanupIntentsTest extends TestCase {
 	private CleanupIntents $cleanup_intents;
 	private OccurrenceDelivery $delivery;
 	private RecordingLogger $logger;
+	private RecordingRandomizer $randomizer;
 	private ScheduleRegistry $registry;
 	private WpdbLockSpy $wpdb;
 
@@ -124,14 +127,15 @@ final class CleanupIntentsTest extends TestCase {
 		$GLOBALS['a8csp_bgje_test_cache_calls']           = array();
 		unset( $GLOBALS['a8csp_bgje_test_before_add_option'] );
 
-		$this->backend  = new RecordingBackend();
-		$this->clock    = new FixedClock( self::NOW );
-		$this->logger   = new RecordingLogger();
-		$this->wpdb     = new WpdbLockSpy();
-		$this->registry = new ScheduleRegistry( new OptionRows( $this->wpdb ), $this->logger );
-		$scheduler      = new SchedulerFacade( array( $this->backend ) );
-		$this->delivery = $this->new_delivery( $this->registry, $scheduler );
-		$this->api      = new ScheduleOperations( $this->registry, $scheduler, $this->clock, $this->delivery, $this->logger );
+		$this->backend    = new RecordingBackend();
+		$this->clock      = new FixedClock( self::NOW );
+		$this->logger     = new RecordingLogger();
+		$this->randomizer = new RecordingRandomizer( 42 );
+		$this->wpdb       = new WpdbLockSpy();
+		$this->registry   = new ScheduleRegistry( new OptionRows( $this->wpdb ), $this->logger );
+		$scheduler        = new SchedulerFacade( array( $this->backend ) );
+		$this->delivery   = $this->new_delivery( $this->registry, $scheduler );
+		$this->api        = new ScheduleOperations( $this->registry, $scheduler, $this->clock, $this->delivery, $this->logger );
 	}
 
 	// endregion.
@@ -157,6 +161,98 @@ final class CleanupIntentsTest extends TestCase {
 	}
 
 	/**
+	 * An indeterminate intent write that stored nothing reports no convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_indeterminate_intent_write_storing_nothing_reports_no_convergence(): void {
+		// The occurrence lease is inserted before the cleanup intent, so the failure is armed one insert late.
+		$this->wpdb->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
+		self::assertFalse( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * An indeterminate intent write whose row is nevertheless readable converges its leftover chain.
+	 *
+	 * @return  void
+	 */
+	public function test_indeterminate_intent_write_with_a_readable_row_still_converges(): void {
+		[ $intent_option, $intent_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 7 );
+		$this->wpdb->put( $intent_option, $intent_raw );
+		// The occurrence lease is inserted before the cleanup intent, so the failure is armed one insert late.
+		$this->wpdb->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $intent_option, $this->wpdb->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * An intent an earlier occurrence recorded is a determinate write, so its removal still reads as convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_concurrently_removed_incumbent_intent_reports_convergence_without_scheduler_access(): void {
+		[ $intent_option, $intent_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 7 );
+		self::assertSame( $this->intent_option_name(), $intent_option );
+		$this->wpdb->put( $intent_option, $intent_raw );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $intent_option, $intent_raw ): void {
+				self::assertSame( $intent_raw, $wpdb->rows[ $intent_option ] ?? null );
+				unset( $wpdb->rows[ $intent_option ], $wpdb->autoload[ $intent_option ] );
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $intent_option, $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * A concurrently removed written intent means another actor already converged the chain.
+	 *
+	 * @return  void
+	 */
+	public function test_concurrently_removed_written_intent_reports_convergence_without_scheduler_access(): void {
+		$intent_option = $this->intent_option_name();
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $intent_option ): void {
+				self::assertArrayHasKey( $intent_option, $wpdb->rows );
+				unset( $wpdb->rows[ $intent_option ], $wpdb->autoload[ $intent_option ] );
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $intent_option, $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( self::REGISTRATION_KEY, $this->logger->records[0]['context']['schedule_identity'] ?? null );
+		self::assertTrue( $this->logger->records[0]['context']['converged'] ?? null );
+	}
+
+	/**
 	 * Malformed scheduler-wire bytes retain their exact lease, intent, cleanup, and diagnostic identity.
 	 *
 	 * @since   1.0.0
@@ -170,7 +266,7 @@ final class CleanupIntentsTest extends TestCase {
 		$lease_option        = OccurrenceLease::OPTION_PREFIX . $digest;
 		$intent_option       = CleanupIntents::OPTION_PREFIX . $digest;
 		$expected_lease_raw  = 'a:2:{s:11:"claim_token";s:19:"0000000000000000042";s:10:"claimed_at";i:1700000000;}';
-		$expected_intent_raw = 'a:2:{s:17:"schedule_identity";s:9:"malformed";s:10:"created_at";i:1700000000;}';
+		$expected_intent_raw = 'a:2:{s:17:"schedule_identity";s:9:"malformed";s:10:"generation";i:42;}';
 		$before              = $this->wpdb->rows;
 
 		$this->wpdb->before_next(
@@ -210,10 +306,11 @@ final class CleanupIntentsTest extends TestCase {
 			array(
 				array(
 					'level'   => 'warning',
-					'message' => 'Unknown schedule registration "malformed" was delivered; re-declare the schedule or remove the leftover occurrence.',
+					'message' => 'Malformed schedule registration "malformed" was delivered; no cleanup is outstanding.',
 					'context' => array(
 						'schedule_identity' => $registration_key,
 						'converged'         => true,
+						'intent_confirmed'  => true,
 					),
 				),
 			),
@@ -295,7 +392,106 @@ final class CleanupIntentsTest extends TestCase {
 
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
 		self::assertSame( 1, $verification_reads );
-		self::assertFalse( $this->logger->records[0]['context']['converged'] ?? null );
+		self::assertCount( 2, $this->logger->records );
+		self::assertSame( 'intent-clear-readback', $this->logger->records[0]['context']['phase'] ?? null );
+		self::assertFalse( $this->logger->records[1]['context']['converged'] ?? null );
+	}
+
+	/**
+	 * A failed inline intent read reports its cause before the delivery reports non-convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_inline_convergence_reports_a_failed_intent_select(): void {
+		$intent_select_failures = 0;
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( &$intent_select_failures ): void {
+				++$intent_select_failures;
+				$wpdb->last_error = 'scripted intent-select read failure';
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertSame( 1, $intent_select_failures );
+		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 2, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup intent could not be selected; a later occurrence or sweep can retry cleanup.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'schedule_identity' => self::REGISTRATION_KEY,
+				'phase'             => 'intent-select',
+				'error_class'       => EngineError::class,
+				'error_reason'      => EngineErrorReason::StorageFailure->value,
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Unknown schedule registration "scope-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
+				'context' => array(
+					'schedule_identity' => self::REGISTRATION_KEY,
+					'converged'         => false,
+					'intent_confirmed'  => true,
+				),
+			),
+			$this->logger->records[1] ?? null
+		);
+	}
+
+	/**
+	 * A failed inline registry read reports its cause before the delivery reports non-convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_inline_convergence_reports_a_failed_registry_read(): void {
+		$registry_read_failures = 0;
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( &$registry_read_failures ): void {
+				++$registry_read_failures;
+				$wpdb->last_error = 'scripted intent registry read failure';
+			}
+		);
+
+		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
+
+		self::assertSame( 1, $registry_read_failures );
+		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 2, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup intent could not be resolved against the schedule registry; a later occurrence or sweep can retry cleanup.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'schedule_identity' => self::REGISTRATION_KEY,
+				'phase'             => 'intent-registry-read',
+				'error_class'       => EngineError::class,
+				'error_reason'      => EngineErrorReason::StorageFailure->value,
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Unknown schedule registration "scope-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
+				'context' => array(
+					'schedule_identity' => self::REGISTRATION_KEY,
+					'converged'         => false,
+					'intent_confirmed'  => true,
+				),
+			),
+			$this->logger->records[1] ?? null
+		);
 	}
 
 	/**
@@ -338,7 +534,7 @@ final class CleanupIntentsTest extends TestCase {
 			$raw              = \maybe_serialize(
 				array(
 					'schedule_identity' => $registration_key,
-					'created_at'        => self::NOW,
+					'generation'        => 42,
 				)
 			);
 			self::assertIsString( $raw );
@@ -367,7 +563,7 @@ final class CleanupIntentsTest extends TestCase {
 		unset( $this->backend->results['unschedule'] );
 		$this->backend->calls  = array();
 		$this->logger->records = array();
-		$resumed               = new CleanupIntents( $this->registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $this->clock, $this->logger );
+		$resumed               = new CleanupIntents( $this->registry, new SchedulerFacade( array( $this->backend ) ), new OptionRows( $this->wpdb ), $this->randomizer, $this->logger );
 
 		$resumed->converge_pending_intents();
 
@@ -384,7 +580,40 @@ final class CleanupIntentsTest extends TestCase {
 	}
 
 	/**
-	 * A failed authoritative intent-name scan skips the sweep without scheduler or row mutation.
+	 * A failed cleanup-intent cursor read reports the aborted sweep without scheduler or row mutation.
+	 *
+	 * @fixture StoreFixtureBuilder
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_failed_cursor_read(): void {
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 42 );
+		self::assertSame( $this->intent_option_name(), $option_name );
+		$this->wpdb->put( $option_name, $raw );
+		$before = $this->wpdb->rows;
+		$this->wpdb->fail_next_read_at( 'query_filtered' );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertSame( $before, $this->wpdb->rows );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'phase'        => 'intent-cursor-read',
+				'error_class'  => EngineError::class,
+				'error_reason' => EngineErrorReason::StorageFailure->value,
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+		// The injected fault arms the next read of any kind, so a read added ahead of the cursor would silently move it.
+		self::assertCount( 1, $this->wpdb->recorded_queries );
+	}
+
+	/**
+	 * A failed authoritative intent-name scan reports the aborted sweep without scheduler or row mutation.
 	 *
 	 * @return  void
 	 */
@@ -393,7 +622,9 @@ final class CleanupIntentsTest extends TestCase {
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
 		$this->backend->calls         = array();
+		$this->logger->records        = array();
 		$this->wpdb->recorded_queries = array();
+		$before                       = $this->wpdb->rows;
 		$scan_failures                = 0;
 		$this->wpdb->before_next(
 			'scan',
@@ -406,9 +637,23 @@ final class CleanupIntentsTest extends TestCase {
 		$this->cleanup_intents->converge_pending_intents();
 
 		self::assertArrayHasKey( $this->intent_option_name(), $this->wpdb->rows );
+		self::assertSame( $before, $this->wpdb->rows );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 1, $scan_failures );
 		self::assertCount( 2, $this->wpdb->recorded_queries );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep aborted while enumerating intent rows; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'phase'        => 'intent-enumeration',
+				'cursor'       => null,
+				'scanned'      => 0,
+				'error_class'  => EngineError::class,
+				'error_reason' => EngineErrorReason::StorageFailure->value,
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
 	}
 
 	/**
@@ -440,7 +685,7 @@ final class CleanupIntentsTest extends TestCase {
 	 * @return  void
 	 */
 	public function test_pending_intent_sweep_logs_a_convergence_throwable_as_exception_context(): void {
-		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( self::NOW );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 42 );
 		self::assertSame( $this->intent_option_name(), $option_name );
 		$this->wpdb->put( $option_name, $raw );
 		$throwable = new \RuntimeException( 'Intent convergence secret.' );
@@ -462,16 +707,20 @@ final class CleanupIntentsTest extends TestCase {
 	}
 
 	/**
-	 * An unreadable intent row is retained and skipped without consulting the scheduler.
+	 * An unreadable intent row is retained and its aborted sweep reported without consulting the scheduler.
 	 *
 	 * @fixture StoreFixtureBuilder
 	 *
 	 * @return  void
 	 */
 	public function test_pending_intent_sweep_skips_a_failed_row_read(): void {
-		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( self::NOW );
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 42 );
 		self::assertSame( $this->intent_option_name(), $option_name );
 		$this->wpdb->put( $option_name, $raw );
+		$cursor_raw = \maybe_serialize( array( 'after_name' => CleanupIntents::OPTION_PREFIX . \str_repeat( '0', 64 ) ) );
+		self::assertIsString( $cursor_raw );
+		$this->wpdb->put( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_raw );
+		$before            = $this->wpdb->rows;
 		$row_read_failures = 0;
 		$this->wpdb->before_next( 'select', static function (): void {} );
 		$this->wpdb->before_next(
@@ -485,8 +734,335 @@ final class CleanupIntentsTest extends TestCase {
 		$this->cleanup_intents->converge_pending_intents();
 
 		self::assertSame( $raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+		self::assertSame( $before, $this->wpdb->rows );
 		self::assertSame( array(), $this->backend->calls );
 		self::assertSame( 1, $row_read_failures );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep aborted while reading a page of intent rows; repair WordPress option reads and retry the sweep.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'phase'           => 'intent-read',
+				'cursor'          => CleanupIntents::OPTION_PREFIX . \str_repeat( '0', 64 ),
+				'names'           => 1,
+				'malformed_count' => 0,
+				'error_class'     => EngineError::class,
+				'error_reason'    => EngineErrorReason::StorageFailure->value,
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * A failed registry read skips one swept intent, reports the cause, and continues convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_failed_registry_read(): void {
+		$intents          = $this->put_intents( 2, 'registry-read' );
+		$failed_option    = \array_key_first( $intents );
+		$converged_option = \array_key_last( $intents );
+		self::assertIsString( $failed_option );
+		self::assertIsString( $converged_option );
+		$failed                 = $intents[ $failed_option ];
+		$converged              = $intents[ $converged_option ];
+		$registry_read_failures = 0;
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next( 'select', static function (): void {} );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( &$registry_read_failures ): void {
+				++$registry_read_failures;
+				$wpdb->last_error = 'scripted intent registry read failure';
+			}
+		);
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertSame( 1, $registry_read_failures );
+		self::assertSame( $failed['raw'], $this->wpdb->rows[ $failed_option ] ?? null );
+		self::assertArrayNotHasKey( $converged_option, $this->wpdb->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertSame( array( $converged['registration_key'] ), $this->backend->calls[1]['args']['args'] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup intent could not be resolved against the schedule registry; a later occurrence or sweep can retry cleanup.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'schedule_identity' => $failed['registration_key'],
+				'phase'             => 'intent-registry-read',
+				'error_class'       => EngineError::class,
+				'error_reason'      => EngineErrorReason::StorageFailure->value,
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * A failed clear read-back skips one swept intent, reports the cause, and continues convergence.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_failed_clear_readback(): void {
+		$intents          = $this->put_intents( 2, 'clear-readback' );
+		$failed_option    = \array_key_first( $intents );
+		$converged_option = \array_key_last( $intents );
+		self::assertIsString( $failed_option );
+		self::assertIsString( $converged_option );
+		$failed              = $intents[ $failed_option ];
+		$converged           = $intents[ $converged_option ];
+		$clear_read_failures = 0;
+		$this->wpdb->script_result( 'delete', 0 );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( &$clear_read_failures ): void {
+				$wpdb->before_next(
+					'select',
+					static function ( WpdbLockSpy $wpdb ) use ( &$clear_read_failures ): void {
+						++$clear_read_failures;
+						$wpdb->last_error = 'scripted intent clear read-back failure';
+					}
+				);
+			}
+		);
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertSame( 1, $clear_read_failures );
+		self::assertSame( $failed['raw'], $this->wpdb->rows[ $failed_option ] ?? null );
+		self::assertArrayNotHasKey( $converged_option, $this->wpdb->rows );
+		self::assertSame( array( 'is_ready', 'unschedule', 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertSame( array( $failed['registration_key'] ), $this->backend->calls[1]['args']['args'] ?? null );
+		self::assertSame( array( $converged['registration_key'] ), $this->backend->calls[3]['args']['args'] ?? null );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup intent could not be confirmed cleared; a later sweep can retry any intent that remains pending.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'schedule_identity' => $failed['registration_key'],
+				'phase'             => 'intent-clear-readback',
+				'error_class'       => EngineError::class,
+				'error_reason'      => EngineErrorReason::StorageFailure->value,
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * A failed first cursor write reports its unconfirmed update after converging the bounded page.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_failed_first_cursor_write(): void {
+		$intents = $this->put_intents( 500, 'cursor-insert' );
+		$this->wpdb->script_result( 'insert', false );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertCount( 0, \array_filter( \array_keys( $this->wpdb->rows ), static fn ( string $option_name ): bool => \str_starts_with( $option_name, CleanupIntents::OPTION_PREFIX ) ) );
+		self::assertArrayNotHasKey( CleanupIntents::SWEEP_CURSOR_OPTION, $this->wpdb->rows );
+		self::assertCount( 500, \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.', $this->logger->records[0]['message'] ?? null );
+		$cursor = \array_key_last( $intents );
+		self::assertIsString( $cursor );
+		self::assertSame(
+			array(
+				'phase'   => 'intent-cursor-write',
+				'cursor'  => $cursor,
+				'outcome' => 'write_failed',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * A lost first cursor write reports its unconfirmed update after converging the bounded page.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_lost_first_cursor_write(): void {
+		$intents        = $this->put_intents( 500, 'cursor-insert-lost' );
+		$competitor_raw = $this->sweep_cursor_raw( CleanupIntents::OPTION_PREFIX . \str_repeat( '0', 64 ) );
+		$this->wpdb->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->put( CleanupIntents::SWEEP_CURSOR_OPTION, $competitor_raw ) );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertCount( 0, \array_filter( \array_keys( $this->wpdb->rows ), static fn ( string $option_name ): bool => \str_starts_with( $option_name, CleanupIntents::OPTION_PREFIX ) ) );
+		self::assertSame( $competitor_raw, $this->wpdb->rows[ CleanupIntents::SWEEP_CURSOR_OPTION ] ?? null );
+		self::assertCount( 500, \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.', $this->logger->records[0]['message'] ?? null );
+		$cursor = \array_key_last( $intents );
+		self::assertIsString( $cursor );
+		self::assertSame(
+			array(
+				'phase'   => 'intent-cursor-write',
+				'cursor'  => $cursor,
+				'outcome' => 'lost',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * A lost cursor CAS reports its unconfirmed update after converging the bounded page.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_lost_cursor_cas(): void {
+		$intents        = $this->put_intents( 500, 'cursor-cas-lost' );
+		$cursor_raw     = $this->sweep_cursor_raw( CleanupIntents::OPTION_PREFIX . \str_repeat( '0', 64 ) );
+		$competitor_raw = $this->sweep_cursor_raw( CleanupIntents::OPTION_PREFIX . \str_repeat( 'f', 64 ) );
+		$this->wpdb->put( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_raw );
+		$this->wpdb->before_next( 'update', static fn ( WpdbLockSpy $wpdb ) => $wpdb->put( CleanupIntents::SWEEP_CURSOR_OPTION, $competitor_raw ) );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertCount( 0, \array_filter( \array_keys( $this->wpdb->rows ), static fn ( string $option_name ): bool => \str_starts_with( $option_name, CleanupIntents::OPTION_PREFIX ) ) );
+		self::assertSame( $competitor_raw, $this->wpdb->rows[ CleanupIntents::SWEEP_CURSOR_OPTION ] ?? null );
+		self::assertCount( 500, \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.', $this->logger->records[0]['message'] ?? null );
+		$cursor = \array_key_last( $intents );
+		self::assertIsString( $cursor );
+		self::assertSame(
+			array(
+				'phase'   => 'intent-cursor-write',
+				'cursor'  => $cursor,
+				'outcome' => 'lost',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * A failed cursor CAS reports its unconfirmed update after converging the bounded page.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_failed_cursor_cas(): void {
+		$intents    = $this->put_intents( 500, 'cursor-cas-failed' );
+		$cursor_raw = $this->sweep_cursor_raw( CleanupIntents::OPTION_PREFIX . \str_repeat( '0', 64 ) );
+		$this->wpdb->put( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_raw );
+		$this->wpdb->script_result( 'update', false );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertCount( 0, \array_filter( \array_keys( $this->wpdb->rows ), static fn ( string $option_name ): bool => \str_starts_with( $option_name, CleanupIntents::OPTION_PREFIX ) ) );
+		self::assertSame( $cursor_raw, $this->wpdb->rows[ CleanupIntents::SWEEP_CURSOR_OPTION ] ?? null );
+		self::assertCount( 500, \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.', $this->logger->records[0]['message'] ?? null );
+		$cursor = \array_key_last( $intents );
+		self::assertIsString( $cursor );
+		self::assertSame(
+			array(
+				'phase'   => 'intent-cursor-write',
+				'cursor'  => $cursor,
+				'outcome' => 'write_failed',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * A failed exhausted-cursor delete reports its unconfirmed update after converging the remaining intent.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_a_failed_exhausted_cursor_delete(): void {
+		$intents       = $this->put_intents( 1, 'cursor-delete' );
+		$intent_option = \array_key_first( $intents );
+		self::assertIsString( $intent_option );
+		$cursor     = CleanupIntents::OPTION_PREFIX . \str_repeat( '0', 64 );
+		$cursor_raw = $this->sweep_cursor_raw( $cursor );
+		$this->wpdb->put( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_raw );
+		$this->wpdb->before_next(
+			'delete',
+			static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'delete', static fn ( WpdbLockSpy $database ) => $database->script_result( 'delete', false ) )
+		);
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertArrayNotHasKey( $intent_option, $this->wpdb->rows );
+		self::assertSame( $cursor_raw, $this->wpdb->rows[ CleanupIntents::SWEEP_CURSOR_OPTION ] ?? null );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'phase'   => 'intent-cursor-write',
+				'cursor'  => null,
+				'outcome' => 'delete_failed',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * An exhausted-cursor value mismatch reports the unconfirmed update after converging the remaining intent.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_reports_an_exhausted_cursor_value_mismatch(): void {
+		$intents       = $this->put_intents( 1, 'cursor-delete-mismatch' );
+		$intent_option = \array_key_first( $intents );
+		self::assertIsString( $intent_option );
+		$cursor         = CleanupIntents::OPTION_PREFIX . \str_repeat( '0', 64 );
+		$cursor_raw     = $this->sweep_cursor_raw( $cursor );
+		$competitor_raw = $this->sweep_cursor_raw( CleanupIntents::OPTION_PREFIX . \str_repeat( 'f', 64 ) );
+		$this->wpdb->put( CleanupIntents::SWEEP_CURSOR_OPTION, $cursor_raw );
+		$this->wpdb->before_next(
+			'delete',
+			static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'delete', static fn ( WpdbLockSpy $database ) => $database->put( CleanupIntents::SWEEP_CURSOR_OPTION, $competitor_raw ) )
+		);
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertArrayNotHasKey( $intent_option, $this->wpdb->rows );
+		self::assertSame( $competitor_raw, $this->wpdb->rows[ CleanupIntents::SWEEP_CURSOR_OPTION ] ?? null );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->backend->calls, 'verb' ) );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.', $this->logger->records[0]['message'] ?? null );
+		self::assertSame(
+			array(
+				'phase'   => 'intent-cursor-write',
+				'cursor'  => null,
+				'outcome' => 'value_mismatch',
+			),
+			$this->logger->records[0]['context'] ?? null
+		);
+	}
+
+	/**
+	 * Successful cursor insertion, replacement, and deletion emit no progress warning.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_does_not_report_successful_cursor_writes(): void {
+		$this->put_intents( 1_001, 'cursor-success' );
+
+		$this->cleanup_intents->converge_pending_intents();
+		$first_cursor_raw = $this->wpdb->rows[ CleanupIntents::SWEEP_CURSOR_OPTION ] ?? null;
+		self::assertIsString( $first_cursor_raw );
+
+		$this->cleanup_intents->converge_pending_intents();
+		$second_cursor_raw = $this->wpdb->rows[ CleanupIntents::SWEEP_CURSOR_OPTION ] ?? null;
+		self::assertIsString( $second_cursor_raw );
+		self::assertNotSame( $first_cursor_raw, $second_cursor_raw );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertSame( array(), $this->wpdb->rows );
+		self::assertCount( 1_001, \array_filter( $this->backend->calls, static fn ( array $call ): bool => 'unschedule' === $call['verb'] ) );
+		self::assertSame( array(), $this->logger->records );
 	}
 
 	/**
@@ -518,7 +1094,7 @@ final class CleanupIntentsTest extends TestCase {
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		$original_raw = $this->wpdb->rows[ $this->intent_option_name() ] ?? null;
 		self::assertIsString( $original_raw );
-		$this->clock->timestamp = self::NOW + 1;
+		$this->randomizer->value = 43;
 
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 
@@ -554,9 +1130,9 @@ final class CleanupIntentsTest extends TestCase {
 		$this->backend->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Keep the first intent pending.' ) );
 		$this->delivery->handle_schedule_due( self::REGISTRATION_KEY );
 		unset( $this->backend->results['unschedule'] );
-		$this->clock->timestamp = self::NOW + 1;
+		$this->randomizer->value = 43;
 
-		[ $replacement_name, $replacement_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( $this->clock->timestamp );
+		[ $replacement_name, $replacement_raw ] = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( $this->randomizer->value );
 		self::assertSame( $this->intent_option_name(), $replacement_name );
 		$this->wpdb->before_next(
 			'delete',
@@ -569,6 +1145,31 @@ final class CleanupIntentsTest extends TestCase {
 		$this->cleanup_intents->converge_pending_intents();
 
 		self::assertSame( $replacement_raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+	}
+
+	/**
+	 * A cleanup intent whose payload carries no integer generation is retained as malformed.
+	 *
+	 * @return  void
+	 */
+	public function test_pending_intent_sweep_classifies_a_row_without_a_generation_as_malformed(): void {
+		$legacy_raw = \maybe_serialize(
+			array(
+				'schedule_identity' => self::REGISTRATION_KEY,
+				'created_at'        => self::NOW,
+			)
+		);
+		self::assertIsString( $legacy_raw );
+		$this->wpdb->put( $this->intent_option_name(), $legacy_raw );
+
+		$this->cleanup_intents->converge_pending_intents();
+
+		self::assertSame( $legacy_raw, $this->wpdb->rows[ $this->intent_option_name() ] ?? null );
+		self::assertSame( array(), $this->backend->calls );
+		self::assertCount( 1, $this->logger->records );
+		self::assertSame( 'warning', $this->logger->records[0]['level'] ?? null );
+		self::assertSame( 1, $this->logger->records[0]['context']['count'] ?? null );
+		self::assertSame( CleanupIntents::OPTION_PREFIX, $this->logger->records[0]['context']['option_prefix'] ?? null );
 	}
 
 	/**
@@ -671,10 +1272,10 @@ final class CleanupIntentsTest extends TestCase {
 		$stores                = new StoreFactory( $this->clock, new OptionRows( $this->wpdb ), $this->logger );
 		$randomizer            = new RecordingRandomizer( 42 );
 		$lock_windows          = new LockWindows( $this->clock, $this->logger );
-		$terminal_effects      = new LifecycleEffects( $guard, $stores, $this->logger );
-		$terminal_transitions  = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $this->logger, $terminal_effects );
 		$scheduler           ??= new SchedulerFacade( array( $this->backend ) );
 		$delivery_scheduler    = new DeliveryScheduler( $scheduler, $this->clock );
+		$terminal_effects      = new LifecycleEffects( $guard, $stores, $this->logger );
+		$terminal_transitions  = new RunTransitions( $guard, $stores, $this->clock, $lock_windows, $delivery_scheduler, $this->logger, $terminal_effects );
 		$failure_lifecycle     = new FailureLifecycle( $delivery_scheduler, $this->clock, $randomizer, $this->logger, $terminal_transitions, $terminal_effects );
 		$job_handler           = new JobKindHandler( $job_registry, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$chunked_job_handler   = new ChunkedJobKindHandler( $job_registry, $delivery_scheduler, $this->logger, $this->clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
@@ -682,10 +1283,48 @@ final class CleanupIntentsTest extends TestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$dispatcher            = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $randomizer, $this->logger, $terminal_transitions );
-		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->clock, $this->logger );
+		$dispatcher            = new Dispatcher( $job_registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $this->clock, $randomizer, $this->logger, $terminal_transitions );
+		$this->cleanup_intents = new CleanupIntents( $registry, $scheduler, new OptionRows( $this->wpdb ), $this->randomizer, $this->logger );
 
 		return new OccurrenceDelivery( $registry, $dispatcher, new OccurrenceLease( new OptionRows( $this->wpdb ), $this->clock, new RecordingRandomizer( 42 ) ), $this->cleanup_intents, $this->clock, $this->logger );
+	}
+
+	/**
+	 * Stores cleanup intents ordered by their option names.
+	 *
+	 * @param   int    $count       Number of intents to store.
+	 * @param   string $name_prefix Registration-name prefix.
+	 *
+	 * @return  array<string, array{registration_key: string, raw: string}>
+	 */
+	private function put_intents( int $count, string $name_prefix ): array {
+		$intents = array();
+		for ( $index = 0; $index < $count; ++$index ) {
+			$registration_key      = self::SCOPE . ':' . $name_prefix . '-' . \sprintf( '%04d', $index );
+			[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( $registration_key )->cleanup_intent( 42 );
+			$this->wpdb->put( $option_name, $raw );
+			$intents[ $option_name ] = array(
+				'registration_key' => $registration_key,
+				'raw'              => $raw,
+			);
+		}
+		\ksort( $intents, \SORT_STRING );
+
+		return $intents;
+	}
+
+	/**
+	 * Returns serialized cleanup-sweep cursor bytes.
+	 *
+	 * @param   string $after_name Exclusive option-name cursor.
+	 *
+	 * @return  string
+	 */
+	private function sweep_cursor_raw( string $after_name ): string {
+		$raw = \maybe_serialize( array( 'after_name' => $after_name ) );
+		self::assertIsString( $raw );
+
+		return $raw;
 	}
 
 	/**

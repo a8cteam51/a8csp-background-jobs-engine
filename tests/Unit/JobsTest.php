@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Engine;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
@@ -16,6 +17,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\AbstractKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FaultingOverlapKeyResolverProvider;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -29,6 +31,7 @@ use PHPUnit\Framework\Attributes\DataProviderExternal;
  * @version 1.0.0
  */
 #[CoversClass( Jobs::class )]
+#[CoversClass( AbstractKindHandler::class )]
 final class JobsTest extends AbstractCapabilityManagerTestCase {
 	// region TESTS.
 
@@ -218,7 +221,7 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 
 		self::assert_run( $jobs->dispatch( 'plain-job', $job_args ), self::SCOPE . ':plain-job', RunStatus::Running );
 		self::assert_run( $jobs->dispatch( 'chunked-job', $chunked_args ), self::SCOPE . ':chunked-job', RunStatus::Running );
-		for ( $delivery = 0; 5 > $delivery; ++$delivery ) {
+		for ( $delivery = 0; 4 > $delivery; ++$delivery ) {
 			$this->rig->run_due();
 		}
 
@@ -259,6 +262,30 @@ final class JobsTest extends AbstractCapabilityManagerTestCase {
 
 		self::assertStringContainsString( 'job', $error->get_error_message() );
 		self::assertStringContainsString( JobExecutionInterface::class, $error->get_error_message() );
+	}
+
+	/**
+	 * Every installed kind preserves its complete incompatible-execution diagnostic.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_register_rejects_incompatible_execution_with_kind_specific_messages(): void {
+		$execution = new class() implements KindExecutionInterface {};
+		$cases     = array(
+			'job'         => array( JobKind::job(), JobExecutionInterface::class ),
+			'chunked_job' => array( JobKind::chunked_job(), ChunkedJobExecutionInterface::class ),
+		);
+		foreach ( $cases as $kind => $case ) {
+			list( $job_kind, $execution_role ) = $case;
+
+			$result = \a8csp_bgje( self::SCOPE )->jobs()->register( JobDefinition::for_kind( "wrong-$kind", $job_kind, $execution ) );
+			$error  = self::assert_wp_error( $result, ErrorCode::InvalidArgument->value );
+
+			self::assertSame( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', $kind, $execution_role, \get_debug_type( $execution ) ), $error->get_error_message() );
+		}
 	}
 
 	/**

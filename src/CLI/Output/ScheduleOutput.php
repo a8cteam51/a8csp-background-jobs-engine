@@ -27,7 +27,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
  *     lock: string
  * }
  */
-final readonly class ScheduleOutput {
+final class ScheduleOutput {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -75,68 +75,6 @@ final readonly class ScheduleOutput {
 	// region METHODS
 
 	/**
-	 * Shapes schedule inspection entries into their exact public columns.
-	 *
-	 * @internal Command formatting seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param list<ScheduleEntry> $entries
-	 *
-	 * @param   array $entries     Validated schedule inspection entries.
-	 * @param   int   $observed_at Inspection timestamp.
-	 *
-	 * @phpstan-return list<ScheduleRow>
-	 *
-	 * @return  array
-	 */
-	public static function rows_from_entries( array $entries, int $observed_at ): array {
-		\usort(
-			$entries,
-			static function ( array $left, array $right ): int {
-				$scope_order = $left['scope'] <=> $right['scope'];
-				return 0 !== $scope_order ? $scope_order : $left['identity'] <=> $right['identity'];
-			}
-		);
-
-		$rows = array();
-		foreach ( $entries as $entry ) {
-			$rows[] = array(
-				'scope'              => $entry['scope'],
-				'identity'           => $entry['identity'],
-				'recurrence'         => $entry['recurrence'] ?? 'unknown (not declared this request)',
-				'next_due'           => self::due_label( $entry['next_due'], $observed_at ),
-				'last_fired'         => null === $entry['last_fired']
-					? 'never'
-					: \gmdate( \DATE_ATOM, $entry['last_fired'] ),
-				'misfire_skips'      => $entry['misfire_skips'],
-				'overlap_skips'      => $entry['overlap_skips'],
-				'occurrence_visible' => $entry['occurrence_visible'] ? 'yes' : 'no',
-				'lock'               => self::lock_label( $entry['lock'] ),
-			);
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Returns the dormant-backend warning only when union reads exclude a present candidate.
-	 *
-	 * @internal Command honesty seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   bool $has_dormant_candidate Whether a backend is present but not ready.
-	 *
-	 * @return  string|null
-	 */
-	public static function dormant_backend_note( bool $has_dormant_candidate ): ?string {
-		return $has_dormant_candidate ? self::DORMANT_BACKEND_NOTE : null;
-	}
-
-	/**
 	 * Requires acknowledgement of one scope's recurring-schedule removal.
 	 *
 	 * @since   1.0.0
@@ -181,78 +119,7 @@ final readonly class ScheduleOutput {
 	 * @return  void
 	 */
 	public static function removal_error( string $scope, string $message ): void {
-		self::error( \sprintf( '%1$s Scope removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove %2$s" to clear any remaining registrations.', $message, $scope ) );
-	}
-
-	/**
-	 * Reports a fatal schedule-command error.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $message Corrective error.
-	 *
-	 * @return  void
-	 */
-	public static function error( string $message ): void {
-		\WP_CLI::error( $message );
-	}
-
-	/**
-	 * Formats one persisted due timestamp as UTC plus its schedule-relative state.
-	 *
-	 * @internal Command time seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int $timestamp   Persisted due timestamp.
-	 * @param   int $observed_at Inspection timestamp.
-	 *
-	 * @return  string
-	 */
-	public static function due_label( int $timestamp, int $observed_at ): string {
-		if ( $timestamp > $observed_at ) {
-			$relative = 'in ' . RelativeTime::duration( RelativeTime::distance( $timestamp, $observed_at ) );
-		} elseif ( $timestamp === $observed_at ) {
-			$relative = 'due now';
-		} else {
-			$relative = 'overdue ' . RelativeTime::duration( RelativeTime::distance( $observed_at, $timestamp ) );
-		}
-
-		return \sprintf( '%1$s (%2$s)', \gmdate( \DATE_ATOM, $timestamp ), $relative );
-	}
-
-	/**
-	 * Formats one complete schedule lock snapshot.
-	 *
-	 * @internal Command honesty seam.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
-	 *                |array{state: 'held', run_id: string, stale: bool} $lock
-	 *
-	 * @param   array $lock Complete discriminated lock state.
-	 *
-	 * @return  string
-	 */
-	public static function lock_label( array $lock ): string {
-		if ( 'held' !== $lock['state'] ) {
-			return match ( $lock['state'] ) {
-				'free'            => 'free',
-				'invalid'         => 'unknown (invalid lock row)',
-				'not_declared'    => 'unknown (not declared this request)',
-				'overlap_allowed' => 'not blocking (overlap allowed)',
-				'read_failed'     => 'unknown (lock read failed)',
-				'resolver_failed' => 'unknown (overlap-key resolver failed)',
-			};
-		}
-
-		$label = 'held by ' . $lock['run_id'];
-
-		return $lock['stale'] ? $label . ' (stale)' : $label;
+		\WP_CLI::error( \sprintf( '%1$s Scope removal converges incrementally; after resolving this error, rerun "wp a8csp-bgje schedules remove %2$s" to clear any remaining registrations.', $message, $scope ) );
 	}
 
 	/**
@@ -281,6 +148,121 @@ final readonly class ScheduleOutput {
 		if ( null !== $note ) {
 			\WP_CLI::warning( $note );
 		}
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Shapes schedule inspection entries into their exact public columns.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<ScheduleEntry> $entries
+	 *
+	 * @param   array $entries     Validated schedule inspection entries.
+	 * @param   int   $observed_at Inspection timestamp.
+	 *
+	 * @phpstan-return list<ScheduleRow>
+	 *
+	 * @return  array
+	 */
+	private static function rows_from_entries( array $entries, int $observed_at ): array {
+		\usort(
+			$entries,
+			static function ( array $left, array $right ): int {
+				$scope_order = $left['scope'] <=> $right['scope'];
+				return 0 !== $scope_order ? $scope_order : $left['identity'] <=> $right['identity'];
+			}
+		);
+
+		$rows = array();
+		foreach ( $entries as $entry ) {
+			$rows[] = array(
+				'scope'              => $entry['scope'],
+				'identity'           => $entry['identity'],
+				'recurrence'         => $entry['recurrence'] ?? 'unknown (not declared this request)',
+				'next_due'           => self::due_label( $entry['next_due'], $observed_at ),
+				'last_fired'         => null === $entry['last_fired']
+					? 'never'
+					: \gmdate( \DATE_ATOM, $entry['last_fired'] ),
+				'misfire_skips'      => $entry['misfire_skips'],
+				'overlap_skips'      => $entry['overlap_skips'],
+				'occurrence_visible' => $entry['occurrence_visible'] ? 'yes' : 'no',
+				'lock'               => self::lock_label( $entry['lock'] ),
+			);
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Returns the dormant-backend warning only when union reads exclude a present candidate.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   bool $has_dormant_candidate Whether a backend is present but not ready.
+	 *
+	 * @return  string|null
+	 */
+	private static function dormant_backend_note( bool $has_dormant_candidate ): ?string {
+		return $has_dormant_candidate ? self::DORMANT_BACKEND_NOTE : null;
+	}
+
+	/**
+	 * Formats one persisted due timestamp as UTC plus its schedule-relative state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   int $timestamp   Persisted due timestamp.
+	 * @param   int $observed_at Inspection timestamp.
+	 *
+	 * @return  string
+	 */
+	private static function due_label( int $timestamp, int $observed_at ): string {
+		if ( $timestamp > $observed_at ) {
+			$relative = 'in ' . RelativeTime::duration( RelativeTime::distance( $timestamp, $observed_at ) );
+		} elseif ( $timestamp === $observed_at ) {
+			$relative = 'due now';
+		} else {
+			$relative = 'overdue ' . RelativeTime::duration( RelativeTime::distance( $observed_at, $timestamp ) );
+		}
+
+		return \sprintf( '%1$s (%2$s)', \gmdate( \DATE_ATOM, $timestamp ), $relative );
+	}
+
+	/**
+	 * Formats one complete schedule lock snapshot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
+	 *                |array{state: 'held', run_id: string, stale: bool} $lock
+	 *
+	 * @param   array $lock Complete discriminated lock state.
+	 *
+	 * @return  string
+	 */
+	private static function lock_label( array $lock ): string {
+		if ( 'held' !== $lock['state'] ) {
+			return match ( $lock['state'] ) {
+				'free'            => 'free',
+				'invalid'         => 'unknown (invalid lock row)',
+				'not_declared'    => 'unknown (not declared this request)',
+				'overlap_allowed' => 'not blocking (overlap allowed)',
+				'read_failed'     => 'unknown (lock read failed)',
+				'resolver_failed' => 'unknown (overlap-key resolver failed)',
+			};
+		}
+
+		$label = 'held by ' . $lock['run_id'];
+
+		return $lock['stale'] ? $label . ' (stale)' : $label;
 	}
 
 	// endregion

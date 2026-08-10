@@ -50,16 +50,16 @@ every surviving component is initialized before any hook can fire.
   graph is likewise `@internal`.
 - `src/Runtime/` is the engine capability tree: `Component.php` assembles and publishes the
   request-local object graph, while `ScopeOperations.php` exposes its scope-bound verb surface to
-  the public portals; `EngineFacade.php`, `Inspection.php`, and `JobRegistry.php` are the root
-  collaborators. `JobRegistry.php` keys registrations by full identity and retains each
-  definition's kind key, execution object, and options. The single kind-handler registry resolves
-  a definition's kind; the resolved internal handler validates its execution role and owns
-  invocation. Only engine-installed kinds are accepted, and the handler SPI is internal.
+  the public portals; `Runs/Dispatcher.php`, `Schedules/ScheduleOperations.php`, `Inspection.php`,
+  and `JobRegistry.php` are the root collaborators. `JobRegistry.php` keys registrations by full
+  identity and retains each complete `JobDefinition`. The single kind-handler registry resolves a
+  definition's kind; the resolved internal handler validates its execution role and owns invocation.
+  Only engine-installed kinds are accepted, and the handler SPI is internal.
   `Backends/` (Action Scheduler preferred, WP-Cron fallback), `Schedules/`
   (schedule registry, sync orchestration, occurrence delivery, leases, and cleanup convergence),
   `Locks/` (CAS-fenced execution-overlap storage, the single overlap-identity authority that admission,
-  retry, and inspection all resolve through, persisted-lane inspection, and explicit malformed-lane
-  repair), `Runs/` (admission, delivery claiming, kind handlers, the run and failed-run stores, and
+  retry, and inspection all resolve through, persisted-lane inspection, and exact malformed-orphan
+  reclamation), `Runs/` (admission, delivery claiming, kind handlers, the run and failed-run stores, and
   the terminal transitions and effects that follow them), `Storage/` (option-row stores with CAS
   fencing), `Maintenance/` (bounded sweeps on an hourly recurrence), `Logging/`, and `Error/` each
   own one sub-capability.
@@ -70,8 +70,8 @@ every surviving component is initialized before any hook can fire.
   `RunReconciliation.php` repairs runs whose delivery or liveness stopped. Admission, delivery,
   terminalization, and effects are separate because each is a distinct compare-and-swap that can lose
   to a rival independently.
-- `src/CLI/` registers the `wp a8csp-bgje` command surface, including the operator-only
-  malformed-lock repair boundary, gated on WP-CLI.
+- `src/CLI/` registers the `wp a8csp-bgje` command surface, including redacted persisted-lock
+  inspection gated on WP-CLI.
 - `languages/` contains the POT generated from the plugin's strings; the release workflow
   regenerates it so archives always ship current strings.
 - `uninstall.php` loads root `footprint.php`, whose pure-data manifest records option prefixes,
@@ -127,8 +127,9 @@ whose fingerprint matches its registration enters the occurrence census. Priorit
 fingerprint, so a priority-only declaration edit preserves an already-converged tick. The recurring
 chain stores no priority; occurrence admission reads the current request's declaration. Exactly
 one tick is the unchanged fast path, a missing tick is recreated, and duplicated ticks are cleared
-and recreated. Action Scheduler obtains the count with one identity-scoped identifier query per
-matching declaration; WP-Cron buckets the requested identities from one cron snapshot.
+and recreated. Action Scheduler obtains the count with one identity-scoped query per matching
+declaration and one hydration per occurrence that query matched; WP-Cron buckets the requested
+identities from one cron snapshot.
 
 Active-run rows admit at most 1,000,000 persisted serialization bytes. Kind-owned state, including
 a chunk queue, receives 983,616 bytes after the 16,384-byte row-envelope reserve; terminal rows are
@@ -144,11 +145,20 @@ and persisting the occurrence state, leaves the occurrence due. A run that finis
 redelivery reaches admission executes twice for that occurrence under every overlap policy;
 `Allow` gives every dispatch a distinct overlap lane and removes cross-run exclusion.
 
-Maintenance reconciles stale parseable locks against retained run state. It preserves
-schema-invalid lock values and logs only their length and truncated SHA-256 correlation so repair
-remains an explicit operator action. The WP-CLI repair path first claims `Superseded` through exact
-compare-and-swap for every matching `Running` row and only then exact-deletes the selected malformed
-lock generation; a lost run or lock fence leaves the lock in place.
+Run reconciliation crash-fails a `Running`, executing row when a schema-invalid lock hides the lock
+heartbeat and the run-row heartbeat is stale. Delivery ownership stamps both rows from one credited
+timestamp, so run-row freshness is authoritative in that case. A stale non-executing run with no
+pending-action descriptor follows the same recovery path; fresh rows remain preserved.
+
+Maintenance reconciles stale parseable locks against retained run state. For a schema-invalid lock,
+it reads active-run values for that identity in bounded batches and retains a compact projection of
+unreadable state and Running argument lanes. It preserves the lock when a Running run has the same
+arguments hash. An unreadable active-run row conservatively preserves every malformed lane for the
+identity until a complete run pass removes it. Without a matching Running run or unreadable row,
+maintenance exact-deletes only the malformed generation it inspected. A changed or absent generation
+loses that fence silently; an authoritative delete failure preserves the row and warns the operator.
+Malformed-lock diagnostics contain only the raw length and truncated SHA-256 correlation, never the
+persisted bytes.
 
 Consumer hooks use the `a8csp_bgje/` namespace. Hooks whose operation has an identity publish
 generic and identity-specific variants: actions fire the specific hook before the generic hook,

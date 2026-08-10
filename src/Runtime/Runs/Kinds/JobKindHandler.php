@@ -5,9 +5,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\KindExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
@@ -17,7 +16,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
@@ -69,7 +67,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	 * @param   FailureLifecycle $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
-		private JobRegistry $registry,
+		JobRegistry $registry,
 		LoggerInterface $logger,
 		ClockInterface $clock,
 		LockWindows $lock_windows,
@@ -77,7 +75,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 		private LifecycleEffects $terminal_effects,
 		private FailureLifecycle $failure_lifecycle,
 	) {
-		parent::__construct( $logger, $clock, $lock_windows, $terminal_transitions );
+		parent::__construct( $registry, $logger, $clock, $lock_windows, $terminal_transitions );
 	}
 
 	// endregion
@@ -95,109 +93,6 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	#[\Override]
 	public function key(): string {
 		return self::KIND;
-	}
-
-	/**
-	 * Validates and registers a standard-job definition.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity      $identity   Complete scope-qualified job identity.
-	 * @param   JobDefinition $definition Definition resolved to this handler.
-	 *
-	 * @throws  \InvalidArgumentException When the execution object does not implement JobExecutionInterface.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public function register( Identity $identity, JobDefinition $definition ): void {
-		if ( ! $definition->execution instanceof JobExecutionInterface ) {
-			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, JobExecutionInterface::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-		}
-
-		$this->registry->register( $identity, $definition );
-	}
-
-	/**
-	 * Returns the registered standard-job execution for an identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete scope-qualified job identity.
-	 *
-	 * @return  JobExecutionInterface|null
-	 */
-	#[\Override]
-	public function execution( Identity $identity ): ?JobExecutionInterface {
-		$execution = $this->registry->execution( $identity );
-
-		return self::KIND === $this->registry->kind( $identity ) && $execution instanceof JobExecutionInterface ? $execution : null;
-	}
-
-	/**
-	 * Returns the registered standard-job policy declaration.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete scope-qualified job identity.
-	 *
-	 * @return  JobOptions|null
-	 */
-	#[\Override]
-	public function options( Identity $identity ): ?JobOptions {
-		return self::KIND === $this->registry->kind( $identity ) ? $this->registry->options( $identity ) : null;
-	}
-
-	/**
-	 * Returns whether the stage belongs to one-off job delivery.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string|null $stage Persisted lifecycle stage, or null.
-	 *
-	 * @return  bool
-	 */
-	#[\Override]
-	public function owns_stage( ?string $stage ): bool {
-		return 'run' === $stage;
-	}
-
-	/**
-	 * Seeds no kind-owned state because one-off jobs execute from the shared start arguments.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 *
-	 * @return  array<array-key, mixed>
-	 */
-	#[\Override]
-	public function initial_kind_state( array $start_args ): array {
-		return array();
-	}
-
-	/**
-	 * Returns the first durable job delivery for the requested absolute time.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int|null $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
-	 * @param   int      $now      Admission timestamp.
-	 * @param   int      $priority Scheduler priority.
-	 *
-	 * @return  PendingAction
-	 */
-	#[\Override]
-	public function initial_pending( ?int $fire_at, int $now, int $priority ): PendingAction {
-		return null === $fire_at || $fire_at <= $now
-			? PendingAction::async( 'run', $priority )
-			: PendingAction::single( 'run', $fire_at, $priority );
 	}
 
 	/**
@@ -251,44 +146,6 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Allows cancellation for every retained nonexecuting job state.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $run_id Run identifier.
-	 * @param   RunState $state  Current running state.
-	 *
-	 * @return  EngineError|null
-	 */
-	#[\Override]
-	public function cancellation_error( string $run_id, RunState $state ): ?EngineError {
-		return null;
-	}
-
-	/**
-	 * Returns the bounded execution lease for a registered job.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity Raw scheduler-wire identity bytes.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Persisted run-stage state.
-	 *
-	 * @return  int|null Null when no registered definition can declare an execution lease.
-	 */
-	#[\Override]
-	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int {
-		$options = $this->registry->raw_options( $identity, self::KIND );
-		if ( null === $options ) {
-			return null;
-		}
-
-		return $this->execution_lease_at( $options );
-	}
-
-	/**
 	 * Clears consumed retries when a one-off job completes successfully.
 	 *
 	 * @since   1.0.0
@@ -320,7 +177,7 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	public function deliver( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
 		$execution = $this->execution( $identity );
 		$options   = $this->options( $identity );
-		if ( null === $execution || null === $options ) {
+		if ( ! $execution instanceof JobExecutionInterface || null === $options ) {
 			$this->logger->warning(
 				'job delivery references an unregistered execution; register the job before dispatching its run action.',
 				array(
@@ -351,63 +208,29 @@ final readonly class JobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Converts a job execution throwable to durable failure detail.
+	 * Returns the execution role a one-off job definition must implement.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Throwable $throwable Execution failure.
-	 *
-	 * @return  EngineError
+	 * @return  class-string<KindExecutionInterface>
 	 */
 	#[\Override]
-	public function failure_error( \Throwable $throwable ): EngineError {
-		return EngineError::from_throwable( $throwable );
+	protected function execution_role(): string {
+		return JobExecutionInterface::class;
 	}
 
 	/**
-	 * Permits retry policy for ordinary job execution failures.
+	 * Returns the lifecycle stages owned by one-off job delivery.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   \Throwable $throwable Execution failure.
-	 *
-	 * @return  bool
+	 * @return  non-empty-list<string>
 	 */
 	#[\Override]
-	public function is_failure_retryable( \Throwable $throwable ): bool {
-		return true;
-	}
-
-	/**
-	 * Returns no failure details because one-off jobs have no kind-specific diagnostics.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   RunState $state Run state at terminalization.
-	 *
-	 * @return  array<array-key, mixed>|null
-	 */
-	#[\Override]
-	public function failure_details( RunState $state ): ?array {
-		return null;
-	}
-
-	/**
-	 * Returns no queue depth because it is not an observable job metric.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   RunState $state Live run state.
-	 *
-	 * @return  int|null
-	 */
-	#[\Override]
-	public function queue_depth( RunState $state ): ?int {
-		return null;
+	protected function stages(): array {
+		return array( 'run' );
 	}
 
 	// endregion

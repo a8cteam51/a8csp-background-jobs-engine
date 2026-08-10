@@ -5,6 +5,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
@@ -13,14 +14,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use Psr\Log\NullLogger;
@@ -168,7 +167,7 @@ final readonly class StoreFixtureBuilder {
 	public function run( string $run_id, RunState $state ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $run_id, $state ): array {
-				$store   = new RunStore( (string) $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
+				$store   = new RunStore( $this->identity, new FixedClock( $state->created_at ), new OptionRows( $wpdb ) );
 				$created = $store->create( $run_id, $state->kind, $state->start_args, $state->args_hash, $state->kind_state, $state->pending, $state->priority );
 				if ( ! $created instanceof RunState ) {
 					throw new \LogicException( 'Production RunStore rejected an isolated active-run fixture.' );
@@ -300,7 +299,7 @@ final readonly class StoreFixtureBuilder {
 	public function latest( array $entries ): array {
 		return $this->isolated(
 			function ( \wpdb $wpdb ) use ( $entries ): array {
-				$store = new LatestRunPointer( (string) $this->identity, new OptionRows( $wpdb ) );
+				$store = new LatestRunPointer( $this->identity, new OptionRows( $wpdb ) );
 				foreach ( $entries as $entry ) {
 					if ( ! $store->record( $entry['run_id'], $entry['args_hash'] ) ) {
 						throw new \LogicException( 'Production LatestRunPointer rejected an isolated pointer fixture.' );
@@ -345,7 +344,7 @@ final readonly class StoreFixtureBuilder {
 				}
 
 				$registry = new ScheduleRegistry( new OptionRows( $wpdb ), new NullLogger() );
-				if ( ScopeReplacementOutcome::Persisted !== $registry->replace_scope( $scope['scope'], $declarations, $scope['registrations'] ) ) {
+				if ( $registry->replace_scope( $scope['scope'], $declarations, $scope['registrations'] )->is_failure() ) {
 					throw new \LogicException( 'Production ScheduleRegistry rejected an isolated registration fixture.' );
 				}
 
@@ -360,16 +359,16 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int $created_at Intent timestamp.
+	 * @param   int $generation Intent generation.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function cleanup_intent( int $created_at ): array {
+	public function cleanup_intent( int $generation ): array {
 		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $created_at ): array {
+			function ( \wpdb $wpdb ) use ( $generation ): array {
 				$rows      = new OptionRows( $wpdb );
 				$scheduler = new SchedulerFacade( array( new RecordingBackend() ) );
-				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new FixedClock( $created_at ), new NullLogger() );
+				$intents   = new CleanupIntents( new ScheduleRegistry( $rows, new NullLogger() ), $scheduler, $rows, new RecordingRandomizer( $generation ), new NullLogger() );
 				$intents->record_intent( (string) $this->identity );
 
 				return $this->only_row_under( $rows, $wpdb, CleanupIntents::OPTION_PREFIX );
@@ -385,21 +384,21 @@ final readonly class StoreFixtureBuilder {
 	 *
 	 * @param   string $args_hash    Stable single-flight identity.
 	 * @param   string $run_id       Lock owner.
-	 * @param   int    $claimed_at   Claim timestamp.
+	 * @param   int    $initial_heartbeat_at   Claim timestamp.
 	 * @param   int    $heartbeat_at Latest liveness timestamp.
 	 *
 	 * @return  array{string, string}
 	 */
-	public function lock( string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at ): array {
+	public function lock( string $args_hash, string $run_id, int $initial_heartbeat_at, int $heartbeat_at ): array {
 		return $this->isolated(
-			function ( \wpdb $wpdb ) use ( $args_hash, $run_id, $claimed_at, $heartbeat_at ): array {
-				$clock = new FixedClock( $claimed_at );
+			function ( \wpdb $wpdb ) use ( $args_hash, $run_id, $initial_heartbeat_at, $heartbeat_at ): array {
+				$clock = new FixedClock( $initial_heartbeat_at );
 				$guard = new OverlapGuard( $clock, new RecordingLogger(), new OptionRows( $wpdb ), new LockWindows( $clock, new RecordingLogger() ) );
 				if ( LockClaimOutcome::Claimed !== $guard->claim( $this->identity, $args_hash, $run_id )->outcome ) {
 					throw new \LogicException( 'Production OverlapGuard rejected an isolated lock fixture.' );
 				}
 
-				if ( $heartbeat_at !== $claimed_at ) {
+				if ( $heartbeat_at !== $initial_heartbeat_at ) {
 					$clock->timestamp = $heartbeat_at;
 					if ( HeartbeatOutcome::Owned !== $guard->heartbeat( $this->identity, $args_hash, $run_id ) ) {
 						throw new \LogicException( 'Production OverlapGuard could not serialize the requested lock heartbeat.' );

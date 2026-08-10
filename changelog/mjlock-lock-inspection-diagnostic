@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+A maintenance sweep reports an execution-overlap lock row it cannot read instead of silently skipping it, and directs operators to repair WordPress option reads before retrying the sweep.

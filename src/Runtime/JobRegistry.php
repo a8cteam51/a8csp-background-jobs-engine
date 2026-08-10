@@ -5,7 +5,6 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\DuplicateRegistrationException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
-use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -26,7 +25,7 @@ final class JobRegistry {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @var     array<string, array{kind: string, execution: object, options: JobOptions}>
+	 * @var     array<string, JobDefinition>
 	 */
 	private array $registrations = array();
 
@@ -61,21 +60,17 @@ final class JobRegistry {
 		$kind     = $definition->kind->value;
 		$existing = $this->registrations[ $key ] ?? null;
 		if ( null === $existing ) {
-			$this->registrations[ $key ] = array(
-				'kind'      => $kind,
-				'execution' => $definition->execution,
-				'options'   => $definition->options,
-			);
+			$this->registrations[ $key ] = $definition;
 
 			return;
 		}
 
-		if ( $kind === $existing['kind'] ) {
+		if ( $kind === $existing->kind->value ) {
 			throw new DuplicateRegistrationException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; register each background-work name exactly once.', (string) $identity, $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
 		}
 
 		// Exception values are diagnostic data, not rendered output.
-		throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', (string) $identity, $existing['kind'], $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		throw new \InvalidArgumentException( \sprintf( 'Background-work identity "%1$s" is already registered as a %2$s; it cannot also be registered as a %3$s.', (string) $identity, $existing->kind->value, $kind ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 
 	// endregion
@@ -83,48 +78,20 @@ final class JobRegistry {
 	// region GETTERS
 
 	/**
-	 * Returns the execution object registered under a stable identity.
+	 * Returns the registered definition only when its kind agrees with the caller.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   Identity $identity Complete scope-qualified work identity.
+	 * @param   string   $kind     Expected kind key.
 	 *
-	 * @return  object|null
+	 * @return  JobDefinition|null
 	 */
-	public function execution( Identity $identity ): ?object {
-		return $this->registrations[ (string) $identity ]['execution'] ?? null;
-	}
+	public function definition_for_kind( Identity $identity, string $kind ): ?JobDefinition {
+		$definition = $this->registrations[ (string) $identity ] ?? null;
 
-	/**
-	 * Returns the policy declaration registered under a stable identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete scope-qualified work identity.
-	 *
-	 * @return  JobOptions|null
-	 */
-	public function options( Identity $identity ): ?JobOptions {
-		return $this->registrations[ (string) $identity ]['options'] ?? null;
-	}
-
-	/**
-	 * Returns the policy declaration for untrusted scheduler-wire identity bytes when its kind matches.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 * @param   string $kind     Persisted kind key.
-	 *
-	 * @return  JobOptions|null
-	 */
-	public function raw_options( string $identity, string $kind ): ?JobOptions {
-		$registration = $this->registrations[ $identity ] ?? null;
-
-		return ( $registration['kind'] ?? null ) === $kind ? $registration['options'] : null;
+		return $kind === $definition?->kind->value ? $definition : null;
 	}
 
 	/**
@@ -138,7 +105,7 @@ final class JobRegistry {
 	 * @return  string|null
 	 */
 	public function kind( Identity $identity ): ?string {
-		return $this->registrations[ (string) $identity ]['kind'] ?? null;
+		return ( $this->registrations[ (string) $identity ] ?? null )?->kind->value;
 	}
 
 	// endregion

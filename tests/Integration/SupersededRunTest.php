@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
@@ -127,9 +126,8 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		);
 
 		$run_a_result = $client->dispatch( self::NAME, $start_args );
-		self::assertInstanceOf( Success::class, $run_a_result, 'The incumbent chunked job must start through the public API' );
-		self::assertInstanceOf( Run::class, $run_a_result->value );
-		$run_a      = (string) $run_a_result->value->id;
+		self::assertInstanceOf( Run::class, $run_a_result, 'The incumbent chunked job must start through the public API' );
+		$run_a      = (string) $run_a_result->id;
 		$group_a    = self::IDENTITY;
 		$start_a_id = $this->assert_pending_start_action( $run_a, $group_a );
 
@@ -141,9 +139,8 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		$run_a_action_id = $this->assert_pending_chunk_continuation( self::IDENTITY, $run_a, $group_a, array( 'chunk' => 'one' ) );
 
 		$run_b_result = $client->dispatch( self::NAME, $start_args );
-		self::assertInstanceOf( Success::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
-		self::assertInstanceOf( Run::class, $run_b_result->value );
-		$run_b      = (string) $run_b_result->value->id;
+		self::assertInstanceOf( Run::class, $run_b_result, 'A normal chunked job start must replace the same-arguments incumbent' );
+		$run_b      = (string) $run_b_result->id;
 		$group_b    = self::IDENTITY;
 		$start_b_id = $this->assert_pending_start_action( $run_b, $group_b );
 		self::assertNotSame( $run_a, $run_b, 'Replacement must allocate a fresh run identifier' );
@@ -221,9 +218,8 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 
 		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}> $process_calls_before */
 		$process_calls_before = $chunked_job->process_calls;
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained replacement queue' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained replacement queue and complete the run' );
 		self::assertSame( $process_calls_before, $chunked_job->process_calls, 'The drained-queue continue action must not execute chunk work' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute replacement terminal cleanup' );
 
 		/** @var list<array{chunk_args: array<array-key, mixed>, context: ChunkedRunContextInterface}> $process_calls */
 		$process_calls = $chunked_job->process_calls;

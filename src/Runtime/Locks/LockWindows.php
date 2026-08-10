@@ -99,21 +99,6 @@ final readonly class LockWindows {
 	}
 
 	/**
-	 * Resolves the non-negative continuation delay for untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 * @param   string $run_id   Run identifier.
-	 *
-	 * @return  int
-	 */
-	public function raw_continue_delay( string $identity, string $run_id ): int {
-		return $this->resolve_continue_delay( $identity, $run_id );
-	}
-
-	/**
 	 * Resolves the per-run lock window at least twice the continue delay.
 	 *
 	 * @since   1.0.0
@@ -126,21 +111,6 @@ final readonly class LockWindows {
 	 */
 	public function lock_staleness( Identity $identity, string $run_id ): int {
 		return $this->resolve_lock_staleness( (string) $identity, $run_id );
-	}
-
-	/**
-	 * Resolves the per-run lock window for untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity Raw scheduler-wire identity bytes.
-	 * @param   string $run_id   Run identifier.
-	 *
-	 * @return  int
-	 */
-	public function raw_lock_staleness( string $identity, string $run_id ): int {
-		return $this->resolve_lock_staleness( $identity, $run_id );
 	}
 
 	/**

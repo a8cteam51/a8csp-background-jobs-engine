@@ -46,7 +46,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
  *     entries: list<FailedRunEntry>
  * }
  */
-final readonly class FailedRunOutput {
+final class FailedRunOutput {
 	// region FIELDS AND CONSTANTS
 
 	/**
@@ -95,9 +95,42 @@ final readonly class FailedRunOutput {
 	// region METHODS
 
 	/**
-	 * Shapes and orders failed-run entries without requiring WordPress or WP-CLI state.
+	 * Renders every retained failed run through the requested WP-CLI formatter.
 	 *
-	 * @internal Command formatting seam.
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param list<FailedRunGroup> $groups
+	 *
+	 * @param   array       $groups             Failed runs grouped by composed identity.
+	 * @param   string|null $scope              Exact scope filter, or null for every scope.
+	 * @param   string      $format             WP-CLI output format.
+	 * @param   int         $unreadable_entries Rejected child-entry count.
+	 * @param   int         $unreadable_rows    Whole-row unreadable count.
+	 *
+	 * @return  void
+	 */
+	public static function render( array $groups, ?string $scope, string $format, int $unreadable_entries = 0, int $unreadable_rows = 0 ): void {
+		$rows    = self::rows_from_entries( $groups, $scope );
+		$warning = self::unreadable_message( $unreadable_entries, $unreadable_rows );
+		if ( array() === $rows && 'table' === $format && null === $warning ) {
+			\WP_CLI::line( 'No failed runs are retained.' );
+			return;
+		}
+
+		$fields = \in_array( $format, array( 'json', 'yaml' ), true ) ? self::STRUCTURED_FIELDS : self::FIELDS;
+		\WP_CLI\Utils\format_items( $format, $rows, $fields );
+		if ( null !== $warning ) {
+			\WP_CLI::warning( $warning );
+		}
+	}
+
+	// endregion
+
+	// region HELPERS
+
+	/**
+	 * Shapes and orders failed-run entries without requiring WordPress or WP-CLI state.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -111,7 +144,7 @@ final readonly class FailedRunOutput {
 	 *
 	 * @return  array
 	 */
-	public static function rows_from_entries( array $groups, ?string $scope = null ): array {
+	private static function rows_from_entries( array $groups, ?string $scope = null ): array {
 		\usort(
 			$groups,
 			static fn ( array $left, array $right ): int => (string) $left['identity'] <=> (string) $right['identity']
@@ -160,8 +193,6 @@ final readonly class FailedRunOutput {
 	/**
 	 * Returns one CLI warning for unreadable failed-run entries or whole option rows.
 	 *
-	 * @internal Command honesty seam.
-	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
@@ -170,7 +201,7 @@ final readonly class FailedRunOutput {
 	 *
 	 * @return  string|null
 	 */
-	public static function unreadable_message( int $unreadable_entries, int $unreadable_rows ): ?string {
+	private static function unreadable_message( int $unreadable_entries, int $unreadable_rows ): ?string {
 		if ( 1 > $unreadable_entries && 1 > $unreadable_rows ) {
 			return null;
 		}
@@ -182,37 +213,6 @@ final readonly class FailedRunOutput {
 		}
 
 		return \sprintf( '%1$d unreadable failed-run %2$s and %3$d unreadable option %4$s were omitted; repair or purge each affected option row.', $unreadable_entries, 1 === $unreadable_entries ? 'entry' : 'entries', $unreadable_rows, 1 === $unreadable_rows ? 'row' : 'rows' );
-	}
-
-	/**
-	 * Renders every retained failed run through the requested WP-CLI formatter.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @phpstan-param list<FailedRunGroup> $groups
-	 *
-	 * @param   array       $groups             Failed runs grouped by composed identity.
-	 * @param   string|null $scope              Exact scope filter, or null for every scope.
-	 * @param   string      $format             WP-CLI output format.
-	 * @param   int         $unreadable_entries Rejected child-entry count.
-	 * @param   int         $unreadable_rows    Whole-row unreadable count.
-	 *
-	 * @return  void
-	 */
-	public static function render( array $groups, ?string $scope, string $format, int $unreadable_entries = 0, int $unreadable_rows = 0 ): void {
-		$rows    = self::rows_from_entries( $groups, $scope );
-		$warning = self::unreadable_message( $unreadable_entries, $unreadable_rows );
-		if ( array() === $rows && 'table' === $format && null === $warning ) {
-			\WP_CLI::line( 'No failed runs are retained.' );
-			return;
-		}
-
-		$fields = \in_array( $format, array( 'json', 'yaml' ), true ) ? self::STRUCTURED_FIELDS : self::FIELDS;
-		\WP_CLI\Utils\format_items( $format, $rows, $fields );
-		if ( null !== $warning ) {
-			\WP_CLI::warning( $warning );
-		}
 	}
 
 	// endregion

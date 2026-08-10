@@ -290,22 +290,6 @@ final class WPCronBackend implements BackendInterface {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * WP-Cron can retain the same hook and serialized arguments at multiple timestamps. It stores no
-	 * groups, so the group dimension remains a no-op.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  int<0, max>
-	 */
-	#[\Override]
-	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
-		return \count( $this->matching_timestamps( $hook, $args ) );
-	}
-
-	/**
-	 * {@inheritDoc}
-	 *
 	 * WP-Cron stores no groups, so one cron-option snapshot can bucket every exact serialized
 	 * one-identity argument list.
 	 *
@@ -332,37 +316,22 @@ final class WPCronBackend implements BackendInterface {
 			return array();
 		}
 
-		foreach ( $this->cron_array() as $timestamp => $hooks ) {
-			if ( ! \is_int( $timestamp ) || ! \is_array( $hooks ) ) {
+		foreach ( $this->events_for_hook( $hook ) as $stored_event ) {
+			$event_args = $stored_event['event']['args'] ?? null;
+			if ( ! \is_array( $event_args ) ) {
 				continue;
 			}
 
-			$events = $hooks[ $hook ] ?? null;
-			if ( ! \is_array( $events ) ) {
+			$serialized_args = \maybe_serialize( $event_args );
+			if ( ! \is_string( $serialized_args ) || ! \array_key_exists( $serialized_args, $identity_by_serialized_args ) ) {
 				continue;
 			}
 
-			foreach ( $events as $event ) {
-				if ( ! \is_array( $event ) ) {
-					continue;
-				}
+			$identity = $identity_by_serialized_args[ $serialized_args ];
+			++$counts[ $identity ];
 
-				$event_args = $event['args'] ?? null;
-				if ( ! \is_array( $event_args ) ) {
-					continue;
-				}
-
-				$serialized_args = \maybe_serialize( $event_args );
-				if ( ! \is_string( $serialized_args ) || ! \array_key_exists( $serialized_args, $identity_by_serialized_args ) ) {
-					continue;
-				}
-
-				$identity = $identity_by_serialized_args[ $serialized_args ];
-				++$counts[ $identity ];
-
-				$interval               = $event['interval'] ?? null;
-				$intervals[ $identity ] = \is_int( $interval ) && 0 < $interval ? $interval : null;
-			}
+			$interval               = $stored_event['event']['interval'] ?? null;
+			$intervals[ $identity ] = \is_int( $interval ) && 0 < $interval ? $interval : null;
 		}
 
 		$chains = array();
@@ -570,19 +539,17 @@ final class WPCronBackend implements BackendInterface {
 	}
 
 	/**
-	 * Returns stored delivery events belonging to one run.
+	 * Returns readable stored events for one hook with their timestamps.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $hook     Delivery hook.
-	 * @param   string $identity Complete work identity.
-	 * @param   string $run_id   Run identifier.
+	 * @param   string $hook Hook to match.
 	 *
-	 * @return  list<array{timestamp: int, args: list<mixed>}>
+	 * @return  list<array{timestamp: int, event: array<mixed>}>
 	 */
-	private function matching_run_events( string $hook, string $identity, string $run_id ): array {
-		$matching = array();
+	private function events_for_hook( string $hook ): array {
+		$stored_events = array();
 		foreach ( $this->cron_array() as $timestamp => $hooks ) {
 			if ( ! \is_int( $timestamp ) || ! \is_array( $hooks ) ) {
 				continue;
@@ -598,22 +565,46 @@ final class WPCronBackend implements BackendInterface {
 					continue;
 				}
 
-				$args = $event['args'] ?? null;
-				if ( ! \is_array( $args ) || ! \array_is_list( $args ) ) {
-					continue;
-				}
-
-				$delivery_identity = $args[0] ?? null;
-				$delivery_run_id   = $args[1] ?? null;
-				if ( $identity !== $delivery_identity || $run_id !== $delivery_run_id ) {
-					continue;
-				}
-
-				$matching[] = array(
+				$stored_events[] = array(
 					'timestamp' => $timestamp,
-					'args'      => $args,
+					'event'     => $event,
 				);
 			}
+		}
+
+		return $stored_events;
+	}
+
+	/**
+	 * Returns stored delivery events belonging to one run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $hook     Delivery hook.
+	 * @param   string $identity Complete work identity.
+	 * @param   string $run_id   Run identifier.
+	 *
+	 * @return  list<array{timestamp: int, args: list<mixed>}>
+	 */
+	private function matching_run_events( string $hook, string $identity, string $run_id ): array {
+		$matching = array();
+		foreach ( $this->events_for_hook( $hook ) as $stored_event ) {
+			$args = $stored_event['event']['args'] ?? null;
+			if ( ! \is_array( $args ) || ! \array_is_list( $args ) ) {
+				continue;
+			}
+
+			$delivery_identity = $args[0] ?? null;
+			$delivery_run_id   = $args[1] ?? null;
+			if ( $identity !== $delivery_identity || $run_id !== $delivery_run_id ) {
+				continue;
+			}
+
+			$matching[] = array(
+				'timestamp' => $stored_event['timestamp'],
+				'args'      => $args,
+			);
 		}
 
 		\usort( $matching, static fn ( array $left, array $right ): int => $left['timestamp'] <=> $right['timestamp'] );
@@ -636,28 +627,13 @@ final class WPCronBackend implements BackendInterface {
 		$timestamps      = array();
 		$serialized_args = \maybe_serialize( $args );
 
-		foreach ( $this->cron_array() as $timestamp => $hooks ) {
-			if ( ! \is_int( $timestamp ) || ! \is_array( $hooks ) ) {
+		foreach ( $this->events_for_hook( $hook ) as $stored_event ) {
+			$event_args = $stored_event['event']['args'] ?? null;
+			if ( ! \is_array( $event_args ) || \maybe_serialize( $event_args ) !== $serialized_args ) {
 				continue;
 			}
 
-			$events = $hooks[ $hook ] ?? null;
-			if ( ! \is_array( $events ) ) {
-				continue;
-			}
-
-			foreach ( $events as $event ) {
-				if ( ! \is_array( $event ) ) {
-					continue;
-				}
-
-				$event_args = $event['args'] ?? null;
-				if ( ! \is_array( $event_args ) || \maybe_serialize( $event_args ) !== $serialized_args ) {
-					continue;
-				}
-
-				$timestamps[] = $timestamp;
-			}
+			$timestamps[] = $stored_event['timestamp'];
 		}
 
 		\sort( $timestamps, SORT_NUMERIC );

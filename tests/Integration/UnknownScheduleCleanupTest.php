@@ -12,11 +12,10 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Logging\EngineLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Randomizer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\SystemClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
@@ -189,14 +188,15 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 				static fn ( array $record ): bool => 'warning' === $record[0] && array(
 					'schedule_identity' => self::KEY,
 					'converged'         => false,
+					'intent_confirmed'  => true,
 				) === $record[2]
 			),
 			'The public log hook must report deferred convergence for the unknown registration'
 		);
 
-		$engine = Component::get_engine();
-		self::assertNotNull( $engine, 'The live plugin must publish its engine before maintenance convergence' );
-		$synced = $engine->schedules->sync_scope(
+		$schedules = Component::get_schedules();
+		self::assertNotNull( $schedules, 'The live plugin must publish schedule operations before maintenance convergence' );
+		$synced = $schedules->sync_scope(
 			'a8csp-bgje',
 			array(
 				self::MAINTENANCE_KEY => array(
@@ -208,8 +208,8 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( Success::class, $synced, 'The reserved maintenance schedule must re-synchronize' );
 		self::assertTrue( $synced->value );
 
-		$maintenance = $engine->schedules->dispatch_now( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ) );
-		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance job must be dispatchable through the schedule facade' );
+		$maintenance = $schedules->dispatch_now( Identity::compose( Identity::ENGINE_SCOPE, MaintenanceJob::NAME, true ) );
+		self::assertInstanceOf( Success::class, $maintenance, 'The live maintenance job must be dispatchable through the schedule operations' );
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute the live maintenance job' );
 
 		self::assertFalse( $scheduler->is_scheduled( self::HOOK, array( self::KEY ), self::KEY ), 'The maintenance sweep must converge the unknown recurring chain' );
@@ -250,8 +250,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		$client->register( $job->definition() );
 		$schedule = new Schedule( self::SCHEDULE, Recurrence::every( 300 ), self::REDECLARED_JOB, array( 'generation' => 'redeclared' ), CatchUpPolicy::RunOnce );
 		$synced   = $client->sync( array( $schedule ) );
-		self::assertInstanceOf( Success::class, $synced, 'The unknown key must accept a legitimate live redeclaration' );
-		self::assertTrue( $synced->value );
+		self::assertTrue( $synced, 'The unknown key must accept a legitimate live redeclaration' );
 		self::assertSame( \ActionScheduler_Store::STATUS_CANCELED, $store->get_status( $unknown_successor_id ), 'Redeclaration must cancel the stale unknown-chain successor before creating its live chain' );
 
 		$live_action_ids = $this->pending_schedule_action_ids( self::KEY );
@@ -324,6 +323,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 				static fn ( array $record ): bool => 'warning' === $record[0] && array(
 					'schedule_identity' => self::WP_CRON_KEY,
 					'converged'         => true,
+					'intent_confirmed'  => true,
 				) === $record[2]
 			),
 			'The public log hook must report authoritative inline convergence'
@@ -428,7 +428,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 		self::assertIsArray( $re_recorded_intent );
 		self::assertCount( 2, $re_recorded_intent );
 		self::assertSame( self::KEY, $re_recorded_intent['schedule_identity'] ?? null );
-		self::assertIsInt( $re_recorded_intent['created_at'] ?? null );
+		self::assertIsInt( $re_recorded_intent['generation'] ?? null );
 	}
 
 	// endregion.
@@ -462,7 +462,7 @@ final class UnknownScheduleCleanupTest extends AbstractIntegrationTestCase {
 				)
 			),
 			$rows,
-			new SystemClock(),
+			new Randomizer(),
 			$logger
 		);
 	}

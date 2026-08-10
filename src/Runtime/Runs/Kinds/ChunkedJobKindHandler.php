@@ -7,8 +7,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
-use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\KindExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContext;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
@@ -84,7 +84,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @param   FailureLifecycle  $failure_lifecycle    Retry adjudication coordinator.
 	 */
 	public function __construct(
-		private JobRegistry $registry,
+		JobRegistry $registry,
 		private DeliveryScheduler $delivery_scheduler,
 		LoggerInterface $logger,
 		ClockInterface $clock,
@@ -93,7 +93,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		private LifecycleEffects $terminal_effects,
 		private FailureLifecycle $failure_lifecycle,
 	) {
-		parent::__construct( $logger, $clock, $lock_windows, $terminal_transitions );
+		parent::__construct( $registry, $logger, $clock, $lock_windows, $terminal_transitions );
 	}
 
 	// endregion
@@ -114,128 +114,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	}
 
 	/**
-	 * Validates and registers a chunked-job definition.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity      $identity   Complete scope-qualified chunked-job identity.
-	 * @param   JobDefinition $definition Definition resolved to this handler.
-	 *
-	 * @throws  \InvalidArgumentException When the execution object does not implement ChunkedJobExecutionInterface.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public function register( Identity $identity, JobDefinition $definition ): void {
-		if ( ! $definition->execution instanceof ChunkedJobExecutionInterface ) {
-			throw new \InvalidArgumentException( \sprintf( 'Job kind "%1$s" requires execution implementing %2$s; %3$s given.', self::KIND, ChunkedJobExecutionInterface::class, \get_debug_type( $definition->execution ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception values are diagnostic data, not rendered output.
-		}
-
-		$this->registry->register( $identity, $definition );
-	}
-
-	/**
-	 * Returns the registered chunked-job execution for an identity.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete scope-qualified chunked-job identity.
-	 *
-	 * @return  ChunkedJobExecutionInterface|null
-	 */
-	#[\Override]
-	public function execution( Identity $identity ): ?ChunkedJobExecutionInterface {
-		$execution = $this->registry->execution( $identity );
-
-		return self::KIND === $this->registry->kind( $identity ) && $execution instanceof ChunkedJobExecutionInterface ? $execution : null;
-	}
-
-	/**
-	 * Returns the registered chunked-job policy declaration.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity Complete scope-qualified chunked-job identity.
-	 *
-	 * @return  JobOptions|null
-	 */
-	#[\Override]
-	public function options( Identity $identity ): ?JobOptions {
-		return self::KIND === $this->registry->kind( $identity ) ? $this->registry->options( $identity ) : null;
-	}
-
-	/**
-	 * Returns whether the stage belongs to chunked-job delivery.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string|null $stage Persisted lifecycle stage, or null.
-	 *
-	 * @return  bool
-	 */
-	#[\Override]
-	public function owns_stage( ?string $stage ): bool {
-		return \in_array( $stage, array( 'start', 'continue', 'cleanup' ), true );
-	}
-
-	/**
-	 * Seeds the handler-owned bare-list queue payload empty until the start delivery generates chunks.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   array<array-key, mixed> $start_args Arguments supplied when the run started.
-	 *
-	 * @return  list<array<array-key, mixed>>
-	 */
-	#[\Override]
-	public function initial_kind_state( array $start_args ): array {
-		return array();
-	}
-
-	/**
-	 * Returns the initial start delivery for an admitted chunked job.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   int|null $fire_at  Absolute first-delivery timestamp, or null for asynchronous admission.
-	 * @param   int      $now      Admission timestamp.
-	 * @param   int      $priority Scheduler priority.
-	 *
-	 * @return  PendingAction
-	 */
-	#[\Override]
-	public function initial_pending( ?int $fire_at, int $now, int $priority ): PendingAction {
-		return null === $fire_at || $fire_at <= $now
-			? PendingAction::async( 'start', $priority )
-			: PendingAction::single( 'start', $fire_at, $priority );
-	}
-
-	/**
-	 * Defers started effects until the generated queue is durably persisted.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
-	 * @param   string   $run_id    Run identifier.
-	 * @param   RunState $state     Persisted running state.
-	 * @param   RunStore $run_store Active-run store.
-	 *
-	 * @return  EngineError|null
-	 */
-	#[\Override]
-	public function after_dispatch( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): ?EngineError {
-		return null;
-	}
-
-	/**
-	 * Refuses cancellation after the queue drains and cleanup becomes authoritative.
+	 * Refuses cancellation after the queue drains and its continuation becomes authoritative.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -251,52 +130,12 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		if ( $queue instanceof EngineError ) {
 			return $queue;
 		}
-		if ( array() !== $queue || 1 >= $state->action_sequence || 'start' === $state->pending?->stage ) {
+		// Only a continuation completes a drained run, so any other pending stage leaves cancellation the operator's one way out.
+		if ( array() !== $queue || 1 >= $state->action_sequence || 'continue' !== $state->pending?->stage ) {
 			return null;
 		}
 
-		return new EngineError( \sprintf( 'Run "%s" has no chunks left to process; the pending cleanup completes it.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), );
-	}
-
-	/**
-	 * Returns the bounded execution lease for a registered chunked job.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity Raw scheduler-wire identity bytes.
-	 * @param   string   $run_id   Run identifier.
-	 * @param   RunState $state    Persisted chunked-job stage state.
-	 *
-	 * @return  int|null Null when no registered definition can declare an execution lease.
-	 */
-	#[\Override]
-	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int {
-		if ( 'cleanup' === $state->pending?->stage ) {
-			return null;
-		}
-
-		$options = $this->registry->raw_options( $identity, self::KIND );
-		if ( null === $options ) {
-			return null;
-		}
-
-		return $this->execution_lease_at( $options );
-	}
-
-	/**
-	 * Preserves chunked-job retry state when cleanup completes the drained run.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   RunState $state Fenced executing state.
-	 *
-	 * @return  RunState
-	 */
-	#[\Override]
-	public function completion_state( RunState $state ): RunState {
-		return $state;
+		return new EngineError( \sprintf( 'Run "%s" has no chunks left to process; the pending continuation completes it.', $run_id ), reason: EngineErrorReason::RunNotCancellable, context: array( 'run_id' => $run_id ), );
 	}
 
 	/**
@@ -317,7 +156,6 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		match ( $state->pending?->stage ) {
 			'start'    => $this->handle_start( $identity, $run_id, $state, $run_store ),
 			'continue' => $this->handle_continue( $identity, $run_id, $state, $run_store ),
-			'cleanup'  => $this->handle_cleanup( $identity, $run_id, $state, $run_store ),
 			default    => null,
 		};
 	}
@@ -395,6 +233,32 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		$queue = $this->queue_for_state( $state );
 
 		return $queue instanceof EngineError ? null : \count( $queue );
+	}
+
+	/**
+	 * Returns the execution role a chunked-job definition must implement.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  class-string<KindExecutionInterface>
+	 */
+	#[\Override]
+	protected function execution_role(): string {
+		return ChunkedJobExecutionInterface::class;
+	}
+
+	/**
+	 * Returns the lifecycle stages owned by chunked-job delivery.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  non-empty-list<string>
+	 */
+	#[\Override]
+	protected function stages(): array {
+		return array( 'start', 'continue' );
 	}
 
 	// endregion
@@ -522,11 +386,11 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			return;
 		}
 
-		$this->schedule_async_successor( $identity, $run_id, $state, $run_store, 'continue' );
+		$this->schedule_async_successor( $identity, $run_id, $state, $run_store );
 	}
 
 	/**
-	 * Processes the current queue head or advances a drained queue to cleanup.
+	 * Processes the current queue head or completes a drained queue.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -555,64 +419,12 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 		}
 
 		if ( array() === $queue ) {
-			$priority     = $state->pending->priority ?? throw new \LogicException( 'Claimed chunked-job delivery requires a durable pending-action descriptor.' );
-			$pending      = PendingAction::async( 'cleanup', $priority );
-			$replacement  = $state->with_action_sequence( $state->action_sequence + 1 )->with_executing( false )->with_pending( $pending );
-			$transitioned = $run_store->replace_if_state_matches( $run_id, $state, $replacement );
-			if ( $transitioned instanceof Failure ) {
-				if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $state->heartbeat_at, $state->heartbeat_at ) ) {
-					return;
-				}
-				$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), ErrorCode::PayloadRejected );
-
-				return;
-			}
-			if ( null === $transitioned ) {
-				return;
-			}
-
-			$this->schedule_async_successor( $identity, $run_id, $replacement, $run_store, 'cleanup' );
+			$this->terminal_transitions->complete_run( $this, $identity, $run_id, $state, $run_store );
 
 			return;
 		}
 
 		$this->process_chunk( $execution, $identity, $run_id, $state, $run_store, $queue );
-	}
-
-	/**
-	 * Completes one drained run after its terminal delivery is fenced.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
-	 * @param   string   $run_id    Run identifier.
-	 * @param   RunState $state     Fenced executing state.
-	 * @param   RunStore $run_store Active-run store.
-	 *
-	 * @return  void
-	 */
-	private function handle_cleanup( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
-		$execution = $this->execution_for_action( $identity, $run_id, 'cleanup' );
-		if ( null === $execution ) {
-			$this->fail_orphaned_run( $identity, $run_id, $state, $run_store );
-
-			return;
-		}
-		$queue = $this->queue_for_state( $state );
-		if ( $queue instanceof EngineError ) {
-			$this->fail_malformed_kind_state( $identity, $run_id, $state, $run_store, $queue );
-
-			return;
-		}
-
-		if ( array() !== $queue ) {
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, new EngineError( \sprintf( '%1$s "%2$s" reached cleanup with queued chunks; schedule cleanup only after continue observes an empty queue.', self::KIND, (string) $identity ) ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::execution(), ErrorCode::UnsupportedOperation );
-
-			return;
-		}
-
-		$this->terminal_transitions->complete_run( $this, $identity, $run_id, $state, $run_store );
 	}
 
 	/**
@@ -686,7 +498,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 			if ( $this->terminal_transitions->enforce_delivery_fence( $this, $identity, $run_id, $state, $run_store, $reset_at, $reset_at ) ) {
 				return;
 			}
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), ErrorCode::PayloadRejected );
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, $transitioned->error, RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), ErrorCode::PayloadRejected, $this->failure_details( $state ) );
 
 			return;
 		}
@@ -724,21 +536,20 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity             $identity  Complete scope-qualified chunked-job identity.
-	 * @param   string               $run_id    Run identifier.
-	 * @param   RunState             $state     Persisted successor state.
-	 * @param   RunStore             $run_store Active-run store.
-	 * @param   'continue'|'cleanup' $stage     Persisted successor stage.
+	 * @param   Identity $identity  Complete scope-qualified chunked-job identity.
+	 * @param   string   $run_id    Run identifier.
+	 * @param   RunState $state     Persisted successor state.
+	 * @param   RunStore $run_store Active-run store.
 	 *
 	 * @throws  \LogicException When the persisted successor has no durable pending-action descriptor.
 	 *
 	 * @return  void
 	 */
-	private function schedule_async_successor( Identity $identity, string $run_id, RunState $state, RunStore $run_store, string $stage ): void {
+	private function schedule_async_successor( Identity $identity, string $run_id, RunState $state, RunStore $run_store ): void {
 		$pending   = $state->pending ?? throw new \LogicException( 'Persisted chunked-job successor requires a durable pending-action descriptor.' );
 		$scheduled = $this->delivery_scheduler->schedule( $identity, $run_id, $state->action_sequence, $pending );
 		if ( $scheduled->is_failure() ) {
-			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, $stage, $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), $scheduled->error->reason->api_code() );
+			$this->terminal_transitions->fail_run( $this, $identity, $run_id, $state, $run_store, EngineError::scheduling( self::KIND, $identity, 'continue', $scheduled->error ), RunState::increment_attempts_safely( $state->failed_attempts ), RunFailureStage::scheduling(), $scheduled->error->reason->api_code() );
 		}
 	}
 
@@ -847,7 +658,7 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 */
 	private function execution_for_action( Identity $identity, string $run_id, string $stage ): ?ChunkedJobExecutionInterface {
 		$execution = $this->execution( $identity );
-		if ( null === $execution ) {
+		if ( ! $execution instanceof ChunkedJobExecutionInterface ) {
 			$this->logger->warning(
 				'chunked_job delivery references an unregistered execution; register the chunked job before dispatching its action.',
 				array(
@@ -856,6 +667,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 					'stage'    => $stage,
 				)
 			);
+
+			return null;
 		}
 
 		return $execution;
@@ -916,7 +729,8 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 	 * @return  list<array<array-key, mixed>>|EngineError
 	 */
 	private function materialize_queue( iterable $chunks ): array|EngineError {
-		$queue = array();
+		$queue       = array();
+		$queue_bytes = 0;
 		foreach ( $chunks as $chunk_args ) {
 			$index = \count( $queue );
 			if ( ! \is_array( $chunk_args ) ) {
@@ -940,15 +754,27 @@ final readonly class ChunkedJobKindHandler extends AbstractKindHandler {
 				return new EngineError( \sprintf( 'chunked_job queue chunk at index %1$d contains %2$d JSON bytes; the limit is %3$d bytes.', $index, $chunk_bytes, ChunkedRunContext::MAX_CHUNK_BYTES ), \UnexpectedValueException::class );
 			}
 
-			$queue[]          = $chunk_args;
-			$serialized_queue = \maybe_serialize( $queue );
-			if ( ! \is_string( $serialized_queue ) ) {
-				return new EngineError( 'chunked_job queue could not be serialized for persistence.', \UnexpectedValueException::class );
-			}
-			$queue_bytes = \strlen( $serialized_queue );
+			$queue[] = $chunk_args;
+
+			// A list of reference-free members serializes to its members plus an index envelope, so this sum
+			// always runs under the real total: crossing the ceiling here proves the whole queue crosses it,
+			// and stopping bounds materialization of an unsized generator. The rebuild above is what makes
+			// the members reference-free; shared references would serialize the whole to less than its parts
+			// and let this sum overshoot. The exact measurement below decides the boundary.
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- A validated chunk is a known array, so this is the branch maybe_serialize() takes; it measures the persisted representation without producing one.
+			$queue_bytes += \strlen( \serialize( $chunk_args ) );
 			if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
-				return new EngineError( \sprintf( 'chunked_job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $queue_bytes, self::MAX_QUEUE_BYTES ), \UnexpectedValueException::class );
+				break;
 			}
+		}
+
+		$serialized_queue = \maybe_serialize( $queue );
+		if ( ! \is_string( $serialized_queue ) ) {
+			return new EngineError( 'chunked_job queue could not be serialized for persistence.', \UnexpectedValueException::class );
+		}
+		$queue_bytes = \strlen( $serialized_queue );
+		if ( self::MAX_QUEUE_BYTES < $queue_bytes ) {
+			return new EngineError( \sprintf( 'chunked_job queue contains %1$d persisted serialization bytes; the limit is %2$d bytes.', $queue_bytes, self::MAX_QUEUE_BYTES ), \UnexpectedValueException::class );
 		}
 
 		return $queue;

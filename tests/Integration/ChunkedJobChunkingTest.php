@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
@@ -122,9 +121,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$result = $client->dispatch( self::NAME, $start_args );
-		self::assertInstanceOf( Success::class, $result, 'The registered chunked job must start through the public API' );
-		self::assertInstanceOf( Run::class, $result->value );
-		$run_id = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result, 'The registered chunked job must start through the public API' );
+		$run_id = (string) $result->id;
 
 		self::assertSame( array(), $chunked_job->generate_calls, 'Starting a chunked job must not generate its queue inline' );
 
@@ -148,9 +146,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		}
 
 		$process_calls_before = $chunked_job->process_calls;
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained queue' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained queue and complete the run' );
 		self::assertSame( $process_calls_before, $chunked_job->process_calls, 'A drained-queue CONTINUE action must leave the process ledger unchanged' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must execute terminal chunked job cleanup' );
 		self::assertSame( \array_fill( 0, 5, array( 60, self::IDENTITY, $run_id ) ), $continue_delay_calls, 'The zero-delay filter must receive its default, chunked job name, and run ID for every chunk; the uncontended start claim grades no incumbent and consults no window' );
 
 		self::assertSame( $expected_chunks, \array_column( $chunked_job->process_calls, 'chunk_args' ), 'Chunked Job chunks must run in generated, prepended, remaining, and appended order' );
@@ -175,9 +172,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$last_completed = $client->last_completed_run( self::NAME );
-		self::assertInstanceOf( Success::class, $last_completed );
-		self::assertInstanceOf( Run::class, $last_completed->value );
-		self::assertSame( $run_id, (string) $last_completed->value->id );
+		self::assertInstanceOf( Run::class, $last_completed );
+		self::assertSame( $run_id, (string) $last_completed->id );
 		$runs = $this->inspection()->runs( Identity::compose( self::SCOPE, self::NAME ) );
 		self::assertSame( array(), $runs['live'], 'Terminal chunked job completion must leave no live run' );
 		self::assertSame(
@@ -242,17 +238,15 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$result = $client->dispatch( self::QUEUE_FILTER_NAME, $start_args );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		$run_id = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result );
+		$run_id = (string) $result->id;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must generate and filter the chunk queue' );
 		$run_state       = \get_option( RunStore::OPTION_PREFIX . self::QUEUE_FILTER_IDENTITY . '_' . $run_id, null );
 		$persisted_queue = \is_array( $run_state ) ? ( $run_state['kind_state'] ?? null ) : null;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must process the identity-specific queue value' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the filtered queue as drained' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete filtered-queue cleanup' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the filtered queue as drained and complete the run' );
 
 		self::assertSame(
 			array(
@@ -308,9 +302,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$result = $client->dispatch( self::CONTINUE_DELAY_FILTER_NAME, array() );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		$run_id = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result );
+		$run_id = (string) $result->id;
 		$this->expect_option( RunStore::OPTION_PREFIX . self::CONTINUE_DELAY_FILTER_IDENTITY . '_' . $run_id );
 		$this->expect_option( OverlapGuard::OPTION_PREFIX . self::CONTINUE_DELAY_FILTER_IDENTITY . '_' . self::args_hash( array() ) );
 
@@ -347,8 +340,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 			\array_column( $chunked_job->process_calls, 'chunk_args' )
 		);
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the queue as drained' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete continuation-delay cleanup' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the queue as drained and complete the run' );
 	}
 
 	/**
@@ -388,9 +380,8 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		);
 
 		$result = $client->dispatch( self::FIDELITY_NAME, array() );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		$run_id = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result );
+		$run_id = (string) $result->id;
 		$group  = self::FIDELITY_IDENTITY;
 
 		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must materialize the float chunk' );
@@ -412,8 +403,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 		self::assertIsFloat( $delivered_chunk['value'] ?? null, 'The real Action Scheduler path must preserve 1.0 as a float' );
 		self::assertSame( $persisted_chunk, $delivered_chunk, 'Chunk processing must receive the exact persisted value' );
 
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained queue' );
-		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must complete the chunked job cleanup' );
+		self::assertSame( 1, $this->run_next_due_action(), 'Action Scheduler must observe the drained queue and complete the run' );
 		self::assertSame(
 			array(
 				array( 'completed', $run_id, array(), null ),

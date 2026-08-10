@@ -10,7 +10,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 /**
  * Scheduling operations shared by every backend.
  *
- * Mutations expose expected backend failures as result data, while queries return scalar state.
+ * Mutations expose expected backend failures as result data, while queries return read-only state.
  * Group and priority support remain backend capabilities so the facade can route the same request
  * through multiple implementations.
  *
@@ -122,26 +122,6 @@ interface BackendInterface {
 	 */
 	#[\NoDiscard( 'a scheduling failure must be handled, not dropped' )]
 	public function unschedule_hooks( array $hooks ): AbstractResult;
-
-	/**
-	 * Returns the number of pending occurrences matching a scheduled identity.
-	 *
-	 * Identity matching follows native backend query semantics: the hook plus serialized arguments,
-	 * plus a non-empty group where the backend supports groups. Empty groups retain backend-native
-	 * query behavior. The count includes every matching pending occurrence exposed by the receiver;
-	 * composite receivers total their currently ready children. Use is_scheduled() when only existence
-	 * matters.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string      $hook  Hook to query.
-	 * @param   list<mixed> $args  Arguments identifying the scheduled hook.
-	 * @param   string      $group Backend grouping label.
-	 *
-	 * @return  int<0, max>
-	 */
-	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int;
 
 	/**
 	 * Returns the pending occurrence count and cadence of every requested canonical schedule identity.

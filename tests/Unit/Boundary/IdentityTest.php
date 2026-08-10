@@ -3,8 +3,8 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Boundary;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -223,8 +223,8 @@ final class IdentityTest extends TestCase {
 		$enqueued = $client->dispatch( $job_name, array( 'site_id' => 7 ) );
 		$synced   = $client->sync( array( new Schedule( $schedule_name, Recurrence::every( 300 ), $job_name ) ) );
 
-		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertInstanceOf( Success::class, $synced );
+		self::assertInstanceOf( Run::class, $enqueued );
+		self::assertTrue( $synced );
 		self::assertSame( 97, \strlen( $scope . ':' . $job_name ) );
 		self::assertSame( 97, \strlen( $scope . ':' . $schedule_name ) );
 		self::assertNotEmpty( $this->rig->wpdb()->rows );

@@ -3,20 +3,23 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Schedules;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\OverlapPolicy;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceLease;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScopeReplacementOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -165,7 +168,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$explicit    = new Schedule( 'explicit-default', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'explicit' ), priority: 10 );
 		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow ) ) );
 
-		self::assertInstanceOf( Success::class, $this->client->sync( array( $unspecified, $explicit ) ) );
+		self::assertTrue( $this->client->sync( array( $unspecified, $explicit ) ) );
 		$recurring_calls = $this->calls( 'schedule_recurring' );
 		self::assertCount( 2, $recurring_calls );
 		self::assertSame( array( 0, 0 ), \array_column( \array_column( $recurring_calls, 'args' ), 'priority' ) );
@@ -194,7 +197,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$job_priority      = new Schedule( 'job-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'job' ) );
 		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow, priority: 41 ) ) );
 
-		self::assertInstanceOf( Success::class, $this->client->sync( array( $schedule_priority, $job_priority ) ) );
+		self::assertTrue( $this->client->sync( array( $schedule_priority, $job_priority ) ) );
 		$this->reset_observations();
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 		$this->rig->run_due();
@@ -218,7 +221,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$urgent = new Schedule( 'urgent-priority', Recurrence::every( self::INTERVAL ), self::JOB, array( 'form' => 'urgent' ), priority: 0 );
 		$this->client->register( $this->job->definition( new JobOptions( overlap: OverlapPolicy::Allow, priority: 41 ) ) );
 
-		self::assertInstanceOf( Success::class, $this->client->sync( array( $urgent ) ) );
+		self::assertTrue( $this->client->sync( array( $urgent ) ) );
 		$this->reset_observations();
 		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
 		$this->rig->run_due();
@@ -250,6 +253,156 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertIsString( $message );
 		self::assertStringContainsString( 'the occurrence stays due and redelivers', $message );
 		self::assertStringContainsString( 'runs twice for one occurrence whatever its overlap policy', $message );
+	}
+
+	/**
+	 * A throwing delivery-state write releases the occurrence lease before outer error handling.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale The registry update throws inside the accepted callback, and the lease delete observes that outer occurrence logging has not started, pinning release to the callback's exception path.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_delivery_state_persistence_exception_releases_the_lease_before_outer_error_handling(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+		$lease_option                  = OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
+		$release_observed              = false;
+		$this->rig->wpdb()->before_next(
+			'update',
+			static function (): void {
+				throw new \RuntimeException( 'Scripted delivery-state persistence exception.' );
+			}
+		);
+		$this->rig->wpdb()->before_next(
+			'delete',
+			function ( WpdbLockSpy $wpdb ) use ( $lease_option, &$release_observed ): void {
+				$release_observed = true;
+				self::assertArrayHasKey( $lease_option, $wpdb->rows );
+				self::assertSame( array(), $this->rig->logger()->records );
+			}
+		);
+
+		$this->rig->run_due();
+
+		self::assertTrue( $release_observed );
+		self::assertArrayNotHasKey( $lease_option, $this->rig->wpdb()->rows );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'Schedule occurrence delivery failed after claiming its decision lease; the next delivery reconciles against persisted schedule state.', $this->rig->logger()->records[0]['message'] ?? null );
+	}
+
+	/**
+	 * Manual occurrence acceptance commits its firing marker and releases its decision lease.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_occurrence_acceptance_commits_state_and_releases_its_lease(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame( self::NOW, $this->registration()['last_fired'] ?? null );
+		self::assertArrayNotHasKey( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $this->rig->wpdb()->rows );
+	}
+
+	/**
+	 * A held occurrence lease rejects manual dispatch as an admission conflict.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_dispatch_rejects_a_held_occurrence_lease(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$raw = \maybe_serialize(
+			array(
+				'claim_token' => 'incumbent-claim',
+				'claimed_at'  => self::NOW,
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( OccurrenceLease::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY ), $raw );
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::AdmissionConflict->value, $result->get_error_code() );
+	}
+
+	/**
+	 * A lost occurrence-lease insert race rejects manual dispatch as an admission conflict.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_dispatch_reports_a_lost_occurrence_lease_race_as_an_admission_conflict(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->wpdb()->script_result( 'insert', 0 );
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::AdmissionConflict->value, $result->get_error_code() );
+		self::assertSame( 'Schedule "nightly" for scope "scope-a" did not acquire its occurrence decision lease; retry.', $result->get_error_message() );
+	}
+
+	/**
+	 * An unconfirmed occurrence-lease write identifies the failed manual-dispatch operation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_dispatch_reports_an_occurrence_lease_write_failure(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->wpdb()->script_result( 'insert', false );
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'Schedule "nightly" for scope "scope-a" could not establish its occurrence lease because the authoritative write failed; repair WordPress option writes, then retry.', $result->get_error_message() );
+		$data = $result->get_error_data();
+		self::assertIsArray( $data );
+		self::assertSame( 'write', $data['storage_operation'] ?? null );
+	}
+
+	/**
+	 * An unconfirmed occurrence-lease read identifies the failed manual-dispatch operation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_manual_dispatch_reports_an_occurrence_lease_read_failure(): void {
+		$this->sync_schedule( self::schedule(), new JobOptions( overlap: OverlapPolicy::Allow ) );
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'scripted manual occurrence lease read failure';
+			}
+		);
+
+		$result = $this->client->dispatch_now( self::NAME );
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'Schedule "nightly" for scope "scope-a" could not establish its occurrence lease because the authoritative read failed; repair WordPress option reads, then retry.', $result->get_error_message() );
+		$data = $result->get_error_data();
+		self::assertIsArray( $data );
+		self::assertSame( 'read', $data['storage_operation'] ?? null );
 	}
 
 	/**
@@ -534,6 +687,230 @@ final class ScheduleExecutionTest extends TestCase {
 	}
 
 	/**
+	 * A failed cleanup-intent write reports no convergence and retries on the next occurrence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_registration_intent_write_failure_defers_convergence_until_the_next_occurrence(): void {
+		$this->sync_schedule( self::schedule() );
+		$registry_option = ScheduleRegistry::option_name( self::SCOPE );
+		$intent_option   = CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
+		self::assertArrayHasKey( $registry_option, $this->rig->wpdb()->rows );
+		unset( $this->rig->wpdb()->rows[ $registry_option ], $this->rig->wpdb()->autoload[ $registry_option ] );
+
+		// Schedule delivery inserts its occurrence lease before the cleanup intent.
+		$this->rig->wpdb()->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->script_result( 'insert', false ) ) );
+		$this->rig->clock()->timestamp = self::NOW + self::INTERVAL;
+
+		$this->rig->run_due();
+
+		self::assertArrayNotHasKey( $intent_option, $this->rig->wpdb()->rows );
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Unknown schedule registration "scope-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
+					'context' => array(
+						'schedule_identity' => self::REGISTRATION_KEY,
+						'converged'         => false,
+						'intent_confirmed'  => false,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+
+		$this->reset_observations();
+		$this->rig->clock()->timestamp = self::NOW + 2 * self::INTERVAL;
+
+		$this->rig->run_due();
+
+		self::assertArrayNotHasKey( $intent_option, $this->rig->wpdb()->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Unknown schedule registration "scope-a:nightly" was delivered, and no cleanup is outstanding; re-declare the schedule only if it is still wanted.',
+					'context' => array(
+						'schedule_identity' => self::REGISTRATION_KEY,
+						'converged'         => true,
+						'intent_confirmed'  => true,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
+	 * An incumbent cleanup intent is confirmed when this delivery loses the insert race.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_registration_confirms_an_incumbent_cleanup_intent(): void {
+		$intent = StoreFixtureBuilder::for_identity( self::REGISTRATION_KEY )->cleanup_intent( 7 );
+		$this->put_fixture( $intent );
+		self::assertArrayHasKey( $intent[0], $this->rig->wpdb()->rows );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
+
+		self::assertArrayNotHasKey( $intent[0], $this->rig->wpdb()->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Unknown schedule registration "scope-a:nightly" was delivered, and no cleanup is outstanding; re-declare the schedule only if it is still wanted.',
+				'context' => array(
+					'schedule_identity' => self::REGISTRATION_KEY,
+					'converged'         => true,
+					'intent_confirmed'  => true,
+				),
+			),
+			$this->rig->logger()->records[0] ?? null
+		);
+	}
+
+	/**
+	 * An attempted unknown-chain cleanup reports separately from an indeterminate intent write.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_unknown_registration_reports_an_attempted_convergence_failure(): void {
+		$this->sync_schedule( self::schedule() );
+		$registry_option = ScheduleRegistry::option_name( self::SCOPE );
+		$intent_option   = CleanupIntents::OPTION_PREFIX . \hash( 'sha256', self::REGISTRATION_KEY );
+		unset( $this->rig->wpdb()->rows[ $registry_option ], $this->rig->wpdb()->autoload[ $registry_option ] );
+		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the scheduler before retrying convergence.' ) );
+		$this->rig->clock()->timestamp               = self::NOW + self::INTERVAL;
+
+		$this->rig->run_due();
+
+		self::assertArrayHasKey( $intent_option, $this->rig->wpdb()->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertCount( 2, $this->rig->logger()->records );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Unknown schedule registration "scope-a:nightly" was delivered; re-declare the schedule or remove the leftover occurrence.',
+				'context' => array(
+					'schedule_identity' => self::REGISTRATION_KEY,
+					'converged'         => false,
+					'intent_confirmed'  => true,
+				),
+			),
+			$this->rig->logger()->records[1]
+		);
+	}
+
+	/**
+	 * A malformed identity reports the scheduler cleanup that remains outstanding.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_reports_outstanding_scheduler_cleanup(): void {
+		$registration_key                            = 'malformed';
+		$intent_option                               = CleanupIntents::OPTION_PREFIX . \hash( 'sha256', $registration_key );
+		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Repair the scheduler before retrying convergence.' ) );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, $registration_key );
+
+		self::assertArrayHasKey( $intent_option, $this->rig->wpdb()->rows );
+		self::assertSame( array( 'is_ready', 'unschedule' ), \array_column( $this->rig->backend()->calls, 'verb' ) );
+		self::assertSame(
+			array(
+				'level'   => 'warning',
+				'message' => 'Malformed schedule registration "malformed" was delivered; remove the leftover occurrence.',
+				'context' => array(
+					'schedule_identity' => $registration_key,
+					'converged'         => false,
+					'intent_confirmed'  => true,
+				),
+			),
+			$this->rig->logger()->records[1] ?? null
+		);
+	}
+
+	/**
+	 * Malformed scheduler-wire bytes retain their exact lease, intent, cleanup, and diagnostic identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_malformed_wire_identity_drives_exact_raw_schedule_cleanup(): void {
+		$registration_key    = 'malformed';
+		$digest              = '60ec9bb7299d85e0cdd35d4058fabd7cb6bdc9b788c6efde44427e9bb9234e13';
+		$lease_option        = OccurrenceLease::OPTION_PREFIX . $digest;
+		$intent_option       = CleanupIntents::OPTION_PREFIX . $digest;
+		$expected_lease_raw  = 'a:2:{s:11:"claim_token";s:19:"0000000000000000042";s:10:"claimed_at";i:1700000000;}';
+		$expected_intent_raw = 'a:2:{s:17:"schedule_identity";s:9:"malformed";s:10:"generation";i:42;}';
+		$before              = $this->rig->wpdb()->rows;
+
+		$this->rig->wpdb()->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $lease_option, $expected_lease_raw ): void {
+				self::assertSame( $expected_lease_raw, $wpdb->rows[ $lease_option ] ?? null );
+			}
+		);
+		$this->rig->backend()->before_next(
+			'unschedule',
+			function () use ( $intent_option, $expected_intent_raw ): void {
+				self::assertSame( $expected_intent_raw, $this->rig->wpdb()->rows[ $intent_option ] ?? null );
+			}
+		);
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, $registration_key );
+
+		self::assertSame(
+			array(
+				array(
+					'verb' => 'is_ready',
+					'args' => array(),
+				),
+				array(
+					'verb' => 'unschedule',
+					'args' => array(
+						'hook'  => OccurrenceDelivery::SCHEDULE_HOOK,
+						'args'  => array( $registration_key ),
+						'group' => $registration_key,
+					),
+				),
+			),
+			$this->rig->backend()->calls
+		);
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'warning',
+					'message' => 'Malformed schedule registration "malformed" was delivered; no cleanup is outstanding.',
+					'context' => array(
+						'schedule_identity' => $registration_key,
+						'converged'         => true,
+						'intent_confirmed'  => true,
+					),
+				),
+			),
+			$this->rig->logger()->records
+		);
+	}
+
+	/**
 	 * A confirmed concurrent occurrence lease is benign delivery contention.
 	 *
 	 * @since   1.0.0
@@ -558,6 +935,26 @@ final class ScheduleExecutionTest extends TestCase {
 		self::assertCount( 1, $this->rig->logger()->records );
 		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
 		self::assertSame( self::REGISTRATION_KEY, $this->rig->logger()->records[0]['context']['schedule_identity'] ?? null );
+	}
+
+	/**
+	 * A lost occurrence-lease insert race is benign delivery contention.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_lost_occurrence_lease_insert_race_logs_debug_and_drops_delivery(): void {
+		$this->sync_schedule( self::schedule() );
+		$this->rig->wpdb()->script_result( 'insert', 0 );
+
+		\do_action( OccurrenceDelivery::SCHEDULE_HOOK, self::REGISTRATION_KEY );
+
+		self::assertSame( array(), $this->rig->backend()->calls );
+		self::assertCount( 1, $this->rig->logger()->records );
+		self::assertSame( 'debug', $this->rig->logger()->records[0]['level'] ?? null );
+		self::assertSame( 'Schedule occurrence skipped because this delivery does not own its decision lease.', $this->rig->logger()->records[0]['message'] ?? null );
 	}
 
 	/**
@@ -681,7 +1078,7 @@ final class ScheduleExecutionTest extends TestCase {
 				'job'      => Identity::compose( self::SCOPE, $schedule->job ),
 			),
 		);
-		self::assertSame( ScopeReplacementOutcome::Persisted, $registry->replace_scope( self::SCOPE, $declarations, $redeclared['registrations'], reset_undeclared_episodes: true ) );
+		self::assertInstanceOf( Success::class, $registry->replace_scope( self::SCOPE, $declarations, $redeclared['registrations'], reset_undeclared_episodes: true ) );
 		$this->reset_observations();
 
 		$this->rig->run_due();
@@ -714,7 +1111,7 @@ final class ScheduleExecutionTest extends TestCase {
 		$this->rig->wpdb()->before_next(
 			'update',
 			function ( WpdbLockSpy $wpdb ) use ( $replacement, &$replacement_raw ): void {
-				self::assertInstanceOf( Success::class, $this->client->sync( array( $replacement ) ) );
+				self::assertTrue( $this->client->sync( array( $replacement ) ) );
 				$replacement_raw = $wpdb->rows[ ScheduleRegistry::option_name( self::SCOPE ) ] ?? null;
 				self::assertIsString( $replacement_raw );
 			}
@@ -914,7 +1311,7 @@ final class ScheduleExecutionTest extends TestCase {
 		};
 		$this->client->register( $execution->definition( $options ) );
 
-		self::assertInstanceOf( Success::class, $this->client->sync( array( $schedule ) ) );
+		self::assertTrue( $this->client->sync( array( $schedule ) ) );
 		$this->reset_observations();
 	}
 

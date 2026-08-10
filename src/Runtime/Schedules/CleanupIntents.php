@@ -6,10 +6,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
-use Psr\Clock\ClockInterface;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
 use Psr\Log\LogLevel;
 use Psr\Log\LoggerInterface;
 
@@ -76,17 +77,17 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   ScheduleRegistry $registry    Per-scope schedule registry.
-	 * @param   SchedulerFacade  $scheduler   Scheduling backend facade.
-	 * @param   OptionRows       $option_rows Authoritative cleanup-intent row I/O.
-	 * @param   ClockInterface   $clock       Current-time source.
-	 * @param   LoggerInterface  $logger      Log event sink.
+	 * @param   ScheduleRegistry    $registry    Per-scope schedule registry.
+	 * @param   SchedulerFacade     $scheduler   Scheduling backend facade.
+	 * @param   OptionRows          $option_rows Authoritative cleanup-intent row I/O.
+	 * @param   RandomizerInterface $randomizer  Randomness source for generation fencing.
+	 * @param   LoggerInterface     $logger      Log event sink.
 	 */
 	public function __construct(
 		private ScheduleRegistry $registry,
 		private SchedulerFacade $scheduler,
 		private OptionRows $option_rows,
-		private ClockInterface $clock,
+		private RandomizerInterface $randomizer,
 		private LoggerInterface $logger,
 	) {}
 
@@ -104,20 +105,20 @@ final readonly class CleanupIntents {
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the intent to a string.
 	 *
-	 * @return  void
+	 * @return  RowWriteOutcome Exact cleanup-intent write classification.
 	 */
-	public function record_intent( string $registration_key ): void {
+	public function record_intent( string $registration_key ): RowWriteOutcome {
 		$raw = \maybe_serialize(
 			array(
 				'schedule_identity' => $registration_key,
-				'created_at'        => $this->clock->now()->getTimestamp(),
+				'generation'        => $this->randomizer->int( 0, \PHP_INT_MAX ),
 			)
 		);
 		if ( ! \is_string( $raw ) ) {
 			throw new \LogicException( 'WordPress must serialize an unknown-schedule cleanup intent to a string.' );
 		}
 
-		$this->option_rows->insert_if_absent( self::intent_option_name( $registration_key ), $raw );
+		return $this->option_rows->insert_if_absent( self::intent_option_name( $registration_key ), $raw );
 	}
 
 	/**
@@ -126,19 +127,32 @@ final readonly class CleanupIntents {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $registration_key `{scope}:{name}` schedule identity.
+	 * @param   string          $registration_key `{scope}:{name}` schedule identity.
+	 * @param   RowWriteOutcome $recorded         Caller's own intent-write classification.
 	 *
 	 * @return  bool Whether the observed intent no longer needs convergence.
 	 */
-	public function converge_unknown_chain( string $registration_key ): bool {
+	public function converge_unknown_chain( string $registration_key, RowWriteOutcome $recorded ): bool {
 		$selected = $this->read_intent( $registration_key );
 		if ( $selected->is_failure() ) {
+			$this->log_pending_intent(
+				'Unknown-schedule cleanup intent could not be selected; a later occurrence or sweep can retry cleanup.',
+				array(
+					'schedule_identity' => $registration_key,
+					'phase'             => 'intent-select',
+					'error_class'       => $selected->error::class,
+					'error_reason'      => $selected->error->reason?->value,
+				)
+			);
+
 			return false;
 		}
 
 		$expected_raw = $selected->value;
 		if ( null === $expected_raw ) {
-			return true;
+			// An absent row means another actor converged the chain, which only a determinate
+			// write establishes; an indeterminate one may simply never have stored anything.
+			return RowWriteOutcome::WriteFailed !== $recorded;
 		}
 
 		return $this->converge_selected_intent( $registration_key, $expected_raw );
@@ -158,6 +172,15 @@ final readonly class CleanupIntents {
 		try {
 			$selected_cursor = $this->option_rows->read( self::SWEEP_CURSOR_OPTION );
 			if ( $selected_cursor->is_failure() ) {
+				$this->log_pending_intent(
+					'Unknown-schedule cleanup sweep aborted while reading its cursor; repair WordPress option reads and retry the sweep.',
+					array(
+						'phase'        => 'intent-cursor-read',
+						'error_class'  => $selected_cursor->error::class,
+						'error_reason' => $selected_cursor->error->reason?->value,
+					)
+				);
+
 				return;
 			}
 
@@ -169,11 +192,34 @@ final readonly class CleanupIntents {
 			while ( $scanned < self::INTENT_SWEEP_BUDGET ) {
 				$page = $this->option_rows->option_names_after( self::OPTION_PREFIX, $cursor, self::SWEEP_PAGE_SIZE );
 				if ( $page->is_failure() ) {
+					$this->log_pending_intent(
+						'Unknown-schedule cleanup sweep aborted while enumerating intent rows; repair WordPress option reads and retry the sweep.',
+						array(
+							'phase'        => 'intent-enumeration',
+							'cursor'       => $cursor,
+							'scanned'      => $scanned,
+							'error_class'  => $page->error::class,
+							'error_reason' => $page->error->reason?->value,
+						)
+					);
+
 					return;
 				}
 
 				$intents = $this->intents_for_names( $page->value['names'] );
 				if ( $intents->is_failure() ) {
+					$this->log_pending_intent(
+						'Unknown-schedule cleanup sweep aborted while reading a page of intent rows; repair WordPress option reads and retry the sweep.',
+						array(
+							'phase'           => 'intent-read',
+							'cursor'          => $cursor,
+							'names'           => \count( $page->value['names'] ),
+							'malformed_count' => $malformed_count,
+							'error_class'     => $intents->error::class,
+							'error_reason'    => $intents->error->reason?->value,
+						)
+					);
+
 					return;
 				}
 
@@ -238,6 +284,16 @@ final readonly class CleanupIntents {
 	private function converge_selected_intent( string $registration_key, string $expected_raw ): bool {
 		$registration = $this->registry->registration( $registration_key );
 		if ( $registration->is_failure() ) {
+			$this->log_pending_intent(
+				'Unknown-schedule cleanup intent could not be resolved against the schedule registry; a later occurrence or sweep can retry cleanup.',
+				array(
+					'schedule_identity' => $registration_key,
+					'phase'             => 'intent-registry-read',
+					'error_class'       => $registration->error::class,
+					'error_reason'      => $registration->error->reason?->value,
+				)
+			);
+
 			return false;
 		}
 
@@ -288,6 +344,16 @@ final readonly class CleanupIntents {
 
 		$selected = $this->read_intent( $registration_key );
 		if ( $selected->is_failure() ) {
+			$this->log_pending_intent(
+				'Unknown-schedule cleanup intent could not be confirmed cleared; a later sweep can retry any intent that remains pending.',
+				array(
+					'schedule_identity' => $registration_key,
+					'phase'             => 'intent-clear-readback',
+					'error_class'       => $selected->error::class,
+					'error_reason'      => $selected->error->reason?->value,
+				)
+			);
+
 			return false;
 		}
 
@@ -347,7 +413,7 @@ final readonly class CleanupIntents {
 				! \is_array( $value )
 				|| 2 !== \count( $value )
 				|| ! \is_string( $registration_key )
-				|| ! \is_int( $value['created_at'] ?? null )
+				|| ! \is_int( $value['generation'] ?? null )
 				|| self::intent_option_name( $registration_key ) !== $option_name
 			) {
 				++$malformed_count;
@@ -382,23 +448,32 @@ final readonly class CleanupIntents {
 	 * @return  void
 	 */
 	private function persist_sweep_cursor( ?string $cursor, ?string $cursor_raw ): void {
+		$outcome_value = null;
+
 		if ( null === $cursor ) {
 			if ( null !== $cursor_raw ) {
-				$this->option_rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
+				$delete_outcome = $this->option_rows->delete_if_value_matches( self::SWEEP_CURSOR_OPTION, $cursor_raw );
+				$outcome_value  = RowDeleteOutcome::Deleted === $delete_outcome ? null : $delete_outcome->value;
+			}
+		} else {
+			$replacement_raw = \maybe_serialize( array( 'after_name' => $cursor ) );
+			if ( ! \is_string( $replacement_raw ) ) {
+				throw new \LogicException( 'WordPress must serialize the cleanup-intent sweep cursor to a string.' );
 			}
 
-			return;
+			$write_outcome = null === $cursor_raw ? $this->option_rows->insert_if_absent( self::SWEEP_CURSOR_OPTION, $replacement_raw ) : $this->option_rows->compare_and_swap( self::SWEEP_CURSOR_OPTION, $cursor_raw, $replacement_raw );
+			$outcome_value = RowWriteOutcome::Won === $write_outcome ? null : $write_outcome->value;
 		}
 
-		$replacement_raw = \maybe_serialize( array( 'after_name' => $cursor ) );
-		if ( ! \is_string( $replacement_raw ) ) {
-			throw new \LogicException( 'WordPress must serialize the cleanup-intent sweep cursor to a string.' );
-		}
-
-		if ( null === $cursor_raw ) {
-			$this->option_rows->insert_if_absent( self::SWEEP_CURSOR_OPTION, $replacement_raw );
-		} else {
-			$this->option_rows->compare_and_swap( self::SWEEP_CURSOR_OPTION, $cursor_raw, $replacement_raw );
+		if ( null !== $outcome_value ) {
+			$this->log_pending_intent(
+				'Unknown-schedule cleanup sweep could not confirm its cursor update; the next sweep resumes from the durable cursor state.',
+				array(
+					'phase'   => 'intent-cursor-write',
+					'cursor'  => $cursor,
+					'outcome' => $outcome_value,
+				)
+			);
 		}
 	}
 

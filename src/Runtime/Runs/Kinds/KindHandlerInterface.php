@@ -92,8 +92,8 @@ interface KindHandlerInterface {
 	/**
 	 * Returns whether this handler owns one persisted lifecycle stage.
 	 *
-	 * Each handler keeps this predicate synchronized with its `deliver()` stages by hand; the stage
-	 * vocabulary gains a single authority at the handler SPI milestone, not before.
+	 * A kind declares its stages once and this predicate follows them, so the two cannot disagree.
+	 * Keeping the set aligned with what `deliver()` handles is still the kind's own responsibility.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -164,13 +164,13 @@ interface KindHandlerInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string   $identity Raw scheduler-wire identity bytes.
+	 * @param   Identity $identity Complete scope-qualified work identity.
 	 * @param   string   $run_id   Run identifier.
 	 * @param   RunState $state    Persisted state admitted for delivery.
 	 *
 	 * @return  int|null Null when no registered definition can declare an execution lease.
 	 */
-	public function delivery_liveness_at( string $identity, string $run_id, RunState $state ): ?int;
+	public function delivery_liveness_at( Identity $identity, string $run_id, RunState $state ): ?int;
 
 	/**
 	 * Returns the kind-owned state used to build a completed terminal transition.

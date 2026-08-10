@@ -4,13 +4,11 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\LocksCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\RunsCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\SchedulesCommand;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Component;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\FailedRunOutput;
-use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\LocksOutput;
+use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\Format;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\RunOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ScheduleOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -21,11 +19,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component as RuntimeComponent;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -46,11 +45,10 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( Component::class )]
-#[CoversClass( LocksCommand::class )]
 #[CoversClass( RunsCommand::class )]
 #[CoversClass( SchedulesCommand::class )]
 #[CoversClass( FailedRunOutput::class )]
-#[CoversClass( LocksOutput::class )]
+#[CoversClass( Format::class )]
 #[CoversClass( RunOutput::class )]
 #[CoversClass( ScheduleOutput::class )]
 final class CommandsAndOutputTest extends TestCase {
@@ -126,6 +124,18 @@ final class CommandsAndOutputTest extends TestCase {
 	 */
 	public function test_component_registers_the_complete_command_surface(): void {
 		self::assertSame( array( 'failed-runs', 'locks', 'reset', 'runs', 'schedules' ), CliHarness::registered_subcommands() );
+	}
+
+	/**
+	 * Failed-run help names every accepted list format.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_failed_run_help_names_every_accepted_list_format(): void {
+		self::assertStringContainsString( ': Render list output as table, csv, json, count, or yaml. Defaults to table.', CliHarness::registered_subcommand_description( 'failed-runs' ) );
 	}
 
 	/**
@@ -221,6 +231,83 @@ final class CommandsAndOutputTest extends TestCase {
 	}
 
 	/**
+	 * Schedule listing and removal render the same unavailable-inspection error.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_list_and_remove_report_an_unavailable_inspection_service(): void {
+		$property   = new \ReflectionProperty( RuntimeComponent::class, 'inspection' );
+		$inspection = $property->getValue();
+		$property->setValue( null, null );
+		try {
+			$list   = CliHarness::run( 'schedules', array( 'list' ) );
+			$remove = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+		} finally {
+			$property->setValue( null, $inspection );
+		}
+
+		foreach ( array( $list, $remove ) as $result ) {
+			self::assertSame( 1, $result->exit_code );
+			self::assertSame( '', $result->stdout );
+			self::assertSame( "Error: The background jobs inspection service is unavailable; run the command after plugins_loaded.\n", $result->stderr );
+		}
+	}
+
+	/**
+	 * Schedule listing and removal render the same authoritative-read error.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_list_and_remove_report_an_authoritative_read_failure(): void {
+		foreach ( array( array( 'list' ), array( 'remove', 'consumer-plugin' ) ) as $args ) {
+			$this->rig->wpdb()->fail_next_read_at( 'reconnect_failed' );
+			$assoc_args = 'remove' === $args[0] ? array( 'yes' => true ) : array();
+
+			$result = CliHarness::run( 'schedules', $args, $assoc_args );
+
+			self::assertSame( 1, $result->exit_code );
+			self::assertSame( '', $result->stdout );
+			self::assertSame( "Error: Schedule registrations are unavailable because the authoritative database read failed; resolve the database error and try again.\n", $result->stderr );
+		}
+	}
+
+	/**
+	 * Schedule removal reports each unavailable mutation service before changing registrations.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_schedule_remove_reports_each_unavailable_mutation_service(): void {
+		$this->register_schedules();
+		$failures = array(
+			'schedules' => 'The background jobs engine is unavailable; run the command after plugins_loaded.',
+			'scheduler' => 'The background jobs scheduler is unavailable; run the command after plugins_loaded.',
+		);
+		foreach ( $failures as $property_name => $message ) {
+			$property = new \ReflectionProperty( RuntimeComponent::class, $property_name );
+			$service  = $property->getValue();
+			$property->setValue( null, null );
+			try {
+				$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
+			} finally {
+				$property->setValue( null, $service );
+			}
+
+			self::assertSame( 1, $result->exit_code );
+			self::assertSame( '', $result->stdout );
+			self::assertSame( 'Error: ' . $message . "\n", $result->stderr );
+		}
+	}
+
+	/**
 	 * Acknowledged scope removal converges only that scope's registrations and is not silently idempotent.
 	 *
 	 * @since   1.0.0
@@ -232,7 +319,7 @@ final class CommandsAndOutputTest extends TestCase {
 		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $scope ) {
 			$client = $this->rig->operations( $scope );
 			$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+			self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
@@ -319,7 +406,7 @@ final class CommandsAndOutputTest extends TestCase {
 	public function test_schedule_remove_reports_first_backend_failure_without_deleting_the_registry(): void {
 		$client = $this->rig->operations( 'consumer-plugin' );
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		$this->rig->backend()->results['unschedule'] = new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Backend clearance failed.' ) );
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
@@ -347,7 +434,7 @@ final class CommandsAndOutputTest extends TestCase {
 		CliHarness::set_up();
 		$client = $this->rig->operations( 'consumer-plugin' );
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		$this->rig->backend()->ready = false;
 
 		$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ), array( 'yes' => true ) );
@@ -372,8 +459,7 @@ final class CommandsAndOutputTest extends TestCase {
 	public function test_schedule_remove_reports_partial_progress_and_converges_on_retry(): void {
 		$client = $this->rig->operations( 'consumer-plugin' );
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf(
-			Success::class,
+		self::assertTrue(
 			$client->sync(
 				array(
 					new Schedule( 'alpha', Recurrence::every( 300 ), 'refresh' ),
@@ -498,7 +584,7 @@ final class CommandsAndOutputTest extends TestCase {
 		} else {
 			$client = $this->rig->operations( 'consumer-plugin' );
 			$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->dispatch( 'email-digest' ) );
+			self::assertInstanceOf( Run::class, $client->dispatch( 'email-digest' ) );
 			$result = CliHarness::run( 'runs', array( 'list', 'consumer-plugin:email-digest' ), $assoc_args );
 		}
 
@@ -561,7 +647,7 @@ final class CommandsAndOutputTest extends TestCase {
 			);
 			$registrations[ 'lock-tests:' . $name ] = StoreFixtureBuilder::schedule_registration_state( $schedule->fingerprint(), self::NOW + 300 );
 		}
-		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
+		self::assertTrue( $client->sync( \array_values( $schedules ) ) );
 		$fixture = StoreFixtureBuilder::for_identity( 'lock-tests:invalid-job' );
 		$this->put(
 			$fixture->schedule_registration(
@@ -614,7 +700,7 @@ final class CommandsAndOutputTest extends TestCase {
 	}
 
 	/**
-	 * Cancellation executes the real engine facade and reports the terminal outcome.
+	 * Cancellation reaches the live dispatcher and reports the terminal outcome.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -625,9 +711,8 @@ final class CommandsAndOutputTest extends TestCase {
 		$client = $this->rig->operations( 'consumer-plugin' );
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		$enqueued = $client->dispatch( 'email-digest' );
-		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertInstanceOf( Run::class, $enqueued->value );
-		$run_id = (string) $enqueued->value->id;
+		self::assertInstanceOf( Run::class, $enqueued );
+		$run_id = (string) $enqueued->id;
 
 		$result = CliHarness::run( 'runs', array( 'cancel', 'consumer-plugin:email-digest', $run_id ) );
 
@@ -726,6 +811,17 @@ final class CommandsAndOutputTest extends TestCase {
 		}
 	}
 
+	/** Failed-run discovery preserves its rendered database error when Core fails silently. */
+	public function test_failed_run_purge_reports_a_silent_database_failure(): void {
+		$this->rig->wpdb()->fail_next_read_at( 'reconnect_failed' );
+
+		$result = CliHarness::run( 'failed-runs', array( 'purge' ), array( 'all' => true ) );
+
+		self::assertSame( 1, $result->exit_code );
+		self::assertSame( '', $result->stdout );
+		self::assertSame( "Error: The database check for failed-run stores failed; resolve the database error and try again.\n", $result->stderr );
+	}
+
 	/**
 	 * Failed-run JSON retains healthy entries while unreadable members warn only on STDERR.
 	 *
@@ -808,7 +904,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$this->rig->clock()->timestamp = $heartbeat_at;
 		$client                        = $this->rig->operations( 'clock-tests' );
 		$client->register( ( new RecordingJob( 'heartbeat' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->dispatch( 'heartbeat' ) );
+		self::assertInstanceOf( Run::class, $client->dispatch( 'heartbeat' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$result = CliHarness::run( 'runs', array( 'list', 'clock-tests:heartbeat' ) );
@@ -829,7 +925,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$this->rig->clock()->timestamp = self::NOW + 1;
 		$client                        = $this->rig->operations( 'clock-skew' );
 		$client->register( ( new RecordingJob( 'future' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->dispatch( 'future' ) );
+		self::assertInstanceOf( Run::class, $client->dispatch( 'future' ) );
 		$this->rig->clock()->timestamp = self::NOW;
 
 		$future = CliHarness::run( 'runs', array( 'list', 'clock-skew:future' ) );
@@ -861,7 +957,7 @@ final class CommandsAndOutputTest extends TestCase {
 			'now'     => new Schedule( 'now', Recurrence::every( 300 ), 'refresh' ),
 			'overdue' => new Schedule( 'overdue', Recurrence::every( 300 ), 'refresh' ),
 		);
-		self::assertInstanceOf( Success::class, $client->sync( \array_values( $schedules ) ) );
+		self::assertTrue( $client->sync( \array_values( $schedules ) ) );
 		$declarations = array();
 		foreach ( $schedules as $name => $schedule ) {
 			$declarations[ 'due-tests:' . $name ] = array(
@@ -950,7 +1046,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$rows   = \json_decode( $result->stdout, true, 512, \JSON_THROW_ON_ERROR );
 
 		self::assertSame( 0, $result->exit_code );
-		self::assertSame( "Warning: 1 unreadable live-run row was omitted; maintenance reclaims corrupt state, but repair malformed option names manually.\n", $result->stderr );
+		self::assertSame( "Warning: 1 unreadable option row sharing this identity's run option-name prefix was omitted; maintenance reclaims corrupt state, but repair malformed option names manually.\n", $result->stderr );
 		self::assertIsArray( $rows );
 		self::assertSame( array( self::run_id( 1 ) ), \array_column( $rows, 'run_id' ) );
 		self::assertStringNotContainsString( 'unreadable', $result->stdout );
@@ -972,7 +1068,7 @@ final class CommandsAndOutputTest extends TestCase {
 		foreach ( array( 'consumer-plugin', 'other-plugin' ) as $scope ) {
 			$client = $this->rig->operations( $scope );
 			$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
-			self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+			self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 		}
 	}
 

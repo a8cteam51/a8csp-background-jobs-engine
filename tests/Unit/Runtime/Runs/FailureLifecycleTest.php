@@ -3,7 +3,6 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedJobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\ChunkedRunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -17,13 +16,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\InvalidChunkException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
@@ -315,10 +314,9 @@ final class FailureLifecycleTest extends TestCase {
 		$this->client->register( $this->dual_kind_job( $name ) );
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->dispatch( $name, self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
-		$run_id                         = (string) $result->value->id;
+		self::assertInstanceOf( Run::class, $result );
+		self::assertInstanceOf( RunId::class, $result->id );
+		$run_id                         = (string) $result->id;
 		$this->rig->randomizer()->value = 7;
 		$this->rig->backend()->calls    = array();
 
@@ -726,7 +724,7 @@ final class FailureLifecycleTest extends TestCase {
 		$chunked_job->process_throwable = InvalidChunkException::chunk_too_large( 8_193, 8_192 );
 		$this->client->register( $chunked_job->definition( new JobOptions( retry: new RetryPolicy( max_attempts: 2, base_delay: 30, max_delay: 120 ) ) ) );
 		$result = $this->client->dispatch( 'bounded-chunked-job', self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
 		for ( $delivery = 0; $delivery < 2; ++$delivery ) {
 			$this->rig->run_due();
@@ -759,14 +757,13 @@ final class FailureLifecycleTest extends TestCase {
 		$retry_value                    = $this->rig->randomizer()->value;
 		$this->rig->randomizer()->value = 42;
 		$result                         = $this->client->dispatch( self::NAME, self::ARGS, priority: $priority );
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertInstanceOf( RunId::class, $result->value->id );
-		self::assertSame( self::RUN_ID, (string) $result->value->id );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertInstanceOf( RunId::class, $result->id );
+		self::assertSame( self::RUN_ID, (string) $result->id );
 		$this->rig->randomizer()->value = $retry_value;
 		$this->rig->randomizer()->calls = array();
 
-		return (string) $result->value->id;
+		return (string) $result->id;
 	}
 
 	/**

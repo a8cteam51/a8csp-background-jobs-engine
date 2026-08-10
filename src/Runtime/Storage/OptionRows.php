@@ -101,8 +101,8 @@ final readonly class OptionRows {
 		$this->assert_site();
 		$wpdb = $this->wpdb;
 
-		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s LIMIT 1', $wpdb->options, $key ), \ARRAY_A );
-		if ( $this->last_read_failed() ) {
+		$result = $wpdb->query( $wpdb->prepare( 'SELECT `option_value` FROM %i WHERE `option_name` = %s LIMIT 1', $wpdb->options, $key ) ?? '' );
+		if ( false === $result ) {
 			return new Failure(
 				new EngineError(
 					'Authoritative option-row read failed; repair WordPress option reads and retry.',
@@ -114,11 +114,13 @@ final readonly class OptionRows {
 				)
 			);
 		}
-		if ( ! \is_array( $row ) || ! \is_string( $row['option_value'] ?? null ) ) {
+
+		$row = $wpdb->last_result[0] ?? null;
+		if ( ! $row instanceof \stdClass || ! \is_string( $row->option_value ?? null ) ) {
 			return new Success( null );
 		}
 
-		return new Success( $row['option_value'] );
+		return new Success( $row->option_value );
 	}
 
 	/**
@@ -145,16 +147,16 @@ final readonly class OptionRows {
 		$wpdb         = $this->wpdb;
 		$placeholders = \implode( ', ', \array_fill( 0, \count( $keys ), '%s' ) );
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- IN-list placeholders are array_fill()-built literals; every option name binds through prepare().
-		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT `option_name`, `option_value` FROM %i WHERE `option_name` IN (' . $placeholders . ')', $wpdb->options, ...$keys ), \ARRAY_A );
-		if ( $this->last_read_failed() ) {
+		$result = $wpdb->query( $wpdb->prepare( 'SELECT `option_name`, `option_value` FROM %i WHERE `option_name` IN (' . $placeholders . ')', $wpdb->options, ...$keys ) ?? '' );
+		if ( false === $result ) {
 			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
 		}
 
 		$requested = \array_fill_keys( $keys, true );
 		$selected  = array();
-		foreach ( $rows ?? array() as $row ) {
-			$option_name  = $row['option_name'] ?? null;
-			$option_value = $row['option_value'] ?? null;
+		foreach ( $wpdb->last_result ?? array() as $row ) {
+			$option_name  = $row->option_name ?? null;
+			$option_value = $row->option_value ?? null;
 			if ( \is_string( $option_name ) && \is_string( $option_value ) && isset( $requested[ $option_name ] ) ) {
 				$selected[ $option_name ] = $option_value;
 			}
@@ -178,14 +180,16 @@ final readonly class OptionRows {
 	#[\NoDiscard( 'an authoritative read outcome must be handled, not dropped' )]
 	public function option_names( string $prefix ): AbstractResult {
 		$this->assert_site();
-		$wpdb  = $this->wpdb;
-		$names = $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( $prefix ) . '%' ) );
-		if ( $this->last_read_failed() ) {
+		$wpdb = $this->wpdb;
+
+		$result = $wpdb->query( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY `option_name` ASC', $wpdb->options, $wpdb->esc_like( $prefix ) . '%' ) ?? '' );
+		if ( false === $result ) {
 			return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
 		}
 
 		$typed = array();
-		foreach ( $names as $name ) {
+		foreach ( $wpdb->last_result ?? array() as $row ) {
+			$name = $row->option_name ?? null;
 			if ( \is_string( $name ) && \str_starts_with( $name, $prefix ) ) {
 				$typed[] = $name;
 			}
@@ -218,21 +222,24 @@ final readonly class OptionRows {
 		}
 
 		$this->assert_site();
-		$wpdb       = $this->wpdb;
-		$pattern    = $wpdb->esc_like( $prefix ) . '%';
-		$candidates = null === $after_name
-			? $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $limit ) )
-			: $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $after_name, $limit ) );
-		if ( $this->last_read_failed() ) {
+		$wpdb    = $this->wpdb;
+		$pattern = $wpdb->esc_like( $prefix ) . '%';
+		if ( null === $after_name ) {
+			$result = $wpdb->query( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $limit ) ?? '' );
+		} else {
+			$result = $wpdb->query( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $after_name, $limit ) ?? '' );
+		}
+		if ( false === $result ) {
 			return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
 		}
 
+		$candidates  = \array_map( static fn ( \stdClass $row ): mixed => $row->option_name ?? null, $wpdb->last_result ?? array() );
 		$scanned     = \count( $candidates );
 		$next_cursor = null;
 		if ( $scanned === $limit ) {
 			$next_cursor = $candidates[ $scanned - 1 ] ?? null;
 			if ( ! \is_string( $next_cursor ) || ( null !== $after_name && 0 >= \strcmp( $next_cursor, $after_name ) ) ) {
-				return new Failure( new EngineError( 'Authoritative option-name read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'storage_error' => $wpdb->last_error ), ) );
+				return new Failure( new EngineError( 'Authoritative option-name enumeration could not advance its keyset cursor past the last returned row.', reason: EngineErrorReason::StorageFailure, ) );
 			}
 		}
 
@@ -249,80 +256,6 @@ final readonly class OptionRows {
 				'next_cursor' => $next_cursor,
 				'scanned'     => $scanned,
 			)
-		);
-	}
-
-	/**
-	 * Returns one bounded page and the complete accepted count for an exact option-name byte length.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string                 $prefix       Literal option-name prefix.
-	 * @param   int                    $total_length Required complete option-name byte length.
-	 * @param   int                    $limit        Positive maximum number of names returned.
-	 * @param   callable(string): bool $is_valid     Complete-name validity predicate.
-	 *
-	 * @throws  \InvalidArgumentException When the length or limit is invalid.
-	 * @throws  \LogicException           When the current site differs from the bound site.
-	 *
-	 * @return  array{names: list<string>, total: int}|null Null when either authoritative read fails.
-	 */
-	public function option_names_page( string $prefix, int $total_length, int $limit, callable $is_valid ): ?array {
-		if ( \strlen( $prefix ) > $total_length || 1 > $limit ) {
-			throw new \InvalidArgumentException( 'An option-name page requires a complete length at least as long as its prefix and a positive limit.' );
-		}
-
-		$this->assert_site();
-		$wpdb     = $this->wpdb;
-		$pattern  = $wpdb->esc_like( $prefix ) . '%';
-		$accepted = array();
-		$total    = 0;
-		$cursor   = null;
-
-		do {
-			$candidates = null === $cursor
-				? $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $total_length, $limit ) )
-				: $wpdb->get_col( $wpdb->prepare( 'SELECT `option_name` FROM %i WHERE `option_name` LIKE %s AND LENGTH(`option_name`) = %d AND BINARY `option_name` > BINARY %s ORDER BY BINARY `option_name` ASC LIMIT %d', $wpdb->options, $pattern, $total_length, $cursor, $limit ) );
-			if ( $this->last_read_failed() ) {
-				return null;
-			}
-
-			$candidate_count = \count( $candidates );
-			if ( 0 === $candidate_count ) {
-				break;
-			}
-
-			$next_cursor = $candidates[ $candidate_count - 1 ] ?? null;
-			if (
-				! \is_string( $next_cursor )
-				|| ( null !== $cursor && 0 >= \strcmp( $next_cursor, $cursor ) )
-			) {
-				return null;
-			}
-
-			foreach ( $candidates as $name ) {
-				if (
-					! \is_string( $name )
-					|| \strlen( $name ) !== $total_length
-					|| ! \str_starts_with( $name, $prefix )
-					|| ! $is_valid( $name )
-				) {
-					continue;
-				}
-
-				++$total;
-				if ( $total <= $limit ) {
-					$accepted[] = $name;
-				}
-			}
-
-			$cursor = $next_cursor;
-		} while ( $candidate_count === $limit );
-
-		return array(
-			'names' => $accepted,
-			'total' => $total,
 		);
 	}
 
@@ -402,20 +335,6 @@ final readonly class OptionRows {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Returns whether the immediately preceding authoritative read failed at the database boundary.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  bool
-	 *
-	 * @phpstan-impure
-	 */
-	private function last_read_failed(): bool {
-		return '' !== $this->wpdb->last_error;
-	}
 
 	/**
 	 * Throws when a blog switch makes the injected wpdb point at a different site's tables.

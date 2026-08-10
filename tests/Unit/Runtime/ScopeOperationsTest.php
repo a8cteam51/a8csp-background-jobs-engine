@@ -2,9 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
@@ -23,6 +21,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -110,10 +109,9 @@ final class ScopeOperationsTest extends TestCase {
 
 		$result = $client->dispatch( 'email-digest', array( 'site_id' => 7 ), fire_at: self::NOW + 300, priority: 5 );
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertSame( 'facade-tests:email-digest', $result->value->identity );
-		self::assertSame( RunStatus::Running, $result->value->status );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame( 'facade-tests:email-digest', $result->identity );
+		self::assertSame( RunStatus::Running, $result->status );
 		$this->rig->backend()->assert_scheduled( 'facade-tests:email-digest' );
 		$this->rig->run_due();
 		self::assertSame( array( array( 'site_id' => 7 ) ), $job->calls );
@@ -135,8 +133,7 @@ final class ScopeOperationsTest extends TestCase {
 
 		$result = $client->dispatch( 'catalog-sync', array( 'site_id' => 7 ), priority: 23 );
 
-		self::assertInstanceOf( Success::class, $result );
-		$this->rig->run_due();
+		self::assertInstanceOf( Run::class, $result );
 		$this->rig->run_due();
 		$this->rig->run_due();
 		self::assertSame( array( array( 'site_id' => 7 ) ), $chunked_job->generate_calls );
@@ -158,7 +155,7 @@ final class ScopeOperationsTest extends TestCase {
 		$client->register( $job->definition( new JobOptions( max_runtime: null, priority: null ) ) );
 		$result = $client->dispatch( 'nullable-defaults' );
 
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 	}
 
 	/**
@@ -199,8 +196,8 @@ final class ScopeOperationsTest extends TestCase {
 		$lowest  = $client->dispatch( 'lowest-priority' );
 		$highest = $client->dispatch( 'highest-priority' );
 
-		self::assertInstanceOf( Success::class, $lowest );
-		self::assertInstanceOf( Success::class, $highest );
+		self::assertInstanceOf( Run::class, $lowest );
+		self::assertInstanceOf( Run::class, $highest );
 		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] ) );
 		self::assertCount( 2, $calls );
 		self::assertSame( 0, $calls[0]['args']['priority'] ?? null );
@@ -244,15 +241,33 @@ final class ScopeOperationsTest extends TestCase {
 		$client->register( $job->definition( new JobOptions( priority: 37 ) ) );
 
 		$synced = $client->sync( array( $schedule ) );
-		self::assertInstanceOf( Success::class, $synced );
+		self::assertTrue( $synced );
 		$this->rig->backend()->calls = array();
 
 		$dispatched = $client->dispatch_now( 'nightly' );
 
-		self::assertInstanceOf( Success::class, $dispatched );
+		self::assertInstanceOf( Run::class, $dispatched );
 		$calls = \array_values( \array_filter( $this->rig->backend()->calls, static fn ( array $call ): bool => 'enqueue_async' === $call['verb'] ) );
 		self::assertCount( 1, $calls );
 		self::assertSame( 37, $calls[0]['args']['priority'] ?? null );
+	}
+
+	/**
+	 * Dispatch returns a payload rejection when start arguments exceed the persisted JSON ceiling.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_rejects_start_arguments_above_the_json_byte_ceiling(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$result = $client->dispatch( 'oversized', array( 'payload' => \str_repeat( 'a', 8_193 - 14 ) ) );
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::PayloadRejected->value, $result->get_error_code() );
+		self::assertSame( 'Background-work "oversized" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $result->get_error_message() );
+		self::assertNull( $result->get_error_data() );
 	}
 
 	/**
@@ -293,7 +308,7 @@ final class ScopeOperationsTest extends TestCase {
 
 		$result = $client->sync( array( $lowest, $highest ) );
 
-		self::assertInstanceOf( Success::class, $result );
+		self::assertTrue( $result );
 	}
 
 	/**
@@ -310,15 +325,14 @@ final class ScopeOperationsTest extends TestCase {
 		$accepted = new Schedule( 'accepted', Recurrence::every( 300 ), 'refresh-index', array( 'payload' => \str_repeat( 'a', 8_192 - 14 ) ) );
 		$client->register( $job->definition() );
 
-		self::assertInstanceOf( Success::class, $client->sync( array( $accepted ) ) );
+		self::assertTrue( $client->sync( array( $accepted ) ) );
 
 		$rejected = new Schedule( 'rejected', Recurrence::every( 300 ), 'refresh-index', array( 'payload' => \str_repeat( 'a', 8_193 - 14 ) ) );
 		$result   = $client->sync( array( $rejected ) );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::PayloadRejected, $result->error->code );
-		self::assertSame( 'Schedule "rejected" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $result->error->message );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::PayloadRejected->value, $result->get_error_code() );
+		self::assertSame( 'Schedule "rejected" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $result->get_error_message() );
 	}
 
 	/**
@@ -375,7 +389,7 @@ final class ScopeOperationsTest extends TestCase {
 		$accepted = new Schedule( \str_repeat( 'a', 64 ), Recurrence::every( 300 ), 'refresh-index' );
 		$client->register( $job->definition() );
 
-		self::assertInstanceOf( Success::class, $client->sync( array( $accepted ) ) );
+		self::assertTrue( $client->sync( array( $accepted ) ) );
 
 		$name     = \str_repeat( 'a', 65 );
 		$rejected = new Schedule( $name, Recurrence::every( 300 ), 'refresh-index' );
@@ -415,11 +429,8 @@ final class ScopeOperationsTest extends TestCase {
 		$client                      = $this->rig->operations( 'facade-tests' );
 		$this->rig->backend()->calls = array();
 		$unknown                     = $client->dispatch( 'missing' );
-		self::assertInstanceOf( Failure::class, $unknown );
-		if ( ! $unknown->error instanceof BoundaryError ) {
-			throw new \LogicException( 'Unknown work must produce a public API error.' );
-		}
-		self::assertSame( ErrorCode::UnknownJob, $unknown->error->code );
+		self::assertInstanceOf( \WP_Error::class, $unknown );
+		self::assertSame( ErrorCode::UnknownJob->value, $unknown->get_error_code() );
 		self::assertSame( array(), $this->rig->backend()->calls );
 
 		$client->register( ( new RecordingJob( 'shared' ) )->definition() );
@@ -452,11 +463,10 @@ final class ScopeOperationsTest extends TestCase {
 
 		$result = $client->retry_failed( 'email-digest', self::FAILED_RUN_ID );
 
-		self::assertInstanceOf( Success::class, $result );
-		self::assertInstanceOf( Run::class, $result->value );
-		self::assertSame( $identity, $result->value->identity );
-		self::assertNotSame( self::FAILED_RUN_ID, (string) $result->value->id );
-		self::assertSame( RunStatus::Running, $result->value->status );
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame( $identity, $result->identity );
+		self::assertNotSame( self::FAILED_RUN_ID, (string) $result->id );
+		self::assertSame( RunStatus::Running, $result->status );
 		$remaining = new FailedRunStore( $work_identity, new OptionRows( $this->rig->wpdb() ), $this->rig->logger() )->all();
 		self::assertInstanceOf( Success::class, $remaining );
 		self::assertSame( array(), $remaining->value );
@@ -476,16 +486,14 @@ final class ScopeOperationsTest extends TestCase {
 		$client = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 		$enqueued = $client->dispatch( 'email-digest' );
-		self::assertInstanceOf( Success::class, $enqueued );
-		self::assertInstanceOf( Run::class, $enqueued->value );
+		self::assertInstanceOf( Run::class, $enqueued );
 
-		$cancelled = $client->cancel( 'email-digest', (string) $enqueued->value->id );
+		$cancelled = $client->cancel( 'email-digest', (string) $enqueued->id );
 
-		self::assertInstanceOf( Success::class, $cancelled );
-		self::assertInstanceOf( Run::class, $cancelled->value );
-		self::assertSame( $enqueued->value->identity, $cancelled->value->identity );
-		self::assertSame( (string) $enqueued->value->id, (string) $cancelled->value->id );
-		self::assertSame( RunStatus::Cancelled, $cancelled->value->status );
+		self::assertInstanceOf( Run::class, $cancelled );
+		self::assertSame( $enqueued->identity, $cancelled->identity );
+		self::assertSame( (string) $enqueued->id, (string) $cancelled->id );
+		self::assertSame( RunStatus::Cancelled, $cancelled->status );
 		self::assertSame( 'cancelled', $this->rig->inspection()->runs( Identity::compose( 'facade-tests', 'email-digest' ) )['history'][0]['outcome'] ?? null );
 	}
 
@@ -502,37 +510,31 @@ final class ScopeOperationsTest extends TestCase {
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 
 		$missing = $client->inspect( 'email-digest', self::FAILED_RUN_ID );
-		self::assertInstanceOf( Success::class, $missing );
-		self::assertNull( $missing->value );
+		self::assertNull( $missing );
 
 		$last_completed = $client->last_completed_run( 'email-digest' );
-		self::assertInstanceOf( Success::class, $last_completed );
-		self::assertNull( $last_completed->value );
+		self::assertNull( $last_completed );
 
 		$dispatched = $client->dispatch( 'email-digest' );
-		self::assertInstanceOf( Success::class, $dispatched );
-		self::assertInstanceOf( Run::class, $dispatched->value );
+		self::assertInstanceOf( Run::class, $dispatched );
 
-		$running = $client->inspect( 'email-digest', (string) $dispatched->value->id );
-		self::assertInstanceOf( Success::class, $running );
-		self::assertInstanceOf( Run::class, $running->value );
-		self::assertSame( $dispatched->value->identity, $running->value->identity );
-		self::assertSame( (string) $dispatched->value->id, (string) $running->value->id );
-		self::assertSame( RunStatus::Running, $running->value->status );
+		$running = $client->inspect( 'email-digest', (string) $dispatched->id );
+		self::assertInstanceOf( Run::class, $running );
+		self::assertSame( $dispatched->identity, $running->identity );
+		self::assertSame( (string) $dispatched->id, (string) $running->id );
+		self::assertSame( RunStatus::Running, $running->status );
 
 		$this->rig->run_due();
 
-		$completed = $client->inspect( 'email-digest', (string) $dispatched->value->id );
-		self::assertInstanceOf( Success::class, $completed );
-		self::assertInstanceOf( Run::class, $completed->value );
-		self::assertSame( RunStatus::Completed, $completed->value->status );
+		$completed = $client->inspect( 'email-digest', (string) $dispatched->id );
+		self::assertInstanceOf( Run::class, $completed );
+		self::assertSame( RunStatus::Completed, $completed->status );
 
 		$last_completed = $client->last_completed_run( 'email-digest' );
-		self::assertInstanceOf( Success::class, $last_completed );
-		self::assertInstanceOf( Run::class, $last_completed->value );
-		self::assertSame( $completed->value->identity, $last_completed->value->identity );
-		self::assertSame( (string) $completed->value->id, (string) $last_completed->value->id );
-		self::assertSame( $completed->value->status, $last_completed->value->status );
+		self::assertInstanceOf( Run::class, $last_completed );
+		self::assertSame( $completed->identity, $last_completed->identity );
+		self::assertSame( (string) $completed->id, (string) $last_completed->id );
+		self::assertSame( $completed->status, $last_completed->status );
 	}
 
 	/**
@@ -553,31 +555,74 @@ final class ScopeOperationsTest extends TestCase {
 		$client->register( ( new RecordingJob( 'email-digest' ) )->definition() );
 
 		$completed = $client->dispatch( 'email-digest' );
-		self::assertInstanceOf( Success::class, $completed );
-		self::assertInstanceOf( Run::class, $completed->value );
+		self::assertInstanceOf( Run::class, $completed );
 		$this->rig->run_due();
 
 		$retained = $client->last_completed_run( 'email-digest' );
-		self::assertInstanceOf( Success::class, $retained );
-		self::assertInstanceOf( Run::class, $retained->value );
-		self::assertSame( (string) $completed->value->id, (string) $retained->value->id );
-		self::assertSame( RunStatus::Completed, $retained->value->status );
+		self::assertInstanceOf( Run::class, $retained );
+		self::assertSame( (string) $completed->id, (string) $retained->id );
+		self::assertSame( RunStatus::Completed, $retained->status );
 
 		++$this->rig->clock()->timestamp;
 		$newer = $client->dispatch( 'email-digest' );
-		self::assertInstanceOf( Success::class, $newer );
-		self::assertInstanceOf( Run::class, $newer->value );
-		self::assertNotSame( (string) $completed->value->id, (string) $newer->value->id );
-		$cancelled = $client->cancel( 'email-digest', (string) $newer->value->id );
-		self::assertInstanceOf( Success::class, $cancelled );
+		self::assertInstanceOf( Run::class, $newer );
+		self::assertNotSame( (string) $completed->id, (string) $newer->id );
+		$cancelled = $client->cancel( 'email-digest', (string) $newer->id );
+		self::assertInstanceOf( Run::class, $cancelled );
 
-		$evicted_completion = $client->inspect( 'email-digest', (string) $completed->value->id );
-		self::assertInstanceOf( Success::class, $evicted_completion );
-		self::assertNull( $evicted_completion->value );
+		$evicted_completion = $client->inspect( 'email-digest', (string) $completed->id );
+		self::assertNull( $evicted_completion );
 
 		$evicted = $client->last_completed_run( 'email-digest' );
-		self::assertInstanceOf( Success::class, $evicted );
-		self::assertNull( $evicted->value );
+		self::assertNull( $evicted );
+	}
+
+	/**
+	 * Every scope operation preserves its existing failure triple when it returns a WordPress error directly.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string               $method  Scope operation under test.
+	 * @param   string               $code    Stable public error code.
+	 * @param   string               $message Engine-authored public message.
+	 * @param   array<string, mixed> $data    Sanitised public error data.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'operation_failure_triples' )]
+	public function test_operations_return_wordpress_errors_without_changing_failure_triples( string $method, string $code, string $message, ?array $data ): void {
+		$client = $this->rig->operations( 'triple-tests' );
+		$run_id = '00000000001700000000-0000000000000000042';
+		if ( 'sync' === $method ) {
+			$client->register( ( new RecordingJob( 'target' ) )->definition() );
+		} elseif ( \in_array( $method, array( 'inspect', 'last_completed_run', 'retry_failed', 'cancel' ), true ) ) {
+			$client->register( ( new RecordingJob( 'job' ) )->definition() );
+		}
+		if ( \in_array( $method, array( 'inspect', 'last_completed_run' ), true ) ) {
+			$this->rig->wpdb()->before_next(
+				'select',
+				static function ( WpdbLockSpy $database ): void {
+					$database->last_error = 'private database detail';
+				}
+			);
+		}
+
+		$result = match ( $method ) {
+			'dispatch'           => $client->dispatch( 'missing' ),
+			'sync'               => $client->sync( array( new Schedule( 'oversized', Recurrence::every( 300 ), 'target', array( 'payload' => \str_repeat( 'a', 8_193 - 14 ) ) ) ) ),
+			'dispatch_now'       => $client->dispatch_now( 'missing' ),
+			'inspect'            => $client->inspect( 'job', $run_id ),
+			'last_completed_run' => $client->last_completed_run( 'job' ),
+			'retry_failed'       => $client->retry_failed( 'job', $run_id ),
+			'cancel'             => $client->cancel( 'job', $run_id ),
+			default              => self::fail( \sprintf( 'Unsupported scope operation "%s".', $method ) ),
+		};
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( $code, $result->get_error_code() );
+		self::assertSame( $message, $result->get_error_message() );
+		self::assertSame( $data, $result->get_error_data() );
 	}
 
 	// endregion.
@@ -608,6 +653,70 @@ final class ScopeOperationsTest extends TestCase {
 	public static function non_positive_max_runtime_provider(): iterable {
 		yield 'zero' => array( 'max_runtime' => 0 );
 		yield 'negative' => array( 'max_runtime' => -1 );
+	}
+
+	/**
+	 * Supplies one captured failure triple for every result-returning scope operation.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{method: string, code: string, message: string, data: array<string, mixed>|null}>
+	 */
+	public static function operation_failure_triples(): array {
+		return array(
+			'dispatch'           => array(
+				'method'  => 'dispatch',
+				'code'    => 'unknown_job',
+				'message' => 'Background-work "triple-tests:missing" is not registered; register it before dispatching.',
+				'data'    => array( 'identity' => 'triple-tests:missing' ),
+			),
+			'sync'               => array(
+				'method'  => 'sync',
+				'code'    => 'payload_rejected',
+				'message' => 'Schedule "oversized" arguments contain 8193 JSON bytes; the limit is 8192 bytes.',
+				'data'    => null,
+			),
+			'dispatch now'       => array(
+				'method'  => 'dispatch_now',
+				'code'    => 'unknown_schedule',
+				'message' => 'Schedule "missing" for scope "triple-tests" is not synchronized; declare it with sync() before running it now.',
+				'data'    => array(
+					'scope'    => 'triple-tests',
+					'schedule' => 'missing',
+				),
+			),
+			'inspect'            => array(
+				'method'  => 'inspect',
+				'code'    => 'storage_failed',
+				'message' => 'Authoritative option-row read failed; repair WordPress option reads and retry.',
+				'data'    => array( 'option_name' => 'a8csp_bgje_active_run_triple-tests:job_00000000001700000000-0000000000000000042' ),
+			),
+			'last completed run' => array(
+				'method'  => 'last_completed_run',
+				'code'    => 'storage_failed',
+				'message' => 'Authoritative option-row read failed; repair WordPress option reads and retry.',
+				'data'    => array( 'option_name' => 'a8csp_bgje_run_history_triple-tests:job' ),
+			),
+			'retry failed'       => array(
+				'method'  => 'retry_failed',
+				'code'    => 'run_not_retained',
+				'message' => 'Failed run "00000000001700000000-0000000000000000042" for background-work "triple-tests:job" is not retained; retry a run identifier returned by the failed-run store after a terminal failure is recorded.',
+				'data'    => array(
+					'identity' => 'triple-tests:job',
+					'run_id'   => '00000000001700000000-0000000000000000042',
+				),
+			),
+			'cancel'             => array(
+				'method'  => 'cancel',
+				'code'    => 'run_not_retained',
+				'message' => 'Run "00000000001700000000-0000000000000000042" for background-work "triple-tests:job" is not retained; nothing remains to cancel.',
+				'data'    => array(
+					'identity' => 'triple-tests:job',
+					'run_id'   => '00000000001700000000-0000000000000000042',
+				),
+			),
+		);
 	}
 
 	/**

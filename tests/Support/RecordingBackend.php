@@ -332,7 +332,6 @@ final class RecordingBackend implements BackendInterface {
 	 *
 	 * @return  int<0, max>
 	 */
-	#[\Override]
 	public function scheduled_count( string $hook, array $args = array(), string $group = '' ): int {
 		$this->calls[] = array(
 			'verb' => 'scheduled_count',

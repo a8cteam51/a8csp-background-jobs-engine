@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Boundary failures pass directly through the WordPress-facing adapters, reducing conversion without altering returned `WP_Error` codes, messages, data, or consumer behaviour.

@@ -15,9 +15,24 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks;
 enum MaintenanceFenceOutcome: string {
 	// region FIELDS AND CONSTANTS
 
-	case Owned         = 'owned';
-	case Abandoned     = 'abandoned';
-	case Transferred   = 'transferred';
+	case Owned       = 'owned';
+	case Abandoned   = 'abandoned';
+	case Transferred = 'transferred';
+
+	/**
+	 * The persisted lock row exists but does not satisfy the lock schema.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
+	case Malformed = 'malformed';
+
+	/**
+	 * Authoritative storage could not classify or fence the lock row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 */
 	case Indeterminate = 'indeterminate';
 
 	// endregion

@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Internal schedule-lease and terminal-snapshot classification is simplified. The public API, persisted row shapes, and observable behaviour are unchanged.

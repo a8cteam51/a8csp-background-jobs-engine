@@ -259,7 +259,7 @@ final class OptionRowsTest extends TestCase {
 	}
 
 	/**
-	 * A non-advancing raw cursor is reported as an authoritative storage failure.
+	 * An unusable raw cursor is reported as a cursor-advance failure, not a read failure.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -276,6 +276,8 @@ final class OptionRowsTest extends TestCase {
 		self::assertTrue( $result->is_failure() );
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+		self::assertSame( 'Authoritative option-name enumeration could not advance its keyset cursor past the last returned row.', $result->error->message );
+		self::assertSame( array(), $result->error->context );
 	}
 
 	/**
@@ -315,28 +317,6 @@ final class OptionRowsTest extends TestCase {
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame( array( 'storage_error' => 'scripted option-name read failure' ), $result->error->context );
-	}
-
-	/** A bounded page keysets past rejected candidates and counts only accepted names. */
-	public function test_option_names_page_applies_the_limit_after_validation(): void {
-		$prefix       = 'a8csp_bgje_active_run_scope:email-digest_';
-		$first_valid  = $prefix . \sprintf( '%020d-%019d', 1, 1 );
-		$second_valid = $prefix . \sprintf( '%020d-%019d', 2, 2 );
-		$wpdb         = new WpdbLockSpy();
-		$wpdb->put( $prefix . \sprintf( '!%039d', 1 ), 'malformed-run-row' );
-		$wpdb->put( $prefix . \sprintf( '!%039d', 2 ), 'malformed-run-row' );
-		$wpdb->put( $first_valid, 'first-run-row' );
-		$wpdb->put( $second_valid, 'second-run-row' );
-
-		$page = ( new OptionRows( $wpdb ) )->option_names_page( $prefix, \strlen( $first_valid ), 1, static fn ( string $name ): bool => 1 === \preg_match( '/\A\d{20}-\d{19}\z/D', \substr( $name, \strlen( $prefix ) ) ) );
-
-		self::assertSame(
-			array(
-				'names' => array( $first_valid ),
-				'total' => 2,
-			),
-			$page
-		);
 	}
 
 	/** Authoritative reads distinguish found, missing, and failed outcomes. */
@@ -389,6 +369,113 @@ final class OptionRowsTest extends TestCase {
 		self::assertInstanceOf( EngineError::class, $result->error );
 		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
 		self::assertSame( array( 'storage_error' => 'scripted option-name read failure' ), $result->error->context );
+	}
+
+	/**
+	 * A false Core query result is a storage failure even when last_error remains empty.
+	 *
+	 * @param   'not_ready'|'query_filtered'|'reconnect_failed' $leg Core query failure leg.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'silent_query_failure_provider' )]
+	public function test_option_names_rejects_every_silent_core_query_failure( string $leg ): void {
+		$wpdb = new WpdbLockSpy();
+		$wpdb->fail_next_read_at( $leg );
+
+		$result = ( new OptionRows( $wpdb ) )->option_names( 'a8csp_bgje_' );
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+	}
+
+	/**
+	 * A single-row read reports a silent Core query failure rather than an absent row.
+	 *
+	 * @param   'not_ready'|'query_filtered'|'reconnect_failed' $leg Core query failure leg.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'silent_query_failure_provider' )]
+	public function test_read_rejects_every_silent_core_query_failure( string $leg ): void {
+		$wpdb = new WpdbLockSpy();
+		$wpdb->fail_next_read_at( $leg );
+
+		$result = ( new OptionRows( $wpdb ) )->read( 'a8csp_bgje_probe' );
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+	}
+
+	/**
+	 * Multi-row reads reject case and PAD SPACE variants returned by option-name collation.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The IN predicate has no binary comparison, so its result must be reduced to the byte-exact requested names before maintenance consumes it.
+	 *
+	 * @return  void
+	 */
+	public function test_read_many_keeps_only_byte_exact_requested_names(): void {
+		$wpdb                     = new WpdbLockSpy();
+		$wpdb->option_row_results = array(
+			(object) array(
+				'option_name'  => self::KEY,
+				'option_value' => 'exact',
+			),
+			(object) array(
+				'option_name'  => \strtoupper( self::KEY ),
+				'option_value' => 'case-variant',
+			),
+			(object) array(
+				'option_name'  => self::KEY . ' ',
+				'option_value' => 'space-variant',
+			),
+		);
+
+		$result = ( new OptionRows( $wpdb ) )->read_many( array( self::KEY ) );
+
+		self::assertFalse( $result->is_failure() );
+		self::assertSame( array( self::KEY => 'exact' ), $result->value );
+	}
+
+	/**
+	 * A multi-row read reports a silent Core query failure rather than an empty selection.
+	 *
+	 * @param   'not_ready'|'query_filtered'|'reconnect_failed' $leg Core query failure leg.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'silent_query_failure_provider' )]
+	public function test_read_many_rejects_every_silent_core_query_failure( string $leg ): void {
+		$wpdb = new WpdbLockSpy();
+		$wpdb->fail_next_read_at( $leg );
+
+		$result = ( new OptionRows( $wpdb ) )->read_many( array( 'a8csp_bgje_probe' ) );
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+	}
+
+	/**
+	 * Cursor-paged name enumeration reports every silent Core query failure.
+	 *
+	 * @param   'not_ready'|'query_filtered'|'reconnect_failed' $leg Core query failure leg.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'silent_query_failure_provider' )]
+	public function test_option_names_after_rejects_every_silent_core_query_failure( string $leg ): void {
+		$wpdb = new WpdbLockSpy();
+		$wpdb->fail_next_read_at( $leg );
+
+		$result = ( new OptionRows( $wpdb ) )->option_names_after( 'a8csp_bgje_', null, 1 );
+
+		self::assertTrue( $result->is_failure() );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
 	}
 
 	/**
@@ -663,6 +750,17 @@ final class OptionRowsTest extends TestCase {
 	// endregion.
 
 	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies every Core query leg that can return false without a current last_error.
+	 *
+	 * @return  iterable<string, array{'not_ready'|'query_filtered'|'reconnect_failed'}>
+	 */
+	public static function silent_query_failure_provider(): iterable {
+		yield 'database not ready' => array( 'not_ready' );
+		yield 'query filtered empty' => array( 'query_filtered' );
+		yield 'reconnection failed' => array( 'reconnect_failed' );
+	}
 
 	/**
 	 * Returns one call for each public single-row option operation.

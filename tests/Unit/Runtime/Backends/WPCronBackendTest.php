@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Backends;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
@@ -132,11 +131,11 @@ final class WPCronBackendTest extends TestCase {
 			),
 			\array_column( $this->calls( 'wp_unschedule_event' ), 'args' )
 		);
-		self::assertSame( 0, ( new WPCronBackend() )->scheduled_count( self::HOOK, $first_args ) );
-		self::assertSame( 0, ( new WPCronBackend() )->scheduled_count( self::HOOK, $second_args ) );
-		self::assertSame( 1, ( new WPCronBackend() )->scheduled_count( self::HOOK, array( $identity, $sibling_run_id, 1 ) ) );
-		self::assertSame( 1, ( new WPCronBackend() )->scheduled_count( self::HOOK, array( $other_identity, $run_id, 1 ) ) );
-		self::assertSame( 1, ( new WPCronBackend() )->scheduled_count( 'other-hook', $first_args ) );
+		self::assertFalse( ( new WPCronBackend() )->is_scheduled( self::HOOK, $first_args ) );
+		self::assertFalse( ( new WPCronBackend() )->is_scheduled( self::HOOK, $second_args ) );
+		self::assertTrue( ( new WPCronBackend() )->is_scheduled( self::HOOK, array( $identity, $sibling_run_id, 1 ) ) );
+		self::assertTrue( ( new WPCronBackend() )->is_scheduled( self::HOOK, array( $other_identity, $run_id, 1 ) ) );
+		self::assertTrue( ( new WPCronBackend() )->is_scheduled( 'other-hook', $first_args ) );
 	}
 
 	/**
@@ -162,7 +161,7 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( SchedulingError::class, $result->error );
 		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
 		self::assertSame( 'The cron store rejected cancellation.', $result->error->context['wp_error'] ?? null );
-		self::assertSame( 1, ( new WPCronBackend() )->scheduled_count( self::HOOK, $args ) );
+		self::assertTrue( ( new WPCronBackend() )->is_scheduled( self::HOOK, $args ) );
 	}
 
 	/**
@@ -186,25 +185,23 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( SchedulingError::class, $result->error );
 		self::assertSame( SchedulingErrorReason::ScheduleFailed, $result->error->reason );
 		self::assertArrayNotHasKey( 'wp_error', $result->error->context );
-		self::assertSame( 1, ( new WPCronBackend() )->scheduled_count( self::HOOK, $args ) );
+		self::assertTrue( ( new WPCronBackend() )->is_scheduled( self::HOOK, $args ) );
 	}
 
 	/**
-	 * Matching WP-Cron events are counted across every stored timestamp.
+	 * Matching WP-Cron chains are counted across every stored timestamp.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_scheduled_count_includes_every_matching_timestamp(): void {
+	public function test_scheduled_chains_include_every_matching_timestamp(): void {
 		a8csp_bgje_test_store_cron_event( 1_700_000_300, self::HOOK, array( 'schedule-17' ), 'a8csp_bgje_every_300s' );
 		a8csp_bgje_test_store_cron_event( 1_700_000_600, self::HOOK, array( 'schedule-17' ), 'a8csp_bgje_every_300s' );
 		a8csp_bgje_test_store_cron_event( 1_700_000_900, self::HOOK, array( 'other-schedule' ), 'a8csp_bgje_every_300s' );
 
-		$count = ( new WPCronBackend() )->scheduled_count( self::HOOK, array( 'schedule-17' ), 'ignored-group' );
-
-		self::assertSame( 2, $count );
+		self::assertSame( 2, ( new WPCronBackend() )->scheduled_chains( self::HOOK, array( 'schedule-17' ) )['schedule-17']['count'] );
 	}
 
 	/**
@@ -402,7 +399,7 @@ final class WPCronBackendTest extends TestCase {
 	 * Arbitrary WP_Error text is removed before a scheduling failure reaches a consumer.
 	 *
 	 * @load-bearing security
-	 * @pin-rationale WordPress extensions can place credentials or user data in WP_Error messages; the public admission mapper must not expose that external text in BoundaryError context or prose.
+	 * @pin-rationale WordPress extensions can place credentials or user data in WP_Error messages; the public admission mapper must not expose that external text in error data or prose.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -421,11 +418,12 @@ final class WPCronBackendTest extends TestCase {
 		self::assertInstanceOf( Failure::class, $internal );
 		self::assertInstanceOf( SchedulingError::class, $internal->error );
 		self::assertSame( $secret, $internal->error->context['wp_error'] ?? null );
-		self::assertInstanceOf( Failure::class, $public );
-		self::assertInstanceOf( BoundaryError::class, $public->error );
-		self::assertSame( ErrorCode::BackendRejected, $public->error->code );
-		self::assertArrayNotHasKey( 'wp_error', $public->error->context );
-		self::assertStringNotContainsString( $secret, $public->error->message );
+		self::assertInstanceOf( \WP_Error::class, $public );
+		self::assertSame( ErrorCode::BackendRejected->value, $public->get_error_code() );
+		$data = $public->get_error_data();
+		self::assertIsArray( $data );
+		self::assertArrayNotHasKey( 'wp_error', $data );
+		self::assertStringNotContainsString( $secret, $public->get_error_message() );
 	}
 
 	/**

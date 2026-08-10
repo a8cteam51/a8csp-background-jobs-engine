@@ -2,10 +2,9 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\CLI;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Commands\ResetCommand;
-use A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output\ResetOutput;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
@@ -13,6 +12,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\CliHarness;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -23,7 +23,6 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( ResetCommand::class )]
-#[CoversClass( ResetOutput::class )]
 final class ResetCommandTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -108,9 +107,7 @@ final class ResetCommandTest extends TestCase {
 
 		self::assertSame( 0, $result->exit_code );
 		self::assertSame( '', $result->stderr );
-		self::assertStringContainsString( 'Option rows deleted: ' . \count( $owned_before ), $result->stdout );
-		self::assertStringContainsString( 'Pending backend actions unscheduled: 5', $result->stdout );
-		self::assertStringContainsString( 'Success: Background jobs development state reset.', $result->stdout );
+		self::assertSame( 'Option rows deleted: ' . \count( $owned_before ) . "\nPending backend actions unscheduled: 5\nSuccess: Background jobs development state reset.\n", $result->stdout );
 		self::assertSame( array(), $this->engine_option_names() );
 		self::assertSame( array(), $this->rig->backend()->pending_actions );
 		self::assertSame( 'keep', $this->rig->wpdb()->rows[ self::UNRELATED_OPTION ] ?? null );
@@ -182,7 +179,7 @@ final class ResetCommandTest extends TestCase {
 			'delete',
 			function (): void {
 				$client = $this->rig->operations( 'reset-tests' );
-				self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
+				self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 600 ), 'refresh' ) ) ) );
 			}
 		);
 
@@ -213,6 +210,34 @@ final class ResetCommandTest extends TestCase {
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertSame( "Error: The database delete for engine option rows failed after 0 deletions; repair the database error and retry the reset.\n", $result->stderr );
+		self::assertSame( $before, $this->rig->wpdb()->rows );
+	}
+
+	/**
+	 * A failed enumeration aborts the reset before any row is deleted.
+	 *
+	 * @load-bearing security
+	 * @pin-rationale The destructive command must stop when it cannot establish which rows it owns; a scripted read failure proves it aborts after the confirmation and before the first delete, which no public operation can force.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_reset_reports_a_database_read_failure(): void {
+		$this->seed_engine_state();
+		$before = $this->rig->wpdb()->rows;
+		$this->rig->wpdb()->before_next(
+			'scan',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'reset enumeration failed';
+			}
+		);
+
+		$result = CliHarness::run( 'reset', array(), array( 'yes' => true ) );
+
+		self::assertSame( 1, $result->exit_code );
+		self::assertSame( "Error: The database check for engine option rows failed; resolve the database error and retry the reset.\n", $result->stderr );
 		self::assertSame( $before, $this->rig->wpdb()->rows );
 	}
 
@@ -250,8 +275,8 @@ final class ResetCommandTest extends TestCase {
 	private function seed_engine_state(): void {
 		$client = $this->rig->operations( 'reset-tests' );
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Success::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
-		self::assertInstanceOf( Success::class, $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
+		self::assertInstanceOf( Run::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}
 
 	/**

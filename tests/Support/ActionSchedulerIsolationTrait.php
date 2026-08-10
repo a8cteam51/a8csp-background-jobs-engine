@@ -3,7 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
 /**
- * Deletes Action Scheduler data from its four custom tables around each integration test.
+ * Resets Action Scheduler state, its four custom tables and the store's caches, around each integration test.
  *
  * @since   1.0.0
  * @version 1.0.0
@@ -31,7 +31,7 @@ trait ActionSchedulerIsolationTrait {
 	// region METHODS.
 
 	/**
-	 * Deletes rows from each installed Action Scheduler custom table without assuming schema availability.
+	 * Deletes rows from each installed Action Scheduler custom table and flushes the store's caches, without assuming schema availability.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -85,6 +85,9 @@ trait ActionSchedulerIsolationTrait {
 				throw new \RuntimeException( \sprintf( 'Action Scheduler table cleanup failed for "%s": %s. Fix the database error before rerunning the integration suite.', $table_name, $wpdb->last_error ) );
 			}
 		}
+
+		// Empty tables are not an isolated store while resolved group IDs remain cached: a stale ID orphans every action row written afterwards.
+		\ActionScheduler::store()->flush_caches();
 	}
 
 	// endregion.

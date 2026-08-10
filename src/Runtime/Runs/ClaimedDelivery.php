@@ -24,7 +24,7 @@ final readonly class ClaimedDelivery {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity             $identity Canonical identity resolved by the claimed run row.
+	 * @param   Identity             $identity Caller-supplied validated identity for the claimed run.
 	 * @param   KindHandlerInterface $handler  Resolved kind handler.
 	 * @param   RunState             $state    Fenced executing state.
 	 */

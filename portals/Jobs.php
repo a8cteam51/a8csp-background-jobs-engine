@@ -63,9 +63,7 @@ final readonly class Jobs extends AbstractPortal {
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
 	public function dispatch( string $name, array $start_args = array(), ?int $priority = null ): Run|\WP_Error {
 		try {
-			$result = $this->operations()->dispatch( $name, $start_args, priority: $priority );
-
-			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
+			return $this->operations()->dispatch( $name, $start_args, priority: $priority );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {
@@ -93,9 +91,7 @@ final readonly class Jobs extends AbstractPortal {
 	#[\NoDiscard( 'a timed job-dispatch failure must be handled, not dropped' )]
 	public function dispatch_at( string $name, int $run_at, array $start_args = array(), ?int $priority = null ): Run|\WP_Error {
 		try {
-			$result = $this->operations()->dispatch( $name, $start_args, $run_at, $priority );
-
-			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
+			return $this->operations()->dispatch( $name, $start_args, $run_at, $priority );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {

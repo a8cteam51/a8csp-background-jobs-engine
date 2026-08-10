@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
@@ -19,7 +18,6 @@ use PHPUnit\Framework\TestCase;
  * @version 1.0.0
  */
 #[CoversClass( SchedulingError::class )]
-#[UsesClass( BoundaryError::class )]
 #[UsesClass( BoundaryErrorMapper::class )]
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingErrorReason::class )]
@@ -60,29 +58,27 @@ final class SchedulingErrorTest extends TestCase {
 		);
 		$result  = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::ScheduleFailed, 'Retry after the backend becomes available.', $context ) ) );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::BackendRejected, $result->error->code );
-		self::assertSame( 'Retry after the backend becomes available.', $result->error->message );
-		self::assertSame( $context, $result->error->context );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::BackendRejected->value, $result->get_error_code() );
+		self::assertSame( 'Retry after the backend becomes available.', $result->get_error_message() );
+		self::assertSame( $context, $result->get_error_data() );
 	}
 
 	/**
-	 * Scheduling failures without safe structured detail expose an empty context.
+	 * Scheduling failures without safe structured detail expose no error data at all.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_context_defaults_to_an_empty_array(): void {
+	public function test_absent_context_reaches_the_boundary_as_no_error_data(): void {
 		$result = BoundaryErrorMapper::map( new Failure( new SchedulingError( SchedulingErrorReason::BackendNotReady, 'Load a supported scheduling backend.' ) ) );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::BackendUnavailable, $result->error->code );
-		self::assertSame( 'Load a supported scheduling backend.', $result->error->message );
-		self::assertSame( array(), $result->error->context );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::BackendUnavailable->value, $result->get_error_code() );
+		self::assertSame( 'Load a supported scheduling backend.', $result->get_error_message() );
+		self::assertNull( $result->get_error_data() );
 	}
 
 	/**
@@ -96,11 +92,10 @@ final class SchedulingErrorTest extends TestCase {
 	public function test_registry_read_failure_surfaces_as_storage_failure(): void {
 		$result = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_read_failure( 'scope-a' ) ) );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry state for scope "scope-a" could not be read; repair WordPress option reads and retry.', $result->error->message );
-		self::assertSame( array( 'scope' => 'scope-a' ), $result->error->context );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be read; repair WordPress option reads and retry.', $result->get_error_message() );
+		self::assertSame( array( 'scope' => 'scope-a' ), $result->get_error_data() );
 	}
 
 	/**
@@ -114,11 +109,10 @@ final class SchedulingErrorTest extends TestCase {
 	public function test_registry_persist_failure_surfaces_as_storage_failure(): void {
 		$result = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_persist_failure( 'scope-a' ) ) );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->error->message );
-		self::assertSame( array( 'scope' => 'scope-a' ), $result->error->context );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'Schedule registry state for scope "scope-a" could not be persisted; repair WordPress option writes and retry synchronization.', $result->get_error_message() );
+		self::assertSame( array( 'scope' => 'scope-a' ), $result->get_error_data() );
 	}
 
 	/**
@@ -130,16 +124,15 @@ final class SchedulingErrorTest extends TestCase {
 		$option_name = 'a8csp_bgje_schedule_registrations_scope-a';
 		$result      = BoundaryErrorMapper::map( new Failure( SchedulingError::registry_corrupt( 'scope-a', $option_name ) ) );
 
-		self::assertInstanceOf( Failure::class, $result );
-		self::assertInstanceOf( BoundaryError::class, $result->error );
-		self::assertSame( ErrorCode::StorageFailed, $result->error->code );
-		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_scope-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->error->message );
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'Schedule registry option row "a8csp_bgje_schedule_registrations_scope-a" is unreadable; maintenance reclaims it, then re-declare schedules on the next init.', $result->get_error_message() );
 		self::assertSame(
 			array(
 				'scope'       => 'scope-a',
 				'option_name' => $option_name,
 			),
-			$result->error->context
+			$result->get_error_data()
 		);
 	}
 

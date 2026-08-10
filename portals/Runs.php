@@ -37,14 +37,11 @@ final readonly class Runs extends AbstractPortal {
 	public function inspect( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
 			$result = $this->operations()->inspect( $name, (string) $run_id );
-			if ( $result->is_failure() ) {
-				return self::wp_error( $result->error );
-			}
-			if ( null === $result->value ) {
+			if ( null === $result ) {
 				return new \WP_Error( ErrorCode::RunNotRetained->value, 'The requested run is not retained.' );
 			}
 
-			return $result->value;
+			return $result;
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {
@@ -67,9 +64,7 @@ final readonly class Runs extends AbstractPortal {
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	public function last_completed( string $name ): Run|null|\WP_Error {
 		try {
-			$result = $this->operations()->last_completed_run( $name );
-
-			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
+			return $this->operations()->last_completed_run( $name );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {
@@ -96,9 +91,7 @@ final readonly class Runs extends AbstractPortal {
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
 	public function retry_failed( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->operations()->retry_failed( $name, (string) $run_id );
-
-			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
+			return $this->operations()->retry_failed( $name, (string) $run_id );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {
@@ -122,9 +115,7 @@ final readonly class Runs extends AbstractPortal {
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
 	public function cancel( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
-			$result = $this->operations()->cancel( $name, (string) $run_id );
-
-			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
+			return $this->operations()->cancel( $name, (string) $run_id );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {

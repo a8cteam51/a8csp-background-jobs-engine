@@ -9,7 +9,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\ActionSchedulerBackend;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\SchedulerFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Backends\WPCronBackend;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\EngineFacade;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\JobRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
@@ -22,7 +21,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
@@ -145,11 +143,11 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$logger = new RecordingLogger();
 		$this->expect_option( ScheduleRegistry::option_name( self::FILTER_SCOPE ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::FILTER_JOB_IDENTITY );
-		$engine = $this->build_engine( $clock, $logger );
-		$job    = new RecordingJob( self::FILTER_JOB );
+		$schedules = $this->build_schedules( $clock, $logger );
+		$job       = new RecordingJob( self::FILTER_JOB );
 		$this->register_deterministic_job( Identity::compose( self::FILTER_SCOPE, self::FILTER_JOB ), $job );
 		$schedule = new Schedule( self::FILTER_SCHEDULE, Recurrence::every( self::INTERVAL ), self::FILTER_JOB, catch_up: CatchUpPolicy::Skip );
-		$this->assert_sync_success( $engine->schedules, self::FILTER_SCOPE, array( $schedule ) );
+		$this->assert_sync_success( $schedules, self::FILTER_SCOPE, array( $schedule ) );
 
 		$due = $now - 2 * \MINUTE_IN_SECONDS;
 		$this->set_next_due( self::FILTER_SCOPE, self::FILTER_SCHEDULE, $due );
@@ -203,11 +201,11 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$logger = new RecordingLogger();
 		$this->expect_option( ScheduleRegistry::option_name( self::RUN_ONCE_SCOPE ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::RUN_ONCE_JOB_IDENTITY );
-		$engine = $this->build_engine( $clock, $logger );
-		$job    = new RecordingJob( self::RUN_ONCE_JOB );
+		$schedules = $this->build_schedules( $clock, $logger );
+		$job       = new RecordingJob( self::RUN_ONCE_JOB );
 		$this->register_deterministic_job( Identity::compose( self::RUN_ONCE_SCOPE, self::RUN_ONCE_JOB ), $job );
 		$schedule = new Schedule( self::RUN_ONCE_SCHEDULE, Recurrence::every( self::INTERVAL ), self::RUN_ONCE_JOB, array( 'policy' => 'run-once' ) );
-		$this->assert_sync_success( $engine->schedules, self::RUN_ONCE_SCOPE, array( $schedule ) );
+		$this->assert_sync_success( $schedules, self::RUN_ONCE_SCOPE, array( $schedule ) );
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
 		$this->set_next_due( self::RUN_ONCE_SCOPE, self::RUN_ONCE_SCHEDULE, $aged_due );
@@ -242,11 +240,11 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$clock  = new FixedClock( $now );
 		$logger = new RecordingLogger();
 		$this->expect_option( ScheduleRegistry::option_name( self::SKIP_SCOPE ) );
-		$engine = $this->build_engine( $clock, $logger );
-		$job    = new RecordingJob( self::SKIP_JOB );
+		$schedules = $this->build_schedules( $clock, $logger );
+		$job       = new RecordingJob( self::SKIP_JOB );
 		$this->register_deterministic_job( Identity::compose( self::SKIP_SCOPE, self::SKIP_JOB ), $job );
 		$schedule = new Schedule( self::SKIP_SCHEDULE, Recurrence::every( self::INTERVAL ), self::SKIP_JOB, array( 'policy' => 'skip' ), CatchUpPolicy::Skip );
-		$this->assert_sync_success( $engine->schedules, self::SKIP_SCOPE, array( $schedule ) );
+		$this->assert_sync_success( $schedules, self::SKIP_SCOPE, array( $schedule ) );
 
 		$aged_due = $now - 3 * self::INTERVAL - 1;
 		$this->set_next_due( self::SKIP_SCOPE, self::SKIP_SCHEDULE, $aged_due );
@@ -294,14 +292,14 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$logger = new RecordingLogger();
 		$this->expect_option( ScheduleRegistry::option_name( self::BOUNDARY_SCOPE ) );
 		$this->expect_option( 'a8csp_bgje_latest_run_' . self::EXACT_JOB_IDENTITY );
-		$engine     = $this->build_engine( $clock, $logger );
+		$schedules  = $this->build_schedules( $clock, $logger );
 		$exact_job  = new RecordingJob( self::EXACT_JOB );
 		$beyond_job = new RecordingJob( self::BEYOND_JOB );
 		$this->register_deterministic_job( Identity::compose( self::BOUNDARY_SCOPE, self::EXACT_JOB ), $exact_job );
 		$this->register_deterministic_job( Identity::compose( self::BOUNDARY_SCOPE, self::BEYOND_JOB ), $beyond_job );
 		$exact  = new Schedule( self::EXACT_SCHEDULE, Recurrence::every( self::INTERVAL ), self::EXACT_JOB, catch_up: CatchUpPolicy::Skip );
 		$beyond = new Schedule( self::BEYOND_SCHEDULE, Recurrence::every( self::INTERVAL ), self::BEYOND_JOB, catch_up: CatchUpPolicy::Skip );
-		$this->assert_sync_success( $engine->schedules, self::BOUNDARY_SCOPE, array( $exact, $beyond ) );
+		$this->assert_sync_success( $schedules, self::BOUNDARY_SCOPE, array( $exact, $beyond ) );
 
 		$exact_due  = $now - self::INTERVAL;
 		$beyond_due = $exact_due - 1;
@@ -364,9 +362,9 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 	 * @param   FixedClock      $clock  Deterministic current instant.
 	 * @param   RecordingLogger $logger Recorded engine log sink.
 	 *
-	 * @return  EngineFacade
+	 * @return  ScheduleOperations
 	 */
-	private function build_engine( FixedClock $clock, RecordingLogger $logger ): EngineFacade {
+	private function build_schedules( FixedClock $clock, RecordingLogger $logger ): ScheduleOperations {
 		global $wpdb;
 
 		self::assertInstanceOf( \wpdb::class, $wpdb );
@@ -379,8 +377,6 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$overlap_identity     = new OverlapIdentity();
 		$stores               = new StoreFactory( $clock, $rows, $logger );
 		$lock_windows         = new LockWindows( $clock, $logger );
-		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
-		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $logger, $terminal_effects );
 		$scheduler            = new SchedulerFacade(
 			array(
 				new ActionSchedulerBackend(),
@@ -388,6 +384,8 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 			)
 		);
 		$delivery_scheduler   = new DeliveryScheduler( $scheduler, $clock );
+		$terminal_effects     = new LifecycleEffects( $guard, $stores, $logger );
+		$terminal_transitions = new RunTransitions( $guard, $stores, $clock, $lock_windows, $delivery_scheduler, $logger, $terminal_effects );
 		$failure_lifecycle    = new FailureLifecycle( $delivery_scheduler, $clock, $randomizer, $logger, $terminal_transitions, $terminal_effects );
 		$job_handler          = new JobKindHandler( $job_registry, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
 		$chunked_job_handler  = new ChunkedJobKindHandler( $job_registry, $delivery_scheduler, $logger, $clock, $lock_windows, $terminal_transitions, $terminal_effects, $failure_lifecycle );
@@ -395,15 +393,13 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 			$job_handler->key()         => $job_handler,
 			$chunked_job_handler->key() => $chunked_job_handler,
 		);
-		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions );
-		$dispatcher           = new Dispatcher( $job_registry, $handlers, $scheduler, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
-		$reconciliation       = new RunReconciliation( $guard, $stores, $clock, $logger, $lock_windows, $terminal_transitions, $terminal_effects, $handlers, $delivery_scheduler );
+		$action_deliveries    = new ActionDeliveries( $handlers, $stores, $terminal_transitions, $logger );
+		$dispatcher           = new Dispatcher( $job_registry, $handlers, $delivery_scheduler, $guard, $overlap_identity, $stores, $clock, $randomizer, $logger, $terminal_transitions );
 		$occurrence_lease     = new OccurrenceLease( $locks, $clock, $randomizer );
-		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $clock, $logger );
+		$cleanup_intents      = new CleanupIntents( $schedule_registry, $scheduler, $rows, $randomizer, $logger );
 		$occurrence_delivery  = new OccurrenceDelivery( $schedule_registry, $dispatcher, $occurrence_lease, $cleanup_intents, $clock, $logger );
 		$schedules            = new ScheduleOperations( $schedule_registry, $scheduler, $clock, $occurrence_delivery, $logger );
 		$inspection           = new Inspection( $schedule_registry, $job_registry, $handlers, $scheduler, $guard, $overlap_identity, $stores, $rows, $lock_windows, $clock );
-		$engine               = new EngineFacade( $schedules, $dispatcher );
 
 		$this->deterministic_inspection   = $inspection;
 		$this->deterministic_registry     = $schedule_registry;
@@ -415,7 +411,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 		$action_deliveries->register_hooks();
 		$occurrence_delivery->register_hooks();
 
-		return $engine;
+		return $schedules;
 	}
 
 	/**

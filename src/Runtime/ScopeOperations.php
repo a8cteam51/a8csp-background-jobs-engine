@@ -2,12 +2,8 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
@@ -114,10 +110,10 @@ final readonly class ScopeOperations {
 	 * @throws  \InvalidArgumentException When the scope/name identity or priority is invalid, or arguments are not portable.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<Run, BoundaryError>
+	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a job-dispatch failure must be handled, not dropped' )]
-	public function dispatch( string $name, array $start_args = array(), ?int $fire_at = null, ?int $priority = null ): AbstractResult {
+	public function dispatch( string $name, array $start_args = array(), ?int $fire_at = null, ?int $priority = null ): Run|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
 		if ( null !== $priority ) {
 			self::assert_priority( $priority, \sprintf( 'Background-work "%s"', $name ) );
@@ -125,12 +121,15 @@ final readonly class ScopeOperations {
 
 		$payload_error = self::assert_portable_args( $start_args, \sprintf( 'Background-work "%s"', $name ) );
 		if ( null !== $payload_error ) {
-			return new Failure( $payload_error );
+			return $payload_error;
 		}
 
 		$result = BoundaryErrorMapper::map( $this->dispatcher->dispatch_until_admitted( $identity, $start_args, $fire_at, $priority ) );
+		if ( $result instanceof \WP_Error ) {
+			return $result;
+		}
 
-		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
+		return self::run( $identity, $result, RunStatus::Running );
 	}
 
 	/**
@@ -143,10 +142,10 @@ final readonly class ScopeOperations {
 	 *
 	 * @throws  \InvalidArgumentException When a scope/name identity, scope/target identity, declaration uniqueness, or schedule priority is invalid.
 	 *
-	 * @return  AbstractResult<true, BoundaryError>
+	 * @return  true|\WP_Error
 	 */
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
-	public function sync( array $schedules ): AbstractResult {
+	public function sync( array $schedules ): true|\WP_Error {
 		$declarations = array();
 		foreach ( $schedules as $schedule ) {
 			$context  = \sprintf( 'Schedule "%s"', $schedule->name );
@@ -162,7 +161,7 @@ final readonly class ScopeOperations {
 			}
 			$payload_error = self::assert_portable_args( $schedule->args, $context );
 			if ( null !== $payload_error ) {
-				return new Failure( $payload_error );
+				return $payload_error;
 			}
 
 			$declarations[ (string) $identity ] = array(
@@ -185,13 +184,16 @@ final readonly class ScopeOperations {
 	 * @throws  \InvalidArgumentException When the scope/name identity is invalid.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<Run, BoundaryError>
+	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
-	public function dispatch_now( string $name ): AbstractResult {
+	public function dispatch_now( string $name ): Run|\WP_Error {
 		$result = BoundaryErrorMapper::map( $this->schedules->dispatch_now( Identity::compose( $this->scope, $name ) ) );
+		if ( $result instanceof \WP_Error ) {
+			return $result;
+		}
 
-		return $result->is_failure() ? $result : new Success( self::run( $result->value['identity'], $result->value['run_id'], RunStatus::Running ) );
+		return self::run( $result['identity'], $result['run_id'], RunStatus::Running );
 	}
 
 	/**
@@ -206,21 +208,20 @@ final readonly class ScopeOperations {
 	 * @throws  \InvalidArgumentException When the scope/name identity is invalid or the run_id is malformed.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<Run|null, BoundaryError>
+	 * @return  Run|null|\WP_Error
 	 */
 	#[\NoDiscard( 'a run-inspection result must be handled, not dropped' )]
-	public function inspect( string $name, string $run_id ): AbstractResult {
+	public function inspect( string $name, string $run_id ): Run|null|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
 		$result   = BoundaryErrorMapper::map( $this->inspection->run_status( $identity, $run_id ) );
-		if ( $result->is_failure() ) {
+		if ( $result instanceof \WP_Error ) {
 			return $result;
 		}
-		if ( null === $result->value ) {
-			return new Success( null );
+		if ( null === $result ) {
+			return null;
 		}
 
-		// The public projection covers every internal run status, so from() always resolves here.
-		return new Success( self::run( $identity, $run_id, RunStatus::from( $result->value->value ) ) );
+		return self::run( $identity, $run_id, $result );
 	}
 
 	/**
@@ -228,7 +229,7 @@ final readonly class ScopeOperations {
 	 *
 	 * The lookup covers only the retained history window. Each history buffer retains at most the
 	 * positive `a8csp_bgje/history_size` filter value, 30 by default. A completed run
-	 * older than that window returns `Success(null)` as if absent. Clients needing indefinite
+	 * older than that window returns null as if absent. Clients needing indefinite
 	 * retention keep their own pointer from the completed lifecycle hook. History
 	 * is recorded after those notifications, so a lookup inside either observes the previous retained
 	 * completion.
@@ -241,20 +242,20 @@ final readonly class ScopeOperations {
 	 * @throws  \InvalidArgumentException When the scope/name identity is invalid.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<Run|null, BoundaryError>
+	 * @return  Run|null|\WP_Error
 	 */
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
-	public function last_completed_run( string $name ): AbstractResult {
+	public function last_completed_run( string $name ): Run|null|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
 		$result   = BoundaryErrorMapper::map( $this->inspection->last_completed_run_id( $identity ) );
-		if ( $result->is_failure() ) {
+		if ( $result instanceof \WP_Error ) {
 			return $result;
 		}
-		if ( null === $result->value ) {
-			return new Success( null );
+		if ( null === $result ) {
+			return null;
 		}
 
-		return new Success( self::run( $identity, $result->value, RunStatus::Completed ) );
+		return self::run( $identity, $result, RunStatus::Completed );
 	}
 
 	/**
@@ -272,18 +273,21 @@ final readonly class ScopeOperations {
 	 * @throws  \InvalidArgumentException When the scope/name identity is invalid or the run_id is malformed.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<Run, BoundaryError>
+	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a failed-run retry result must be handled, not dropped' )]
-	public function retry_failed( string $name, string $run_id ): AbstractResult {
+	public function retry_failed( string $name, string $run_id ): Run|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
 		$result   = BoundaryErrorMapper::map( $this->dispatcher->retry_failed( $identity, $run_id ) );
+		if ( $result instanceof \WP_Error ) {
+			return $result;
+		}
 
-		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Running ) );
+		return self::run( $identity, $result, RunStatus::Running );
 	}
 
 	/**
-	 * Cancels one retained run that is not executing or pending chunked job cleanup.
+	 * Cancels one retained run that is not executing or pending drained-queue completion.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -294,14 +298,17 @@ final readonly class ScopeOperations {
 	 * @throws  \InvalidArgumentException When the scope/name identity is invalid or the run_id is malformed.
 	 * @throws  \ValueError               When a non-canonical persisted run identifier is rejected.
 	 *
-	 * @return  AbstractResult<Run, BoundaryError>
+	 * @return  Run|\WP_Error
 	 */
 	#[\NoDiscard( 'a run-cancel result must be handled, not dropped' )]
-	public function cancel( string $name, string $run_id ): AbstractResult {
+	public function cancel( string $name, string $run_id ): Run|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
 		$result   = BoundaryErrorMapper::map( $this->dispatcher->cancel( $identity, $run_id ) );
+		if ( $result instanceof \WP_Error ) {
+			return $result;
+		}
 
-		return $result->is_failure() ? $result : new Success( self::run( $identity, $result->value, RunStatus::Cancelled ) );
+		return self::run( $identity, $result, RunStatus::Cancelled );
 	}
 
 	// endregion
@@ -385,9 +392,9 @@ final readonly class ScopeOperations {
 	 *
 	 * @throws  \InvalidArgumentException When the arguments are not portable and JSON-encodable.
 	 *
-	 * @return  BoundaryError|null Payload rejection when the portable arguments exceed the persisted byte limit.
+	 * @return  \WP_Error|null Payload rejection when the portable arguments exceed the persisted byte limit.
 	 */
-	private static function assert_portable_args( array $args, string $context ): ?BoundaryError {
+	private static function assert_portable_args( array $args, string $context ): ?\WP_Error {
 		try {
 			$encoded_args = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
 		} catch ( \JsonException ) {
@@ -404,7 +411,7 @@ final readonly class ScopeOperations {
 			return null;
 		}
 
-		return new BoundaryError( ErrorCode::PayloadRejected, \sprintf( '%1$s arguments contain %2$d JSON bytes; the limit is %3$d bytes.', $context, $actual_bytes, self::MAX_ARGUMENTS_BYTES ) );
+		return new \WP_Error( ErrorCode::PayloadRejected->value, \sprintf( '%1$s arguments contain %2$d JSON bytes; the limit is %3$d bytes.', $context, $actual_bytes, self::MAX_ARGUMENTS_BYTES ), array() );
 	}
 
 	// endregion

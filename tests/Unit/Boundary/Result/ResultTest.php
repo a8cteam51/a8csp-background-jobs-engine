@@ -2,12 +2,10 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Boundary\Result;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\ErrorInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
-use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -68,27 +66,15 @@ final class ResultTest extends TestCase {
 	}
 
 	/**
-	 * Runtime callers cannot construct a failed result with a value outside the error contract.
-	 *
-	 * @return  void
-	 */
-	public function test_failure_rejects_a_non_error_value_at_runtime(): void {
-		$this->expectException( \LogicException::class );
-		$this->expectExceptionMessageIs( 'A failed result requires an error implementing ErrorInterface.' );
-
-		( new \ReflectionClass( Failure::class ) )->newInstanceArgs( array( 'not-an-error' ) );
-	}
-
-	/**
 	 * Predicate checks expose each variant's payload without a second type check.
 	 *
 	 * @return  void
 	 */
 	public function test_predicate_branches_expose_the_narrowed_payload(): void {
-		$error = new BoundaryError( ErrorCode::BackendUnavailable, 'Load a supported scheduling backend.' );
+		$error = new class() implements ErrorInterface {};
 
 		self::assertSame( 42, $this->read_narrowed_result( new Success( 42 ) ) );
-		self::assertSame( $error->message, $this->read_narrowed_result( new Failure( $error ) ) );
+		self::assertSame( $error, $this->read_narrowed_result( new Failure( $error ) ) );
 	}
 
 	// endregion.
@@ -98,15 +84,15 @@ final class ResultTest extends TestCase {
 	/**
 	 * Reads the payload selected by the result predicate.
 	 *
-	 * @phpstan-param AbstractResult<int, BoundaryError> $result
+	 * @phpstan-param AbstractResult<int, ErrorInterface> $result
 	 *
 	 * @param   AbstractResult $result Result to consume.
 	 *
-	 * @return  int|string
+	 * @return  int|ErrorInterface
 	 */
-	private function read_narrowed_result( AbstractResult $result ): int|string {
+	private function read_narrowed_result( AbstractResult $result ): int|ErrorInterface {
 		if ( $result->is_failure() ) {
-			return $result->error->message;
+			return $result->error;
 		}
 
 		return $result->value;

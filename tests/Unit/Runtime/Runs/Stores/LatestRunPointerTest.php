@@ -2,6 +2,7 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Runtime\Runs\Stores;
 
+use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -23,6 +24,7 @@ final class LatestRunPointerTest extends TestCase {
 	private const string IDENTITY = 'runs-tests:reports';
 
 	private StoreFixtureBuilder $fixtures;
+	private Identity $identity;
 	private EngineRig $rig;
 	private OptionRows $rows;
 
@@ -57,6 +59,7 @@ final class LatestRunPointerTest extends TestCase {
 
 		$this->rig      = EngineRig::set_up();
 		$this->rows     = new OptionRows( $this->rig->wpdb() );
+		$this->identity = Identity::compose( 'runs-tests', 'reports' );
 		$this->fixtures = StoreFixtureBuilder::for_identity( self::IDENTITY );
 	}
 
@@ -289,7 +292,7 @@ final class LatestRunPointerTest extends TestCase {
 	 * @return  LatestRunPointer
 	 */
 	private function pointer(): LatestRunPointer {
-		return new LatestRunPointer( self::IDENTITY, $this->rows );
+		return new LatestRunPointer( $this->identity, $this->rows );
 	}
 
 	/**

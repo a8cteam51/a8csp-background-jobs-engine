@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -101,6 +102,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 	 * @param   OptionRows        $rows            Authoritative option-name enumeration.
 	 * @param   RunReconciliation $reconciliation  Run-reconciliation boundary.
 	 * @param   OverlapGuard      $guard           Lock schema and exact-delete boundary.
+	 * @param   StoreFactory      $stores          Identity-bound active-run stores.
 	 * @param   CleanupIntents    $cleanup_intents Unknown-chain convergence boundary.
 	 * @param   LoggerInterface   $logger          Log event sink.
 	 */
@@ -108,6 +110,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 		private readonly OptionRows $rows,
 		private readonly RunReconciliation $reconciliation,
 		private readonly OverlapGuard $guard,
+		private readonly StoreFactory $stores,
 		private readonly CleanupIntents $cleanup_intents,
 		private readonly LoggerInterface $logger,
 	) {}
@@ -222,7 +225,8 @@ final class MaintenanceJob implements JobExecutionInterface {
 		}
 		$run_incomplete = null !== $runs_cursor;
 
-		$lock_count = 0;
+		$liveness_by_identity = array();
+		$lock_count           = 0;
 		while ( $lock_count < self::LOCK_SWEEP_BUDGET ) {
 			$lock_page = $this->rows->option_names_after( OverlapGuard::OPTION_PREFIX, $locks_cursor, self::SWEEP_PAGE_SIZE );
 			if ( $lock_page->is_failure() ) {
@@ -252,21 +256,101 @@ final class MaintenanceJob implements JobExecutionInterface {
 
 				$run_id = null;
 				try {
-					$sweep  = $this->guard->sweep_persisted_lock( $identity, $args_hash );
-					$run_id = $sweep->run_id;
-					if ( $sweep->malformed_preserved ) {
+					$inspected = $this->guard->inspect_persisted_lock( $identity, $args_hash );
+					if ( $inspected->is_failure() ) {
 						$this->logger->warning(
-							'Preserved schema-invalid execution-overlap lock during maintenance sweep; inspect and repair it with WP-CLI.',
+							'Skipped an execution-overlap lock during maintenance sweep because its row could not be read; repair WordPress option reads and retry the sweep.',
 							array(
-								'identity'   => (string) $identity,
-								'args_hash'  => $args_hash,
-								'malformed'  => true,
-								'raw_length' => $sweep->raw_length,
-								'raw_sha256' => $sweep->raw_sha256,
+								'identity'     => (string) $identity,
+								'args_hash'    => $args_hash,
+								'phase'        => 'lock-inspection',
+								'error_class'  => $inspected->error::class,
+								'error_reason' => $inspected->error->reason?->value,
+							)
+						);
+
+						continue;
+					}
+
+					$snapshot = $inspected->value;
+					$run_id   = $snapshot['lock']['run_id'] ?? null;
+					if ( null !== $snapshot && null === $run_id ) {
+						$correlation  = OverlapGuard::raw_correlation( $snapshot['raw'] );
+						$identity_key = (string) $identity;
+						$liveness     = $liveness_by_identity[ $identity_key ] ??= $this->stores->run_store( $identity )->inspect_lane_liveness();
+						if ( $liveness->is_failure() ) {
+							$this->logger->warning(
+								'Preserved schema-invalid execution-overlap lock during maintenance sweep because active-run inspection failed; repair WordPress option reads and retry the sweep.',
+								array(
+									'identity'     => $identity_key,
+									'args_hash'    => $args_hash,
+									'malformed'    => true,
+									'phase'        => 'malformed-lock-run-inspection',
+									'error_class'  => $liveness->error::class,
+									'error_reason' => $liveness->error->reason?->value,
+									...$correlation,
+								)
+							);
+							continue;
+						}
+
+						if ( $liveness->value['unreadable'] ) {
+							$this->logger->warning(
+								'Preserved schema-invalid execution-overlap lock during maintenance sweep because an active-run row for its identity is unreadable.',
+								array(
+									'identity'  => $identity_key,
+									'args_hash' => $args_hash,
+									'malformed' => true,
+									'phase'     => 'malformed-lock-run-inspection',
+									...$correlation,
+								)
+							);
+							continue;
+						}
+
+						if ( ! isset( $liveness->value['running_lanes'][ $args_hash ] ) ) {
+							$reclaimed = $this->guard->reclaim_malformed_lock( $identity, $args_hash, $snapshot['raw'] );
+							if ( RowDeleteOutcome::DeleteFailed === $reclaimed ) {
+								$this->logger->warning(
+									'Could not reclaim schema-invalid execution-overlap lock during maintenance sweep because the exact option-row delete failed; repair WordPress option writes and retry the sweep.',
+									array(
+										'identity'  => $identity_key,
+										'args_hash' => $args_hash,
+										'malformed' => true,
+										'phase'     => 'malformed-lock-reclamation',
+										...$correlation,
+									)
+								);
+							}
+							if ( RowDeleteOutcome::Deleted !== $reclaimed ) {
+								continue;
+							}
+
+							$this->logger->warning(
+								'Reclaimed schema-invalid execution-overlap lock during maintenance sweep because no Running run occupies its lane.',
+								array(
+									'identity'  => $identity_key,
+									'args_hash' => $args_hash,
+									'malformed' => true,
+									'phase'     => 'malformed-lock-reclamation',
+									...$correlation,
+								)
+							);
+							continue;
+						}
+
+						// The malformed row makes every claim indeterminate, so preserving it keeps rival execution out of the occupied lane.
+						$this->logger->warning(
+							'Preserved schema-invalid execution-overlap lock during maintenance sweep because a Running run occupies its lane.',
+							array(
+								'identity'  => $identity_key,
+								'args_hash' => $args_hash,
+								'malformed' => true,
+								'phase'     => 'malformed-lock-run-inspection',
+								...$correlation,
 							)
 						);
 					}
-
 					if ( null === $run_id ) {
 						continue;
 					}
@@ -293,6 +377,7 @@ final class MaintenanceJob implements JobExecutionInterface {
 			}
 		}
 		$lock_incomplete = null !== $locks_cursor;
+		unset( $liveness_by_identity );
 
 		// Intent convergence must not starve behind a persistently failing registry phase.
 		$this->cleanup_intents->converge_pending_intents();

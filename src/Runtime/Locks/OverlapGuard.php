@@ -18,9 +18,10 @@ use Psr\Log\LoggerInterface;
 /**
  * Owns execution-overlap locks stored as WordPress options.
  *
- * A claim mutates only an absent row. Existing parseable and malformed rows are returned as exact
- * snapshots so the admission coordinator can fence the incumbent before transferring that same
- * lock generation. Maintenance owns stale deletion independently.
+ * A claim mutates only an absent row. Existing parseable rows are returned as exact snapshots so
+ * the admission coordinator can fence the incumbent before transferring that same lock generation.
+ * Unreadable selections, unanswered writes whose row is absent, malformed rows, and exhausted claim
+ * attempts are all indeterminate and remain unchanged. Maintenance owns stale deletion independently.
  *
  * LockWindows resolves the 15-minute default, lock-staleness filter, and
  * twice-the-continue-delay floor; this guard enforces lock mechanics with the supplied window.
@@ -42,6 +43,18 @@ final readonly class OverlapGuard {
 	 * @var     string
 	 */
 	public const string OPTION_PREFIX = 'a8csp_bgje_overlap_lock_';
+
+	/**
+	 * Maximum claim attempts when a lost insert's incumbent row disappears.
+	 *
+	 * One or greater because range() reverses when its start exceeds its end.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     int
+	 */
+	private const int CLAIM_ATTEMPTS = 3;
 
 	/**
 	 * Prefix length retained from a raw-value digest in operator diagnostics.
@@ -80,7 +93,13 @@ final readonly class OverlapGuard {
 	// region METHODS
 
 	/**
-	 * Claims an absent lock or selects an existing parseable or malformed row.
+	 * Claims an absent lock or selects an existing parseable row.
+	 *
+	 * A lost insert whose row is then absent is contention that resolved itself: an incumbent held the
+	 * lane when the insert ran and released it before the read, so the lane is free and the claim is
+	 * attempted again against it. Attempts are bounded, so a lane that keeps vanishing settles as
+	 * indeterminate rather than spinning. Nothing outside this method observes an intermediate attempt:
+	 * no run row exists yet, and a losing attempt writes nothing to undo.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -89,39 +108,77 @@ final readonly class OverlapGuard {
 	 * @param   string   $args_hash Stable single-flight identity.
 	 * @param   string   $run_id    Claiming run identifier.
 	 *
-	 * @return  LockClaimResult Typed selection carrying the generation it decided under, with an exact snapshot when one was read.
+	 * @return  LockClaimResult Typed selection carrying the generation it decided under, with an exact contended snapshot when one was read.
 	 */
 	public function claim( Identity $identity, string $args_hash, string $run_id ): LockClaimResult {
-		$key      = $this->option_name( $identity, $args_hash );
-		$now      = $this->clock->now()->getTimestamp();
-		$new_lock = self::new_lock( $run_id, $now );
+		$key = $this->option_name( $identity, $args_hash );
 
-		if ( RowWriteOutcome::Won === $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) ) ) {
-			return LockClaimResult::claimed( $now );
+		// A fixed attempt list makes the bound independent of a mutable counter. The list is not monotonic
+		// in the budget, though, because range() reverses when its start exceeds its end, which is why the
+		// budget is documented as one or greater.
+		foreach ( \range( 1, self::CLAIM_ATTEMPTS ) as $attempt ) {
+			if ( 1 < $attempt ) {
+				$this->logger->debug(
+					'An execution-overlap lock claim lost an insert race and is being attempted again.',
+					array(
+						'identity' => (string) $identity,
+						'run_id'   => $run_id,
+						'attempt'  => $attempt,
+					)
+				);
+			}
+
+			$now      = $this->clock->now()->getTimestamp();
+			$new_lock = self::new_lock( $run_id, $now );
+			$insert   = $this->rows->insert_if_absent( $key, self::serialize( $new_lock ) );
+			if ( RowWriteOutcome::Won === $insert ) {
+				return LockClaimResult::claimed( $now );
+			}
+
+			$selected = $this->rows->read( $key );
+			if ( $selected->is_failure() ) {
+				return LockClaimResult::indeterminate();
+			}
+
+			$raw = $selected->value;
+			if ( null === $raw ) {
+				if ( RowWriteOutcome::Lost === $insert ) {
+					continue;
+				}
+
+				// Storage that did not answer a write is not asked for another one in the same request. The
+				// absent read has already excluded this claim's own row, so a further attempt could only
+				// re-ask degraded storage for the answer it just failed to give.
+				return LockClaimResult::indeterminate();
+			}
+
+			$lock = self::parse( $raw );
+			if ( null === $lock ) {
+				return LockClaimResult::indeterminate();
+			}
+
+			// Liveness is the incumbent's own policy: resolving the window from the contender would judge a healthy
+			// incumbent against a window it never declared. Resolving it applies consumer filters, so the age this
+			// decision uses is read afterwards.
+			$staleness_window = $this->lock_windows->lock_staleness( $identity, $lock['run_id'] );
+			$now              = $this->clock->now()->getTimestamp();
+
+			return LockClaimResult::contended( $lock['run_id'], $raw, self::is_stale( $lock, $now, $staleness_window ), $now );
 		}
 
-		$selected = $this->rows->read( $key );
-		if ( $selected->is_failure() ) {
-			return LockClaimResult::indeterminate();
-		}
+		// The caller presents an exhausted claim as a storage failure, which is the wrong cause for a lane
+		// that answered every query. This record is what tells an operator reading the log that the lane was
+		// contended rather than unreadable.
+		$this->logger->debug(
+			'An execution-overlap lock claim exhausted its attempts because the contended lane was released before every read.',
+			array(
+				'identity' => (string) $identity,
+				'run_id'   => $run_id,
+				'attempts' => self::CLAIM_ATTEMPTS,
+			)
+		);
 
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return LockClaimResult::indeterminate();
-		}
-
-		$lock = self::parse( $raw );
-		if ( null === $lock ) {
-			return LockClaimResult::malformed( $raw );
-		}
-
-		// Liveness is the incumbent's own policy: resolving the window from the contender would judge a healthy
-		// incumbent against a window it never declared. Resolving it applies consumer filters, so the age this
-		// decision uses is read afterwards.
-		$staleness_window = $this->lock_windows->lock_staleness( $identity, $lock['run_id'] );
-		$now              = $this->clock->now()->getTimestamp();
-
-		return LockClaimResult::contended( $lock['run_id'], $raw, self::is_stale( $lock, $now, $staleness_window ), $now );
+		return LockClaimResult::indeterminate();
 	}
 
 	/**
@@ -173,26 +230,57 @@ final readonly class OverlapGuard {
 	 */
 	#[\NoDiscard( 'a lock-heartbeat outcome must be handled, not dropped' )]
 	public function heartbeat( Identity $identity, string $args_hash, string $run_id, ?int $at = null, ?int $expected_heartbeat_at = null ): HeartbeatOutcome {
-		return $this->heartbeat_for_identity( (string) $identity, $args_hash, $run_id, $at, $expected_heartbeat_at );
-	}
+		$key      = $this->option_name( $identity, $args_hash );
+		$selected = $this->rows->read( $key );
+		if ( $selected->is_failure() ) {
+			$this->logger->warning(
+				'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
+				array(
+					'key'       => $key,
+					'identity'  => (string) $identity,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
 
-	/**
-	 * Refreshes liveness for untrusted scheduler-wire identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity              Raw scheduler-wire identity bytes.
-	 * @param   string   $args_hash             Stable single-flight identity.
-	 * @param   string   $run_id                Owning run identifier.
-	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time.
-	 * @param   int|null $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
-	 *
-	 * @return  HeartbeatOutcome Ownership classification after the heartbeat attempt.
-	 */
-	#[\NoDiscard( 'a lock-heartbeat outcome must be handled, not dropped' )]
-	public function raw_heartbeat( string $identity, string $args_hash, string $run_id, ?int $at = null, ?int $expected_heartbeat_at = null ): HeartbeatOutcome {
-		return $this->heartbeat_for_identity( $identity, $args_hash, $run_id, $at, $expected_heartbeat_at );
+			return HeartbeatOutcome::Indeterminate;
+		}
+
+		$raw = $selected->value;
+		if ( null === $raw ) {
+			return HeartbeatOutcome::Lost;
+		}
+
+		$lock = self::parse( $raw );
+		if ( null === $lock || $run_id !== $lock['run_id'] ) {
+			return HeartbeatOutcome::Lost;
+		}
+		if ( null !== $expected_heartbeat_at && $expected_heartbeat_at !== $lock['heartbeat_at'] ) {
+			return HeartbeatOutcome::GenerationMismatch;
+		}
+
+		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
+
+		$write = $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) );
+		if ( RowWriteOutcome::Won === $write ) {
+			return HeartbeatOutcome::Owned;
+		}
+		if ( RowWriteOutcome::WriteFailed === $write ) {
+			$this->logger->warning(
+				'Execution-overlap lock heartbeat could not write the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
+				array(
+					'key'       => $key,
+					'identity'  => (string) $identity,
+					'args_hash' => $args_hash,
+					'run_id'    => $run_id,
+				)
+			);
+
+			return HeartbeatOutcome::Indeterminate;
+		}
+
+		// Ownership moved after selection, so execution cannot continue under this lock.
+		return null !== $expected_heartbeat_at ? HeartbeatOutcome::GenerationMismatch : HeartbeatOutcome::Lost;
 	}
 
 	/**
@@ -248,7 +336,7 @@ final readonly class OverlapGuard {
 	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
 	 * @param   string   $args_hash Stable single-flight identity.
 	 *
-	 * @return  AbstractResult<array{raw: string, lock: array{run_id: string, claimed_at: int, heartbeat_at: int}|null}|null, EngineError>
+	 * @return  AbstractResult<array{raw: string, lock: array{run_id: string, heartbeat_at: int}|null}|null, EngineError>
 	 */
 	#[\NoDiscard( 'a persisted-lock read outcome must be handled, not dropped' )]
 	public function inspect_persisted_lock( Identity $identity, string $args_hash ): AbstractResult {
@@ -271,39 +359,21 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Reads one persisted lock and preserves malformed state for explicit repair.
+	 * Reclaims a malformed lock only while its exact inspected row is unchanged.
 	 *
 	 * @internal Engine maintenance only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity $identity  Complete scope-qualified job or chunked job identity.
-	 * @param   string   $args_hash Stable single-flight identity.
+	 * @param   Identity $identity     Complete scope-qualified job or chunked job identity.
+	 * @param   string   $args_hash    Stable single-flight identity.
+	 * @param   string   $expected_raw Exact inspected malformed row value.
 	 *
-	 * @return  MaintenanceLockSweep Actionable owner or malformed-row diagnostic.
+	 * @return  RowDeleteOutcome Exact malformed-row delete classification.
 	 */
-	#[\NoDiscard( 'a persisted-lock maintenance sweep must be handled, not dropped' )]
-	public function sweep_persisted_lock( Identity $identity, string $args_hash ): MaintenanceLockSweep {
-		$inspected = $this->inspect_persisted_lock( $identity, $args_hash );
-		if ( $inspected->is_failure() ) {
-			return new MaintenanceLockSweep( null, false, null, null );
-		}
-
-		$snapshot = $inspected->value;
-		if ( null === $snapshot ) {
-			return new MaintenanceLockSweep( null, false, null, null );
-		}
-
-		$lock = $snapshot['lock'];
-		if ( null === $lock ) {
-			$raw         = $snapshot['raw'];
-			$correlation = self::raw_correlation( $raw );
-
-			return new MaintenanceLockSweep( null, true, $correlation['raw_length'], $correlation['raw_sha256'] );
-		}
-
-		return new MaintenanceLockSweep( $lock['run_id'], false, null, null );
+	public function reclaim_malformed_lock( Identity $identity, string $args_hash, string $expected_raw ): RowDeleteOutcome {
+		return $this->rows->delete_if_value_matches( $this->option_name( $identity, $args_hash ), $expected_raw );
 	}
 
 	/**
@@ -419,7 +489,7 @@ final readonly class OverlapGuard {
 
 		$lock = $snapshot['lock'];
 		if ( null === $lock ) {
-			return MaintenanceFenceOutcome::Indeterminate;
+			return MaintenanceFenceOutcome::Malformed;
 		}
 
 		if ( $run_id !== $lock['run_id'] ) {
@@ -462,7 +532,7 @@ final readonly class OverlapGuard {
 
 		$lock = $snapshot['lock'];
 		if ( null === $lock ) {
-			return MaintenanceFenceOutcome::Indeterminate;
+			return MaintenanceFenceOutcome::Malformed;
 		}
 
 		return $run_id === $lock['run_id']
@@ -481,17 +551,15 @@ final readonly class OverlapGuard {
 	 * @param   Identity $identity     Complete scope-qualified job or chunked job identity.
 	 * @param   string   $args_hash    Stable single-flight identity.
 	 * @param   string   $run_id       Expected lock owner.
-	 * @param   int      $claimed_at   Original run claim timestamp.
 	 * @param   int      $heartbeat_at Delivery-generation heartbeat.
 	 * @param   int      $staleness    Resolved lock-staleness window.
 	 *
 	 * @return  RedeliveryFenceOutcome Typed readiness after the preparation attempt.
 	 */
-	public function prepare_run_redelivery_fence( Identity $identity, string $args_hash, string $run_id, int $claimed_at, int $heartbeat_at, int $staleness ): RedeliveryFenceOutcome {
+	public function prepare_run_redelivery_fence( Identity $identity, string $args_hash, string $run_id, int $heartbeat_at, int $staleness ): RedeliveryFenceOutcome {
 		$key         = $this->option_name( $identity, $args_hash );
 		$replacement = array(
 			'run_id'       => $run_id,
-			'claimed_at'   => $claimed_at,
 			'heartbeat_at' => $heartbeat_at,
 		);
 		$inspected   = $this->inspect_persisted_lock( $identity, $args_hash );
@@ -534,8 +602,7 @@ final readonly class OverlapGuard {
 			return RedeliveryFenceOutcome::Live;
 		}
 
-		$replacement['claimed_at'] = $lock['claimed_at'];
-		$write                     = $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) );
+		$write = $this->rows->compare_and_swap( $key, $snapshot['raw'], self::serialize( $replacement ) );
 		if ( RowWriteOutcome::Won === $write ) {
 			return RedeliveryFenceOutcome::Ready;
 		}
@@ -549,74 +616,6 @@ final readonly class OverlapGuard {
 	// endregion
 
 	// region HELPERS
-
-	/**
-	 * Refreshes liveness for exact identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string   $identity              Exact identity bytes used for the option key and diagnostics.
-	 * @param   string   $args_hash             Stable single-flight identity.
-	 * @param   string   $run_id                Owning run identifier.
-	 * @param   int|null $at                    Liveness timestamp, or null to use the current clock time.
-	 * @param   int|null $expected_heartbeat_at Expected heartbeat for one delivery generation, or null to accept any owned generation.
-	 *
-	 * @return  HeartbeatOutcome Ownership classification after the heartbeat attempt.
-	 */
-	private function heartbeat_for_identity( string $identity, string $args_hash, string $run_id, ?int $at, ?int $expected_heartbeat_at ): HeartbeatOutcome {
-		$key      = $this->raw_option_name( $identity, $args_hash );
-		$selected = $this->rows->read( $key );
-		if ( $selected->is_failure() ) {
-			$this->logger->warning(
-				'Execution-overlap lock heartbeat could not read the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
-				array(
-					'key'       => $key,
-					'identity'  => $identity,
-					'args_hash' => $args_hash,
-					'run_id'    => $run_id,
-				)
-			);
-
-			return HeartbeatOutcome::Indeterminate;
-		}
-
-		$raw = $selected->value;
-		if ( null === $raw ) {
-			return HeartbeatOutcome::Lost;
-		}
-
-		$lock = self::parse( $raw );
-		if ( null === $lock || $run_id !== $lock['run_id'] ) {
-			return HeartbeatOutcome::Lost;
-		}
-		if ( null !== $expected_heartbeat_at && $expected_heartbeat_at !== $lock['heartbeat_at'] ) {
-			return HeartbeatOutcome::GenerationMismatch;
-		}
-
-		$lock['heartbeat_at'] = $at ?? $this->clock->now()->getTimestamp();
-
-		$write = $this->rows->compare_and_swap( $key, $raw, self::serialize( $lock ) );
-		if ( RowWriteOutcome::Won === $write ) {
-			return HeartbeatOutcome::Owned;
-		}
-		if ( RowWriteOutcome::WriteFailed === $write ) {
-			$this->logger->warning(
-				'Execution-overlap lock heartbeat could not write the authoritative lock row; ownership is indeterminate and the caller aborts without a terminal claim.',
-				array(
-					'key'       => $key,
-					'identity'  => $identity,
-					'args_hash' => $args_hash,
-					'run_id'    => $run_id,
-				)
-			);
-
-			return HeartbeatOutcome::Indeterminate;
-		}
-
-		// Ownership moved after selection, so execution cannot continue under this lock.
-		return null !== $expected_heartbeat_at ? HeartbeatOutcome::GenerationMismatch : HeartbeatOutcome::Lost;
-	}
 
 	/**
 	 * Reclassifies a redelivery fence after an exact lock write loses its race.
@@ -668,22 +667,7 @@ final readonly class OverlapGuard {
 	 * @return  string
 	 */
 	private function option_name( Identity $identity, string $args_hash ): string {
-		return $this->raw_option_name( (string) $identity, $args_hash );
-	}
-
-	/**
-	 * Returns the execution-overlap option name for exact identity bytes.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $identity  Exact identity bytes.
-	 * @param   string $args_hash Stable single-flight identity.
-	 *
-	 * @return  string
-	 */
-	private function raw_option_name( string $identity, string $args_hash ): string {
-		return self::OPTION_PREFIX . $identity . '_' . $args_hash;
+		return self::OPTION_PREFIX . (string) $identity . '_' . $args_hash;
 	}
 
 	/**
@@ -693,14 +677,13 @@ final readonly class OverlapGuard {
 	 * @version 1.0.0
 	 *
 	 * @param   string $run_id Claiming run identifier.
-	 * @param   int    $now    Claim timestamp.
+	 * @param   int    $now    Initial heartbeat timestamp.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}
+	 * @return  array{run_id: string, heartbeat_at: int}
 	 */
 	private static function new_lock( string $run_id, int $now ): array {
 		return array(
 			'run_id'       => $run_id,
-			'claimed_at'   => $now,
 			'heartbeat_at' => $now,
 		);
 	}
@@ -711,7 +694,7 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $row Complete lock row.
+	 * @param   array{run_id: string, heartbeat_at: int} $row Complete lock row.
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the row to a string.
 	 *
@@ -727,22 +710,20 @@ final readonly class OverlapGuard {
 	}
 
 	/**
-	 * Parses only the exact three-field persisted lock shape.
+	 * Parses the required persisted lock fields into the canonical row shape.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string $raw Exact persisted option value.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}|null
+	 * @return  array{run_id: string, heartbeat_at: int}|null
 	 */
 	private static function parse( string $raw ): ?array {
 		$value = RawOptionDecoder::decode( $raw );
 		if (
 			! \is_array( $value )
-			|| 3 !== \count( $value )
 			|| ! \is_string( $value['run_id'] ?? null )
-			|| ! \is_int( $value['claimed_at'] ?? null )
 			|| ! \is_int( $value['heartbeat_at'] ?? null )
 		) {
 			return null;
@@ -750,7 +731,6 @@ final readonly class OverlapGuard {
 
 		return array(
 			'run_id'       => $value['run_id'],
-			'claimed_at'   => $value['claimed_at'],
 			'heartbeat_at' => $value['heartbeat_at'],
 		);
 	}
@@ -761,9 +741,9 @@ final readonly class OverlapGuard {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array{run_id: string, claimed_at: int, heartbeat_at: int} $lock             Lock row.
-	 * @param   int                                                       $now              Current timestamp.
-	 * @param   int                                                       $staleness_window Staleness window in seconds.
+	 * @param   array{run_id: string, heartbeat_at: int} $lock             Lock row.
+	 * @param   int                                      $now              Current timestamp.
+	 * @param   int                                      $staleness_window Staleness window in seconds.
 	 *
 	 * @return  bool
 	 */

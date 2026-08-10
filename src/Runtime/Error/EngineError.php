@@ -66,10 +66,10 @@ final readonly class EngineError implements ErrorInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string                             $kind      Persisted kind key.
-	 * @param   Identity                           $identity  Complete scope-qualified job or chunked job identity.
-	 * @param   'continue'|'run'|'cleanup'|'retry' $stage     Internal action that was not scheduled.
-	 * @param   SchedulingError                    $error     Scheduling failure.
+	 * @param   string                   $kind      Persisted kind key.
+	 * @param   Identity                 $identity  Complete scope-qualified job or chunked job identity.
+	 * @param   'continue'|'run'|'retry' $stage     Internal action that was not scheduled.
+	 * @param   SchedulingError          $error     Scheduling failure.
 	 *
 	 * @return  self
 	 */

@@ -9,11 +9,11 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceFenceOutcome;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceLockSweep;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\RedeliveryFenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RawOptionDecoder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowDeleteOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\FixedClock;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingLogger;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
@@ -52,14 +52,15 @@ final class LockRowWakeupProbe {
  *
  */
 #[CoversClass( OverlapGuard::class )]
+#[CoversClass( MaintenanceFenceOutcome::class )]
 #[UsesClass( LockClaimOutcome::class )]
 #[UsesClass( LockClaimResult::class )]
 #[UsesClass( LockTransferOutcome::class )]
 #[UsesClass( HeartbeatOutcome::class )]
-#[UsesClass( MaintenanceLockSweep::class )]
 #[UsesClass( RedeliveryFenceOutcome::class )]
 #[UsesClass( OptionRows::class )]
 #[UsesClass( RawOptionDecoder::class )]
+#[UsesClass( RowDeleteOutcome::class )]
 final class OverlapGuardTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -149,9 +150,135 @@ final class OverlapGuardTest extends TestCase {
 		self::assertNull( $result->owner_run_id );
 		self::assertNull( $result->raw );
 		self::assertNull( $result->stale );
-		self::assertSame( self::expected_lock_row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
+		self::assertSame( 1_700_000_100, $result->admitted_at );
+		self::assertSame( 'a:2:{s:6:"run_id";s:7:"run-new";s:12:"heartbeat_at";i:1700000100;}', $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertSame( self::expected_lock_row( 'run-new', 1_700_000_100 ), $this->lock() );
 		self::assertTrue( $this->wpdb->is_non_autoloaded( self::KEY ) );
 		self::assertSame( array( 'insert' ), $this->operations() );
+	}
+
+	/** A claim retries against current storage when the incumbent disappears after a lost insert. */
+	public function test_claim_retries_a_lost_insert_when_the_selected_row_disappears(): void {
+		$logger = new RecordingLogger();
+		$this->wpdb->script_result( 'insert', 0 );
+
+		$result = $this->guard_at( 1_700_000_100, $logger )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockClaimOutcome::Claimed, $result->outcome );
+		self::assertSame( 1_700_000_100, $result->admitted_at );
+		self::assertSame( 'a:2:{s:6:"run_id";s:7:"run-new";s:12:"heartbeat_at";i:1700000100;}', $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertCount( 3, $this->wpdb->recorded_queries );
+		self::assertSame(
+			array(
+				array(
+					'level'   => 'debug',
+					'message' => 'An execution-overlap lock claim lost an insert race and is being attempted again.',
+					'context' => array(
+						'identity' => self::IDENTITY,
+						'run_id'   => 'run-new',
+						'attempt'  => 2,
+					),
+				),
+			),
+			$logger->records
+		);
+	}
+
+	/** A retried claim selects the new incumbent that arrives after the vanished row. */
+	public function test_claim_retry_selects_a_new_incumbent(): void {
+		$new_incumbent_raw = self::fixture_lock_raw( 'run-new-owner', 100, 190 );
+		$this->wpdb->script_result( 'insert', 0 );
+		$this->wpdb->before_next(
+			'select',
+			static fn ( WpdbLockSpy $wpdb ) => $wpdb->before_next( 'insert', static fn ( WpdbLockSpy $database ) => $database->put( self::KEY, $new_incumbent_raw ) )
+		);
+
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
+
+		self::assertSame( LockClaimOutcome::Contended, $result->outcome );
+		self::assertSame( 'run-new-owner', $result->owner_run_id );
+		self::assertSame( $new_incumbent_raw, $result->raw );
+		self::assertCount( 4, $this->wpdb->recorded_queries );
+	}
+
+	/** A claim stops after three lost inserts whose selected rows all disappear. */
+	public function test_claim_exhausts_its_lost_insert_retry_budget(): void {
+		$logger = new RecordingLogger();
+		$this->wpdb->script_result( 'insert', 0 );
+		$this->wpdb->script_result( 'insert', 0 );
+		$this->wpdb->script_result( 'insert', 0 );
+
+		$result = $this->guard_at( 200, $logger )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
+
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertCount( 6, $this->wpdb->recorded_queries );
+		self::assertSame( array( 'debug', 'debug', 'debug' ), \array_column( $logger->records, 'level' ) );
+		self::assertSame(
+			array(
+				'An execution-overlap lock claim lost an insert race and is being attempted again.',
+				'An execution-overlap lock claim lost an insert race and is being attempted again.',
+				'An execution-overlap lock claim exhausted its attempts because the contended lane was released before every read.',
+			),
+			\array_column( $logger->records, 'message' )
+		);
+		self::assertSame( 2, $logger->records[0]['context']['attempt'] ?? null );
+		self::assertSame( 3, $logger->records[1]['context']['attempt'] ?? null );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => 'run-rival',
+				'attempts' => 3,
+			),
+			$logger->records[2]['context']
+		);
+	}
+
+	/** An unanswered insert is not retried even when the selected row is absent. */
+	public function test_claim_does_not_retry_a_failed_insert(): void {
+		$this->wpdb->script_result( 'insert', false );
+
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' );
+
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertSame( 1, \count( \array_filter( $this->operations(), static fn ( string $operation ): bool => 'insert' === $operation ) ) );
+	}
+
+	/** A successful retry persists and reports the retry attempt's later generation. */
+	public function test_claim_retry_recomputes_its_generation(): void {
+		$clock = new FixedClock( 100 );
+		$this->wpdb->script_result( 'insert', 0 );
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ) use ( $clock ): void {
+				$clock->timestamp = 200;
+			}
+		);
+		$guard = new OverlapGuard( $clock, new RecordingLogger(), $this->rows, new LockWindows( $clock, new RecordingLogger() ) );
+
+		$result = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockClaimOutcome::Claimed, $result->outcome );
+		self::assertSame( 200, $result->admitted_at );
+		self::assertSame( self::expected_lock_row( 'run-new', 200 ), $this->lock() );
+	}
+
+	/** A retry without a parseable incumbent does not resolve the incumbent-only staleness filter. */
+	public function test_claim_retry_without_an_incumbent_does_not_resolve_staleness(): void {
+		$staleness_calls = 0;
+		\add_filter(
+			'a8csp_bgje/lock_staleness',
+			static function ( int $window ) use ( &$staleness_calls ): int {
+				++$staleness_calls;
+
+				return $window;
+			}
+		);
+		$this->wpdb->script_result( 'insert', 0 );
+
+		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
+
+		self::assertSame( LockClaimOutcome::Claimed, $result->outcome );
+		self::assertSame( 0, $staleness_calls );
 	}
 
 	/** A fresh foreign owner is selected with its exact raw row without mutation. */
@@ -165,6 +292,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( 'run-live', $result->owner_run_id );
 		self::assertSame( $raw, $result->raw );
 		self::assertFalse( $result->stale );
+		self::assertSame( 1_700_000_100, $result->admitted_at );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
@@ -202,7 +330,7 @@ final class OverlapGuardTest extends TestCase {
 		$outcome = $this->guard_at( 1_700_000_100 )->replace( $this->identity, self::ARGS_HASH, 'run-live', $raw, 'run-new' );
 
 		self::assertSame( LockTransferOutcome::Transferred, $outcome );
-		self::assertSame( self::expected_lock_row( 'run-new', 1_700_000_100, 1_700_000_100 ), $this->lock() );
+		self::assertSame( self::expected_lock_row( 'run-new', 1_700_000_100 ), $this->lock() );
 		self::assertSame( array( 'update' ), $this->operations() );
 	}
 
@@ -290,8 +418,8 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
 
-	/** A malformed raw row is classified with its exact bytes without mutation. */
-	public function test_claim_classifies_a_malformed_row_without_mutation(): void {
+	/** A malformed raw row produces no claim or contention and remains unchanged. */
+	public function test_claim_reports_a_malformed_row_as_indeterminate_without_mutation(): void {
 		$logger = new RecordingLogger();
 		$raw    = \str_repeat( 'malformed-', 30 );
 		$this->wpdb->put( self::KEY, $raw );
@@ -299,16 +427,16 @@ final class OverlapGuardTest extends TestCase {
 
 		$result = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
-		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
 		self::assertNull( $result->owner_run_id );
-		self::assertSame( $raw, $result->raw );
+		self::assertNull( $result->raw );
 		self::assertNull( $result->stale );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array(), $logger->records );
 	}
 
-	/** A serialized object is classified as malformed without constructing its class or changing its bytes. */
-	public function test_malformed_object_row_is_classified_without_class_construction_or_mutation(): void {
+	/** A malformed serialized object produces no claim or contention, class construction, or mutation. */
+	public function test_malformed_object_row_is_indeterminate_without_class_construction_or_mutation(): void {
 		LockRowWakeupProbe::$woke = false;
 
 		$raw = StoreFixtureBuilder::corrupt_row( new LockRowWakeupProbe() );
@@ -316,8 +444,8 @@ final class OverlapGuardTest extends TestCase {
 
 		$result = $this->guard_at( 1_000 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
-		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
-		self::assertSame( $raw, $result->raw );
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertNull( $result->raw );
 		self::assertFalse( LockRowWakeupProbe::$woke );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
@@ -330,7 +458,7 @@ final class OverlapGuardTest extends TestCase {
 		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner' );
 
 		self::assertSame( HeartbeatOutcome::Owned, $outcome );
-		self::assertSame( self::expected_lock_row( 'run-owner', 100, 200 ), $this->lock() );
+		self::assertSame( self::expected_lock_row( 'run-owner', 200 ), $this->lock() );
 		self::assertSame( array( 'select', 'update' ), $this->operations() );
 	}
 
@@ -348,11 +476,11 @@ final class OverlapGuardTest extends TestCase {
 
 		self::assertSame( HeartbeatOutcome::Owned, $guard->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner', 1_000 ) );
 		self::assertSame( 0, $clock->calls );
-		self::assertSame( self::expected_lock_row( 'run-owner', 100, 1_000 ), $this->lock() );
+		self::assertSame( self::expected_lock_row( 'run-owner', 1_000 ), $this->lock() );
 		self::assertFalse( $this->guard_at( 500 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' )->stale );
 		self::assertFalse( $this->guard_at( 1_100 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' )->stale );
 		self::assertTrue( $this->guard_at( 1_101 )->claim( $this->identity, self::ARGS_HASH, 'run-rival' )->stale );
-		self::assertSame( self::expected_lock_row( 'run-owner', 100, 1_000 ), $this->lock() );
+		self::assertSame( self::expected_lock_row( 'run-owner', 1_000 ), $this->lock() );
 	}
 
 	/** An identical-second heartbeat is confirmed after MySQL reports zero affected rows. */
@@ -464,6 +592,18 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
+	/** An expected heartbeat rejects an already-advanced generation before attempting a write. */
+	public function test_heartbeat_rejects_an_already_newer_same_run_generation(): void {
+		$newer_raw = self::fixture_lock_raw( 'run-owner', 100, 300 );
+		$this->wpdb->put( self::KEY, $newer_raw );
+
+		$outcome = $this->guard_at( 200 )->heartbeat( $this->identity, self::ARGS_HASH, 'run-owner', null, 120 );
+
+		self::assertSame( HeartbeatOutcome::GenerationMismatch, $outcome );
+		self::assertSame( $newer_raw, $this->wpdb->rows[ self::KEY ] );
+		self::assertSame( array( 'select' ), $this->operations() );
+	}
+
 	/** An expected heartbeat refuses to shorten a newer generation owned by the same run. */
 	public function test_heartbeat_rejects_a_newer_same_run_generation(): void {
 		$newer_raw = self::fixture_lock_raw( 'run-owner', 100, 300 );
@@ -490,6 +630,22 @@ final class OverlapGuardTest extends TestCase {
 		self::assertTrue( $released );
 		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 		self::assertSame( array( 'select', 'delete' ), $this->operations() );
+	}
+
+	/**
+	 * Release deletes a row written before the claim timestamp left the schema.
+	 *
+	 * A lock persisted by an earlier version carries a third field that the parser now ignores, so the
+	 * bytes the delete must match are the ones on disk rather than the ones a fresh write would produce.
+	 */
+	public function test_release_deletes_a_legacy_three_field_lock(): void {
+		$legacy_raw = self::legacy_lock_raw( 'run-owner', 100, 120 );
+		$this->wpdb->put( self::KEY, $legacy_raw );
+
+		$released = $this->guard_at( 200 )->release( $this->identity, self::ARGS_HASH, 'run-owner' );
+
+		self::assertTrue( $released );
+		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
 	}
 
 	/** Release leaves a foreign lock byte-for-byte unchanged. */
@@ -555,7 +711,7 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
-	/** Claim outcomes distinguish fresh, stale, absent, and malformed rows with exact bytes. */
+	/** Claim selects fresh and stale locks, claims absence, and rejects malformed bytes. */
 	public function test_claim_distinguishes_fresh_stale_absent_and_malformed_locks(): void {
 		$this->declare_lock_window( 100 );
 		$guard     = $this->guard_at( 1_000 );
@@ -581,28 +737,68 @@ final class OverlapGuardTest extends TestCase {
 		$malformed_raw = 'not-a-lock-row';
 		$this->wpdb->put( self::KEY, $malformed_raw );
 		$malformed = $guard->claim( $this->identity, self::ARGS_HASH, 'run-new' );
-		self::assertSame( LockClaimOutcome::Malformed, $malformed->outcome );
-		self::assertSame( $malformed_raw, $malformed->raw );
+		self::assertSame( LockClaimOutcome::Indeterminate, $malformed->outcome );
+		self::assertNull( $malformed->raw );
 		self::assertSame( $malformed_raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'insert', 'select', 'insert', 'select', 'insert', 'insert', 'select' ), $this->operations() );
 	}
 
-	/** Claim classifies a deserializable row outside the exact three-field schema as malformed. */
-	public function test_claim_rejects_a_lock_row_with_extra_fields(): void {
+	/** Inspection accepts required lock fields and drops an unknown field from its normalized row. */
+	public function test_inspection_ignores_an_unknown_lock_row_field(): void {
 		$raw = StoreFixtureBuilder::corrupt_row(
 			array(
 				'run_id'       => 'run-owner',
-				'claimed_at'   => 100,
 				'heartbeat_at' => 200,
 				'extra'        => true,
 			)
 		);
 		$this->wpdb->put( self::KEY, $raw );
 
+		$inspected = $this->guard_at( 200 )->inspect_persisted_lock( $this->identity, self::ARGS_HASH );
+		self::assertFalse( $inspected->is_failure() );
+		$snapshot = $inspected->value;
+		self::assertIsArray( $snapshot );
+
+		self::assertSame( $raw, $snapshot['raw'] );
+		self::assertSame( self::expected_lock_row( 'run-owner', 200 ), $snapshot['lock'] );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
+	}
+
+	/** A legacy three-field lock remains parseable with its retired field dropped after decoding. */
+	public function test_inspection_normalizes_a_legacy_three_field_lock_row(): void {
+		$raw = StoreFixtureBuilder::corrupt_row(
+			array(
+				'run_id'       => 'run-owner',
+				'claimed_at'   => 100,
+				'heartbeat_at' => 200,
+			)
+		);
+		$this->wpdb->put( self::KEY, $raw );
+
+		$inspected = $this->guard_at( 200 )->inspect_persisted_lock( $this->identity, self::ARGS_HASH );
+		self::assertFalse( $inspected->is_failure() );
+		$snapshot = $inspected->value;
+		self::assertIsArray( $snapshot );
+
+		self::assertSame( $raw, $snapshot['raw'] );
+		self::assertSame( self::expected_lock_row( 'run-owner', 200 ), $snapshot['lock'] );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
+	}
+
+	/** A lock row without a heartbeat remains malformed even when its other fields are parseable. */
+	public function test_claim_rejects_a_lock_row_without_a_heartbeat(): void {
+		$raw = StoreFixtureBuilder::corrupt_row(
+			array(
+				'run_id' => 'run-owner',
+				'extra'  => true,
+			)
+		);
+		$this->wpdb->put( self::KEY, $raw );
+
 		$result = $this->guard_at( 200 )->claim( $this->identity, self::ARGS_HASH, 'run-new' );
 
-		self::assertSame( LockClaimOutcome::Malformed, $result->outcome );
-		self::assertSame( $raw, $result->raw );
+		self::assertSame( LockClaimOutcome::Indeterminate, $result->outcome );
+		self::assertNull( $result->raw );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 	}
 
@@ -624,32 +820,81 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'insert', 'select' ), $this->operations() );
 	}
 
-	/** A maintenance lock sweep preserves a malformed row and returns only redacted correlation. */
-	public function test_maintenance_lock_sweep_preserves_a_malformed_row_with_redacted_correlation(): void {
+	/** Inspection preserves a malformed row and exposes exact bytes for redacted correlation. */
+	public function test_inspection_preserves_a_malformed_row_with_redacted_correlation(): void {
 		$raw = 'not-a-lock-row';
 		$this->wpdb->put( self::KEY, $raw );
 
-		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( $this->identity, self::ARGS_HASH );
+		$inspected = $this->guard_at( 1_000 )->inspect_persisted_lock( $this->identity, self::ARGS_HASH );
+		self::assertFalse( $inspected->is_failure() );
+		$snapshot = $inspected->value;
+		self::assertIsArray( $snapshot );
+		$correlation = OverlapGuard::raw_correlation( $snapshot['raw'] );
 
-		self::assertNull( $sweep->run_id );
-		self::assertTrue( $sweep->malformed_preserved );
-		self::assertSame( \strlen( $raw ), $sweep->raw_length );
-		self::assertSame( \substr( \hash( 'sha256', $raw ), 0, 16 ), $sweep->raw_sha256 );
+		self::assertSame( $raw, $snapshot['raw'] );
+		self::assertNull( $snapshot['lock'] );
+		self::assertSame( \strlen( $raw ), $correlation['raw_length'] );
+		self::assertSame( \substr( \hash( 'sha256', $raw ), 0, 16 ), $correlation['raw_sha256'] );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
-	/** A maintenance lock sweep returns a healthy owner without writing or reading twice. */
-	public function test_maintenance_lock_sweep_returns_a_healthy_run_without_writing(): void {
+	/** A malformed row is exact-deleted through the maintenance reclaim boundary. */
+	public function test_reclaim_malformed_lock_exact_deletes_the_selected_row(): void {
+		$raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $raw );
+
+		$reclaimed = $this->guard_at( 1_000 )->reclaim_malformed_lock( $this->identity, self::ARGS_HASH, $raw );
+
+		self::assertSame( RowDeleteOutcome::Deleted, $reclaimed );
+		self::assertArrayNotHasKey( self::KEY, $this->wpdb->rows );
+		self::assertSame( array( 'delete' ), $this->operations() );
+	}
+
+	/** Exact malformed-row reclamation cannot delete a concurrent replacement. */
+	public function test_reclaim_malformed_lock_loses_to_a_concurrent_replacement(): void {
+		$raw         = 'not-a-lock-row';
+		$replacement = self::fixture_lock_raw( 'run-winner', 1_000, 1_000 );
+		$this->wpdb->put( self::KEY, $raw );
+		$this->wpdb->before_next(
+			'delete',
+			static function ( WpdbLockSpy $wpdb ) use ( $replacement ): void {
+				$wpdb->put( self::KEY, $replacement );
+			}
+		);
+
+		$reclaimed = $this->guard_at( 1_000 )->reclaim_malformed_lock( $this->identity, self::ARGS_HASH, $raw );
+
+		self::assertSame( RowDeleteOutcome::ValueMismatch, $reclaimed );
+		self::assertSame( $replacement, $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertSame( array( 'delete' ), $this->operations() );
+	}
+
+	/** A failed malformed-row delete remains distinguishable from a concurrent replacement. */
+	public function test_reclaim_malformed_lock_reports_a_delete_failure(): void {
+		$raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $raw );
+		$this->wpdb->script_result( 'delete', false );
+
+		$reclaimed = $this->guard_at( 1_000 )->reclaim_malformed_lock( $this->identity, self::ARGS_HASH, $raw );
+
+		self::assertSame( RowDeleteOutcome::DeleteFailed, $reclaimed );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertSame( array( 'delete' ), $this->operations() );
+	}
+
+	/** Inspection returns a normalized healthy lock without writing or reading twice. */
+	public function test_inspection_returns_a_healthy_lock_without_writing(): void {
 		$raw = self::fixture_lock_raw( 'run-owner', 900, 950 );
 		$this->wpdb->put( self::KEY, $raw );
 
-		$sweep = $this->guard_at( 1_000 )->sweep_persisted_lock( $this->identity, self::ARGS_HASH );
+		$inspected = $this->guard_at( 1_000 )->inspect_persisted_lock( $this->identity, self::ARGS_HASH );
+		self::assertFalse( $inspected->is_failure() );
+		$snapshot = $inspected->value;
+		self::assertIsArray( $snapshot );
 
-		self::assertSame( 'run-owner', $sweep->run_id );
-		self::assertFalse( $sweep->malformed_preserved );
-		self::assertNull( $sweep->raw_length );
-		self::assertNull( $sweep->raw_sha256 );
+		self::assertSame( $raw, $snapshot['raw'] );
+		self::assertSame( self::expected_lock_row( 'run-owner', 950 ), $snapshot['lock'] );
 		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] );
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
@@ -668,6 +913,18 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( MaintenanceFenceOutcome::Abandoned, $guard->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
 	}
 
+	/** Both maintenance fences distinguish a persisted malformed row from a failed read. */
+	public function test_maintenance_fences_report_malformed_for_an_unparseable_row(): void {
+		$raw = 'not-a-lock-row';
+		$this->wpdb->put( self::KEY, $raw );
+		$guard = $this->guard_at( 1_000 );
+
+		self::assertSame( MaintenanceFenceOutcome::Malformed, $guard->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
+		self::assertSame( MaintenanceFenceOutcome::Malformed, $guard->classify_run_fence( $this->identity, self::ARGS_HASH, 'run-owner' ) );
+		self::assertSame( $raw, $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertSame( array( 'select', 'select' ), $this->operations() );
+	}
+
 	/** A redelivery fence classifies a stale owner without deleting its exact-generation heartbeat. */
 	public function test_redelivery_fence_preserves_a_stale_owned_lock(): void {
 		$raw = self::fixture_lock_raw( 'run-owner', 800, 899 );
@@ -678,11 +935,20 @@ final class OverlapGuardTest extends TestCase {
 		self::assertSame( array( 'select' ), $this->operations() );
 	}
 
+	/** An absent redelivery fence persists the exact delivery generation without a claim timestamp. */
+	public function test_redelivery_fence_inserts_the_literal_two_field_lock(): void {
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 899, 100 );
+
+		self::assertSame( RedeliveryFenceOutcome::Ready, $outcome );
+		self::assertSame( 'a:2:{s:6:"run_id";s:9:"run-owner";s:12:"heartbeat_at";i:899;}', $this->wpdb->rows[ self::KEY ] ?? null );
+		self::assertSame( array( 'select', 'insert' ), $this->operations() );
+	}
+
 	/** An absent redelivery fence reports an insert error without a diagnostic re-read. */
 	public function test_redelivery_fence_reports_indeterminate_after_insert_failure(): void {
 		$this->wpdb->script_result( 'insert', false );
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
 		self::assertSame( array( 'select', 'insert' ), $this->operations() );
@@ -698,7 +964,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Transferred, $outcome );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
@@ -710,10 +976,25 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, 'malformed' );
 		$this->wpdb->script_result( 'update', false );
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
 		self::assertSame( array( 'select', 'update' ), $this->operations() );
+	}
+
+	/**
+	 * A stale fence rewrites a row written before the claim timestamp left the schema.
+	 *
+	 * The compare-and-swap has to match the legacy bytes to win, and what it leaves behind is the
+	 * current two-field shape, so one redelivery migrates the row.
+	 */
+	public function test_stale_redelivery_fence_replaces_a_legacy_three_field_lock(): void {
+		$this->wpdb->put( self::KEY, self::legacy_lock_raw( 'run-owner', 700, 800 ) );
+
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 899, 100 );
+
+		self::assertSame( RedeliveryFenceOutcome::Ready, $outcome );
+		self::assertSame( 'a:2:{s:6:"run_id";s:9:"run-owner";s:12:"heartbeat_at";i:899;}', $this->wpdb->rows[ self::KEY ] ?? null );
 	}
 
 	/** A stale same-owner fence reports a replacement error without a diagnostic re-read. */
@@ -722,7 +1003,7 @@ final class OverlapGuardTest extends TestCase {
 		$this->wpdb->put( self::KEY, $owned_raw );
 		$this->wpdb->script_result( 'update', false );
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Indeterminate, $outcome );
 		self::assertSame( $owned_raw, $this->wpdb->rows[ self::KEY ] );
@@ -740,7 +1021,7 @@ final class OverlapGuardTest extends TestCase {
 			}
 		);
 
-		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 800, 899, 100 );
+		$outcome = $this->guard_at( 1_000 )->prepare_run_redelivery_fence( $this->identity, self::ARGS_HASH, 'run-owner', 899, 100 );
 
 		self::assertSame( RedeliveryFenceOutcome::Transferred, $outcome );
 		self::assertSame( $winner_raw, $this->wpdb->rows[ self::KEY ] );
@@ -778,6 +1059,14 @@ final class OverlapGuardTest extends TestCase {
 		);
 
 		self::assertSame( MaintenanceFenceOutcome::Indeterminate, $this->guard_at( 1_000 )->fence_abandoned_run( $this->identity, self::ARGS_HASH, 'run-owner', 100 ) );
+
+		$this->wpdb->before_next(
+			'select',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'transient read failure';
+			}
+		);
+		self::assertSame( MaintenanceFenceOutcome::Indeterminate, $this->guard_at( 1_000 )->classify_run_fence( $this->identity, self::ARGS_HASH, 'run-owner' ) );
 	}
 
 	/** A stale-delete CAS loss leaves maintenance unable to claim the crash decision. */
@@ -857,13 +1146,13 @@ final class OverlapGuardTest extends TestCase {
 	 * Stores one production-authored lock row as a deterministic precondition.
 	 *
 	 * @param   string $run_id       Run identifier.
-	 * @param   int    $claimed_at   Claim timestamp.
+	 * @param   int    $initial_heartbeat_at   Claim timestamp.
 	 * @param   int    $heartbeat_at Heartbeat timestamp.
 	 *
 	 * @return  void
 	 */
-	private function store_fixture_lock( string $run_id, int $claimed_at, int $heartbeat_at ): void {
-		$this->wpdb->put( self::KEY, self::fixture_lock_raw( $run_id, $claimed_at, $heartbeat_at ) );
+	private function store_fixture_lock( string $run_id, int $initial_heartbeat_at, int $heartbeat_at ): void {
+		$this->wpdb->put( self::KEY, self::fixture_lock_raw( $run_id, $initial_heartbeat_at, $heartbeat_at ) );
 	}
 
 	/** Returns the current lock row after WordPress-shaped unserialization. */
@@ -882,15 +1171,13 @@ final class OverlapGuardTest extends TestCase {
 	 * StoreFixtureBuilder lock rows come from the production guard.
 	 *
 	 * @param   string $run_id       Run identifier.
-	 * @param   int    $claimed_at   Claim timestamp.
 	 * @param   int    $heartbeat_at Heartbeat timestamp.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}
+	 * @return  array{run_id: string, heartbeat_at: int}
 	 */
-	private static function expected_lock_row( string $run_id, int $claimed_at, int $heartbeat_at ): array {
+	private static function expected_lock_row( string $run_id, int $heartbeat_at ): array {
 		return array(
 			'run_id'       => $run_id,
-			'claimed_at'   => $claimed_at,
 			'heartbeat_at' => $heartbeat_at,
 		);
 	}
@@ -899,30 +1186,49 @@ final class OverlapGuardTest extends TestCase {
 	 * Returns one decoded production-authored lock row.
 	 *
 	 * @param   string $run_id       Run identifier.
-	 * @param   int    $claimed_at   Claim timestamp.
+	 * @param   int    $initial_heartbeat_at   Claim timestamp.
 	 * @param   int    $heartbeat_at Heartbeat timestamp.
 	 *
-	 * @return  array{run_id: string, claimed_at: int, heartbeat_at: int}
+	 * @return  array{run_id: string, heartbeat_at: int}
 	 */
-	private static function fixture_lock_row( string $run_id, int $claimed_at, int $heartbeat_at ): array {
-		/** @var array{run_id: string, claimed_at: int, heartbeat_at: int} $row */
-		$row = \maybe_unserialize( self::fixture_lock_raw( $run_id, $claimed_at, $heartbeat_at ) );
+	private static function fixture_lock_row( string $run_id, int $initial_heartbeat_at, int $heartbeat_at ): array {
+		/** @var array{run_id: string, heartbeat_at: int} $row */
+		$row = \maybe_unserialize( self::fixture_lock_raw( $run_id, $initial_heartbeat_at, $heartbeat_at ) );
 		self::assertIsArray( $row );
 
 		return $row;
 	}
 
 	/**
-	 * Returns one exact production-authored lock row.
+	 * Returns one lock row in the shape a previous version persisted.
 	 *
 	 * @param   string $run_id       Run identifier.
-	 * @param   int    $claimed_at   Claim timestamp.
+	 * @param   int    $claimed_at   Retired claim timestamp the parser now ignores.
 	 * @param   int    $heartbeat_at Heartbeat timestamp.
 	 *
 	 * @return  string
 	 */
-	private static function fixture_lock_raw( string $run_id, int $claimed_at, int $heartbeat_at ): string {
-		[ , $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->lock( self::ARGS_HASH, $run_id, $claimed_at, $heartbeat_at );
+	private static function legacy_lock_raw( string $run_id, int $claimed_at, int $heartbeat_at ): string {
+		return StoreFixtureBuilder::corrupt_row(
+			array(
+				'run_id'       => $run_id,
+				'claimed_at'   => $claimed_at,
+				'heartbeat_at' => $heartbeat_at,
+			)
+		);
+	}
+
+	/**
+	 * Returns one exact production-authored lock row.
+	 *
+	 * @param   string $run_id       Run identifier.
+	 * @param   int    $initial_heartbeat_at   Claim timestamp.
+	 * @param   int    $heartbeat_at Heartbeat timestamp.
+	 *
+	 * @return  string
+	 */
+	private static function fixture_lock_raw( string $run_id, int $initial_heartbeat_at, int $heartbeat_at ): string {
+		[ , $raw ] = StoreFixtureBuilder::for_identity( self::IDENTITY )->lock( self::ARGS_HASH, $run_id, $initial_heartbeat_at, $heartbeat_at );
 
 		return $raw;
 	}

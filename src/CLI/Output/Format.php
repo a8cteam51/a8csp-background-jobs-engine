@@ -12,11 +12,11 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\CLI\Output;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class Format {
+final class Format {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Formats accepted by schedule, run, and failed-run list commands.
+	 * Formats accepted by every list subcommand.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -33,12 +33,7 @@ final readonly class Schedules extends AbstractPortal {
 	#[\NoDiscard( 'a schedule-sync failure must be handled, not dropped' )]
 	public function sync( Schedule ...$schedules ): true|\WP_Error {
 		try {
-			$result = $this->operations()->sync( $schedules );
-			if ( $result->is_failure() ) {
-				return self::wp_error( $result->error );
-			}
-
-			return true;
+			return $this->operations()->sync( $schedules );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {
@@ -61,9 +56,7 @@ final readonly class Schedules extends AbstractPortal {
 	#[\NoDiscard( 'a schedule dispatch-now failure must be handled, not dropped' )]
 	public function dispatch( string $name ): Run|\WP_Error {
 		try {
-			$result = $this->operations()->dispatch_now( $name );
-
-			return $result->is_failure() ? self::wp_error( $result->error ) : $result->value;
+			return $this->operations()->dispatch_now( $name );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {

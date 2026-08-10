@@ -60,7 +60,7 @@ final class ActionSchedulerBackendTest extends TestCase {
 
 		$GLOBALS['a8csp_bgje_test_as_calls']    = array();
 		$GLOBALS['a8csp_bgje_test_as_results']  = array();
-		$GLOBALS['a8csp_bgje_test_as_version']  = '4.0.0';
+		$GLOBALS['a8csp_bgje_test_as_version']  = '4.1.0';
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array(
 			'init'                  => 1,
 			'action_scheduler_init' => 1,
@@ -119,11 +119,11 @@ final class ActionSchedulerBackendTest extends TestCase {
 	 */
 	public static function elected_versions(): array {
 		return array(
-			'below the floor'   => array( '3.9.3', false ),
-			'one patch below'   => array( '3.99.99', false ),
-			'exactly the floor' => array( '4.0.0', true ),
-			'above the floor'   => array( '4.1.0', true ),
-			'a later major'     => array( '5.0.0', true ),
+			'clearly below the floor'   => array( '3.9.3', false ),
+			'one minor below the floor' => array( '4.0.0', false ),
+			'exactly the floor'         => array( '4.1.0', true ),
+			'one patch above the floor' => array( '4.1.1', true ),
+			'a later major'             => array( '5.0.0', true ),
 		);
 	}
 
@@ -226,35 +226,40 @@ final class ActionSchedulerBackendTest extends TestCase {
 	}
 
 	/**
-	 * Pending occurrences are counted without fetching Action Scheduler objects.
+	 * Same-backend duplicate chains remain visible through the scheduled-chain census.
 	 *
 	 * @load-bearing concurrency
-	 * @pin-rationale Same-backend duplicate chains are invisible through logical schedule reads, so exact pending-ID cardinality remains the scalar query signal; requesting IDs avoids materializing complete actions for callers that need only one identity.
+	 * @pin-rationale Same-backend duplicate chains are invisible through existence and next-occurrence reads, so each identity's scheduled-chain census must retain exact pending cardinality.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_pending_occurrence_count_uses_an_identity_scoped_id_query(): void {
+	public function test_scheduled_chains_preserve_same_backend_duplicate_cardinality(): void {
 		$GLOBALS['a8csp_bgje_test_as_results'] = array(
-			'as_get_scheduled_actions' => array( array( 41, 42 ) ),
+			'as_get_scheduled_actions' => array(
+				array(
+					41 => new \A8CSP_BGJE_Test_AS_Action( array( 'schedule-17' ), 'schedule-17' ),
+					42 => new \A8CSP_BGJE_Test_AS_Action( array( 'schedule-17' ), 'schedule-17' ),
+				),
+			),
 		);
 
-		$count = ( new ActionSchedulerBackend() )->scheduled_count( self::HOOK, array( 'schedule-17' ), 'reports' );
+		$chains = ( new ActionSchedulerBackend() )->scheduled_chains( self::HOOK, array( 'schedule-17' ) );
 
-		self::assertSame( 2, $count );
+		self::assertSame( 2, $chains['schedule-17']['count'] );
 		self::assertSame(
 			array(
 				array(
 					'hook'     => self::HOOK,
 					'args'     => array( 'schedule-17' ),
-					'group'    => 'reports',
+					'group'    => 'schedule-17',
 					'status'   => 'pending',
 					'per_page' => -1,
 					'orderby'  => 'none',
 				),
-				'ids',
+				'OBJECT',
 			),
 			$this->calls( 'as_get_scheduled_actions' )[0]['args']
 		);
@@ -380,6 +385,48 @@ final class ActionSchedulerBackendTest extends TestCase {
 		self::assertIsArray( $query );
 		self::assertSame( array( '123' ), $query['args'] ?? null );
 		self::assertSame( '123', $query['group'] ?? null );
+	}
+
+	/**
+	 * A gated write reached before init names that cause instead of blaming the store.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_write_before_init_names_init_rather_than_a_store_rejection(): void {
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'action_scheduler_init' => 1 );
+		$GLOBALS['a8csp_bgje_test_as_results']  = array(
+			'as_enqueue_async_action' => array( 0 ),
+			'as_has_scheduled_action' => array( false ),
+		);
+
+		$result = ( new ActionSchedulerBackend() )->enqueue_async( self::HOOK, array(), 'reports' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertStringContainsString( 'WordPress init has not fired', $result->error->message );
+		self::assertFalse( $result->error->context['wp_init_fired'] ?? null );
+	}
+
+	/**
+	 * A rejected action reports the identifier this call returned rather than ambient request state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_negative_action_id_outranks_the_unfired_init_cause(): void {
+		$GLOBALS['a8csp_bgje_test_did_actions'] = array( 'action_scheduler_init' => 1 );
+		$GLOBALS['a8csp_bgje_test_as_results']  = array( 'as_enqueue_async_action' => array( -1 ) );
+
+		$result = ( new ActionSchedulerBackend() )->enqueue_async( self::HOOK, array(), 'reports' );
+
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( SchedulingError::class, $result->error );
+		self::assertStringContainsString( 'returned negative action ID -1', $result->error->message );
 	}
 
 	/**

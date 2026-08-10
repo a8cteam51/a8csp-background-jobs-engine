@@ -9,12 +9,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
 use A8C\SpecialProjects\BackgroundJobsEngine\RetryPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -144,7 +145,7 @@ final class RunStoreTest extends TestCase {
 			$during_execution = $this->single_live_run();
 		};
 		$result               = $this->client->dispatch( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
 		$queued = $this->single_live_run();
 		self::assertSame( self::RUN_ID, $queued['run_id'] );
@@ -175,7 +176,7 @@ final class RunStoreTest extends TestCase {
 		$this->job->throwable           = new \RuntimeException( 'Transient failure.' );
 		$this->rig->randomizer()->value = 7;
 		$result                         = $this->client->dispatch( self::NAME, self::ARGS );
-		self::assertInstanceOf( Success::class, $result );
+		self::assertInstanceOf( Run::class, $result );
 
 		$this->rig->run_due();
 
@@ -230,52 +231,84 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * Exhaustive repair inspection returns every canonical identity-bound row without hiding corruption.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
+	 * A negative persisted action sequence is unreadable state rather than a hydration exception.
 	 *
 	 * @return  void
 	 */
-	public function test_inspect_all_returns_every_identity_bound_snapshot_and_preserves_corruption(): void {
-		$other_run_id = '00000000001700000000-0000000000000000043';
-		$valid        = $this->fixtures->run( self::RUN_ID, $this->state() );
-		$corrupt_name = RunIdentity::option_name( $this->identity, $other_run_id );
-		$corrupt_raw  = 'corrupt-run-row';
-		$this->put_fixture( $valid );
-		$this->rig->wpdb()->put( $corrupt_name, $corrupt_raw );
+	public function test_negative_action_sequence_never_hydrates(): void {
+		$fixture = $this->fixtures->run( self::RUN_ID, $this->state() );
+		$stored  = \maybe_unserialize( $fixture[1] );
+		self::assertIsArray( $stored );
+		$stored['action_sequence'] = -1;
+		$raw                       = \maybe_serialize( $stored );
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( $fixture[0], $raw );
 
-		$foreign_identity = self::IDENTITY . '_other';
-		$foreign          = StoreFixtureBuilder::for_identity( $foreign_identity )->run( self::RUN_ID, $this->state() );
-		$this->put_fixture( $foreign );
-
-		$inspected = $this->store()->inspect_all();
+		$inspected = $this->store()->inspect( self::RUN_ID );
 
 		self::assertInstanceOf( Success::class, $inspected );
 		self::assertIsArray( $inspected->value );
-		$snapshots = $inspected->value;
-		self::assertCount( 2, $snapshots );
-		$valid_snapshot   = $snapshots[0] ?? null;
-		$corrupt_snapshot = $snapshots[1] ?? null;
-		self::assertIsArray( $valid_snapshot );
-		self::assertIsArray( $corrupt_snapshot );
-		self::assertSame( self::RUN_ID, $valid_snapshot['run_id'] ?? null );
-		self::assertSame( $other_run_id, $corrupt_snapshot['run_id'] ?? null );
-		self::assertSame( $valid[1], $valid_snapshot['raw'] ?? null );
-		self::assertInstanceOf( RunState::class, $valid_snapshot['state'] ?? null );
-		self::assertSame( $corrupt_raw, $corrupt_snapshot['raw'] ?? null );
-		self::assertNull( $corrupt_snapshot['state'] ?? null );
+		self::assertSame( $raw, $inspected->value['raw'] ?? null );
+		self::assertNull( $inspected->value['state'] ?? null );
 	}
 
 	/**
-	 * Exhaustive repair inspection propagates an authoritative candidate-read failure.
+	 * Lane liveness reads rows in bounded batches and retains only the maintenance projection.
+	 *
+	 * @load-bearing performance
+	 * @pin-rationale A high-fan-out identity must not materialize its complete active-run value set in one query or retain raw-scale fields for lock classification.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_inspect_all_fails_when_any_candidate_read_is_indeterminate(): void {
+	public function test_inspect_lane_liveness_projects_rows_in_bounded_batches(): void {
+		$args_hash = $this->fixtures->args_hash( self::ARGS );
+		$valid     = $this->fixtures->run( self::RUN_ID, $this->state() );
+		for ( $index = 0; $index < 11; ++$index ) {
+			$run_id = \sprintf( '00000000001700000000-%019d', $index );
+			$this->rig->wpdb()->put( RunIdentity::option_name( $this->identity, $run_id ), $valid[1] );
+		}
+
+		$corrupt = \maybe_unserialize( $valid[1] );
+		self::assertIsArray( $corrupt );
+		$corrupt['args_hash'] = \str_repeat( 'a', 100_000 );
+		$corrupt_raw          = \maybe_serialize( $corrupt );
+		self::assertIsString( $corrupt_raw );
+		$corrupt_run_id = '00000000001700000000-0000000000000000011';
+		$this->rig->wpdb()->put( RunIdentity::option_name( $this->identity, $corrupt_run_id ), $corrupt_raw );
+		$foreign_identity = self::IDENTITY . '_other';
+		$foreign          = StoreFixtureBuilder::for_identity( $foreign_identity )->run( self::RUN_ID, $this->state( args_hash: \str_repeat( 'f', 64 ) ) );
+		$this->put_fixture( $foreign );
+		$this->rig->wpdb()->recorded_queries = array();
+
+		$inspected = $this->store()->inspect_lane_liveness();
+
+		self::assertInstanceOf( Success::class, $inspected );
+		self::assertSame(
+			array(
+				'unreadable'    => true,
+				'running_lanes' => array( $args_hash => true ),
+			),
+			$inspected->value
+		);
+		$batch_reads = \array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_starts_with( $query, 'SELECT `option_name`, `option_value` FROM ' ) ) );
+		self::assertCount( 2, $batch_reads );
+		foreach ( $batch_reads as $query ) {
+			self::assertLessThanOrEqual( 10, \substr_count( $query, RunStore::OPTION_PREFIX ) );
+		}
+	}
+
+	/**
+	 * Lane-liveness inspection propagates an authoritative batch-read failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_lane_liveness_fails_when_any_batch_read_is_indeterminate(): void {
 		$this->put_fixture( $this->fixtures->run( self::RUN_ID, $this->state() ) );
 		$this->rig->wpdb()->before_next(
 			'select',
@@ -284,7 +317,27 @@ final class RunStoreTest extends TestCase {
 			}
 		);
 
-		$inspected = $this->store()->inspect_all();
+		$inspected = $this->store()->inspect_lane_liveness();
+
+		self::assertInstanceOf( Failure::class, $inspected );
+		self::assertInstanceOf( EngineError::class, $inspected->error );
+		self::assertSame( EngineErrorReason::StorageFailure, $inspected->error->reason );
+	}
+
+	/**
+	 * Lane-liveness inspection propagates an authoritative name-enumeration failure.
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_lane_liveness_fails_when_name_enumeration_is_indeterminate(): void {
+		$this->rig->wpdb()->before_next(
+			'scan',
+			static function ( WpdbLockSpy $wpdb ): void {
+				$wpdb->last_error = 'name enumeration failed';
+			}
+		);
+
+		$inspected = $this->store()->inspect_lane_liveness();
 
 		self::assertInstanceOf( Failure::class, $inspected );
 		self::assertInstanceOf( EngineError::class, $inspected->error );
@@ -585,36 +638,58 @@ final class RunStoreTest extends TestCase {
 	}
 
 	/**
-	 * An existing exact option row preserves create's null-on-conflict contract.
+	 * An existing exact option row returns the shared persistence failure without replacing its bytes.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_create_returns_null_when_the_exact_option_row_exists(): void {
+	public function test_create_returns_storage_failure_when_the_exact_option_row_exists(): void {
 		$this->rig->wpdb()->put( $this->run_option_name(), 'incumbent-row' );
 
 		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), array() );
 
-		self::assertNull( $result );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( 'Run "' . self::RUN_ID . '" for acme.export "' . self::IDENTITY . '" could not be persisted; remove the conflicting run option before retrying.', $result->error->message );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+				'kind'     => 'acme.export',
+			),
+			$result->error->context
+		);
 		self::assertSame( 'incumbent-row', $this->raw_row() );
 	}
 
 	/**
-	 * An indeterminate exact-row insert preserves create's null failure contract.
+	 * An indeterminate exact-row insert returns the same persistence failure without creating a row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_create_returns_null_when_the_exact_row_insert_fails(): void {
+	public function test_create_returns_storage_failure_when_the_exact_row_insert_fails(): void {
 		$this->rig->wpdb()->script_result( 'insert', false );
 
 		$result = $this->store()->create( self::RUN_ID, 'acme.export', self::ARGS, $this->fixtures->args_hash( self::ARGS ), array() );
 
-		self::assertNull( $result );
+		self::assertInstanceOf( Failure::class, $result );
+		self::assertInstanceOf( EngineError::class, $result->error );
+		self::assertSame( 'Run "' . self::RUN_ID . '" for acme.export "' . self::IDENTITY . '" could not be persisted because storage did not answer the option write; repair WordPress option writes before retrying.', $result->error->message );
+		self::assertSame( EngineErrorReason::StorageFailure, $result->error->reason );
+		self::assertSame(
+			array(
+				'identity' => self::IDENTITY,
+				'run_id'   => self::RUN_ID,
+				'kind'     => 'acme.export',
+			),
+			$result->error->context
+		);
 		self::assertArrayNotHasKey( $this->run_option_name(), $this->rig->wpdb()->rows );
 		$options = $GLOBALS['a8csp_bgje_test_options'] ?? array();
 		self::assertIsArray( $options );
@@ -1511,14 +1586,15 @@ final class RunStoreTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $kind Opaque admitted kind key.
+	 * @param   string      $kind      Opaque admitted kind key.
+	 * @param   string|null $args_hash Stable single-flight identity, or null to derive it from shared arguments.
 	 *
 	 * @return  RunState
 	 */
-	private function state( string $kind = 'job' ): RunState {
+	private function state( string $kind = 'job', ?string $args_hash = null ): RunState {
 		$pending_stage = 'job' === $kind ? 'run' : 'start';
 
-		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: self::ARGS, args_hash: $this->fixtures->args_hash( self::ARGS ), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( $pending_stage, 10 ) );
+		return new RunState( status: RunStatus::Running, kind: $kind, executing: false, start_args: self::ARGS, args_hash: $args_hash ?? $this->fixtures->args_hash( self::ARGS ), kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( $pending_stage, 10 ) );
 	}
 
 	/**
@@ -1547,7 +1623,7 @@ final class RunStoreTest extends TestCase {
 	 * @return  RunStore
 	 */
 	private function store(): RunStore {
-		return new RunStore( self::IDENTITY, $this->rig->clock(), $this->rows );
+		return new RunStore( $this->identity, $this->rig->clock(), $this->rows );
 	}
 
 	/**

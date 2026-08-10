@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Pending lifecycle delivery mode and timing are correlated within the engine's descriptor. This has no effect on the public API, stored rows, or observable behaviour.

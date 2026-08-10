@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+Run status is a single vocabulary throughout the engine. The public cases, their persisted strings, consumer behaviour and command output are all unchanged.

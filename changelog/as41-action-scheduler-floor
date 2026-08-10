@@ -1,0 +1,4 @@
+Significance: minor
+Type: changed
+
+The supported Action Scheduler floor is 4.1.0. A site whose elected Action Scheduler is below that runs on WP-Cron instead, and its scheduling diagnostics flag the elected copy as unsupported. Action Scheduler elects the highest version among every bundled copy on the site, so the deciding copy is not necessarily the one installed beside this plugin. Upgrade Action Scheduler before upgrading this plugin: a recurring chain an older copy already holds keeps firing alongside the WP-Cron chain that replaces it, and hook-wide clearance is refused while an unsupported copy is present.

@@ -81,9 +81,9 @@ final readonly class OccurrenceLease {
 	 *
 	 * @param   string $registration_key `{scope}:{name}` schedule identity.
 	 *
-	 * @return  OccurrenceLeaseClaim Classified claim with a handle only after confirmed ownership.
+	 * @return  OccurrenceLeaseHandle|OccurrenceLeaseOutcome Claimed handle or exceptional claim classification.
 	 */
-	public function claim( string $registration_key ): OccurrenceLeaseClaim {
+	public function claim( string $registration_key ): OccurrenceLeaseHandle|OccurrenceLeaseOutcome {
 		$key = self::option_name( $registration_key );
 		$now = $this->clock->now()->getTimestamp();
 		$row = array(
@@ -96,48 +96,44 @@ final readonly class OccurrenceLease {
 		if ( RowWriteOutcome::Won === $insert ) {
 			$selected = $this->rows->read( $key );
 			if ( $selected->is_failure() ) {
-				return OccurrenceLeaseClaim::indeterminate_read();
+				return OccurrenceLeaseOutcome::IndeterminateRead;
 			}
 
-			return $raw === $selected->value
-				? OccurrenceLeaseClaim::claimed( new OccurrenceLeaseHandle( $this->rows, $key, $raw ) )
-				: OccurrenceLeaseClaim::not_claimed();
+			return $raw === $selected->value ? new OccurrenceLeaseHandle( $this->rows, $key, $raw ) : OccurrenceLeaseOutcome::NotClaimed;
 		}
 		if ( RowWriteOutcome::WriteFailed === $insert ) {
-			return OccurrenceLeaseClaim::indeterminate_write();
+			return OccurrenceLeaseOutcome::IndeterminateWrite;
 		}
 
 		$selected = $this->rows->read( $key );
 		if ( $selected->is_failure() ) {
-			return OccurrenceLeaseClaim::indeterminate_read();
+			return OccurrenceLeaseOutcome::IndeterminateRead;
 		}
 
 		$expected_raw = $selected->value;
 		if ( null === $expected_raw ) {
-			return OccurrenceLeaseClaim::indeterminate_write();
+			return OccurrenceLeaseOutcome::NotClaimed;
 		}
 
 		$incumbent = self::parse( $expected_raw );
 		if ( null !== $incumbent && ! self::is_stale( $incumbent['claimed_at'], $now ) ) {
-			return OccurrenceLeaseClaim::not_claimed();
+			return OccurrenceLeaseOutcome::NotClaimed;
 		}
 
 		$write = $this->rows->compare_and_swap( $key, $expected_raw, $raw );
 		if ( RowWriteOutcome::Won === $write ) {
-			return OccurrenceLeaseClaim::claimed( new OccurrenceLeaseHandle( $this->rows, $key, $raw ) );
+			return new OccurrenceLeaseHandle( $this->rows, $key, $raw );
 		}
 		if ( RowWriteOutcome::WriteFailed === $write ) {
-			return OccurrenceLeaseClaim::indeterminate_write();
+			return OccurrenceLeaseOutcome::IndeterminateWrite;
 		}
 
 		$current = $this->rows->read( $key );
 		if ( $current->is_failure() ) {
-			return OccurrenceLeaseClaim::indeterminate_read();
+			return OccurrenceLeaseOutcome::IndeterminateRead;
 		}
 
-		return $expected_raw === $current->value
-			? OccurrenceLeaseClaim::indeterminate_write()
-			: OccurrenceLeaseClaim::not_claimed();
+		return $expected_raw === $current->value ? OccurrenceLeaseOutcome::IndeterminateWrite : OccurrenceLeaseOutcome::NotClaimed;
 	}
 
 	// endregion

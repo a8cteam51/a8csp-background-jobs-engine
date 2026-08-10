@@ -2,15 +2,13 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\BoundaryError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\AbstractResult;
-use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Failure;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Translates internal operation failures into the sole public failure value.
+ * Translates internal operation outcomes into public boundary values.
  *
  * @internal Public facade boundary only.
  *
@@ -57,7 +55,6 @@ final class BoundaryErrorMapper {
 		'limit_bytes'                        => true,
 		'maximum_depth'                      => true,
 		'maximum_json_length'                => true,
-		'missing_function'                   => true,
 		'option_name'                        => true,
 		'priority'                           => true,
 		'run_at'                             => true,
@@ -75,27 +72,24 @@ final class BoundaryErrorMapper {
 	// region METHODS
 
 	/**
-	 * Maps a result at the public facade boundary while preserving successful values exactly.
+	 * Maps a result at the public facade boundary.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @template TValue
-	 * @template TError of EngineError|SchedulingError
 	 *
-	 * @param   AbstractResult<TValue, TError> $result Internal command outcome.
+	 * @param   AbstractResult<TValue, EngineError|SchedulingError> $result Internal command outcome.
 	 *
-	 * @phpstan-return ($result is AbstractResult<true, TError> ? AbstractResult<true, BoundaryError> : AbstractResult<TValue, BoundaryError>)
-	 *
-	 * @return  AbstractResult<TValue, BoundaryError>
+	 * @return  TValue|\WP_Error
 	 */
 	#[\NoDiscard( 'a mapped API failure must be handled, not dropped' )]
-	public static function map( AbstractResult $result ): AbstractResult {
+	public static function map( AbstractResult $result ): mixed {
 		if ( $result->is_failure() ) {
-			return new Failure( self::error( $result->error ) );
+			return self::error( $result->error );
 		}
 
-		return $result;
+		return $result->value;
 	}
 
 	// endregion
@@ -112,14 +106,14 @@ final class BoundaryErrorMapper {
 	 *
 	 * @throws  \LogicException When an engine failure lacks an API classification.
 	 *
-	 * @return  BoundaryError
+	 * @return  \WP_Error
 	 */
-	private static function error( EngineError|SchedulingError $error ): BoundaryError {
+	private static function error( EngineError|SchedulingError $error ): \WP_Error {
 		$code = $error instanceof SchedulingError
 			? $error->reason->api_code()
 			: self::engine_code( $error );
 
-		return new BoundaryError( $code, $error->message, self::safe_context( $error->context ) );
+		return new \WP_Error( $code->value, $error->message, self::safe_context( $error->context ) );
 	}
 
 	/**
@@ -140,17 +134,15 @@ final class BoundaryErrorMapper {
 		}
 
 		return match ( $error->reason ) {
-			EngineErrorReason::EngineUnavailable    => ErrorCode::EngineUnavailable,
-			EngineErrorReason::UnknownJob           => ErrorCode::UnknownJob,
-			EngineErrorReason::UnknownSchedule      => ErrorCode::UnknownSchedule,
-			EngineErrorReason::OverlapHeld          => ErrorCode::OverlapHeld,
-			EngineErrorReason::AdmissionConflict    => ErrorCode::AdmissionConflict,
-			EngineErrorReason::PayloadRejected      => ErrorCode::PayloadRejected,
-			EngineErrorReason::StorageFailure       => ErrorCode::StorageFailed,
-			EngineErrorReason::RunNotRetained       => ErrorCode::RunNotRetained,
-			EngineErrorReason::RunNotCancellable    => ErrorCode::RunNotCancellable,
-			EngineErrorReason::UnsupportedOperation => ErrorCode::UnsupportedOperation,
-			EngineErrorReason::ExecutionFailed      => ErrorCode::ExecutionFailed,
+			EngineErrorReason::UnknownJob        => ErrorCode::UnknownJob,
+			EngineErrorReason::UnknownSchedule   => ErrorCode::UnknownSchedule,
+			EngineErrorReason::OverlapHeld       => ErrorCode::OverlapHeld,
+			EngineErrorReason::AdmissionConflict => ErrorCode::AdmissionConflict,
+			EngineErrorReason::PayloadRejected   => ErrorCode::PayloadRejected,
+			EngineErrorReason::StorageFailure    => ErrorCode::StorageFailed,
+			EngineErrorReason::RunNotRetained    => ErrorCode::RunNotRetained,
+			EngineErrorReason::RunNotCancellable => ErrorCode::RunNotCancellable,
+			EngineErrorReason::ExecutionFailed   => ErrorCode::ExecutionFailed,
 		};
 	}
 

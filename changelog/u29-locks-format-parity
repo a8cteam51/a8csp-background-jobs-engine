@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+`locks list` accepts `--format=count`, and its invalid-format and usage guidance matches the other list subcommands.
