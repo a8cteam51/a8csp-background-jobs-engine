@@ -23,10 +23,11 @@ The test rig defines three PHPUnit suites, exposes five local run configurations
 
 ## Running the configurations
 
-Each `composer test:*` verb starts its own environment first — a container already running serves
-the mount set it was created with, and `start` is what replaces it when the resolved config moved.
-Stopping afterwards is still worth it: the four environments claim the same ports as other
-repositories built from the same template.
+Each of the four wp-env-backed verbs — `test:integration`, `test:degraded`, `test:requirements` and
+`test:multisite` — starts its own environment first: a container already running serves the mount
+set it was created with, and `start` is what replaces it when the resolved config moved. `test:unit`
+needs no container and starts none. Stopping afterwards is still worth it: the four environments
+claim the same ports as other repositories built from the same template.
 
 Unit requires no wp-env instance:
 
