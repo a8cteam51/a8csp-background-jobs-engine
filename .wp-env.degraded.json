@@ -1,7 +1,7 @@
 {
   "$schema": "https://schemas.wp.org/trunk/wp-env.json",
   "phpVersion": "8.5",
-  "port": 8892,
+  "port": 21384,
   "testsEnvironment": false,
   "mappings": {
     "wp-content/plugins/a8csp-background-jobs-engine": "."
