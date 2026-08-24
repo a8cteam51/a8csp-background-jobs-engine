@@ -23,6 +23,11 @@ The test rig defines three PHPUnit suites, exposes five local run configurations
 
 ## Running the configurations
 
+Each `composer test:*` verb starts its own environment first — a container already running serves
+the mount set it was created with, and `start` is what replaces it when the resolved config moved.
+Stopping afterwards is still worth it: the four environments claim the same ports as other
+repositories built from the same template.
+
 Unit requires no wp-env instance:
 
 ```sh
@@ -32,7 +37,6 @@ composer test:unit
 Integration:
 
 ```sh
-npm run wp-env:tests:start
 composer test:integration
 npm run wp-env:tests:stop
 ```
@@ -40,7 +44,6 @@ npm run wp-env:tests:stop
 Degraded:
 
 ```sh
-npm run wp-env:degraded:start
 composer test:degraded
 npm run wp-env:degraded:stop
 ```
@@ -48,7 +51,6 @@ npm run wp-env:degraded:stop
 Requirements:
 
 ```sh
-npm run wp-env:belowfloor:start
 composer test:requirements
 npm run wp-env:belowfloor:stop
 ```
@@ -56,7 +58,6 @@ npm run wp-env:belowfloor:stop
 Multisite:
 
 ```sh
-npm run wp-env:multisite:start
 composer test:multisite
 npm run wp-env:multisite:stop
 ```
