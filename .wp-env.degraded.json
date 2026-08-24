@@ -7,7 +7,7 @@
     "wp-content/plugins/a8csp-background-jobs-engine": "."
   },
   "lifecycleScripts": {
-    "afterStart": "wp-env --config .wp-env.degraded.json run cli wp plugin activate a8csp-background-jobs-engine"
+    "afterStart": "./node_modules/.bin/wp-env --config .wp-env.degraded.json run cli wp plugin activate a8csp-background-jobs-engine"
   },
   "config": {
     "WP_DEBUG_DISPLAY": false,

@@ -8,7 +8,7 @@
     "wp-content/plugins/action-scheduler": "./vendor/wp-plugin/action-scheduler"
   },
   "lifecycleScripts": {
-    "afterStart": "wp-env run cli wp plugin activate action-scheduler a8csp-background-jobs-engine"
+    "afterStart": "./node_modules/.bin/wp-env run cli wp plugin activate action-scheduler a8csp-background-jobs-engine"
   },
   "config": {
     "WP_DEBUG_DISPLAY": false,
