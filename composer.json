@@ -93,10 +93,22 @@
     "test": "@php vendor/bin/phpunit",
     "test:unit": "@php vendor/bin/phpunit --testsuite=Unit",
     "test:unit:mutation": "@php vendor/bin/infection --threads=max",
-    "test:integration": "npm --prefix=. run test:integration",
-    "test:requirements": "npm --prefix=. run test:requirements",
-    "test:degraded": "npm --prefix=. run test:degraded",
-    "test:multisite": "npm --prefix=. run test:multisite",
+    "test:integration": [
+      "if [ -n \"$GITHUB_ACTIONS\" ]; then echo 'CI owns the wp-env lifecycle — skipping start.'; else ./node_modules/.bin/wp-env --config .wp-env.tests.json start; fi",
+      "npm --prefix=. run test:integration"
+    ],
+    "test:requirements": [
+      "if [ -n \"$GITHUB_ACTIONS\" ]; then echo 'CI owns the wp-env lifecycle — skipping start.'; else ./node_modules/.bin/wp-env --config .wp-env.belowfloor.json start; fi",
+      "npm --prefix=. run test:requirements"
+    ],
+    "test:degraded": [
+      "if [ -n \"$GITHUB_ACTIONS\" ]; then echo 'CI owns the wp-env lifecycle — skipping start.'; else ./node_modules/.bin/wp-env --config .wp-env.degraded.json start; fi",
+      "npm --prefix=. run test:degraded"
+    ],
+    "test:multisite": [
+      "if [ -n \"$GITHUB_ACTIONS\" ]; then echo 'CI owns the wp-env lifecycle — skipping start.'; else ./node_modules/.bin/wp-env --config .wp-env.multisite.json start; fi",
+      "npm --prefix=. run test:multisite"
+    ],
 
     "quality-check": [
       "@composer validate --strict",
@@ -111,6 +123,9 @@
     "changelog:add": "@php vendor/bin/changelogger add",
     "changelog:validate": "@php vendor/bin/changelogger validate",
     "changelog:write": "@php vendor/bin/changelogger write"
+  },
+  "scripts-descriptions": {
+    "test:integration": "Integration suite on .wp-env.tests.json. The $GITHUB_ACTIONS guard in front of every suite verb keeps the start out of CI, which owns the container's lifecycle in its own step. On this verb it is also load-bearing: only the integration matrix passes wp-env-core, so a second start would fall back to whatever core the config names — and .wp-env.tests.json names none, which makes it wp-env's default of latest stable. Both legs of the integration matrix are exposed, not just nightly: the other passes wp-version, which the workflow maps into the same step-scoped variable, so it would go green without testing the version it asked for. It names GITHUB_ACTIONS rather than the conventional CI because devcontainers and task runners export CI too, and CI=false still satisfies -n, which would skip the start locally in silence."
   },
   "config": {
     "allow-plugins": {
