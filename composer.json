@@ -94,19 +94,19 @@
     "test:unit": "@php vendor/bin/phpunit --testsuite=Unit",
     "test:unit:mutation": "@php vendor/bin/infection --threads=max",
     "test:integration": [
-      "[ -n \"$CI\" ] || ./node_modules/.bin/wp-env --config .wp-env.tests.json start",
+      "[ -n \"$GITHUB_ACTIONS\" ] || ./node_modules/.bin/wp-env --config .wp-env.tests.json start",
       "npm --prefix=. run test:integration"
     ],
     "test:requirements": [
-      "[ -n \"$CI\" ] || ./node_modules/.bin/wp-env --config .wp-env.belowfloor.json start",
+      "[ -n \"$GITHUB_ACTIONS\" ] || ./node_modules/.bin/wp-env --config .wp-env.belowfloor.json start",
       "npm --prefix=. run test:requirements"
     ],
     "test:degraded": [
-      "[ -n \"$CI\" ] || ./node_modules/.bin/wp-env --config .wp-env.degraded.json start",
+      "[ -n \"$GITHUB_ACTIONS\" ] || ./node_modules/.bin/wp-env --config .wp-env.degraded.json start",
       "npm --prefix=. run test:degraded"
     ],
     "test:multisite": [
-      "[ -n \"$CI\" ] || ./node_modules/.bin/wp-env --config .wp-env.multisite.json start",
+      "[ -n \"$GITHUB_ACTIONS\" ] || ./node_modules/.bin/wp-env --config .wp-env.multisite.json start",
       "npm --prefix=. run test:multisite"
     ],
 
@@ -125,7 +125,7 @@
     "changelog:write": "@php vendor/bin/changelogger write"
   },
   "scripts-descriptions": {
-    "test:integration": "Integration suite on .wp-env.tests.json. The $CI guard shared by the four suite verbs is load-bearing: CI starts wp-env in its own step, where WP_ENV_CORE overrides the WordPress version and does not reach this one, so a second start would fall back to the config's own core and the nightly leg would test the pinned version and pass."
+    "test:integration": "Integration suite on .wp-env.tests.json. The $GITHUB_ACTIONS guard in front of every suite verb keeps the start out of CI, which owns the container's lifecycle in its own step. On this verb it is also load-bearing: only the integration matrix passes wp-env-core, so a second start would fall back to the config's own core and the nightly leg would test the pinned version and pass. It names GITHUB_ACTIONS rather than the conventional CI because devcontainers and task runners export CI too, and CI=false still satisfies -n, which would skip the start locally in silence."
   },
   "config": {
     "allow-plugins": {
