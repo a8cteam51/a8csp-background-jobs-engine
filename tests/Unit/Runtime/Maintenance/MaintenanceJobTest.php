@@ -1187,7 +1187,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * @param   string|null $runs          Active-run cursor.
 	 * @param   string|null $locks         Overlap-lock cursor.
 	 * @param   string|null $registrations Schedule-registration cursor.
-	 * @param   string|null $data       Run-data cursor.
+	 * @param   string|null $data          Run-data cursor.
 	 *
 	 * @return  string
 	 */

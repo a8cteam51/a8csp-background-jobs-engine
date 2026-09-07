@@ -203,13 +203,25 @@ final readonly class Inspection {
 	 */
 	public function schedules( ?string $scope = null, bool $with_lock = true ): ?array {
 		$observed_at = $this->clock->now()->getTimestamp();
-		$read        = $this->schedules->all_registrations();
+		// A scoped caller reads its own registry row. Reading every scope's would fail this answer
+		// for a row belonging to somebody else, and report it as this scope's storage failure.
+		$read = null === $scope ? $this->schedules->all_registrations() : $this->schedules->registrations_for( $scope );
 		if ( $read->is_failure() ) {
 			return null;
 		}
 
 		$registrations = $read->value;
 		\ksort( $registrations, \SORT_STRING );
+
+		$identities = array();
+		foreach ( \array_keys( $registrations ) as $registration_key ) {
+			if ( null !== Identity::tryFrom( $registration_key ) ) {
+				$identities[] = $registration_key;
+			}
+		}
+
+		// One census for every registration rather than a backend query each.
+		$chains = $this->scheduler->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, $identities );
 
 		$entries = array();
 		foreach ( $registrations as $registration_key => $registration ) {
@@ -218,21 +230,16 @@ final readonly class Inspection {
 				continue;
 			}
 
-			$registration_scope = $schedule_identity->scope();
-			if ( null !== $scope && $scope !== $registration_scope ) {
-				continue;
-			}
-
 			$declaration = $this->schedules->declaration( $schedule_identity );
 			$entries[]   = array(
-				'scope'              => $registration_scope,
+				'scope'              => $schedule_identity->scope(),
 				'identity'           => $registration_key,
 				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval,
 				'next_due'           => $registration['next_due'],
 				'last_fired'         => $registration['last_fired'],
 				'misfire_skips'      => $registration['misfire_skips'],
 				'overlap_skips'      => $registration['overlap_skips'],
-				'occurrence_visible' => $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key ),
+				'occurrence_visible' => 0 < $chains[ $registration_key ]['count'],
 				'lock'               => $with_lock ? $this->schedule_lock( $declaration, $observed_at ) : array( 'state' => 'not_inspected' ),
 			);
 		}

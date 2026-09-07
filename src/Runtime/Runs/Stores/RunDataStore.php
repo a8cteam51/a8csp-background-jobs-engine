@@ -216,7 +216,7 @@ final readonly class RunDataStore {
 	 *
 	 * @throws  \LogicException When WordPress does not serialize the data row to a string.
 	 *
-	 * @return  bool|null True when the write is confirmed, null when the complete row would exceed its ceiling.
+	 * @return  bool|null True when the write is confirmed, false when storage refused it or the swap never won, null when the complete row would exceed its ceiling.
 	 */
 	#[\NoDiscard( 'a data write result must be handled, not dropped' )]
 	public function remember( string $run_id, string $key, array $value ): ?bool {

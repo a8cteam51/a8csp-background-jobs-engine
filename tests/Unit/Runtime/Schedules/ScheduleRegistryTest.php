@@ -481,6 +481,26 @@ final class ScheduleRegistryTest extends TestCase {
 	}
 
 	/**
+	 * Listing every scope merges each scope row's registrations into one identity-keyed map.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_all_registrations_merges_every_scope_row(): void {
+		$this->put_fixture( $this->fixtures->schedule_registration( self::scope_fixture( 'scope-a', self::schedule( 'nightly', 300 ), self::NOW + 300 ) ) );
+		$this->put_fixture( $this->fixtures->schedule_registration( self::scope_fixture( 'scope-b', self::schedule( 'weekly', 900 ), self::NOW + 900 ) ) );
+
+		$all = $this->registry()->all_registrations();
+
+		self::assertInstanceOf( Success::class, $all );
+		self::assertIsArray( $all->value );
+		// The engine registers its own maintenance schedule at boot, so its row is one of the merged three.
+		self::assertSame( array( 'a8csp-bgje:maintenance', 'scope-a:nightly', 'scope-b:weekly' ), \array_keys( $all->value ) );
+	}
+
+	/**
 	 * A registration without mandatory inactive-episode markers fails and reports its scope row.
 	 *
 	 * @since   1.0.0

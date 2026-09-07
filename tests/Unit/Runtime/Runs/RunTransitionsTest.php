@@ -1589,13 +1589,13 @@ final class RunTransitionsTest extends TestCase {
 	private function assert_terminal_history( string $status ): void {
 		// Taken from the terminal run row rather than named here, so the assertion also proves the
 		// history timestamp is the row's terminal heartbeat and not some other clock reading.
-		$terminal_at = $this->recorded_run_state( $status )['heartbeat_at'] ?? null;
-		self::assertIsInt( $terminal_at );
+		$ended_at = $this->recorded_run_state( $status )['heartbeat_at'] ?? null;
+		self::assertIsInt( $ended_at );
 
 		$entry = array(
 			'run_id' => self::RUN_ID,
 			'status' => $status,
-			'at'     => $terminal_at,
+			'at'     => $ended_at,
 		);
 
 		self::assertSame(
@@ -1611,7 +1611,7 @@ final class RunTransitionsTest extends TestCase {
 				'last_completed' => 'completed' === $status
 					? array(
 						'run_id' => self::RUN_ID,
-						'at'     => $terminal_at,
+						'at'     => $ended_at,
 					)
 					: array(),
 			),

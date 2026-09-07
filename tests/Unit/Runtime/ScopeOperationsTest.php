@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -586,7 +587,7 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertInstanceOf( Run::class, $retained );
 		self::assertSame( (string) $completed->id, (string) $retained->id );
 		self::assertSame( RunStatus::Completed, $retained->status );
-		self::assertSame( self::NOW, $retained->terminal_at );
+		self::assertSame( self::NOW, $retained->ended_at );
 
 		++$this->rig->clock()->timestamp;
 		$newer = $client->dispatch( 'email-digest' );
@@ -602,7 +603,7 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertInstanceOf( Run::class, $still_answered );
 		self::assertSame( (string) $completed->id, (string) $still_answered->id );
 		self::assertSame( RunStatus::Completed, $still_answered->status );
-		self::assertSame( self::NOW, $still_answered->terminal_at );
+		self::assertSame( self::NOW, $still_answered->ended_at );
 	}
 
 	/**
@@ -831,18 +832,18 @@ final class ScopeOperationsTest extends TestCase {
 		$client = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		$client->register( ( new RecordingJob( 'prune' ) )->definition() );
+		// Declared out of order on purpose: the projection is sorted by identity, and a declaration
+		// order that already matched would not show that.
 		self::assertTrue(
 			$client->sync(
 				array(
-					new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ),
 					new Schedule( 'weekly', Recurrence::every( 900 ), 'prune' ),
+					new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ),
 				)
 			)
 		);
 
-		// The backend answers occurrence visibility, so drive it rather than asserting its default.
-		$this->rig->backend()->scheduled = true;
-
+		// occurrence_visible reads the chain sync() actually created, so the fixture drives it.
 		$registered = $client->inspect_schedules();
 
 		self::assertIsArray( $registered );
@@ -864,6 +865,7 @@ final class ScopeOperationsTest extends TestCase {
 		);
 		self::assertSame( 'weekly', $registered['schedules'][1]['name'] );
 		self::assertSame( 900, $registered['schedules'][1]['recurrence'] );
+		self::assertSame( array( 'nightly', 'weekly' ), \array_column( $registered['schedules'], 'name' ), 'Entries are ordered by identity, not by declaration order.' );
 	}
 
 	/**
@@ -968,6 +970,38 @@ final class ScopeOperationsTest extends TestCase {
 				'occurrence_visible' => false,
 			),
 			$registered['schedules'][0]
+		);
+	}
+
+	/**
+	 * Inspection reads only the bound scope's registry row, never another scope's.
+	 *
+	 * Reading every scope's row made one caller's answer depend on rows it does not own: an
+	 * unreadable row anywhere returned `storage_failed` to a scope whose own row was fine, described
+	 * as "the schedule registry".
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_reads_only_the_bound_scopes_registry_row(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$foreign = ScheduleRegistry::option_name( 'other-scope' );
+		$this->rig->wpdb()->put( $foreign, StoreFixtureBuilder::corrupt_row( array( 'not' => 'a registry' ) ) );
+		$this->rig->wpdb()->recorded_queries = array();
+
+		$registered = $client->inspect_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertSame( array( 'nightly' ), \array_column( $registered['schedules'], 'name' ) );
+		self::assertSame(
+			array(),
+			\array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_contains( $query, $foreign ) ) ),
+			'A scope-bound inspection must not touch another scope\'s registry row.'
 		);
 	}
 

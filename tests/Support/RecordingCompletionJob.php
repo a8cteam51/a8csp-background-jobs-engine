@@ -29,9 +29,6 @@ final class RecordingCompletionJob implements JobExecutionInterface, RunCompleti
 	 */
 	public array $completions = array();
 
-	/** Throwable raised by the completion role after the invocation is recorded. */
-	public ?\Throwable $completion_throwable = null;
-
 	/**
 	 * Observation run inside the completion role, while the engine still holds the run's state.
 	 *
@@ -99,10 +96,6 @@ final class RecordingCompletionJob implements JobExecutionInterface, RunCompleti
 
 		if ( null !== $this->on_completed_observer ) {
 			( $this->on_completed_observer )( $run_id );
-		}
-
-		if ( null !== $this->completion_throwable ) {
-			throw $this->completion_throwable;
 		}
 	}
 

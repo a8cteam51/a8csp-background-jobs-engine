@@ -12,7 +12,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunDataStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
@@ -76,14 +75,14 @@ final readonly class ScopeOperations {
 	/**
 	 * Registers one definition under the bound scope and its declared local name.
 	 *
+	 * An execution object declaring {@see RunCompletionInterface} is subscribed to this identity's
+	 * completed hook here, because registration is where the engine is handed the object and the
+	 * identity in the same call.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   JobDefinition $definition Job definition to register.
-	 *
-	 * An execution object declaring {@see RunCompletionInterface} is subscribed to this identity's
-	 * completed hook here, because registration is where the engine is handed the object and the
-	 * identity in the same call.
 	 *
 	 * @throws  \InvalidArgumentException When the identity, job-default priority, crash-reclamation window, kind, or execution role is invalid.
 	 * @throws  \LogicException           When the job identity is already registered.
@@ -337,7 +336,7 @@ final readonly class ScopeOperations {
 	 * @param   string                  $key    Run data key.
 	 * @param   array<array-key, mixed> $value  Portable value to store.
 	 *
-	 * @throws  \InvalidArgumentException When the identity, run identifier, key, or value is invalid.
+	 * @throws  \InvalidArgumentException When the identity, key, or value is invalid.
 	 *
 	 * @return  true|\WP_Error
 	 */
@@ -346,7 +345,6 @@ final readonly class ScopeOperations {
 		$identity = Identity::compose( $this->scope, $name );
 		$context  = \sprintf( 'Background-work "%1$s" data key "%2$s"', $name, $key );
 		self::assert_data_key( $key, $name );
-		self::assert_canonical_run_id( $run_id, $context );
 
 		// Only portability here: the run's complete data row is the byte ceiling that applies.
 		self::assert_portable_tree( $value, $context . ' value' );
@@ -374,7 +372,7 @@ final readonly class ScopeOperations {
 	 * @param   string $run_id Run identifier.
 	 * @param   string $key    Run data key.
 	 *
-	 * @throws  \InvalidArgumentException When the identity, run identifier, or key is invalid.
+	 * @throws  \InvalidArgumentException When the identity or key is invalid.
 	 *
 	 * @return  array<array-key, mixed>|null|\WP_Error
 	 */
@@ -382,7 +380,6 @@ final readonly class ScopeOperations {
 	public function get_run_data( string $name, string $run_id, string $key ): array|null|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
 		self::assert_data_key( $key, $name );
-		self::assert_canonical_run_id( $run_id, \sprintf( 'Background-work "%1$s" data key "%2$s"', $name, $key ) );
 
 		return BoundaryErrorMapper::map( $this->stores->run_data( $identity )->recall( $run_id, $key ) );
 	}
@@ -518,42 +515,22 @@ final readonly class ScopeOperations {
 	}
 
 	/**
-	 * Rejects a run identifier that is not one the engine issued.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @param   string $run_id  Run identifier.
-	 * @param   string $context Declaration context for the rejection message.
-	 *
-	 * @throws  \InvalidArgumentException When the run identifier is not canonical.
-	 *
-	 * @return  void
-	 */
-	private static function assert_canonical_run_id( string $run_id, string $context ): void {
-		if ( null === RunIdentity::parse( $run_id ) ) {
-			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( '%s run identifier is malformed; pass a run ID the engine returned.', $context ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
-	}
-
-	/**
 	 * Projects one admitted run into the public boundary value.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity  $identity    Complete scope-qualified job or chunked job identity.
-	 * @param   string    $run_id      Run identifier.
-	 * @param   RunStatus $status      Public lifecycle state.
-	 * @param   int|null  $terminal_at Terminalization timestamp, or null when the projection carries none.
+	 * @param   Identity  $identity Complete scope-qualified job or chunked job identity.
+	 * @param   string    $run_id   Run identifier.
+	 * @param   RunStatus $status   Public lifecycle state.
+	 * @param   int|null  $ended_at Terminalization timestamp, or null when the projection carries none.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  Run
 	 */
-	private static function run( Identity $identity, string $run_id, RunStatus $status, ?int $terminal_at = null ): Run {
-		return new Run( (string) $identity, RunId::from( $run_id ), $status, $terminal_at );
+	private static function run( Identity $identity, string $run_id, RunStatus $status, ?int $ended_at = null ): Run {
+		return new Run( (string) $identity, RunId::from( $run_id ), $status, $ended_at );
 	}
 
 	/**

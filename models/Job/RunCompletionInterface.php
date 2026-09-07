@@ -18,6 +18,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
  * and the delivery guarantees are the hook's guarantees. A consumer may declare the role, add its
  * own listeners, or both.
  *
+ * The run's data is still readable here — the engine drops it only once every terminal effect has
+ * landed, which is after this — but a value written here does not survive: the drop follows
+ * immediately and takes it. Anything that must outlive the run belongs in the consumer's own storage.
+ *
  * Two consequences follow from being a hook listener rather than a separate mechanism, and both
  * matter to an implementation:
  *

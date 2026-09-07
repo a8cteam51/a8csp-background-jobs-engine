@@ -50,7 +50,7 @@ final readonly class Runs extends AbstractPortal {
 	}
 
 	/**
-	 * Returns the most recently retained completed run for one background-work name.
+	 * Returns the last completed run for one background-work name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -72,6 +72,12 @@ final readonly class Schedules extends AbstractPortal {
 	 * scheduling backend can currently see its occurrence. What counts as wrong is the caller's
 	 * question, because only the caller knows what it declared.
 	 *
+	 * Entries are ordered by composed identity, not by declaration order.
+	 *
+	 * `occurrence_visible` comes from one batched census across every ready scheduling backend, not a
+	 * query per registration, so the call costs a bounded number of backend reads whatever the scope
+	 * declares.
+	 *
 	 * A `recurrence` of null means the registration is persisted but the current request carries no
 	 * declaration for it — `sync()` is per-request, so a request that has not yet synchronised sees
 	 * null for every registration. `dormant_backend` reports that a scheduling backend is present but

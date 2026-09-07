@@ -3,8 +3,8 @@ Type: changed
 
 `runs()->last_completed()` now answers for as long as the identity has ever completed. The run-history buffers are capped and hold every terminal outcome, so on an identity that fails often the last completion was carried out of them by later failures — at exactly the moment a caller most wants to know when the work last succeeded. The answer is now kept in a slot those buffers do not evict. The `previous_completed_run_id` argument of `a8csp_bgje/completed/{identity}` is frozen from the same slot, so the hook and the verb cannot disagree.
 
-The returned `Run` carries a new `?int $terminal_at` with the Unix timestamp the run reached its terminal state, so "when did this last succeed" is answerable without keeping a pointer of your own. It is null on projections that do not carry one, such as a dispatch result.
+The returned `Run` carries a new `?int $ended_at` with the Unix timestamp the run reached its terminal state, so "when did this last succeed" is answerable without keeping a pointer of your own. It is null on projections that do not carry one, such as a dispatch result.
 
 `wp a8csp-bgje runs list` gains an `ended` column showing how long ago each history entry terminalized.
 
-A history row written by an earlier version carries neither the per-entry timestamp nor the slot. Its entries render `ended` as `—`, and `last_completed()` answers such a row from the retained buffer with a null `terminal_at` until the identity's next completion fills the slot — so the answer is never worse than it was before the upgrade.
+A history row written by an earlier version carries neither the per-entry timestamp nor the slot. Its entries render `ended` as `—`, and `last_completed()` answers such a row from the retained buffer with a null `ended_at` until the identity's next completion fills the slot — so the answer is never worse than it was before the upgrade.

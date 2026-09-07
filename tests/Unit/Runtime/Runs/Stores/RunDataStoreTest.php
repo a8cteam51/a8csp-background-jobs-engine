@@ -246,21 +246,6 @@ final class RunDataStoreTest extends TestCase {
 	}
 
 	/**
-	 * A run identifier the engine never issued is refused.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_a_malformed_run_identifier_is_refused(): void {
-		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessageIs( 'Background-work "catalog-sync" data key "seen" run identifier is malformed; pass a run ID the engine returned.' );
-
-		(void) $this->client->set_run_data( self::NAME, 'not-a-run-id', 'seen', array() );
-	}
-
-	/**
 	 * A value that would carry the complete row past its ceiling is refused, leaving the row intact.
 	 *
 	 * @since   1.0.0

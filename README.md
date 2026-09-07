@@ -396,8 +396,8 @@ from a retained failure, and `runs()->inspect()` / `runs()->last_completed()` an
 questions from tooling — inspection returns `run_not_retained` for an absent run, while
 `last_completed()` answers from a slot the capped history buffers do not evict, so a run of failures
 long enough to fill one does not carry the last completion out of the answer, and the `Run` it
-returns carries `terminal_at`. A history row written before that slot existed is answered from the
-retained buffer instead, with a null `terminal_at`, until the identity's next completion fills the
+returns carries `ended_at`. A history row written before that slot existed is answered from the
+retained buffer instead, with a null `ended_at`, until the identity's next completion fills the
 slot. It returns `null` only when neither holds a completion. Day-2
 operator workflows live in the CLI — see "WP-CLI".
 
@@ -500,7 +500,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `ChunkedJobExecutionInterface` | Standalone chunked execution role extending `KindExecutionInterface` and requiring only `generate_queue( array $start_args, RunContextInterface $context ): iterable` and `process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void`; it does not extend `JobExecutionInterface`. |
 | `Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`; only `name`, `recurrence`, and `job` are required, and the rest default to an empty array, `CatchUpPolicy::RunOnce`, and null. |
 | `Recurrence` | Readonly fixed-interval recurrence created with `every( int $seconds )` or `every_anchored( int $seconds, int $anchor )`; an anchor is reduced modulo the interval. |
-| `Run` | Readonly snapshot with `string $identity`, `RunId $id`, `RunStatus $status`, and `?int $terminal_at`. `terminal_at` is the Unix timestamp the run reached its terminal state; it is populated by `runs()->last_completed()` and null on projections that do not carry one, such as a dispatch result. |
+| `Run` | Readonly snapshot with `string $identity`, `RunId $id`, `RunStatus $status`, and `?int $ended_at`. `ended_at` is the Unix timestamp the run reached its terminal state; it is populated by `runs()->last_completed()` and null on projections that do not carry one, such as a dispatch result. |
 | `RunId` | Final readonly stringable wrapper for a canonical run identifier; `from( string )` requires canonical input, `tryFrom( string )` returns null for another shape, and string casting returns the wire value. |
 | `RunFailure` | Readonly value with `string $identity`, `RunId $run_id`, `int $attempts`, `RunFailureStage $stage`, `ErrorCode $code`, `string $summary`, and generic diagnostic payload `?array $details`. |
 | `RunFailureStage` | Final readonly interned open string-backed stage carried by `RunFailure::$stage`; its grammar, engine stages, and third-party keys are described below this table. |
@@ -615,9 +615,10 @@ the empty array a key explicitly set to `array()` returns — that distinction i
 "have I generated this yet" check is made of. It returns `WP_Error` with `storage_failed` when the
 authoritative read fails, so a database fault is not mistaken for "not generated yet".
 
-Treat run data as unreadable once the run ends. A completion listener still sees it, because the
-drop happens after every terminal effect has landed; nothing later should rely on it. Values that
-must outlive the run belong in the consumer's own storage.
+Treat run data as unreadable once the run ends. A completion listener still sees it, because the drop
+happens after every terminal effect has landed; nothing later should rely on it, and a value *written*
+from that listener does not survive the drop that follows it. Values that must outlive the run belong
+in the consumer's own storage.
 
 ### Completion role
 
