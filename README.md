@@ -19,7 +19,7 @@ Consumers use four connected surfaces:
 
 - **The Engine handle** — `a8csp_bgje( $scope )` returns a scope-bound `Engine` with `jobs()`, `schedules()`, and `runs()` capability managers.
 - **The public models and execution roles** — compose work with `JobDefinition`, `JobKind`, and `JobOptions`; implement `JobExecutionInterface` or `ChunkedJobExecutionInterface`; declare schedules with `Schedule`, `Recurrence`, and `CatchUpPolicy`; callbacks depend on `RunContextInterface` or `ChunkedRunContextInterface`; run-producing commands return `Run` snapshots, terminal failures use `RunFailure`, and verb failures return `WP_Error`.
-- **The procedural aliases** — ten verb-noun `a8csp_bgje_*()` functions take `$scope` first, accept the same `JobDefinition` registration value as the Jobs manager and the same variadic `Schedule` values as the Schedules manager, and invoke the capability-manager verbs.
+- **The procedural aliases** — twelve verb-noun `a8csp_bgje_*()` functions take `$scope` first, accept the same `JobDefinition` registration value as the Jobs manager and the same variadic `Schedule` values as the Schedules manager, and invoke the capability-manager verbs.
 - **The lifecycle hooks** — observe runs through the `a8csp_bgje/*` actions.
 
 The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run`, `RunContext`, and `RunFailure`; execution callbacks depend on `RunContextInterface` or `ChunkedRunContextInterface`. The procedural aliases accept the same typed definition and schedule values as their capability-manager counterparts.
@@ -461,6 +461,8 @@ The procedural facade is grouped by concept: `includes/job.php` provides backgro
 | `schedules()->dispatch( string $name )` | `a8csp_bgje_dispatch_schedule( string $scope, string $name )` | `Run \| WP_Error` |
 | `schedules()->registered()` | `a8csp_bgje_registered_schedules( string $scope )` | `array \| WP_Error` |
 | `runs()->inspect( string $name, RunId $run_id )` | `a8csp_bgje_inspect_run( string $scope, string $name, string $run_id )` | `Run \| WP_Error` |
+| `runs()->remember_scratch( string $name, RunId $run_id, string $key, array $value )` | `a8csp_bgje_remember_run_scratch( string $scope, string $name, string $run_id, string $key, array $value )` | `true \| WP_Error` |
+| `runs()->recall_scratch( string $name, RunId $run_id, string $key )` | `a8csp_bgje_recall_run_scratch( string $scope, string $name, string $run_id, string $key )` | `array \| null \| WP_Error` |
 | `runs()->last_completed( string $name )` | `a8csp_bgje_last_completed_run( string $scope, string $name )` | `Run \| null \| WP_Error` |
 | `runs()->retry_failed( string $name, RunId $run_id )` | `a8csp_bgje_retry_failed_run( string $scope, string $name, string $run_id )` | `Run \| WP_Error` |
 | `runs()->cancel( string $name, RunId $run_id )` | `a8csp_bgje_cancel_run( string $scope, string $name, string $run_id )` | `Run \| WP_Error` |
@@ -486,7 +488,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `Engine` | Scope-bound readonly handle returned by `a8csp_bgje()` with its `jobs()`, `schedules()`, and `runs()` capability managers. |
 | `Jobs` | Scope-bound readonly manager for registration, immediate dispatch, and absolute-time dispatch. |
 | `Schedules` | Scope-bound readonly manager for schedule synchronization, immediate dispatch, and read-only registration inspection. |
-| `Runs` | Scope-bound readonly manager for run inspection, retry, and cancellation. |
+| `Runs` | Scope-bound readonly manager for run inspection, per-run scratch storage, retry, and cancellation. |
 | `JobDefinition` | Final readonly registration declaration with public `string $name`, `JobKind $kind`, `KindExecutionInterface $execution`, and `JobOptions $options`. Its non-public constructor is exposed through `job()`, `chunked_job()`, `closure()`, and `for_kind()`, each taking an optional `JobOptions`. |
 | `JobKind` | Final readonly kind key with public `string $value`, built-in `job()` and `chunked_job()` constructors, and `from( string $value )` for a grammar-valid key. It carries no execution contract. |
 | `JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?RetryPolicy $retry`, `?OverlapPolicy $overlap`, `?\Closure $overlap_key`, and `?int $priority`. Null uses the documented default for each policy except priority, where it defers to the priority resolution ladder ending at engine default 10. `max_runtime` supplies per-invocation crash-reclamation credit, not an execution limit. Construction stores `max_runtime` and priority without validating their declared bounds: `jobs()->register()` rejects an invalid `max_runtime` or job-default priority, `schedules()->sync()` rejects an invalid schedule priority, and `jobs()->dispatch()` rejects an invalid explicit priority. The [consumer limits](#consumer-limits) give the exact bounds and effective clamp. |
@@ -555,6 +557,49 @@ While a non-executing row is fresh and preserved, `wp a8csp-bgje runs cancel` ca
 Neither `JobOptions` nor `Schedule` validates priority during construction. `jobs()->register()` rejects an out-of-range job default, `schedules()->sync()` rejects an out-of-range schedule value, and `jobs()->dispatch()` rejects an out-of-range explicit argument. The remaining defaults are a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
 
 Expiry of the credit and lock-staleness window does not interrupt a handler. Crash reconciliation can then reclaim the run and admit replacement work that overlaps it, so handlers remain idempotent.
+
+### Per-run scratch
+
+A Chunked Job accumulates across chunks and has nowhere but storage to put what it accumulates.
+`runs()->remember_scratch()` and `runs()->recall_scratch()` — and their procedural aliases — hold
+that for the life of one run.
+
+```php
+public function process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void {
+	$run_id = $context->get_run_id();
+	$seen   = a8csp_bgje_recall_run_scratch( 'my-plugin', self::NAME, (string) $run_id, 'seen' ) ?? array();
+
+	$seen[ (string) $chunk_args['host'] ] = true;
+
+	$stored = a8csp_bgje_remember_run_scratch( 'my-plugin', self::NAME, (string) $run_id, 'seen', $seen );
+	if ( is_wp_error( $stored ) ) {
+		error_log( $stored->get_error_message() );
+	}
+}
+
+public function on_completed( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ): void {
+	$seen = a8csp_bgje_recall_run_scratch( 'my-plugin', self::NAME, (string) $run_id, 'seen' );
+	my_plugin_publish_summary( $seen ?? array() );
+}
+```
+
+The functions are procedural rather than context methods because half the real usage is in a
+completion listener, which has a run ID and no context.
+
+**The engine owns the lifetime.** Scratch belongs to the run, not to the job, so the whole row is
+dropped wherever the engine drops the run row — completed, failed, cancelled, superseded, and the
+corrupt rows maintenance removes without firing any hook. A consumer therefore cannot forget to
+clean up after a terminal path it did not think about. Scratch that outlives its run by some other
+route is collected by the hourly maintenance sweep.
+
+`recall_scratch()` returns `null` for a key the run never stored, which is a different answer from
+the empty array a key explicitly set to `array()` returns — that distinction is what a
+"have I generated this yet" check is made of. It returns `WP_Error` with `storage_failed` when the
+authoritative read fails, so a database fault is not mistaken for "not generated yet".
+
+Scratch is not readable after the run ends: a completion listener runs before the engine drops the
+row, but anything later reads `null`. Values that must outlive the run belong in the consumer's own
+storage.
 
 ### Completion role
 
@@ -763,6 +808,8 @@ This table covers engine-enforced identity, payload, scheduling-admission, stora
 | Complete chunked-job queue | At most 983,616 PHP-serialized bytes. | `Runtime\Runs\Stores\RunStore::MAX_KIND_STATE_BYTES` | No; only the initial generated queue contents are filterable through `a8csp_bgje/queue` and its identity-specific form. |
 | Complete active-run row | At most 1,000,000 PHP-serialized bytes while active. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES` | No |
 | Failed-run retained count | At most 20 entries per scope-qualified work identity. | `Runtime\Runs\Stores\FailedRunStore::ENTRY_LIMIT` | No |
+| One scratch key | 1–64 bytes matching `[a-z0-9_-]+`. | `Runtime\Runs\Stores\RunScratchStore::MAX_KEY_BYTES` | No |
+| One run's complete scratch row | At most 1,000,000 PHP-serialized bytes across every key that run stores. A value that would carry the row past it is refused with `payload_rejected` and leaves the existing keys intact. Values are a portable tree of scalars, null, and arrays, with no separate JSON-byte limit. | `Runtime\Runs\Stores\RunScratchStore::MAX_ROW_BYTES`, which derives from `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES` | No |
 | Complete failed-run retention row | At most 1,000,000 PHP-serialized bytes per scope-qualified work identity. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES`, enforced for this row by `Runtime\Runs\Stores\FailedRunStore::MAX_ROW_BYTES`, which derives from it | No |
 | Run history | Default 30 entries in each history buffer; no hard maximum. The last completed run is kept in a separate slot the buffers do not evict, so `runs()->last_completed()` is not bounded by this value. | `Runtime\Runs\Stores\RunHistory::DEFAULT_SIZE` | Yes: `a8csp_bgje/history_size` accepts a positive integer. |
 
@@ -787,7 +834,7 @@ Network activation is supported; each site runs its own isolated engine state, b
 
 ## Uninstall
 
-Uninstall removes operational engine options and unschedules WP-Cron events per site, but preserves `a8csp_bgje_failed_runs_*` and `a8csp_bgje_run_history_*` option rows by default for post-uninstall diagnosis. When the `actionscheduler_actions` table and initialized public API are available, Action Scheduler marks pending actions for the engine's delivery hooks as canceled rather than deleting them. In-progress, complete, failed, already-canceled, and newly canceled action rows survive, as do all `actionscheduler_logs` rows and orphaned `actionscheduler_claims` and `actionscheduler_groups` rows. Define `A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL` to the literal boolean `true` before deleting the plugin to remove those diagnostic rows too; an undefined constant or any other value preserves them, and `wp a8csp-bgje reset` is deliberately exempt and still deletes every engine runtime option row, including both diagnostic families.
+Uninstall removes operational engine options and unschedules WP-Cron events per site, but preserves `a8csp_bgje_failed_runs_*` and `a8csp_bgje_run_history_*` option rows by default for post-uninstall diagnosis. Per-run scratch is operational rather than diagnostic and is removed with the rest. When the `actionscheduler_actions` table and initialized public API are available, Action Scheduler marks pending actions for the engine's delivery hooks as canceled rather than deleting them. In-progress, complete, failed, already-canceled, and newly canceled action rows survive, as do all `actionscheduler_logs` rows and orphaned `actionscheduler_claims` and `actionscheduler_groups` rows. Define `A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL` to the literal boolean `true` before deleting the plugin to remove those diagnostic rows too; an undefined constant or any other value preserves them, and `wp a8csp-bgje reset` is deliberately exempt and still deletes every engine runtime option row, including both diagnostic families.
 
 ## WP-CLI
 

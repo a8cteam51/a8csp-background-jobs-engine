@@ -1,0 +1,10 @@
+Significance: minor
+Type: added
+
+`runs()->remember_scratch()` and `runs()->recall_scratch()`, with the procedural `a8csp_bgje_remember_run_scratch()` and `a8csp_bgje_recall_run_scratch()`, store consumer values for the life of one run. A Chunked Job accumulates across chunks and has nowhere but storage to put what it accumulates; this holds it without a consumer inventing option rows keyed by run ID.
+
+The engine owns the lifetime. The whole row is dropped wherever the engine drops the run row — completed, failed, cancelled, superseded, and the corrupt rows maintenance removes without firing any hook — so a consumer cannot forget to clean up after a terminal path it did not think about, and cannot reconstruct that lifetime from terminal hooks because two of those deletions fire none. The hourly maintenance sweep collects scratch that outlives its run by any other route.
+
+Reading a key the run never stored returns null, which is a different answer from the empty array a key explicitly set to `array()` returns. A failed authoritative read returns `storage_failed` rather than null, so a database fault is not mistaken for "not generated yet".
+
+Scratch is its own option family with its own ceiling; see Consumer limits. It is removed by uninstall and by `wp a8csp-bgje reset`.

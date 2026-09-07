@@ -21,6 +21,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunScratchStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
@@ -158,6 +159,32 @@ final class MaintenanceJobTest extends TestCase {
 	// endregion.
 
 	// region TESTS.
+
+	/**
+	 * The scratch phase records its own cursor when its budget runs out, and finishes on a later pass.
+	 *
+	 * Without a persisted cursor every pass would rescan the same first page, so scratch beyond it
+	 * would never be reached and would accumulate with nothing naming it — silently, because the
+	 * sweep has no other output.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_scratch_budget_exhaustion_records_a_cursor_and_a_later_pass_finishes(): void {
+		$this->put_orphaned_scratch_names( 501 );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( self::scratch_name( 499 ), $this->cursor_state()['scratch'], 'An exhausted scratch budget must persist where it stopped.' );
+		self::assertCount( 1, $this->names_under( RunScratchStore::OPTION_PREFIX ), 'The exhausted pass must have collected everything it scanned.' );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame( array(), $this->names_under( RunScratchStore::OPTION_PREFIX ), 'A later pass must resume from the cursor and finish.' );
+		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows, 'A completed sweep must drop its cursor.' );
+	}
 
 	/**
 	 * Each phase consumes its own budget when both prefixes contain more work.
@@ -1001,6 +1028,33 @@ final class MaintenanceJobTest extends TestCase {
 	}
 
 	/**
+	 * Stores a requested count of orphaned run-scratch rows with no run behind them.
+	 *
+	 * @param   int $count Number of scratch rows.
+	 *
+	 * @return  void
+	 */
+	private function put_orphaned_scratch_names( int $count ): void {
+		$raw = \maybe_serialize( array( 'seen' => array( 'a' ) ) );
+		self::assertIsString( $raw );
+
+		for ( $index = 0; $index < $count; ++$index ) {
+			$this->wpdb->put( self::scratch_name( $index ), $raw );
+		}
+	}
+
+	/**
+	 * Returns one complete canonical run-scratch option name.
+	 *
+	 * @param   int $index Stable lexical index.
+	 *
+	 * @return  string
+	 */
+	private static function scratch_name( int $index ): string {
+		return RunScratchStore::OPTION_PREFIX . 'sweep-tests:scratch_' . \sprintf( '%020d-%019d', self::NOW, $index );
+	}
+
+	/**
 	 * Stores a requested count of canonical unreadable schedule-registration rows.
 	 *
 	 * @param   int $count Number of corrupt rows.
@@ -1077,15 +1131,17 @@ final class MaintenanceJobTest extends TestCase {
 	 * @param   string|null $runs          Active-run cursor.
 	 * @param   string|null $locks         Overlap-lock cursor.
 	 * @param   string|null $registrations Schedule-registration cursor.
+	 * @param   string|null $scratch       Run-scratch cursor.
 	 *
 	 * @return  string
 	 */
-	private static function cursor_bytes( ?string $runs, ?string $locks, ?string $registrations ): string {
+	private static function cursor_bytes( ?string $runs, ?string $locks, ?string $registrations, ?string $scratch = null ): string {
 		$raw = \maybe_serialize(
 			array(
 				'runs'          => $runs,
 				'locks'         => $locks,
 				'registrations' => $registrations,
+				'scratch'       => $scratch,
 			)
 		);
 		self::assertIsString( $raw );
@@ -1124,7 +1180,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array{runs: string|null, locks: string|null, registrations: string|null}
+	 * @return  array{runs: string|null, locks: string|null, registrations: string|null, scratch: string|null}
 	 */
 	private function cursor_state(): array {
 		$raw = $this->wpdb->rows[ $this->cursor_option ] ?? null;
@@ -1134,11 +1190,13 @@ final class MaintenanceJobTest extends TestCase {
 		self::assertArrayHasKey( 'runs', $state );
 		self::assertArrayHasKey( 'locks', $state );
 		self::assertArrayHasKey( 'registrations', $state );
+		self::assertArrayHasKey( 'scratch', $state );
 
 		return array(
 			'runs'          => \is_string( $state['runs'] ) ? $state['runs'] : null,
 			'locks'         => \is_string( $state['locks'] ) ? $state['locks'] : null,
 			'registrations' => \is_string( $state['registrations'] ) ? $state['registrations'] : null,
+			'scratch'       => \is_string( $state['scratch'] ) ? $state['scratch'] : null,
 		);
 	}
 

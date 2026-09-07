@@ -70,6 +70,16 @@ final class Component extends AbstractComponent {
 	private static ?Inspection $inspection = null;
 
 	/**
+	 * Name-bound run stores published by the initialized component.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @var     StoreFactory|null
+	 */
+	private static ?StoreFactory $stores = null;
+
+	/**
 	 * Read-only lock inspection service published by the initialized component.
 	 *
 	 * @since   1.0.0
@@ -241,6 +251,7 @@ final class Component extends AbstractComponent {
 			$this->maintenance_schedule = $maintenance_schedule;
 
 			self::$inspection      = $inspection;
+			self::$stores          = $stores;
 			self::$lock_inspection = $lock_inspection;
 			self::$scheduler       = $scheduler;
 			self::$registry        = $registry;
@@ -304,11 +315,12 @@ final class Component extends AbstractComponent {
 		$schedules  = self::$schedules;
 		$dispatcher = self::$dispatcher;
 		$inspection = self::$inspection;
-		if ( null === $registry || null === $schedules || null === $dispatcher || null === $inspection ) {
+		$stores     = self::$stores;
+		if ( null === $registry || null === $schedules || null === $dispatcher || null === $inspection || null === $stores ) {
 			throw new EngineUnavailableException( 'The background jobs engine graph is unavailable before its plugins_loaded boot callback completes successfully; invoke engine operations from init or a later hook.' );
 		}
 
-		return new ScopeOperations( $scope, $schedules, $dispatcher, $inspection );
+		return new ScopeOperations( $scope, $schedules, $dispatcher, $inspection, $stores );
 	}
 
 	// endregion

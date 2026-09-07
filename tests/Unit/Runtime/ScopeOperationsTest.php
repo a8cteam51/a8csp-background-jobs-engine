@@ -272,6 +272,23 @@ final class ScopeOperationsTest extends TestCase {
 	}
 
 	/**
+	 * Dispatch rejects start arguments that would not survive persistence, naming the work.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_rejects_start_arguments_that_are_not_portable(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Background-work "unportable" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.' );
+
+		(void) $client->dispatch( 'unportable', array( 'handle' => new \stdClass() ) );
+	}
+
+	/**
 	 * Sync rejects each schedule priority outside the supported range with declaration context.
 	 *
 	 * @since   1.0.0

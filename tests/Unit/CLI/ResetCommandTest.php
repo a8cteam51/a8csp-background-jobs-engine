@@ -275,7 +275,9 @@ final class ResetCommandTest extends TestCase {
 	private function seed_engine_state(): void {
 		$client = $this->rig->operations( 'reset-tests' );
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
-		self::assertInstanceOf( Run::class, $client->dispatch( 'refresh', array( 'site_id' => 7 ) ) );
+		$run = $client->dispatch( 'refresh', array( 'site_id' => 7 ) );
+		self::assertInstanceOf( Run::class, $run );
+		self::assertTrue( $client->remember_run_scratch( 'refresh', (string) $run->id, 'seen', array( 'a' ) ) );
 		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}
 

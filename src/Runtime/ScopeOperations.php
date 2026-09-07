@@ -12,6 +12,9 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunScratchStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 
@@ -56,12 +59,14 @@ final readonly class ScopeOperations {
 	 * @param   ScheduleOperations $schedules  Schedule engine operations.
 	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
 	 * @param   Inspection         $inspection Read-only run inspection.
+	 * @param   StoreFactory       $stores     Name-bound run stores.
 	 */
 	public function __construct(
 		private string $scope,
 		private ScheduleOperations $schedules,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
+		private StoreFactory $stores,
 	) {}
 
 	// endregion
@@ -317,6 +322,72 @@ final readonly class ScopeOperations {
 	}
 
 	/**
+	 * Stores one consumer value for the duration of one run.
+	 *
+	 * Scratch belongs to the run rather than to the job: the engine drops the whole row wherever it
+	 * drops the run row, however the run ended, so a consumer cannot forget to clean up after a
+	 * terminal path it did not think about. Values must survive `serialize()`/`unserialize()`
+	 * without materializing an object, which is the same portability contract start arguments carry.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $name   Scope-local job or chunked job name.
+	 * @param   string                  $run_id Run identifier.
+	 * @param   string                  $key    Scratch key.
+	 * @param   array<array-key, mixed> $value  Portable value to store.
+	 *
+	 * @throws  \InvalidArgumentException When the identity, run identifier, key, or value is invalid.
+	 *
+	 * @return  true|\WP_Error
+	 */
+	#[\NoDiscard( 'a scratch write failure must be handled, not dropped' )]
+	public function remember_run_scratch( string $name, string $run_id, string $key, array $value ): true|\WP_Error {
+		$identity = Identity::compose( $this->scope, $name );
+		$context  = \sprintf( 'Background-work "%1$s" scratch key "%2$s"', $name, $key );
+		self::assert_scratch_key( $key, $name );
+		self::assert_canonical_run_id( $run_id, $context );
+
+		// Only portability here: the run's complete scratch row is the byte ceiling that applies.
+		self::assert_portable_tree( $value, $context . ' value' );
+
+		$stored = $this->stores->run_scratch( $identity )->remember( $run_id, $key, $value );
+		if ( true === $stored ) {
+			return true;
+		}
+		if ( null === $stored ) {
+			return new \WP_Error( ErrorCode::PayloadRejected->value, \sprintf( '%1$s does not fit; the run\'s complete scratch row is limited to %2$d serialized bytes.', $context, RunScratchStore::MAX_ROW_BYTES ) );
+		}
+
+		return new \WP_Error( ErrorCode::StorageFailed->value, \sprintf( '%s could not be stored; repair WordPress option writes and retry.', $context ) );
+	}
+
+	/**
+	 * Returns one consumer value stored for the duration of one run.
+	 *
+	 * Null separates a key the run never stored from one holding an empty array.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Scope-local job or chunked job name.
+	 * @param   string $run_id Run identifier.
+	 * @param   string $key    Scratch key.
+	 *
+	 * @throws  \InvalidArgumentException When the identity, run identifier, or key is invalid.
+	 *
+	 * @return  array<array-key, mixed>|null|\WP_Error
+	 */
+	#[\NoDiscard( 'a scratch read result must be handled, not dropped' )]
+	public function recall_run_scratch( string $name, string $run_id, string $key ): array|null|\WP_Error {
+		$identity = Identity::compose( $this->scope, $name );
+		self::assert_scratch_key( $key, $name );
+		self::assert_canonical_run_id( $run_id, \sprintf( 'Background-work "%1$s" scratch key "%2$s"', $name, $key ) );
+
+		return BoundaryErrorMapper::map( $this->stores->run_scratch( $identity )->recall( $run_id, $key ) );
+	}
+
+	/**
 	 * Starts a fresh run from one retained failed run's original arguments.
 	 *
 	 * The registered Job recomputes its argument-aware overlap key, while retry always rejects a
@@ -402,6 +473,77 @@ final readonly class ScopeOperations {
 	}
 
 	/**
+	 * Returns one value tree's encoded form, rejecting anything that would not survive storage.
+	 *
+	 * Portability is separate from any byte ceiling because the ceilings differ per surface: start
+	 * arguments are capped in JSON bytes, while scratch is capped by its complete serialized row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $values  Value tree to check.
+	 * @param   string                  $subject Complete subject phrase for the rejection message.
+	 *
+	 * @throws  \InvalidArgumentException When the tree is not a portable, JSON-encodable value.
+	 *
+	 * @return  string
+	 */
+	private static function assert_portable_tree( array $values, string $subject ): string {
+		try {
+			$encoded = \wp_json_encode( $values, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
+		} catch ( \JsonException ) {
+			$encoded = false;
+		}
+
+		if ( ! \is_string( $encoded ) || ! PortableArguments::is_valid( $values ) ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( '%s must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $subject ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		return $encoded;
+	}
+
+	/**
+	 * Rejects a scratch key that violates the key contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $key  Scratch key.
+	 * @param   string $name Scope-local job or chunked job name.
+	 *
+	 * @throws  \InvalidArgumentException When the key violates its grammar or byte ceiling.
+	 *
+	 * @return  void
+	 */
+	private static function assert_scratch_key( string $key, string $name ): void {
+		if ( ! RunScratchStore::is_valid_key( $key ) ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( 'Background-work "%1$s" scratch key "%2$s" is invalid; use 1 to %3$d bytes matching [a-z0-9_-]+.', $name, $key, RunScratchStore::MAX_KEY_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+	}
+
+	/**
+	 * Rejects a run identifier that is not one the engine issued.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $run_id  Run identifier.
+	 * @param   string $context Declaration context for the rejection message.
+	 *
+	 * @throws  \InvalidArgumentException When the run identifier is not canonical.
+	 *
+	 * @return  void
+	 */
+	private static function assert_canonical_run_id( string $run_id, string $context ): void {
+		if ( null === RunIdentity::parse( $run_id ) ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( '%s run identifier is malformed; pass a run ID the engine returned.', $context ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+	}
+
+	/**
 	 * Projects one admitted run into the public boundary value.
 	 *
 	 * @since   1.0.0
@@ -482,16 +624,7 @@ final readonly class ScopeOperations {
 	 * @return  \WP_Error|null Payload rejection when the portable arguments exceed the persisted byte limit.
 	 */
 	private static function assert_portable_args( array $args, string $context ): ?\WP_Error {
-		try {
-			$encoded_args = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		} catch ( \JsonException ) {
-			$encoded_args = false;
-		}
-
-		if ( ! \is_string( $encoded_args ) || ! PortableArguments::is_valid( $args ) ) {
-			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( '%s arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $context ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
+		$encoded_args = self::assert_portable_tree( $args, $context . ' arguments' );
 
 		$actual_bytes = \strlen( $encoded_args );
 		if ( self::MAX_ARGUMENTS_BYTES >= $actual_bytes ) {
