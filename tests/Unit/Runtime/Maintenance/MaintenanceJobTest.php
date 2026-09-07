@@ -17,11 +17,12 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\FailureLifecycle;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\ChunkedJobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\JobKindHandler;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\LifecycleEffects;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunTransitions;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunDataStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunScratchStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
@@ -161,9 +162,64 @@ final class MaintenanceJobTest extends TestCase {
 	// region TESTS.
 
 	/**
-	 * The scratch phase records its own cursor when its budget runs out, and finishes on a later pass.
+	 * The data sweep collects rows whose run is gone and leaves rows whose run still exists.
 	 *
-	 * Without a persisted cursor every pass would rescan the same first page, so scratch beyond it
+	 * That guard is the whole of the phase's judgement, and this suite is what the mutation gate
+	 * attributes those lines to.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_the_data_sweep_collects_only_rows_whose_run_is_gone(): void {
+		$this->put_orphaned_data_names( 2 );
+		[ $run_option, $run_raw ] = StoreFixtureBuilder::for_identity( 'sweep-tests:run-data' )->run(
+			\sprintf( '%020d-%019d', self::NOW, 1 ),
+			new RunState( status: RunStatus::Running, kind: 'job', executing: false, start_args: array(), args_hash: self::ARGS_HASH, kind_state: array(), failed_attempts: 0, action_sequence: 1, created_at: self::NOW, heartbeat_at: self::NOW, pending: PendingAction::async( 'run', 10 ) )
+		);
+		$this->wpdb->put( $run_option, $run_raw );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame(
+			array( self::data_name( 1 ) ),
+			$this->names_under( RunDataStore::OPTION_PREFIX ),
+			'Only run data whose run row is absent may be collected.'
+		);
+	}
+
+	/**
+	 * One undeletable data row does not strand every data row behind it.
+	 *
+	 * The cursor is persisted only after the loop, so abandoning the phase on a failed delete would
+	 * leave it pointing before the offending row and every later pass would stall at the same place —
+	 * the only collector for the one unbounded row family the engine adds.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_an_undeletable_data_row_does_not_strand_the_rows_behind_it(): void {
+		$this->put_orphaned_data_names( 3 );
+		// No earlier phase has a row to delete, so the scripted failure lands on the first data row.
+		$this->wpdb->script_result( 'delete', false );
+
+		$this->maintenance->handle( array(), $this->run_context );
+
+		self::assertSame(
+			array( self::data_name( 0 ) ),
+			$this->names_under( RunDataStore::OPTION_PREFIX ),
+			'Only the row whose delete failed may survive the pass.'
+		);
+		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows, 'A completed pass drops its cursor even when one row refused to go.' );
+	}
+
+	/**
+	 * The data phase records its own cursor when its budget runs out, and finishes on a later pass.
+	 *
+	 * Without a persisted cursor every pass would rescan the same first page, so data beyond it
 	 * would never be reached and would accumulate with nothing naming it — silently, because the
 	 * sweep has no other output.
 	 *
@@ -172,17 +228,17 @@ final class MaintenanceJobTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_scratch_budget_exhaustion_records_a_cursor_and_a_later_pass_finishes(): void {
-		$this->put_orphaned_scratch_names( 501 );
+	public function test_run_data_budget_exhaustion_records_a_cursor_and_a_later_pass_finishes(): void {
+		$this->put_orphaned_data_names( 501 );
 
 		$this->maintenance->handle( array(), $this->run_context );
 
-		self::assertSame( self::scratch_name( 499 ), $this->cursor_state()['scratch'], 'An exhausted scratch budget must persist where it stopped.' );
-		self::assertCount( 1, $this->names_under( RunScratchStore::OPTION_PREFIX ), 'The exhausted pass must have collected everything it scanned.' );
+		self::assertSame( self::data_name( 499 ), $this->cursor_state()['data'], 'An exhausted data budget must persist where it stopped.' );
+		self::assertCount( 1, $this->names_under( RunDataStore::OPTION_PREFIX ), 'The exhausted pass must have collected everything it scanned.' );
 
 		$this->maintenance->handle( array(), $this->run_context );
 
-		self::assertSame( array(), $this->names_under( RunScratchStore::OPTION_PREFIX ), 'A later pass must resume from the cursor and finish.' );
+		self::assertSame( array(), $this->names_under( RunDataStore::OPTION_PREFIX ), 'A later pass must resume from the cursor and finish.' );
 		self::assertArrayNotHasKey( $this->cursor_option, $this->wpdb->rows, 'A completed sweep must drop its cursor.' );
 	}
 
@@ -1028,30 +1084,30 @@ final class MaintenanceJobTest extends TestCase {
 	}
 
 	/**
-	 * Stores a requested count of orphaned run-scratch rows with no run behind them.
+	 * Stores a requested count of orphaned run-data rows with no run behind them.
 	 *
-	 * @param   int $count Number of scratch rows.
+	 * @param   int $count Number of data rows.
 	 *
 	 * @return  void
 	 */
-	private function put_orphaned_scratch_names( int $count ): void {
+	private function put_orphaned_data_names( int $count ): void {
 		$raw = \maybe_serialize( array( 'seen' => array( 'a' ) ) );
 		self::assertIsString( $raw );
 
 		for ( $index = 0; $index < $count; ++$index ) {
-			$this->wpdb->put( self::scratch_name( $index ), $raw );
+			$this->wpdb->put( self::data_name( $index ), $raw );
 		}
 	}
 
 	/**
-	 * Returns one complete canonical run-scratch option name.
+	 * Returns one complete canonical run-data option name.
 	 *
 	 * @param   int $index Stable lexical index.
 	 *
 	 * @return  string
 	 */
-	private static function scratch_name( int $index ): string {
-		return RunScratchStore::OPTION_PREFIX . 'sweep-tests:scratch_' . \sprintf( '%020d-%019d', self::NOW, $index );
+	private static function data_name( int $index ): string {
+		return RunDataStore::OPTION_PREFIX . 'sweep-tests:run-data_' . \sprintf( '%020d-%019d', self::NOW, $index );
 	}
 
 	/**
@@ -1131,17 +1187,17 @@ final class MaintenanceJobTest extends TestCase {
 	 * @param   string|null $runs          Active-run cursor.
 	 * @param   string|null $locks         Overlap-lock cursor.
 	 * @param   string|null $registrations Schedule-registration cursor.
-	 * @param   string|null $scratch       Run-scratch cursor.
+	 * @param   string|null $data       Run-data cursor.
 	 *
 	 * @return  string
 	 */
-	private static function cursor_bytes( ?string $runs, ?string $locks, ?string $registrations, ?string $scratch = null ): string {
+	private static function cursor_bytes( ?string $runs, ?string $locks, ?string $registrations, ?string $data = null ): string {
 		$raw = \maybe_serialize(
 			array(
 				'runs'          => $runs,
 				'locks'         => $locks,
 				'registrations' => $registrations,
-				'scratch'       => $scratch,
+				'data'          => $data,
 			)
 		);
 		self::assertIsString( $raw );
@@ -1180,7 +1236,7 @@ final class MaintenanceJobTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return  array{runs: string|null, locks: string|null, registrations: string|null, scratch: string|null}
+	 * @return  array{runs: string|null, locks: string|null, registrations: string|null, data: string|null}
 	 */
 	private function cursor_state(): array {
 		$raw = $this->wpdb->rows[ $this->cursor_option ] ?? null;
@@ -1190,13 +1246,13 @@ final class MaintenanceJobTest extends TestCase {
 		self::assertArrayHasKey( 'runs', $state );
 		self::assertArrayHasKey( 'locks', $state );
 		self::assertArrayHasKey( 'registrations', $state );
-		self::assertArrayHasKey( 'scratch', $state );
+		self::assertArrayHasKey( 'data', $state );
 
 		return array(
 			'runs'          => \is_string( $state['runs'] ) ? $state['runs'] : null,
 			'locks'         => \is_string( $state['locks'] ) ? $state['locks'] : null,
 			'registrations' => \is_string( $state['registrations'] ) ? $state['registrations'] : null,
-			'scratch'       => \is_string( $state['scratch'] ) ? $state['scratch'] : null,
+			'data'          => \is_string( $state['data'] ) ? $state['data'] : null,
 		);
 	}
 

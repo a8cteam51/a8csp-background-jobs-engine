@@ -2,17 +2,17 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\CompletionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobExecutionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobOptions;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunCompletionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunContextInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 
 /**
  * Records standard job executions and the completion-role callbacks the engine drives for them.
  */
-final class RecordingCompletionJob implements JobExecutionInterface, CompletionInterface {
+final class RecordingCompletionJob implements JobExecutionInterface, RunCompletionInterface {
 	// region FIELDS AND CONSTANTS.
 
 	/**

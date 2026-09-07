@@ -493,7 +493,7 @@ final class MisfirePolicyTest extends AbstractIntegrationTestCase {
 	 *     misfire_skips: int,
 	 *     overlap_skips: int,
 	 *     occurrence_visible: bool,
-	 *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}|array{state: 'held', run_id: string, stale: bool}
+	 *     lock: array{state: 'free'|'invalid'|'not_declared'|'not_inspected'|'overlap_allowed'|'read_failed'|'resolver_failed'}|array{state: 'held', run_id: string, stale: bool}
 	 * }
 	 */
 	private function registration( string $scope, string $name ): array {

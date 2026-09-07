@@ -15,7 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * Consumer-owned scratch values that live and die with one run.
+ * Consumer-owned data values that live and die with one run.
  *
  * A Chunked Job accumulates across chunks and has nowhere but storage to put what it accumulates.
  * What it puts there belongs to the run rather than to the job, so the engine owns the lifetime: one
@@ -30,13 +30,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
  * @since   1.0.0
  * @version 1.0.0
  */
-final readonly class RunScratchStore {
+final readonly class RunDataStore {
 	// region FIELDS AND CONSTANTS
 
 	/**
-	 * Maximum bytes accepted for one run's complete serialized scratch row.
+	 * Maximum bytes accepted for one run's complete serialized data row.
 	 *
-	 * Scratch shares the active-run row's option-table and object-cache substrate, so it accepts the
+	 * Run data shares the active-run row's option-table and object-cache substrate, so it accepts the
 	 * same complete-row ceiling.
 	 *
 	 * @since   1.0.0
@@ -47,7 +47,7 @@ final readonly class RunScratchStore {
 	public const int MAX_ROW_BYTES = RunStore::MAX_ROW_BYTES;
 
 	/**
-	 * Maximum bytes accepted for one scratch key.
+	 * Maximum bytes accepted for one data key.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -57,17 +57,17 @@ final readonly class RunScratchStore {
 	public const int MAX_KEY_BYTES = 64;
 
 	/**
-	 * Prefix for per-run scratch option names.
+	 * Prefix for per-run data option names.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @var     string
 	 */
-	public const string OPTION_PREFIX = 'a8csp_bgje_run_scratch_';
+	public const string OPTION_PREFIX = 'a8csp_bgje_run_data_';
 
 	/**
-	 * Grammar accepted for one scratch key.
+	 * Grammar accepted for one data key.
 	 *
 	 * The job and schedule name grammar, so a consumer already knows it.
 	 *
@@ -111,12 +111,12 @@ final readonly class RunScratchStore {
 	// region METHODS
 
 	/**
-	 * Returns whether a candidate satisfies the scratch key grammar and byte ceiling.
+	 * Returns whether a candidate satisfies the data key grammar and byte ceiling.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $key Scratch key candidate.
+	 * @param   string $key Run data key candidate.
 	 *
 	 * @return  bool
 	 */
@@ -125,7 +125,7 @@ final readonly class RunScratchStore {
 	}
 
 	/**
-	 * Returns the complete scratch option name for one run.
+	 * Returns the complete data option name for one run.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -140,7 +140,7 @@ final readonly class RunScratchStore {
 	}
 
 	/**
-	 * Parses a work identity and run identifier from one scratch option name.
+	 * Parses a work identity and run identifier from one data option name.
 	 *
 	 * The sweep needs both to ask whether the run still exists, which is why the name carries them
 	 * literally rather than hashed.
@@ -167,23 +167,23 @@ final readonly class RunScratchStore {
 	}
 
 	/**
-	 * Returns one run's scratch value, or null when the run has stored nothing under that key.
+	 * Returns one run's data value, or null when the run has stored nothing under that key.
 	 *
-	 * Null separates an absent key from one holding an empty array, which is the distinction a
+	 * Null separates an absent key from one holding an empty array — the distinction a
 	 * "have I generated this yet" check is made of.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * A failed read is reported rather than folded into the absent answer: a caller treating a
-	 * database fault as "not generated yet" would redo the work the scratch exists to avoid.
+	 * database fault as "not generated yet" would redo the work the data exists to avoid.
 	 *
 	 * @param   string $run_id Run identifier.
-	 * @param   string $key    Scratch key.
+	 * @param   string $key    Run data key.
 	 *
 	 * @return  AbstractResult<array<array-key, mixed>|null, EngineError>
 	 */
-	#[\NoDiscard( 'a scratch read result must be handled, not dropped' )]
+	#[\NoDiscard( 'a data read result must be handled, not dropped' )]
 	public function recall( string $run_id, string $key ): AbstractResult {
 		$option_name = self::option_name( $this->identity, $run_id );
 		$selected    = $this->rows->read( $option_name );
@@ -205,20 +205,20 @@ final readonly class RunScratchStore {
 	}
 
 	/**
-	 * Stores one run's scratch value under one key.
+	 * Stores one run's data value under one key.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $run_id Run identifier.
-	 * @param   string                  $key    Scratch key.
+	 * @param   string                  $key    Run data key.
 	 * @param   array<array-key, mixed> $value  Portable value to store.
 	 *
-	 * @throws  \LogicException When WordPress does not serialize the scratch row to a string.
+	 * @throws  \LogicException When WordPress does not serialize the data row to a string.
 	 *
 	 * @return  bool|null True when the write is confirmed, null when the complete row would exceed its ceiling.
 	 */
-	#[\NoDiscard( 'a scratch write result must be handled, not dropped' )]
+	#[\NoDiscard( 'a data write result must be handled, not dropped' )]
 	public function remember( string $run_id, string $key, array $value ): ?bool {
 		$option_name = self::option_name( $this->identity, $run_id );
 
@@ -230,11 +230,11 @@ final readonly class RunScratchStore {
 
 			$expected_raw = $selected->value;
 			$decoded      = null === $expected_raw ? null : RawOptionDecoder::decode( $expected_raw );
-			$scratch      = \is_array( $decoded ) ? $decoded : array();
+			$data         = \is_array( $decoded ) ? $decoded : array();
 
-			$scratch[ $key ] = $value;
+			$data[ $key ] = $value;
 
-			$replacement_raw = self::serialize_scratch( $scratch );
+			$replacement_raw = self::serialize_data( $data );
 			if ( self::MAX_ROW_BYTES < \strlen( $replacement_raw ) ) {
 				return null;
 			}
@@ -263,7 +263,7 @@ final readonly class RunScratchStore {
 	}
 
 	/**
-	 * Drops one run's complete scratch row.
+	 * Drops one run's complete data row.
 	 *
 	 * Byte-exact like every other engine delete, so a write that landed between the read and the
 	 * delete is left rather than clobbered. Losing that race strands one row, which is the state the
@@ -274,9 +274,9 @@ final readonly class RunScratchStore {
 	 *
 	 * @param   string $run_id Run identifier.
 	 *
-	 * @return  bool Whether no scratch row remains for the run.
+	 * @return  bool Whether no data row remains for the run.
 	 */
-	#[\NoDiscard( 'a scratch delete result must be handled, not dropped' )]
+	#[\NoDiscard( 'a data delete result must be handled, not dropped' )]
 	public function forget( string $run_id ): bool {
 		$option_name = self::option_name( $this->identity, $run_id );
 		$selected    = $this->rows->read( $option_name );
@@ -295,21 +295,21 @@ final readonly class RunScratchStore {
 	// region HELPERS
 
 	/**
-	 * Returns a scratch row's exact WordPress option representation.
+	 * Returns a data row's exact WordPress option representation.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   array<array-key, mixed> $scratch Complete scratch state.
+	 * @param   array<array-key, mixed> $data Complete data state.
 	 *
-	 * @throws  \LogicException When WordPress does not serialize the scratch row to a string.
+	 * @throws  \LogicException When WordPress does not serialize the data row to a string.
 	 *
 	 * @return  string
 	 */
-	private static function serialize_scratch( array $scratch ): string {
-		$raw = \maybe_serialize( $scratch );
+	private static function serialize_data( array $data ): string {
+		$raw = \maybe_serialize( $data );
 		if ( ! \is_string( $raw ) ) {
-			throw new \LogicException( 'WordPress must serialize run scratch to a string.' );
+			throw new \LogicException( 'WordPress must serialize run data to a string.' );
 		}
 
 		return $raw;

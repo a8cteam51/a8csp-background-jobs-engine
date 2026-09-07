@@ -13,11 +13,10 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
  * per-consumer restatement of what the consumer already told `jobs()->register()`. A hook name
  * spelled by hand cannot be checked, and one spelled wrong is a listener that silently never fires.
  *
- * This is sugar over `a8csp_bgje/completed/{identity}`, not a second channel. Registration
- * subscribes the declared object to that hook and nothing else changes: the hook still fires for
- * every listener, the payload is the hook's payload, and the delivery guarantees are the hook's
- * guarantees. A consumer that prefers the hook keeps using it, and one that declares this role can
- * still add its own listeners beside it.
+ * Registration subscribes the declared object to `a8csp_bgje/completed/{identity}`, so this role is
+ * one of that hook's listeners rather than a mechanism beside it: the payload is the hook's payload
+ * and the delivery guarantees are the hook's guarantees. A consumer may declare the role, add its
+ * own listeners, or both.
  *
  * Two consequences follow from being a hook listener rather than a separate mechanism, and both
  * matter to an implementation:
@@ -37,14 +36,13 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
  * @since   1.0.0
  * @version 1.0.0
  */
-interface CompletionInterface {
+interface RunCompletionInterface {
 	// region METHODS
 
 	/**
 	 * Reacts to one completed run of the work this object executes.
 	 *
-	 * The parameters mirror `a8csp_bgje/completed/{identity}` exactly, so one signature documents
-	 * both channels.
+	 * The parameters are `a8csp_bgje/completed/{identity}`'s, in its order.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

@@ -58,17 +58,17 @@ final readonly class StoreFactory {
 	}
 
 	/**
-	 * Constructs the per-run scratch store for a job or chunked job identity.
+	 * Constructs the per-run data store for a job or chunked job identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
-	 * @return  RunScratchStore
+	 * @return  RunDataStore
 	 */
-	public function run_scratch( Identity $identity ): RunScratchStore {
-		return new RunScratchStore( $identity, $this->rows );
+	public function run_data( Identity $identity ): RunDataStore {
+		return new RunDataStore( $identity, $this->rows );
 	}
 
 	/**

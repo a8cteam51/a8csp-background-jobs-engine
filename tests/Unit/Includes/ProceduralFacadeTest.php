@@ -29,10 +29,10 @@ use PHPUnit\Framework\TestCase;
 #[CoversFunction( 'a8csp_bgje_dispatch_job_at' )]
 #[CoversFunction( 'a8csp_bgje_sync_schedules' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_schedule' )]
-#[CoversFunction( 'a8csp_bgje_registered_schedules' )]
+#[CoversFunction( 'a8csp_bgje_inspect_schedules' )]
 #[CoversFunction( 'a8csp_bgje_inspect_run' )]
-#[CoversFunction( 'a8csp_bgje_remember_run_scratch' )]
-#[CoversFunction( 'a8csp_bgje_recall_run_scratch' )]
+#[CoversFunction( 'a8csp_bgje_set_run_data' )]
+#[CoversFunction( 'a8csp_bgje_get_run_data' )]
 #[CoversFunction( 'a8csp_bgje_last_completed_run' )]
 #[CoversFunction( 'a8csp_bgje_retry_failed_run' )]
 #[CoversFunction( 'a8csp_bgje_cancel_run' )]
@@ -266,11 +266,11 @@ final class ProceduralFacadeTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_registered_schedules_alias_projects_the_bound_scope(): void {
+	public function test_inspect_schedules_alias_projects_the_bound_scope(): void {
 		self::assertTrue( \a8csp_bgje_register_job( self::SCOPE, self::job( 'scheduled-job' ) ) );
 		self::assertTrue( \a8csp_bgje_sync_schedules( self::SCOPE, new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job' ) ) );
 
-		$registered = \a8csp_bgje_registered_schedules( self::SCOPE );
+		$registered = \a8csp_bgje_inspect_schedules( self::SCOPE );
 
 		self::assertIsArray( $registered );
 		self::assertSame( self::NOW, $registered['observed_at'] );
@@ -288,32 +288,32 @@ final class ProceduralFacadeTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_registered_schedules_alias_rejects_an_invalid_scope(): void {
-		$result = \a8csp_bgje_registered_schedules( 'Not A Scope' );
+	public function test_inspect_schedules_alias_rejects_an_invalid_scope(): void {
+		$result = \a8csp_bgje_inspect_schedules( 'Not A Scope' );
 
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( ErrorCode::InvalidArgument->value, $result->get_error_code() );
 	}
 
 	/**
-	 * The scratch aliases round-trip one run's value and reject a malformed run identifier.
+	 * The data aliases round-trip one run's value and reject a malformed run identifier.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_run_scratch_aliases_delegate_to_the_bound_engine(): void {
-		self::assertTrue( \a8csp_bgje_register_job( self::SCOPE, self::job( 'scratch-job' ) ) );
-		$run = \a8csp_bgje_dispatch_job( self::SCOPE, 'scratch-job' );
+	public function test_run_data_aliases_delegate_to_the_bound_engine(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::SCOPE, self::job( 'data-job' ) ) );
+		$run = \a8csp_bgje_dispatch_job( self::SCOPE, 'data-job' );
 		self::assertInstanceOf( Run::class, $run );
 
-		self::assertNull( \a8csp_bgje_recall_run_scratch( self::SCOPE, 'scratch-job', (string) $run->id, 'seen' ) );
-		self::assertTrue( \a8csp_bgje_remember_run_scratch( self::SCOPE, 'scratch-job', (string) $run->id, 'seen', array( 'hosts' => array( 'a' ) ) ) );
+		self::assertNull( \a8csp_bgje_get_run_data( self::SCOPE, 'data-job', (string) $run->id, 'seen' ) );
+		self::assertTrue( \a8csp_bgje_set_run_data( self::SCOPE, 'data-job', (string) $run->id, 'seen', array( 'hosts' => array( 'a' ) ) ) );
 
-		self::assertSame( array( 'hosts' => array( 'a' ) ), \a8csp_bgje_recall_run_scratch( self::SCOPE, 'scratch-job', (string) $run->id, 'seen' ) );
+		self::assertSame( array( 'hosts' => array( 'a' ) ), \a8csp_bgje_get_run_data( self::SCOPE, 'data-job', (string) $run->id, 'seen' ) );
 
-		$rejected = \a8csp_bgje_remember_run_scratch( self::SCOPE, 'scratch-job', 'not-a-run-id', 'seen', array() );
+		$rejected = \a8csp_bgje_set_run_data( self::SCOPE, 'data-job', 'not-a-run-id', 'seen', array() );
 		self::assertInstanceOf( \WP_Error::class, $rejected );
 		self::assertSame( ErrorCode::InvalidArgument->value, $rejected->get_error_code() );
 		self::assertSame( 'Run identifier is malformed; pass a run ID the engine returned.', $rejected->get_error_message() );

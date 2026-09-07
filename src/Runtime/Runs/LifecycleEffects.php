@@ -212,14 +212,14 @@ final readonly class LifecycleEffects {
 		}
 
 		if ( $run_store->delete_exact( $run_id, $terminal_raw ) ) {
-			return $this->drop_run_scratch( $identity, $run_id );
+			return $this->drop_run_data( $identity, $run_id );
 		}
 
 		$inspected = $run_store->inspect( $run_id );
 		if ( ! $inspected->is_failure() ) {
 			$snapshot = $inspected->value;
 			if ( null === $snapshot ) {
-				return $this->drop_run_scratch( $identity, $run_id );
+				return $this->drop_run_data( $identity, $run_id );
 			}
 			if ( $terminal_raw !== $snapshot['raw'] ) {
 				return false;
@@ -385,7 +385,7 @@ final readonly class LifecycleEffects {
 	// region HELPERS
 
 	/**
-	 * Drops one finished run's consumer scratch row and reports the run finished regardless.
+	 * Drops one finished run's consumer data row and reports the run finished regardless.
 	 *
 	 * Called only from the gated finish, so every required effect is already marked and no hook
 	 * replay is still owed the values. A delete that does not land leaves one row for the
@@ -400,10 +400,10 @@ final readonly class LifecycleEffects {
 	 *
 	 * @return  true
 	 */
-	private function drop_run_scratch( Identity $identity, string $run_id ): bool {
-		if ( ! $this->stores->run_scratch( $identity )->forget( $run_id ) ) {
+	private function drop_run_data( Identity $identity, string $run_id ): bool {
+		if ( ! $this->stores->run_data( $identity )->forget( $run_id ) ) {
 			$this->logger->warning(
-				'Run scratch could not be dropped for a finished run; the hourly maintenance sweep removes scratch whose run is gone, so no action is needed unless the warning recurs.',
+				'Run data could not be dropped for a finished run; the hourly maintenance sweep removes data whose run is gone, so no action is needed unless the warning recurs.',
 				array(
 					'identity' => (string) $identity,
 					'run_id'   => $run_id,

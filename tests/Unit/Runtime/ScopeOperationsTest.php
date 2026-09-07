@@ -13,6 +13,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
@@ -826,7 +827,7 @@ final class ScopeOperationsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_registered_schedules_reports_declared_registrations(): void {
+	public function test_inspect_schedules_reports_declared_registrations(): void {
 		$client = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		$client->register( ( new RecordingJob( 'prune' ) )->definition() );
@@ -842,7 +843,7 @@ final class ScopeOperationsTest extends TestCase {
 		// The backend answers occurrence visibility, so drive it rather than asserting its default.
 		$this->rig->backend()->scheduled = true;
 
-		$registered = $client->registered_schedules();
+		$registered = $client->inspect_schedules();
 
 		self::assertIsArray( $registered );
 		self::assertSame( self::NOW, $registered['observed_at'] );
@@ -866,6 +867,49 @@ final class ScopeOperationsTest extends TestCase {
 	}
 
 	/**
+	 * Schedule-registration inspection runs no consumer code and reads no lock row.
+	 *
+	 * The verb is advertised as read-only. Resolving each registration's lock state would invoke the
+	 * consumer's overlap-key closure and read that lane's lock row — observable side effects, and a
+	 * cost paid for a projection this verb does not return.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_does_not_invoke_the_overlap_key_resolver(): void {
+		$resolved = 0;
+		$client   = $this->rig->operations( 'facade-tests' );
+		$client->register(
+			( new RecordingJob( 'refresh-index' ) )->definition(
+				new JobOptions(
+					overlap_key: static function ( array $args ) use ( &$resolved ): string {
+						++$resolved;
+
+						return 'lane';
+					}
+				)
+			)
+		);
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$resolved                            = 0;
+		$this->rig->wpdb()->recorded_queries = array();
+
+		$registered = $client->inspect_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertCount( 1, $registered['schedules'] );
+		self::assertSame( 0, $resolved, 'A read-only projection must not run the consumer overlap-key resolver.' );
+		self::assertSame(
+			array(),
+			\array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_contains( $query, OverlapGuard::OPTION_PREFIX ) ) ),
+			'A read-only projection must not read execution-overlap lock rows.'
+		);
+	}
+
+	/**
 	 * Schedule-registration inspection is confined to the bound scope.
 	 *
 	 * @since   1.0.0
@@ -873,7 +917,7 @@ final class ScopeOperationsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_registered_schedules_excludes_another_scope(): void {
+	public function test_inspect_schedules_excludes_another_scope(): void {
 		$client = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
@@ -882,7 +926,7 @@ final class ScopeOperationsTest extends TestCase {
 		$neighbour->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		self::assertTrue( $neighbour->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
 
-		$registered = $client->registered_schedules();
+		$registered = $client->inspect_schedules();
 
 		self::assertIsArray( $registered );
 		self::assertSame( array( 'facade-tests:nightly' ), \array_column( $registered['schedules'], 'identity' ) );
@@ -896,7 +940,7 @@ final class ScopeOperationsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_registered_schedules_reports_a_null_recurrence_for_an_undeclared_registration(): void {
+	public function test_inspect_schedules_reports_a_null_recurrence_for_an_undeclared_registration(): void {
 		// A registry row with no request-local declaration is the state a request that did not sync sees.
 		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( 'facade-tests:refresh-index' )->schedule_registration(
 			array(
@@ -909,7 +953,7 @@ final class ScopeOperationsTest extends TestCase {
 		);
 		$this->rig->wpdb()->put( $option_name, $raw );
 
-		$registered = $this->rig->operations( 'facade-tests' )->registered_schedules();
+		$registered = $this->rig->operations( 'facade-tests' )->inspect_schedules();
 
 		self::assertIsArray( $registered );
 		self::assertSame(
@@ -935,13 +979,13 @@ final class ScopeOperationsTest extends TestCase {
 	 *
 	 * @return  void
 	 */
-	public function test_registered_schedules_reports_an_unreadable_registry(): void {
+	public function test_inspect_schedules_reports_an_unreadable_registry(): void {
 		$client = $this->rig->operations( 'facade-tests' );
 		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
 		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
 
 		$this->rig->wpdb()->fail_next_read_at( 'query_filtered' );
-		$result = $client->registered_schedules();
+		$result = $client->inspect_schedules();
 
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );

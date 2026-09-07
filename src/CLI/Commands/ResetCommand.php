@@ -8,8 +8,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Maintenance\MaintenanceJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\LatestRunPointer;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunDataStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunScratchStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\OccurrenceDelivery;
@@ -45,7 +45,7 @@ final readonly class ResetCommand {
 		RunStore::OPTION_PREFIX,
 		FailedRunStore::OPTION_PREFIX,
 		RunHistory::OPTION_PREFIX,
-		RunScratchStore::OPTION_PREFIX,
+		RunDataStore::OPTION_PREFIX,
 		LatestRunPointer::OPTION_PREFIX,
 		OverlapGuard::OPTION_PREFIX,
 		OccurrenceLease::OPTION_PREFIX,

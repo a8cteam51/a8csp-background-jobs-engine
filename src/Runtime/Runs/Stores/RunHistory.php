@@ -179,14 +179,29 @@ final readonly class RunHistory {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  array{run_id: string, at: int}|array{} Empty when the identity has recorded no completion.
+	 * A row written before the slot existed has none, so the retained terminal buffer answers for it
+	 * until the identity's next completion fills the slot. That keeps the answer at least as good as
+	 * it was before the slot, rather than briefly worse across an upgrade.
 	 *
-	 * @phpstan-return array{run_id: string, at: int}|array{}|null
+	 * @return  array|null Empty when the identity has recorded no completion; null when the authoritative row read fails.
+	 *
+	 * @phpstan-return array{run_id: string, at: int|null}|array{}|null
 	 */
 	public function last_completed(): ?array {
 		$history = $this->history_from_raw_row();
+		if ( null === $history ) {
+			return null;
+		}
+		if ( array() !== $history['last_completed'] ) {
+			return $history['last_completed'];
+		}
 
-		return null === $history ? null : $history['last_completed'];
+		$buffered = \array_find( \array_reverse( $history['terminal'] ), static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status'] );
+
+		return null === $buffered ? array() : array(
+			'run_id' => $buffered['run_id'],
+			'at'     => $buffered['at'],
+		);
 	}
 
 	// endregion
@@ -256,11 +271,12 @@ final readonly class RunHistory {
 				$history['terminal'][]      = $entry;
 				$hash_history['terminal'][] = $entry;
 
-				// Compared on terminalization time rather than run identifier: identifiers order by a
-				// random suffix within one second, so they cannot rank two completions. `>=` keeps
-				// recording order deciding a tie, while a replayed older completion cannot move the
-				// slot backwards once a later one has landed.
-				if ( RunStatus::Completed === $status && null !== $at && $at >= ( $history['last_completed']['at'] ?? \PHP_INT_MIN ) ) {
+				// Recording order decides, matching the terminal buffers beside it. Gating on the
+				// stored timestamp instead would let one completion stamped by a skewed clock beat
+				// every later one for good, with no way back. The replay such a gate would guard
+				// against is already answered by the identifier check above while the run is still
+				// buffered, and corrects itself at the next completion once it is not.
+				if ( RunStatus::Completed === $status && null !== $at ) {
 					$history['last_completed'] = array(
 						'run_id' => $run_id,
 						'at'     => $at,

@@ -4,16 +4,16 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
-use A8C\SpecialProjects\BackgroundJobsEngine\CompletionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunCompletionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunScratchStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunDataStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -81,7 +81,7 @@ final readonly class ScopeOperations {
 	 *
 	 * @param   JobDefinition $definition Job definition to register.
 	 *
-	 * An execution object declaring {@see CompletionInterface} is subscribed to this identity's
+	 * An execution object declaring {@see RunCompletionInterface} is subscribed to this identity's
 	 * completed hook here, because registration is where the engine is handed the object and the
 	 * identity in the same call.
 	 *
@@ -103,7 +103,7 @@ final readonly class ScopeOperations {
 
 		$this->dispatcher->register( $identity, $definition );
 
-		if ( $definition->execution instanceof CompletionInterface ) {
+		if ( $definition->execution instanceof RunCompletionInterface ) {
 			self::subscribe_completion_role( $identity, $definition->execution );
 		}
 	}
@@ -227,8 +227,11 @@ final readonly class ScopeOperations {
 	 * @return  array|\WP_Error
 	 */
 	#[\NoDiscard( 'a schedule-registration inspection result must be handled, not dropped' )]
-	public function registered_schedules(): array|\WP_Error {
-		$inspected = $this->inspection->schedules( $this->scope );
+	public function inspect_schedules(): array|\WP_Error {
+		// Lock state is not projected here, so it is not resolved either — resolving it would run the
+		// consumer's overlap-key resolver and read a lock row per registration for a value this verb
+		// discards, which a read-only query has no business doing.
+		$inspected = $this->inspection->schedules( $this->scope, with_lock: false );
 		if ( null === $inspected ) {
 			return new \WP_Error( ErrorCode::StorageFailed->value, 'The schedule registry could not be read; repair WordPress option reads and retry.' );
 		}
@@ -288,14 +291,12 @@ final readonly class ScopeOperations {
 	}
 
 	/**
-	 * Returns the most recently recorded completed run retained for one background-work name.
+	 * Returns the last completed run for one background-work name.
 	 *
-	 * The lookup covers only the retained history window. Each history buffer retains at most the
-	 * positive `a8csp_bgje/history_size` filter value, 30 by default. A completed run
-	 * older than that window returns null as if absent. Clients needing indefinite
-	 * retention keep their own pointer from the completed lifecycle hook. History
-	 * is recorded after those notifications, so a lookup inside either observes the previous retained
-	 * completion.
+	 * Read from the non-evicting slot rather than the capped history buffers, so the answer outlives
+	 * any number of later outcomes; {@see RunHistory::last_completed()} owns that guarantee and the
+	 * order it records in. History is written after the terminal notifications, so a lookup from
+	 * inside one observes the previous completion rather than the run being notified about.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -324,39 +325,38 @@ final readonly class ScopeOperations {
 	/**
 	 * Stores one consumer value for the duration of one run.
 	 *
-	 * Scratch belongs to the run rather than to the job: the engine drops the whole row wherever it
-	 * drops the run row, however the run ended, so a consumer cannot forget to clean up after a
-	 * terminal path it did not think about. Values must survive `serialize()`/`unserialize()`
-	 * without materializing an object, which is the same portability contract start arguments carry.
+	 * Values must survive `serialize()`/`unserialize()` without materializing an object, which is the
+	 * same portability contract start arguments carry. {@see Runs\Stores\RunDataStore} owns the
+	 * run-scoped lifetime this writes into.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   string                  $name   Scope-local job or chunked job name.
 	 * @param   string                  $run_id Run identifier.
-	 * @param   string                  $key    Scratch key.
+	 * @param   string                  $key    Run data key.
 	 * @param   array<array-key, mixed> $value  Portable value to store.
 	 *
 	 * @throws  \InvalidArgumentException When the identity, run identifier, key, or value is invalid.
 	 *
 	 * @return  true|\WP_Error
 	 */
-	#[\NoDiscard( 'a scratch write failure must be handled, not dropped' )]
-	public function remember_run_scratch( string $name, string $run_id, string $key, array $value ): true|\WP_Error {
+	#[\NoDiscard( 'a data write failure must be handled, not dropped' )]
+	public function set_run_data( string $name, string $run_id, string $key, array $value ): true|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
-		$context  = \sprintf( 'Background-work "%1$s" scratch key "%2$s"', $name, $key );
-		self::assert_scratch_key( $key, $name );
+		$context  = \sprintf( 'Background-work "%1$s" data key "%2$s"', $name, $key );
+		self::assert_data_key( $key, $name );
 		self::assert_canonical_run_id( $run_id, $context );
 
-		// Only portability here: the run's complete scratch row is the byte ceiling that applies.
+		// Only portability here: the run's complete data row is the byte ceiling that applies.
 		self::assert_portable_tree( $value, $context . ' value' );
 
-		$stored = $this->stores->run_scratch( $identity )->remember( $run_id, $key, $value );
+		$stored = $this->stores->run_data( $identity )->remember( $run_id, $key, $value );
 		if ( true === $stored ) {
 			return true;
 		}
 		if ( null === $stored ) {
-			return new \WP_Error( ErrorCode::PayloadRejected->value, \sprintf( '%1$s does not fit; the run\'s complete scratch row is limited to %2$d serialized bytes.', $context, RunScratchStore::MAX_ROW_BYTES ) );
+			return new \WP_Error( ErrorCode::PayloadRejected->value, \sprintf( '%1$s does not fit; the run\'s complete data row is limited to %2$d serialized bytes.', $context, RunDataStore::MAX_ROW_BYTES ) );
 		}
 
 		return new \WP_Error( ErrorCode::StorageFailed->value, \sprintf( '%s could not be stored; repair WordPress option writes and retry.', $context ) );
@@ -372,19 +372,19 @@ final readonly class ScopeOperations {
 	 *
 	 * @param   string $name   Scope-local job or chunked job name.
 	 * @param   string $run_id Run identifier.
-	 * @param   string $key    Scratch key.
+	 * @param   string $key    Run data key.
 	 *
 	 * @throws  \InvalidArgumentException When the identity, run identifier, or key is invalid.
 	 *
 	 * @return  array<array-key, mixed>|null|\WP_Error
 	 */
-	#[\NoDiscard( 'a scratch read result must be handled, not dropped' )]
-	public function recall_run_scratch( string $name, string $run_id, string $key ): array|null|\WP_Error {
+	#[\NoDiscard( 'a data read result must be handled, not dropped' )]
+	public function get_run_data( string $name, string $run_id, string $key ): array|null|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
-		self::assert_scratch_key( $key, $name );
-		self::assert_canonical_run_id( $run_id, \sprintf( 'Background-work "%1$s" scratch key "%2$s"', $name, $key ) );
+		self::assert_data_key( $key, $name );
+		self::assert_canonical_run_id( $run_id, \sprintf( 'Background-work "%1$s" data key "%2$s"', $name, $key ) );
 
-		return BoundaryErrorMapper::map( $this->stores->run_scratch( $identity )->recall( $run_id, $key ) );
+		return BoundaryErrorMapper::map( $this->stores->run_data( $identity )->recall( $run_id, $key ) );
 	}
 
 	/**
@@ -456,27 +456,21 @@ final readonly class ScopeOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity            $identity  Complete scope-qualified work identity.
-	 * @param   CompletionInterface $execution Registered execution object declaring the completion role.
+	 * @param   Identity               $identity  Complete scope-qualified work identity.
+	 * @param   RunCompletionInterface $execution Registered execution object declaring the completion role.
 	 *
 	 * @return  void
 	 */
-	private static function subscribe_completion_role( Identity $identity, CompletionInterface $execution ): void {
-		\add_action(
-			'a8csp_bgje/completed/' . (string) $identity,
-			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $execution ): void {
-				$execution->on_completed( $run_id, $start_args, $previous_completed_run_id );
-			},
-			10,
-			3
-		);
+	private static function subscribe_completion_role( Identity $identity, RunCompletionInterface $execution ): void {
+		// The role's signature is the hook's, so the object's own method is the listener.
+		\add_action( 'a8csp_bgje/completed/' . (string) $identity, array( $execution, 'on_completed' ), 10, 3 );
 	}
 
 	/**
 	 * Returns one value tree's encoded form, rejecting anything that would not survive storage.
 	 *
 	 * Portability is separate from any byte ceiling because the ceilings differ per surface: start
-	 * arguments are capped in JSON bytes, while scratch is capped by its complete serialized row.
+	 * arguments are capped in JSON bytes, while data is capped by its complete serialized row.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -504,22 +498,22 @@ final readonly class ScopeOperations {
 	}
 
 	/**
-	 * Rejects a scratch key that violates the key contract.
+	 * Rejects a data key that violates the key contract.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string $key  Scratch key.
+	 * @param   string $key  Run data key.
 	 * @param   string $name Scope-local job or chunked job name.
 	 *
 	 * @throws  \InvalidArgumentException When the key violates its grammar or byte ceiling.
 	 *
 	 * @return  void
 	 */
-	private static function assert_scratch_key( string $key, string $name ): void {
-		if ( ! RunScratchStore::is_valid_key( $key ) ) {
+	private static function assert_data_key( string $key, string $name ): void {
+		if ( ! RunDataStore::is_valid_key( $key ) ) {
 			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( 'Background-work "%1$s" scratch key "%2$s" is invalid; use 1 to %3$d bytes matching [a-z0-9_-]+.', $name, $key, RunScratchStore::MAX_KEY_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new \InvalidArgumentException( \sprintf( 'Background-work "%1$s" data key "%2$s" is invalid; use 1 to %3$d bytes matching [a-z0-9_-]+.', $name, $key, RunDataStore::MAX_KEY_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 	}
 

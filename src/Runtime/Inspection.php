@@ -43,7 +43,7 @@ use Psr\Clock\ClockInterface;
  *     misfire_skips: int,
  *     overlap_skips: int,
  *     occurrence_visible: bool,
- *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
+ *     lock: array{state: 'free'|'invalid'|'not_declared'|'not_inspected'|'overlap_allowed'|'read_failed'|'resolver_failed'}
  *         |array{state: 'held', run_id: string, stale: bool}
  * }
  * @phpstan-type LiveRunEntry array{
@@ -172,7 +172,7 @@ final readonly class Inspection {
 	 *
 	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
-	 * @return  AbstractResult<array{run_id: string, at: int}|null, EngineError>
+	 * @return  AbstractResult<array{run_id: string, at: int|null}|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run inspection result must be handled, not dropped' )]
 	public function last_completed_run( Identity $identity ): AbstractResult {
@@ -190,13 +190,18 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $scope Exact scope filter, or null for every scope.
+	 * Resolving a registration's lock state runs the consumer's overlap-key resolver and reads that
+	 * lane's lock row, so a caller that does not render lock state asks for it to be skipped rather
+	 * than paying for a projection it discards.
+	 *
+	 * @param   string|null $scope     Exact scope filter, or null for every scope.
+	 * @param   bool        $with_lock Whether to resolve each registration's execution-overlap lock state.
 	 *
 	 * @phpstan-return array{observed_at: int, dormant_candidate: bool, entries: list<ScheduleEntry>}|null
 	 *
 	 * @return  array|null Null when authoritative schedule-registry inspection fails.
 	 */
-	public function schedules( ?string $scope = null ): ?array {
+	public function schedules( ?string $scope = null, bool $with_lock = true ): ?array {
 		$observed_at = $this->clock->now()->getTimestamp();
 		$read        = $this->schedules->all_registrations();
 		if ( $read->is_failure() ) {
@@ -228,7 +233,7 @@ final readonly class Inspection {
 				'misfire_skips'      => $registration['misfire_skips'],
 				'overlap_skips'      => $registration['overlap_skips'],
 				'occurrence_visible' => $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key ),
-				'lock'               => $this->schedule_lock( $declaration, $observed_at ),
+				'lock'               => $with_lock ? $this->schedule_lock( $declaration, $observed_at ) : array( 'state' => 'not_inspected' ),
 			);
 		}
 

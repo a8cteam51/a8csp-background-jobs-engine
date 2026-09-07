@@ -72,9 +72,9 @@ final readonly class Schedules extends AbstractPortal {
 	 * scheduling backend can currently see its occurrence. What counts as wrong is the caller's
 	 * question, because only the caller knows what it declared.
 	 *
-	 * A `recurrence` of null means the registration is persisted but the current request did not
-	 * declare it — `sync()` is per-request, so that is the state of a registration a later
-	 * declaration stopped naming. `dormant_backend` reports that a scheduling backend is present but
+	 * A `recurrence` of null means the registration is persisted but the current request carries no
+	 * declaration for it — `sync()` is per-request, so a request that has not yet synchronised sees
+	 * null for every registration. `dormant_backend` reports that a scheduling backend is present but
 	 * not usable, which is a site-wide condition rather than one of this scope's.
 	 *
 	 * @since   1.0.0
@@ -85,9 +85,9 @@ final readonly class Schedules extends AbstractPortal {
 	 * @return  array|\WP_Error
 	 */
 	#[\NoDiscard( 'a schedule-registration inspection result must be handled, not dropped' )]
-	public function registered(): array|\WP_Error {
+	public function inspect(): array|\WP_Error {
 		try {
-			return $this->operations()->registered_schedules();
+			return $this->operations()->inspect_schedules();
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {

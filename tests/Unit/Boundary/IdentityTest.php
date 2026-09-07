@@ -225,7 +225,7 @@ final class IdentityTest extends TestCase {
 
 		self::assertInstanceOf( Run::class, $enqueued );
 		self::assertTrue( $synced );
-		self::assertTrue( $client->remember_run_scratch( $job_name, (string) $enqueued->id, \str_repeat( 'k', 64 ), array( 'a' ) ) );
+		self::assertTrue( $client->set_run_data( $job_name, (string) $enqueued->id, \str_repeat( 'k', 64 ), array( 'a' ) ) );
 		self::assertSame( 97, \strlen( $scope . ':' . $job_name ) );
 		self::assertSame( 97, \strlen( $scope . ':' . $schedule_name ) );
 		self::assertNotEmpty( $this->rig->wpdb()->rows );

@@ -58,6 +58,6 @@ function a8csp_bgje_dispatch_schedule( string $scope, string $name ): Run|\WP_Er
  * @return  array|\WP_Error
  */
 #[\NoDiscard( 'a schedule-registration inspection result must be handled, not dropped' )]
-function a8csp_bgje_registered_schedules( string $scope ): array|\WP_Error {
-	return a8csp_bgje( $scope )->schedules()->registered();
+function a8csp_bgje_inspect_schedules( string $scope ): array|\WP_Error {
+	return a8csp_bgje( $scope )->schedules()->inspect();
 }

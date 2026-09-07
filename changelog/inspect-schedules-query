@@ -1,6 +1,6 @@
 Significance: minor
 Type: added
 
-`schedules()->registered()`, and the procedural `a8csp_bgje_registered_schedules( $scope )`, return the scope's persisted schedule registrations as plain arrays: name, identity, declared recurrence, next due, last fired, misfire and overlap counts, and whether a scheduling backend can currently see each occurrence.
+`schedules()->inspect()`, and the procedural `a8csp_bgje_inspect_schedules( $scope )`, return the scope's persisted schedule registrations as plain arrays: name, identity, declared recurrence, next due, last fired, misfire and overlap counts, and whether a scheduling backend can currently see each occurrence.
 
 Synchronization happens on `init`, where a caller is rarely able to act on a refusal, and the engine does not log one. This answers the follow-up question — is the declaration actually in force — from a request that can do something about the answer. It reports facts and no verdict: what counts as wrong depends on what the caller declared, which the engine does not know.

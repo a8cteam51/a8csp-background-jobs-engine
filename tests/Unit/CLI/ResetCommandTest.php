@@ -277,7 +277,7 @@ final class ResetCommandTest extends TestCase {
 		$client->register( ( new RecordingJob( 'refresh' ) )->definition() );
 		$run = $client->dispatch( 'refresh', array( 'site_id' => 7 ) );
 		self::assertInstanceOf( Run::class, $run );
-		self::assertTrue( $client->remember_run_scratch( 'refresh', (string) $run->id, 'seen', array( 'a' ) ) );
+		self::assertTrue( $client->set_run_data( 'refresh', (string) $run->id, 'seen', array( 'a' ) ) );
 		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh' ) ) ) );
 	}
 
