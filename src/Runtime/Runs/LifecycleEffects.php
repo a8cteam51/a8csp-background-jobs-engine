@@ -529,7 +529,7 @@ final readonly class LifecycleEffects {
 	 * @return  bool Whether the history entry is confirmed persisted.
 	 */
 	private function record_terminal_history( Identity $identity, string $run_id, RunState $state ): bool {
-		if ( $this->stores->run_history( $identity )->record_terminal( $run_id, $state->args_hash, $state->status ) ) {
+		if ( $this->stores->run_history( $identity )->record_terminal( $run_id, $state->args_hash, $state->status, $state->heartbeat_at ) ) {
 			return true;
 		}
 

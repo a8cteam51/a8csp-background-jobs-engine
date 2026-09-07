@@ -539,14 +539,19 @@ final class ScopeOperationsTest extends TestCase {
 	}
 
 	/**
-	 * A completed run outside the retained history window is absent at the scope boundary.
+	 * A completion outlives its eviction from the capped terminal history window.
+	 *
+	 * The buffer holds every terminal outcome, so on an identity that fails often the completion is
+	 * carried out of it by later failures — at exactly the moment a caller most wants to know when
+	 * the work last succeeded. The non-evicting slot is what keeps the answer available, while
+	 * per-run inspection still stops at the retained window.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_last_completed_run_is_null_after_completion_leaves_the_retained_window(): void {
+	public function test_last_completed_run_survives_eviction_from_the_retained_window(): void {
 		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
 		$filters['a8csp_bgje/history_size']       = 1;
@@ -563,6 +568,7 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertInstanceOf( Run::class, $retained );
 		self::assertSame( (string) $completed->id, (string) $retained->id );
 		self::assertSame( RunStatus::Completed, $retained->status );
+		self::assertSame( self::NOW, $retained->terminal_at );
 
 		++$this->rig->clock()->timestamp;
 		$newer = $client->dispatch( 'email-digest' );
@@ -574,8 +580,11 @@ final class ScopeOperationsTest extends TestCase {
 		$evicted_completion = $client->inspect( 'email-digest', (string) $completed->id );
 		self::assertNull( $evicted_completion );
 
-		$evicted = $client->last_completed_run( 'email-digest' );
-		self::assertNull( $evicted );
+		$still_answered = $client->last_completed_run( 'email-digest' );
+		self::assertInstanceOf( Run::class, $still_answered );
+		self::assertSame( (string) $completed->id, (string) $still_answered->id );
+		self::assertSame( RunStatus::Completed, $still_answered->status );
+		self::assertSame( self::NOW, $still_answered->terminal_at );
 	}
 
 	/**
@@ -920,6 +929,50 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
 		self::assertSame( 'The schedule registry could not be read; repair WordPress option reads and retry.', $result->get_error_message() );
+	}
+
+	/**
+	 * The completed hook's previous-completion argument survives eviction from the history buffer.
+	 *
+	 * It is frozen from the same non-evicting slot the boundary verb reads, so the hook payload and
+	 * `runs()->last_completed()` cannot disagree about which run completed last.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_previous_completed_run_survives_eviction_from_the_retained_window(): void {
+		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
+		self::assertIsArray( $filters );
+		$filters['a8csp_bgje/history_size']       = 1;
+		$GLOBALS['a8csp_bgje_test_filter_values'] = $filters;
+
+		$client = $this->rig->operations( 'facade-tests' );
+		$job    = new RecordingCompletionJob( 'digest' );
+		$client->register( $job->definition() );
+		$this->rig->activate_registered_hooks();
+
+		$first = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $first );
+		$this->rig->run_due();
+
+		// A later terminal outcome fills the one-entry buffer and carries the completion out of it.
+		++$this->rig->clock()->timestamp;
+		$this->rig->randomizer()->value = 4_242;
+		$cancelled                      = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $cancelled );
+		self::assertInstanceOf( Run::class, $client->cancel( 'digest', (string) $cancelled->id ) );
+
+		++$this->rig->clock()->timestamp;
+		$this->rig->randomizer()->value = 8_484;
+		$second                         = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $second );
+		$this->rig->run_due();
+
+		self::assertCount( 2, $job->completions );
+		self::assertSame( (string) $second->id, (string) $job->completions[1]['run_id'] );
+		self::assertSame( (string) $first->id, (string) $job->completions[1]['previous_completed_run_id'] );
 	}
 
 	// endregion.

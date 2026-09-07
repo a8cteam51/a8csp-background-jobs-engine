@@ -329,9 +329,154 @@ final class RunHistoryTest extends TestCase {
 				array(
 					'run_id' => $terminal_run_id,
 					'status' => 'completed',
+					'at'     => null,
 				),
 			),
 			$buffers['terminal'] ?? null
+		);
+	}
+
+	/**
+	 * The last-completed slot outlives every later terminal outcome that fills the buffer.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_survives_a_buffer_filled_by_later_outcomes(): void {
+		$this->set_history_size( 2 );
+		$store = $this->store();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW ) );
+		foreach ( range( 2, 6 ) as $index ) {
+			self::assertTrue( $store->record_terminal( self::run_id( $index ), self::hash( 1 ), RunStatus::Failed, self::NOW + $index ) );
+		}
+
+		self::assertSame(
+			array( self::run_id( 5 ), self::run_id( 6 ) ),
+			\array_column( $store->terminal_entries() ?? array(), 'run_id' ),
+			'The capped buffer holds only the newest outcomes.'
+		);
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 1 ),
+				'at'     => self::NOW,
+			),
+			$store->last_completed()
+		);
+	}
+
+	/**
+	 * An identity that has never completed reports no last completion rather than a read failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_is_empty_before_any_completion(): void {
+		$store = $this->store();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Failed, self::NOW ) );
+
+		self::assertSame( array(), $store->last_completed() );
+	}
+
+	/**
+	 * A replayed earlier completion cannot move the slot back off a later one.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_replayed_earlier_completion_does_not_move_the_last_completed_slot(): void {
+		$this->set_history_size( 1 );
+		$store = $this->store();
+
+		// One argument identity throughout: the per-hash bucket short-circuits a replay it still
+		// holds, so the replay only reaches the slot once its own bucket has evicted it too.
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW ) );
+		self::assertTrue( $store->record_terminal( self::run_id( 2 ), self::hash( 1 ), RunStatus::Completed, self::NOW + 60 ) );
+		self::assertSame(
+			array( self::run_id( 2 ) ),
+			\array_column( $store->terminal_entries() ?? array(), 'run_id' ),
+			'The replayed run must be absent from every buffer, or the replay never reaches the slot.'
+		);
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW ) );
+
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 2 ),
+				'at'     => self::NOW + 60,
+			),
+			$store->last_completed()
+		);
+	}
+
+	/**
+	 * A completion recorded in the same second as the last one takes the slot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_same_second_completion_takes_the_last_completed_slot(): void {
+		$store = $this->store();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW ) );
+		self::assertTrue( $store->record_terminal( self::run_id( 2 ), self::hash( 2 ), RunStatus::Completed, self::NOW ) );
+
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 2 ),
+				'at'     => self::NOW,
+			),
+			$store->last_completed(),
+			'Run identifiers order by a random suffix within one second, so recording order decides.'
+		);
+	}
+
+	/**
+	 * A row written before the slot existed reports no completion rather than a malformed one.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_slotless_row_reports_no_last_completion(): void {
+		$raw = \maybe_serialize(
+			array(
+				'started'  => array(),
+				'terminal' => array(
+					array(
+						'run_id' => self::run_id( 1 ),
+						'status' => 'completed',
+					),
+				),
+				'by_hash'  => array(),
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( RunHistory::OPTION_PREFIX . self::IDENTITY, $raw );
+
+		$store = $this->store();
+
+		self::assertSame( array(), $store->last_completed() );
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::run_id( 1 ),
+					'status' => 'completed',
+					'at'     => null,
+				),
+			),
+			$store->terminal_entries(),
+			'The entry survives hydration without its timestamp rather than being dropped.'
 		);
 	}
 

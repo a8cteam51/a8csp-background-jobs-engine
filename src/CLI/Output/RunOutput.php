@@ -28,6 +28,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Inspection;
  * @phpstan-type HistoryRow array{
  *     run_id: string,
  *     outcome: 'completed'|'failed'|'cancelled'|'superseded'|'started',
+ *     ended: string,
  *     failed_store: 'failed store'|'—'
  * }
  */
@@ -62,6 +63,7 @@ final class RunOutput {
 	private const array HISTORY_FIELDS = array(
 		'run_id',
 		'outcome',
+		'ended',
 		'failed_store',
 	);
 
@@ -100,7 +102,7 @@ final class RunOutput {
 
 		$live_rows           = self::live_rows_from_entries( $snapshot['live'], $snapshot['observed_at'] );
 		$history_unavailable = null === $snapshot['history'];
-		$history_rows        = $history_unavailable ? array() : self::history_rows_from_entries( $snapshot['history'] );
+		$history_rows        = $history_unavailable ? array() : self::history_rows_from_entries( $snapshot['history'], $snapshot['observed_at'] );
 		$truncation          = self::truncation_message( $snapshot['live_scanned'], $snapshot['live_uninspected'] );
 		$unreadable          = self::unreadable_message( $snapshot['live_unreadable'] );
 		if (
@@ -190,18 +192,20 @@ final class RunOutput {
 	 *
 	 * @phpstan-param list<HistoryEntry> $entries
 	 *
-	 * @param   array $entries Validated recent-history entries.
+	 * @param   array $entries     Validated recent-history entries.
+	 * @param   int   $observed_at Inspection timestamp.
 	 *
 	 * @phpstan-return list<HistoryRow>
 	 *
 	 * @return  array
 	 */
-	private static function history_rows_from_entries( array $entries ): array {
+	private static function history_rows_from_entries( array $entries, int $observed_at ): array {
 		$rows = array();
 		foreach ( $entries as $entry ) {
 			$rows[] = array(
 				'run_id'       => $entry['run_id'],
 				'outcome'      => $entry['outcome'],
+				'ended'        => null === $entry['at'] ? '—' : RelativeTime::duration( $entry['at'] > $observed_at ? 0 : RelativeTime::distance( $observed_at, $entry['at'] ) ) . ' ago',
 				'failed_store' => $entry['failed_store'] ? 'failed store' : '—',
 			);
 		}

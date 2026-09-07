@@ -464,10 +464,16 @@ final class InspectionTest extends TestCase {
 			)
 		);
 
-		$result = $this->rig->inspection()->last_completed_run_id( self::identity( $identity ) );
+		$result = $this->rig->inspection()->last_completed_run( self::identity( $identity ) );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::run_id( 1 ), $result->value );
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 1 ),
+				'at'     => self::NOW,
+			),
+			$result->value
+		);
 	}
 
 	/**

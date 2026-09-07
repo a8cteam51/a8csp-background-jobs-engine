@@ -305,7 +305,7 @@ final readonly class ScopeOperations {
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	public function last_completed_run( string $name ): Run|null|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
-		$result   = BoundaryErrorMapper::map( $this->inspection->last_completed_run_id( $identity ) );
+		$result   = BoundaryErrorMapper::map( $this->inspection->last_completed_run( $identity ) );
 		if ( $result instanceof \WP_Error ) {
 			return $result;
 		}
@@ -313,7 +313,7 @@ final readonly class ScopeOperations {
 			return null;
 		}
 
-		return self::run( $identity, $result, RunStatus::Completed );
+		return self::run( $identity, $result['run_id'], RunStatus::Completed, $result['at'] );
 	}
 
 	/**
@@ -407,16 +407,17 @@ final readonly class ScopeOperations {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   Identity  $identity Complete scope-qualified job or chunked job identity.
-	 * @param   string    $run_id   Run identifier.
-	 * @param   RunStatus $status   Public lifecycle state.
+	 * @param   Identity  $identity    Complete scope-qualified job or chunked job identity.
+	 * @param   string    $run_id      Run identifier.
+	 * @param   RunStatus $status      Public lifecycle state.
+	 * @param   int|null  $terminal_at Terminalization timestamp, or null when the projection carries none.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  Run
 	 */
-	private static function run( Identity $identity, string $run_id, RunStatus $status ): Run {
-		return new Run( (string) $identity, RunId::from( $run_id ), $status );
+	private static function run( Identity $identity, string $run_id, RunStatus $status, ?int $terminal_at = null ): Run {
+		return new Run( (string) $identity, RunId::from( $run_id ), $status, $terminal_at );
 	}
 
 	/**

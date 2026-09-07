@@ -60,6 +60,7 @@ use Psr\Clock\ClockInterface;
  * @phpstan-type HistoryEntry array{
  *     run_id: string,
  *     outcome: 'completed'|'failed'|'cancelled'|'superseded'|'started',
+ *     at: int|null,
  *     failed_store: bool
  * }
  */
@@ -161,23 +162,26 @@ final readonly class Inspection {
 	}
 
 	/**
-	 * Returns the last completed run ID in the retained terminal recording order.
+	 * Returns the identity's last completed run and when it terminalized.
+	 *
+	 * Read from the non-evicting slot rather than the capped terminal buffers, so a run of failures
+	 * long enough to fill one does not carry the last completion out of the answer.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
-	 * @return  AbstractResult<string|null, EngineError>
+	 * @return  AbstractResult<array{run_id: string, at: int}|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run inspection result must be handled, not dropped' )]
-	public function last_completed_run_id( Identity $identity ): AbstractResult {
-		$entries = $this->stores->run_history( $identity )->terminal_entries();
-		if ( null === $entries ) {
+	public function last_completed_run( Identity $identity ): AbstractResult {
+		$slot = $this->stores->run_history( $identity )->last_completed();
+		if ( null === $slot ) {
 			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . (string) $identity ), ) );
 		}
 
-		return new Success( RunHistory::newest_completed_run_id( $entries ) );
+		return new Success( array() === $slot ? null : $slot );
 	}
 
 	/**
@@ -499,6 +503,7 @@ final readonly class Inspection {
 			$entries[]                = array(
 				'run_id'       => $entry['run_id'],
 				'outcome'      => $entry['status'],
+				'at'           => $entry['at'],
 				'failed_store' => isset( $failed_ids[ $entry['run_id'] ] ),
 			);
 		}
@@ -517,6 +522,7 @@ final readonly class Inspection {
 			$entries[]       = array(
 				'run_id'       => $run_id,
 				'outcome'      => 'started',
+				'at'           => null,
 				'failed_store' => isset( $failed_ids[ $run_id ] ),
 			);
 		}

@@ -384,8 +384,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 
 		self::assertSame( array( $args_b ), $job->calls );
 		self::assertSame( \ActionScheduler_Store::STATUS_COMPLETE, $store->get_status( $action_b ) );
-		$history = \get_option( 'a8csp_bgje_run_history_' . self::SIBLING_IDENTITY, null );
-		self::assertIsArray( $history );
+		$history = self::history_without_timestamps( \get_option( 'a8csp_bgje_run_history_' . self::SIBLING_IDENTITY, null ) );
 		self::assertSame( array( $run_a, $run_b ), $history['started'] ?? null );
 		self::assertSame(
 			array(
@@ -546,8 +545,7 @@ final class CancellationTest extends AbstractIntegrationTestCase {
 	 * @return  array<array-key, mixed>
 	 */
 	private static function terminal_entries( string $name ): array {
-		$history = \get_option( 'a8csp_bgje_run_history_' . $name, null );
-		self::assertIsArray( $history );
+		$history = self::history_without_timestamps( \get_option( 'a8csp_bgje_run_history_' . $name, null ) );
 		$entries = $history['terminal'] ?? null;
 		self::assertIsArray( $entries );
 

@@ -184,7 +184,7 @@ final class ChunkedJobChunkingTest extends AbstractIntegrationTestCase {
 					'failed_store' => false,
 				),
 			),
-			$runs['history'],
+			self::history_entries_without_timestamps( $runs['history'] ),
 			'Inspection must retain the completed lifecycle outcome'
 		);
 	}

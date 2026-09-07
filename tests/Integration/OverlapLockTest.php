@@ -185,16 +185,17 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'started'  => array( $run_a ),
-				'terminal' => array(),
-				'by_hash'  => array(
+				'started'        => array( $run_a ),
+				'terminal'       => array(),
+				'by_hash'        => array(
 					$args_hash => array(
 						'started'  => array( $run_a ),
 						'terminal' => array(),
 					),
 				),
+				'last_completed' => array(),
 			),
-			\get_option( 'a8csp_bgje_run_history_' . self::REJECT_IDENTITY, null ),
+			self::history_without_timestamps( \get_option( 'a8csp_bgje_run_history_' . self::REJECT_IDENTITY, null ) ),
 			'A rejected start must not create a second history entry'
 		);
 
@@ -393,8 +394,8 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		self::assertFalse( \get_option( 'a8csp_bgje_failed_runs_' . self::RECLAIM_IDENTITY, false ) );
 		self::assertSame(
 			array(
-				'started'  => array( $run_a, $run_b ),
-				'terminal' => array(
+				'started'        => array( $run_a, $run_b ),
+				'terminal'       => array(
 					array(
 						'run_id' => $run_a,
 						'status' => 'superseded',
@@ -404,7 +405,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 						'status' => 'completed',
 					),
 				),
-				'by_hash'  => array(
+				'by_hash'        => array(
 					$args_hash => array(
 						'started'  => array( $run_a, $run_b ),
 						'terminal' => array(
@@ -419,8 +420,9 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 						),
 					),
 				),
+				'last_completed' => array( 'run_id' => $run_b ),
 			),
-			\get_option( 'a8csp_bgje_run_history_' . self::RECLAIM_IDENTITY, null ),
+			self::history_without_timestamps( \get_option( 'a8csp_bgje_run_history_' . self::RECLAIM_IDENTITY, null ) ),
 			'Reclaim history must retain the superseded orphan and completed replacement'
 		);
 		self::assertSame(

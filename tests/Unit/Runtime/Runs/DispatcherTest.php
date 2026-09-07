@@ -1032,7 +1032,15 @@ final class DispatcherTest extends TestCase {
 				'run_id' => self::INCUMBENT_RUN_ID,
 				'status' => RunStatus::Superseded->value,
 			),
-			$terminal
+			\array_map(
+				static fn ( mixed $entry ): array => \is_array( $entry )
+					? array(
+						'run_id' => $entry['run_id'] ?? null,
+						'status' => $entry['status'] ?? null,
+					)
+					: array(),
+				$terminal
+			)
 		);
 	}
 

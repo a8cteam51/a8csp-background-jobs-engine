@@ -251,8 +251,8 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'started'  => array( $run_a, $run_b ),
-				'terminal' => array(
+				'started'        => array( $run_a, $run_b ),
+				'terminal'       => array(
 					array(
 						'run_id' => $run_a,
 						'status' => 'superseded',
@@ -262,7 +262,7 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 						'status' => 'completed',
 					),
 				),
-				'by_hash'  => array(
+				'by_hash'        => array(
 					$args_hash => array(
 						'started'  => array( $run_a, $run_b ),
 						'terminal' => array(
@@ -277,8 +277,9 @@ final class SupersededRunTest extends AbstractIntegrationTestCase {
 						),
 					),
 				),
+				'last_completed' => array( 'run_id' => $run_b ),
 			),
-			\get_option( 'a8csp_bgje_run_history_' . self::IDENTITY, null ),
+			self::history_without_timestamps( \get_option( 'a8csp_bgje_run_history_' . self::IDENTITY, null ) ),
 			'History must retain the superseded incumbent and completed replacement in lifecycle order'
 		);
 		self::assertSame(

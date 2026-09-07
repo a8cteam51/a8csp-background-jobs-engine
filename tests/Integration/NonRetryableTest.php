@@ -133,7 +133,7 @@ final class NonRetryableTest extends AbstractIntegrationTestCase {
 					'failed_store' => true,
 				),
 			),
-			$runs['history'],
+			self::history_entries_without_timestamps( $runs['history'] ),
 			'Inspection must expose the retained failed outcome for manual retry'
 		);
 

@@ -860,28 +860,33 @@ final class LifecycleEffectsTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_terminal_history( string $status ): void {
-		$this->recorded_run_state( $status );
+		// Taken from the terminal run row rather than named here, so the assertion also proves the
+		// history timestamp is the row's terminal heartbeat and not some other clock reading.
+		$terminal_at = $this->recorded_run_state( $status )['heartbeat_at'] ?? null;
+		self::assertIsInt( $terminal_at );
+
+		$entry = array(
+			'run_id' => self::RUN_ID,
+			'status' => $status,
+			'at'     => $terminal_at,
+		);
 
 		self::assertSame(
 			array(
-				'started'  => array( self::RUN_ID ),
-				'terminal' => array(
-					array(
-						'run_id' => self::RUN_ID,
-						'status' => $status,
-					),
-				),
-				'by_hash'  => array(
+				'started'        => array( self::RUN_ID ),
+				'terminal'       => array( $entry ),
+				'by_hash'        => array(
 					self::ARGS_HASH => array(
 						'started'  => array( self::RUN_ID ),
-						'terminal' => array(
-							array(
-								'run_id' => self::RUN_ID,
-								'status' => $status,
-							),
-						),
+						'terminal' => array( $entry ),
 					),
 				),
+				'last_completed' => 'completed' === $status
+					? array(
+						'run_id' => self::RUN_ID,
+						'at'     => $terminal_at,
+					)
+					: array(),
 			),
 			$this->option( 'a8csp_bgje_run_history_' . self::IDENTITY )
 		);

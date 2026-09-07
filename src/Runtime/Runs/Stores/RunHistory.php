@@ -116,6 +116,7 @@ final readonly class RunHistory {
 	 * @param   string    $run_id    Run identifier.
 	 * @param   string    $args_hash Stable single-flight identity.
 	 * @param   RunStatus $status    Terminal run status.
+	 * @param   int       $at        Terminalization timestamp, as `FailedRunStore::record()` retains it.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
 	 * @throws  \LogicException           When the current site differs from the bound site or serialization fails.
@@ -123,8 +124,8 @@ final readonly class RunHistory {
 	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
 	#[\NoDiscard( 'a run-history persistence failure must be handled, not dropped' )]
-	public function record_terminal( string $run_id, string $args_hash, RunStatus $status ): bool {
-		return $this->record( $run_id, $args_hash, $status );
+	public function record_terminal( string $run_id, string $args_hash, RunStatus $status, int $at ): bool {
+		return $this->record( $run_id, $args_hash, $status, $at );
 	}
 
 	/**
@@ -155,7 +156,7 @@ final readonly class RunHistory {
 	 *
 	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>|null Null when the authoritative row read fails.
+	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded', at: int|null}>|null Null when the authoritative row read fails.
 	 */
 	public function terminal_entries(): ?array {
 		$history = $this->history_from_raw_row();
@@ -164,19 +165,28 @@ final readonly class RunHistory {
 	}
 
 	/**
-	 * Returns the newest completed run identifier in terminal recording order.
+	 * Returns the identity's last completed run, which no later terminal outcome evicts.
 	 *
-	 * @internal Read-only engine derivation.
+	 * The terminal buffers are capped and hold every outcome, so a run of failures long enough to
+	 * fill one carries the last completion out of it. This slot is written beside those buffers and
+	 * is never trimmed, so "when did this last succeed" stays answerable however many failures
+	 * follow.
+	 *
+	 * @internal Read-only engine inspection.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}> $entries Terminal entries, oldest first.
+	 * @throws  \LogicException When the current site differs from the bound site.
 	 *
-	 * @return  string|null
+	 * @return  array{run_id: string, at: int}|array{} Empty when the identity has recorded no completion.
+	 *
+	 * @phpstan-return array{run_id: string, at: int}|array{}|null
 	 */
-	public static function newest_completed_run_id( array $entries ): ?string {
-		return \array_find( \array_reverse( $entries ), static fn ( array $entry ): bool => RunStatus::Completed->value === $entry['status'] )['run_id'] ?? null;
+	public function last_completed(): ?array {
+		$history = $this->history_from_raw_row();
+
+		return null === $history ? null : $history['last_completed'];
 	}
 
 	// endregion
@@ -192,13 +202,14 @@ final readonly class RunHistory {
 	 * @param   string         $run_id    Run identifier.
 	 * @param   string         $args_hash Stable single-flight identity.
 	 * @param   RunStatus|null $status    Terminal run status, or null for a started entry.
+	 * @param   int|null       $at        Terminalization timestamp, or null for a started entry.
 	 *
 	 * @throws  \InvalidArgumentException When the supplied status is not terminal.
 	 * @throws  \LogicException           When the current site differs from the bound site or serialization fails.
 	 *
 	 * @return  bool True when the entry is already present or confirmed persisted.
 	 */
-	private function record( string $run_id, string $args_hash, ?RunStatus $status = null ): bool {
+	private function record( string $run_id, string $args_hash, ?RunStatus $status = null, ?int $at = null ): bool {
 		if ( RunStatus::Running === $status ) {
 			throw new \InvalidArgumentException( 'Run history records only terminal outcomes.' );
 		}
@@ -239,10 +250,22 @@ final readonly class RunHistory {
 				$entry = array(
 					'run_id' => $run_id,
 					'status' => $status->value,
+					'at'     => $at,
 				);
 
 				$history['terminal'][]      = $entry;
 				$hash_history['terminal'][] = $entry;
+
+				// Compared on terminalization time rather than run identifier: identifiers order by a
+				// random suffix within one second, so they cannot rank two completions. `>=` keeps
+				// recording order deciding a tie, while a replayed older completion cannot move the
+				// slot backwards once a later one has landed.
+				if ( RunStatus::Completed === $status && null !== $at && $at >= ( $history['last_completed']['at'] ?? \PHP_INT_MIN ) ) {
+					$history['last_completed'] = array(
+						'run_id' => $run_id,
+						'at'     => $at,
+					);
+				}
 			}
 
 			// Re-inserting at the tail keeps the map ordered by recording recency for the bucket cap.
@@ -337,11 +360,12 @@ final readonly class RunHistory {
 	 *
 	 * @return  array{
 	 *     started: list<string>,
-	 *     terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
+	 *     terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded', at: int|null}>,
 	 *     by_hash: array<array-key, array{
 	 *         started: list<string>,
-	 *         terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
-	 *     }>
+	 *         terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded', at: int|null}>
+	 *     }>,
+	 *     last_completed: array{run_id: string, at: int}|array{}
 	 * }|null Null when the authoritative row read fails.
 	 */
 	private function history_from_raw_row(): ?array {
@@ -386,19 +410,21 @@ final readonly class RunHistory {
 	 *
 	 * @return  array{
 	 *     started: list<string>,
-	 *     terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>,
+	 *     terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded', at: int|null}>,
 	 *     by_hash: array<array-key, array{
 	 *         started: list<string>,
-	 *         terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
-	 *     }>
+	 *         terminal: list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded', at: int|null}>
+	 *     }>,
+	 *     last_completed: array{run_id: string, at: int}|array{}
 	 * }
 	 */
 	private static function history_from_option( mixed $value ): array {
 		if ( ! \is_array( $value ) ) {
 			return array(
-				'started'  => array(),
-				'terminal' => array(),
-				'by_hash'  => array(),
+				'started'        => array(),
+				'terminal'       => array(),
+				'by_hash'        => array(),
+				'last_completed' => array(),
 			);
 		}
 
@@ -417,9 +443,39 @@ final readonly class RunHistory {
 		}
 
 		return array(
-			'started'  => self::string_list( $value['started'] ?? null ),
-			'terminal' => self::terminal_list( $value['terminal'] ?? null ),
-			'by_hash'  => $by_hash,
+			'started'        => self::string_list( $value['started'] ?? null ),
+			'terminal'       => self::terminal_list( $value['terminal'] ?? null ),
+			'by_hash'        => $by_hash,
+			'last_completed' => self::last_completed_from_option( $value['last_completed'] ?? null ),
+		);
+	}
+
+	/**
+	 * Returns a well-formed last-completed slot from a persisted option.
+	 *
+	 * A row written before the slot existed carries none, so the identity reports no completion
+	 * until its next one lands rather than reporting a wrong one.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $value Persisted slot value.
+	 *
+	 * @return  array{run_id: string, at: int}|array{}
+	 */
+	private static function last_completed_from_option( mixed $value ): array {
+		if (
+			! \is_array( $value )
+			|| ! \is_string( $value['run_id'] ?? null )
+			|| null === RunIdentity::parse( $value['run_id'] )
+			|| ! \is_int( $value['at'] ?? null )
+		) {
+			return array();
+		}
+
+		return array(
+			'run_id' => $value['run_id'],
+			'at'     => $value['at'],
 		);
 	}
 
@@ -449,7 +505,7 @@ final readonly class RunHistory {
 	 *
 	 * @param   mixed $value Persisted list value.
 	 *
-	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}>
+	 * @return  list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded', at: int|null}>
 	 */
 	private static function terminal_list( mixed $value ): array {
 		if ( ! \is_array( $value ) ) {
@@ -472,9 +528,12 @@ final readonly class RunHistory {
 				continue;
 			}
 
+			$at = $entry['at'] ?? null;
+
 			$terminals[] = array(
 				'run_id' => $entry['run_id'],
 				'status' => $status->value,
+				'at'     => \is_int( $at ) ? $at : null,
 			);
 		}
 
@@ -487,7 +546,7 @@ final readonly class RunHistory {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded'}> $entries Terminal history entries.
+	 * @param   list<array{run_id: string, status: 'completed'|'failed'|'cancelled'|'superseded', at: int|null}> $entries Terminal history entries.
 	 *
 	 * @return  list<string>
 	 */

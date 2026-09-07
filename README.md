@@ -393,9 +393,11 @@ converges. The generic variants (`a8csp_bgje/completed`, …) prepend `string $i
 Acting on runs, rather than reacting, stays imperative: `runs()->cancel()` (or
 `a8csp_bgje_cancel_run()`) withdraws a retained run, `runs()->retry_failed()` starts a fresh run
 from a retained failure, and `runs()->inspect()` / `runs()->last_completed()` answer point-in-time
-questions from tooling — inspection returns `run_not_retained` for an absent run, and
-`last_completed()` returns `null` outside the retained history window. Day-2 operator workflows
-live in the CLI — see "WP-CLI".
+questions from tooling — inspection returns `run_not_retained` for an absent run, while
+`last_completed()` returns `null` only when the identity has never completed. Its answer is kept in
+a slot the capped history buffers do not evict, so a run of failures long enough to fill one does not
+carry the last completion out of the answer, and the `Run` it returns carries `terminal_at`. Day-2
+operator workflows live in the CLI — see "WP-CLI".
 
 ### 5. Handling failures
 
@@ -494,7 +496,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `ChunkedJobExecutionInterface` | Standalone chunked execution role extending `KindExecutionInterface` and requiring only `generate_queue( array $start_args, RunContextInterface $context ): iterable` and `process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void`; it does not extend `JobExecutionInterface`. |
 | `Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`; only `name`, `recurrence`, and `job` are required, and the rest default to an empty array, `CatchUpPolicy::RunOnce`, and null. |
 | `Recurrence` | Readonly fixed-interval recurrence created with `every( int $seconds )` or `every_anchored( int $seconds, int $anchor )`; an anchor is reduced modulo the interval. |
-| `Run` | Readonly snapshot with `string $identity`, `RunId $id`, and `RunStatus $status`. |
+| `Run` | Readonly snapshot with `string $identity`, `RunId $id`, `RunStatus $status`, and `?int $terminal_at`. `terminal_at` is the Unix timestamp the run reached its terminal state; it is populated by `runs()->last_completed()` and null on projections that do not carry one, such as a dispatch result. |
 | `RunId` | Final readonly stringable wrapper for a canonical run identifier; `from( string )` requires canonical input, `tryFrom( string )` returns null for another shape, and string casting returns the wire value. |
 | `RunFailure` | Readonly value with `string $identity`, `RunId $run_id`, `int $attempts`, `RunFailureStage $stage`, `ErrorCode $code`, `string $summary`, and generic diagnostic payload `?array $details`. |
 | `RunFailureStage` | Final readonly interned open string-backed stage carried by `RunFailure::$stage`; its grammar, engine stages, and third-party keys are described below this table. |
@@ -762,7 +764,7 @@ This table covers engine-enforced identity, payload, scheduling-admission, stora
 | Complete active-run row | At most 1,000,000 PHP-serialized bytes while active. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES` | No |
 | Failed-run retained count | At most 20 entries per scope-qualified work identity. | `Runtime\Runs\Stores\FailedRunStore::ENTRY_LIMIT` | No |
 | Complete failed-run retention row | At most 1,000,000 PHP-serialized bytes per scope-qualified work identity. | `Runtime\Runs\Stores\RunStore::MAX_ROW_BYTES`, enforced for this row by `Runtime\Runs\Stores\FailedRunStore::MAX_ROW_BYTES`, which derives from it | No |
-| Run history | Default 30 entries in each history buffer; no hard maximum. | `Runtime\Runs\Stores\RunHistory::DEFAULT_SIZE` | Yes: `a8csp_bgje/history_size` accepts a positive integer. |
+| Run history | Default 30 entries in each history buffer; no hard maximum. The last completed run is kept in a separate slot the buffers do not evict, so `runs()->last_completed()` is not bounded by this value. | `Runtime\Runs\Stores\RunHistory::DEFAULT_SIZE` | Yes: `a8csp_bgje/history_size` accepts a positive integer. |
 
 ## Scale ceilings
 
@@ -804,7 +806,7 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 | Remove every schedule in one scope | `wp a8csp-bgje schedules remove <scope> [--yes]` |
 | Destroy all engine state (development reset) | `wp a8csp-bgje reset [--yes]` |
 
-Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
+Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Its history `ended` column is how long ago each run terminalized, and reads `—` for a started entry and for a row written before the engine recorded terminal times. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
 
 ## Releasing
 
