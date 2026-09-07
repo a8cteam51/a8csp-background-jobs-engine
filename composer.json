@@ -34,13 +34,13 @@
   },
   "require-dev": {
     "a8csp/configs": "dev-trunk",
-    "automattic/jetpack-changelogger": "^6",
+    "automattic/jetpack-changelogger": "^7",
 
     "phpcompatibility/phpcompatibility-wp": "^3@alpha",
     "phpcompatibility/php-compatibility": "^10@alpha",
     "phpcompatibility/phpcompatibility-paragonie": "^2@alpha",
 
-    "infection/infection": "^0.34",
+    "infection/infection": "^0.35",
     "phpunit/phpunit": "^13",
     "wp-cli/i18n-command": "^2",
 
