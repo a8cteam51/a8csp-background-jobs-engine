@@ -42,3 +42,22 @@ function a8csp_bgje_sync_schedules( string $scope, Schedule ...$schedules ): tru
 function a8csp_bgje_dispatch_schedule( string $scope, string $name ): Run|\WP_Error {
 	return a8csp_bgje( $scope )->schedules()->dispatch( $name );
 }
+
+/**
+ * Returns one scope's persisted schedule registrations and their observable live state.
+ *
+ * @api
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string $scope Client plugin scope.
+ *
+ * @phpstan-return array{observed_at: int, dormant_backend: bool, schedules: list<array{name: string, identity: string, recurrence: int|null, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, occurrence_visible: bool}>}|\WP_Error
+ *
+ * @return  array|\WP_Error
+ */
+#[\NoDiscard( 'a schedule-registration inspection result must be handled, not dropped' )]
+function a8csp_bgje_registered_schedules( string $scope ): array|\WP_Error {
+	return a8csp_bgje( $scope )->schedules()->registered();
+}

@@ -792,6 +792,136 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertSame( (string) $second->id, (string) $job->completions[1]['run_id'] );
 	}
 
+	/**
+	 * Schedule-registration inspection reports each declared registration's observable live state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_schedules_reports_declared_registrations(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		$client->register( ( new RecordingJob( 'prune' ) )->definition() );
+		self::assertTrue(
+			$client->sync(
+				array(
+					new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ),
+					new Schedule( 'weekly', Recurrence::every( 900 ), 'prune' ),
+				)
+			)
+		);
+
+		// The backend answers occurrence visibility, so drive it rather than asserting its default.
+		$this->rig->backend()->scheduled = true;
+
+		$registered = $client->registered_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertSame( self::NOW, $registered['observed_at'] );
+		self::assertFalse( $registered['dormant_backend'] );
+		self::assertCount( 2, $registered['schedules'] );
+		self::assertSame(
+			array(
+				'name'               => 'nightly',
+				'identity'           => 'facade-tests:nightly',
+				'recurrence'         => 300,
+				'next_due'           => self::NOW + 300,
+				'last_fired'         => null,
+				'misfire_skips'      => 0,
+				'overlap_skips'      => 0,
+				'occurrence_visible' => true,
+			),
+			$registered['schedules'][0]
+		);
+		self::assertSame( 'weekly', $registered['schedules'][1]['name'] );
+		self::assertSame( 900, $registered['schedules'][1]['recurrence'] );
+	}
+
+	/**
+	 * Schedule-registration inspection is confined to the bound scope.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_schedules_excludes_another_scope(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$neighbour = $this->rig->operations( 'other-scope' );
+		$neighbour->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		self::assertTrue( $neighbour->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$registered = $client->registered_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertSame( array( 'facade-tests:nightly' ), \array_column( $registered['schedules'], 'identity' ) );
+	}
+
+	/**
+	 * A registration the current request stopped declaring reports a null recurrence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_schedules_reports_a_null_recurrence_for_an_undeclared_registration(): void {
+		// A registry row with no request-local declaration is the state a request that did not sync sees.
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( 'facade-tests:refresh-index' )->schedule_registration(
+			array(
+				'scope'         => 'facade-tests',
+				'declarations'  => array(),
+				'registrations' => array(
+					'facade-tests:nightly' => StoreFixtureBuilder::schedule_registration_state( 'stale-fingerprint', self::NOW + 300, last_fired: self::NOW - 120, misfire_skips: 2, overlap_skips: 1 ),
+				),
+			)
+		);
+		$this->rig->wpdb()->put( $option_name, $raw );
+
+		$registered = $this->rig->operations( 'facade-tests' )->registered_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertSame(
+			array(
+				'name'               => 'nightly',
+				'identity'           => 'facade-tests:nightly',
+				'recurrence'         => null,
+				'next_due'           => self::NOW + 300,
+				'last_fired'         => self::NOW - 120,
+				'misfire_skips'      => 2,
+				'overlap_skips'      => 1,
+				'occurrence_visible' => false,
+			),
+			$registered['schedules'][0]
+		);
+	}
+
+	/**
+	 * An unreadable schedule registry surfaces as a storage failure rather than an empty list.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_schedules_reports_an_unreadable_registry(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$this->rig->wpdb()->fail_next_read_at( 'query_filtered' );
+		$result = $client->registered_schedules();
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'The schedule registry could not be read; repair WordPress option reads and retry.', $result->get_error_message() );
+	}
+
 	// endregion.
 
 	// region HELPERS.

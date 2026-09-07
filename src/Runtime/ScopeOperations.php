@@ -206,6 +206,55 @@ final readonly class ScopeOperations {
 	}
 
 	/**
+	 * Returns the bound scope's persisted schedule registrations with their observable live state.
+	 *
+	 * The projection reports facts and draws no conclusion from them: whether a next_due in the past
+	 * or an invisible occurrence is a problem depends on what the caller declared and how late is
+	 * late, neither of which the engine knows. Execution-overlap lock state is deliberately absent —
+	 * it describes a run rather than a registration, and `wp a8csp-bgje schedules list` renders it
+	 * for an operator who needs it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-return array{observed_at: int, dormant_backend: bool, schedules: list<array{name: string, identity: string, recurrence: int|null, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, occurrence_visible: bool}>}|\WP_Error
+	 *
+	 * @return  array|\WP_Error
+	 */
+	#[\NoDiscard( 'a schedule-registration inspection result must be handled, not dropped' )]
+	public function registered_schedules(): array|\WP_Error {
+		$inspected = $this->inspection->schedules( $this->scope );
+		if ( null === $inspected ) {
+			return new \WP_Error( ErrorCode::StorageFailed->value, 'The schedule registry could not be read; repair WordPress option reads and retry.' );
+		}
+
+		$schedules = array();
+		foreach ( $inspected['entries'] as $entry ) {
+			$identity = Identity::tryFrom( $entry['identity'] );
+			if ( null === $identity ) {
+				continue;
+			}
+
+			$schedules[] = array(
+				'name'               => $identity->name(),
+				'identity'           => $entry['identity'],
+				'recurrence'         => $entry['recurrence'],
+				'next_due'           => $entry['next_due'],
+				'last_fired'         => $entry['last_fired'],
+				'misfire_skips'      => $entry['misfire_skips'],
+				'overlap_skips'      => $entry['overlap_skips'],
+				'occurrence_visible' => $entry['occurrence_visible'],
+			);
+		}
+
+		return array(
+			'observed_at'     => $inspected['observed_at'],
+			'dormant_backend' => $inspected['dormant_candidate'],
+			'schedules'       => $schedules,
+		);
+	}
+
+	/**
 	 * Returns one retained run's observable lifecycle status.
 	 *
 	 * @since   1.0.0

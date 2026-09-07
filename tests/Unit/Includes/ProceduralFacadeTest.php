@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Includes;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
@@ -28,6 +29,7 @@ use PHPUnit\Framework\TestCase;
 #[CoversFunction( 'a8csp_bgje_dispatch_job_at' )]
 #[CoversFunction( 'a8csp_bgje_sync_schedules' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_schedule' )]
+#[CoversFunction( 'a8csp_bgje_registered_schedules' )]
 #[CoversFunction( 'a8csp_bgje_inspect_run' )]
 #[CoversFunction( 'a8csp_bgje_last_completed_run' )]
 #[CoversFunction( 'a8csp_bgje_retry_failed_run' )]
@@ -252,6 +254,43 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );
 		self::assertSame( 0, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
 		self::assertSame( 41, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
+	}
+
+	/**
+	 * The registration-inspection alias returns the bound scope's registry projection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_schedules_alias_projects_the_bound_scope(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::SCOPE, self::job( 'scheduled-job' ) ) );
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::SCOPE, new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job' ) ) );
+
+		$registered = \a8csp_bgje_registered_schedules( self::SCOPE );
+
+		self::assertIsArray( $registered );
+		self::assertSame( self::NOW, $registered['observed_at'] );
+		self::assertFalse( $registered['dormant_backend'] );
+		self::assertSame( array( 'nightly' ), \array_column( $registered['schedules'], 'name' ) );
+		self::assertSame( 300, $registered['schedules'][0]['recurrence'] );
+		self::assertSame( self::NOW + 300, $registered['schedules'][0]['next_due'] );
+	}
+
+	/**
+	 * The registration-inspection alias rejects a scope that violates the scope contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_registered_schedules_alias_rejects_an_invalid_scope(): void {
+		$result = \a8csp_bgje_registered_schedules( 'Not A Scope' );
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::InvalidArgument->value, $result->get_error_code() );
 	}
 
 	/**

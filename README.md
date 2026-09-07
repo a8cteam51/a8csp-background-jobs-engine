@@ -19,7 +19,7 @@ Consumers use four connected surfaces:
 
 - **The Engine handle** — `a8csp_bgje( $scope )` returns a scope-bound `Engine` with `jobs()`, `schedules()`, and `runs()` capability managers.
 - **The public models and execution roles** — compose work with `JobDefinition`, `JobKind`, and `JobOptions`; implement `JobExecutionInterface` or `ChunkedJobExecutionInterface`; declare schedules with `Schedule`, `Recurrence`, and `CatchUpPolicy`; callbacks depend on `RunContextInterface` or `ChunkedRunContextInterface`; run-producing commands return `Run` snapshots, terminal failures use `RunFailure`, and verb failures return `WP_Error`.
-- **The procedural aliases** — nine verb-noun `a8csp_bgje_*()` functions take `$scope` first, accept the same `JobDefinition` registration value as the Jobs manager and the same variadic `Schedule` values as the Schedules manager, and invoke the capability-manager verbs.
+- **The procedural aliases** — ten verb-noun `a8csp_bgje_*()` functions take `$scope` first, accept the same `JobDefinition` registration value as the Jobs manager and the same variadic `Schedule` values as the Schedules manager, and invoke the capability-manager verbs.
 - **The lifecycle hooks** — observe runs through the `a8csp_bgje/*` actions.
 
 The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run`, `RunContext`, and `RunFailure`; execution callbacks depend on `RunContextInterface` or `ChunkedRunContextInterface`. The procedural aliases accept the same typed definition and schedule values as their capability-manager counterparts.
@@ -68,7 +68,7 @@ Never define `a8csp_bgje()` yourself as a fallback; a second definition of the s
 
 `a8csp_bgje( $scope )` constructs a handle lazily and infallibly. Capability-manager verb calls belong on the WordPress `init` hook or later. Invalid scopes and unavailable engine state return `WP_Error` from the first verb instead of failing handle construction. The request that activates the engine stays dormant until the next request.
 
-Register work and synchronize schedules from `init` **on every request**: registration is per-request, and schedule synchronization treats the supplied schedules as the scope's complete declaration. Prefer `init` priority `2` or later so Action Scheduler's `init:1` store initialization has run; synchronizing before it routes that request's occurrences to WP-Cron.
+Register work and synchronize schedules from `init` **on every request**: registration is per-request, and schedule synchronization treats the supplied schedules as the scope's complete declaration. A refusal there is returned, not logged, and `init` is rarely a place to act on one; `schedules()->registered()` answers later, on a request that can, whether the declaration is actually in force. Prefer `init` priority `2` or later so Action Scheduler's `init:1` store initialization has run; synchronizing before it routes that request's occurrences to WP-Cron.
 
 Register unconditionally. A delivery that arrives on a request where its definition was never registered fails that run terminally with `unknown_job` and consumes no automatic attempt, because the engine cannot distinguish work you removed from work you forgot to declare. Guarding registration behind `is_admin()`, a page check, or a capability check is the usual way this happens, and it fails intermittently rather than consistently: background deliveries run in whichever request context the backend chooses, including admin-ajax.
 
@@ -457,6 +457,7 @@ The procedural facade is grouped by concept: `includes/job.php` provides backgro
 | `jobs()->dispatch_at( string $name, int $run_at, array $start_args = array(), ?int $priority = null )` | `a8csp_bgje_dispatch_job_at( string $scope, string $name, int $run_at, array $start_args = array(), ?int $priority = null )` | `Run \| WP_Error` |
 | `schedules()->sync( Schedule ...$schedules )` | `a8csp_bgje_sync_schedules( string $scope, Schedule ...$schedules )` | `true \| WP_Error` |
 | `schedules()->dispatch( string $name )` | `a8csp_bgje_dispatch_schedule( string $scope, string $name )` | `Run \| WP_Error` |
+| `schedules()->registered()` | `a8csp_bgje_registered_schedules( string $scope )` | `array \| WP_Error` |
 | `runs()->inspect( string $name, RunId $run_id )` | `a8csp_bgje_inspect_run( string $scope, string $name, string $run_id )` | `Run \| WP_Error` |
 | `runs()->last_completed( string $name )` | `a8csp_bgje_last_completed_run( string $scope, string $name )` | `Run \| null \| WP_Error` |
 | `runs()->retry_failed( string $name, RunId $run_id )` | `a8csp_bgje_retry_failed_run( string $scope, string $name, string $run_id )` | `Run \| WP_Error` |
@@ -482,7 +483,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | --- | --- |
 | `Engine` | Scope-bound readonly handle returned by `a8csp_bgje()` with its `jobs()`, `schedules()`, and `runs()` capability managers. |
 | `Jobs` | Scope-bound readonly manager for registration, immediate dispatch, and absolute-time dispatch. |
-| `Schedules` | Scope-bound readonly manager for schedule synchronization and immediate dispatch. |
+| `Schedules` | Scope-bound readonly manager for schedule synchronization, immediate dispatch, and read-only registration inspection. |
 | `Runs` | Scope-bound readonly manager for run inspection, retry, and cancellation. |
 | `JobDefinition` | Final readonly registration declaration with public `string $name`, `JobKind $kind`, `KindExecutionInterface $execution`, and `JobOptions $options`. Its non-public constructor is exposed through `job()`, `chunked_job()`, `closure()`, and `for_kind()`, each taking an optional `JobOptions`. |
 | `JobKind` | Final readonly kind key with public `string $value`, built-in `job()` and `chunked_job()` constructors, and `from( string $value )` for a grammar-valid key. It carries no execution contract. |
@@ -613,6 +614,44 @@ Each schedule chain has two stages. The recurring backend row is the tick on `a8
 `Recurrence::every()` creates an unanchored fixed interval. `Recurrence::every_anchored()` creates an interval aligned to a non-negative UTC Unix-epoch phase. Both recurrence constructors require a positive interval in seconds. An unanchored schedule first runs one interval after synchronization. An anchored schedule first runs at the strictly future Unix timestamp whose phase matches `anchor mod interval`, then stays on that grid. The target work supplies overlap behavior for imperative and scheduled runs.
 
 The procedural `a8csp_bgje_sync_schedules()` alias accepts the same `Schedule` values variadically.
+
+`schedules()->registered()` answers the read-only counterpart: what the scope's schedule registry
+currently holds, and what a scheduling backend can currently see of it. It returns plain arrays.
+
+```php
+$registered = a8csp_bgje( 'my-plugin' )->schedules()->registered();
+if ( is_wp_error( $registered ) ) {
+	error_log( $registered->get_error_message() );
+	return;
+}
+
+foreach ( $registered['schedules'] as $schedule ) {
+	if ( ! $schedule['occurrence_visible'] ) {
+		my_plugin_report_missing_occurrence( $schedule['name'], $registered['observed_at'] );
+	}
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `observed_at` | The engine clock's Unix timestamp when the projection was taken. Compare `next_due` against this rather than against `time()`. |
+| `dormant_backend` | Whether a scheduling backend is present but unusable, which is a site-wide condition rather than one of this scope's. |
+| `schedules[]['name']` | The scope-local schedule name, as declared. |
+| `schedules[]['identity']` | The composed `{scope}:{name}`, which is what the hooks and the CLI use. |
+| `schedules[]['recurrence']` | The declared interval in seconds, or null when the current request did not declare this registration. |
+| `schedules[]['next_due']` | Unix timestamp of the next occurrence the registry expects. |
+| `schedules[]['last_fired']` | Unix timestamp of the last admitted occurrence, or null when none has been. |
+| `schedules[]['misfire_skips']` | Occurrences dropped beyond the grace window under `CatchUpPolicy::Skip`. |
+| `schedules[]['overlap_skips']` | Occurrences recorded as skipped because a matching lock was held. |
+| `schedules[]['occurrence_visible']` | Whether a ready scheduling backend can currently see this chain's occurrence. |
+
+The projection reports facts and draws no conclusion from them: whether a `next_due` in the past or
+an invisible occurrence is a problem depends on what the caller declared and on how late is late,
+neither of which the engine knows. Execution-overlap lock state is deliberately absent — it describes
+a run rather than a registration, and `wp a8csp-bgje schedules list` renders it for an operator.
+
+An unreadable registry returns `WP_Error` with `storage_failed` rather than an empty list, so a
+caller cannot mistake a failed read for a scope that declares nothing.
 
 ## Migrating from Action Scheduler
 
