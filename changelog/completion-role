@@ -1,0 +1,6 @@
+Significance: minor
+Type: added
+
+An execution object may declare the new `CompletionInterface` and receive `on_completed( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id )` when one of its runs completes. It removes the need to hand-assemble `'a8csp_bgje/completed/' . $scope . ':' . $name` and re-derive that hook's argument order, which matters most to a Chunked Job, whose execution role has no last chunk to put post-queue work in.
+
+Registration subscribes the declaring object to that hook, so nothing about the hook changes: it still fires for every other listener, the payload is the same, and delivery stays at-least-once. Key what `on_completed()` does to the run identifier so a repeated delivery converges.

@@ -19,6 +19,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingCompletionJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -735,6 +736,60 @@ final class ScopeOperationsTest extends TestCase {
 			'period'    => array( 'name' => 'refresh.index' ),
 			'non-ASCII' => array( 'name' => 'réindex' ),
 		);
+	}
+
+	/**
+	 * Registration subscribes a declared completion role to the identity's completed hook.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_register_drives_a_declared_completion_role_when_the_run_completes(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$job    = new RecordingCompletionJob( 'digest' );
+		$client->register( $job->definition() );
+		$this->rig->activate_registered_hooks();
+
+		$run = $client->dispatch( 'digest', array( 'site_id' => 7 ) );
+
+		self::assertInstanceOf( Run::class, $run );
+		$this->rig->run_due();
+		$this->rig->assert_completed();
+		self::assertCount( 1, $job->completions );
+		self::assertSame( (string) $run->id, (string) $job->completions[0]['run_id'] );
+		self::assertSame( array( 'site_id' => 7 ), $job->completions[0]['start_args'] );
+		self::assertNull( $job->completions[0]['previous_completed_run_id'] );
+	}
+
+	/**
+	 * The completion role receives the hook's previous-completed argument, not a null placeholder.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_declared_completion_role_receives_the_previous_completed_run(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$job    = new RecordingCompletionJob( 'digest' );
+		$client->register( $job->definition() );
+		$this->rig->activate_registered_hooks();
+
+		$first = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $first );
+		$this->rig->run_due();
+
+		$this->rig->randomizer()->value = 4_242;
+		$second                         = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $second );
+		$this->rig->run_due();
+
+		self::assertCount( 2, $job->completions );
+		self::assertNull( $job->completions[0]['previous_completed_run_id'] );
+		self::assertSame( (string) $first->id, (string) $job->completions[1]['previous_completed_run_id'] );
+		self::assertSame( (string) $second->id, (string) $job->completions[1]['run_id'] );
 	}
 
 	// endregion.

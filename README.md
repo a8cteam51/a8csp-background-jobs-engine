@@ -326,9 +326,14 @@ Chunks run one at a time with a short pause between them. `ChunkedRunContextInte
 
 ### 4. Reacting to run lifecycles
 
-Lifecycle reactions are hooks-only: the engine pushes every outcome, so consumers listen instead of
+Lifecycle reactions are hook-driven: the engine pushes every outcome, so consumers listen instead of
 polling. Every admitted run ends in exactly one of four terminal states — completed, failed,
 cancelled, or superseded — and each fires its identity-specific hook first, then its generic hook.
+
+An execution object may also declare `CompletionInterface` and receive its own completions without
+naming a hook. That is a subscription the engine makes on the consumer's behalf at
+`jobs()->register()`, not a second mechanism: the payload, the ordering against other listeners and
+the at-least-once delivery are the hook's. See [Completion role](#completion-role).
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
@@ -435,7 +440,7 @@ add_action( 'init', static function (): void {
 }, 2 );
 ```
 
-The failure summary is engine-authored and redacted; it never contains raw exception text. Terminal hooks can replay across crash recovery, so listeners use the run ID to converge repeated delivery. Their delivery is durable under Action Scheduler and best-effort under WP-Cron. Completed, failed, cancelled, and superseded reactions use their lifecycle hooks exclusively.
+The failure summary is engine-authored and redacted; it never contains raw exception text. Terminal hooks can replay across crash recovery, so listeners use the run ID to converge repeated delivery. Their delivery is durable under Action Scheduler and best-effort under WP-Cron. Completed, failed, cancelled, and superseded reactions reach consumers through their lifecycle hooks; a completed run additionally drives `CompletionInterface` on an execution object that declares it, which is a listener on the same hook.
 
 The engine retains up to 20 failed runs per scope-qualified identity for manual retry, subject also to a 1,000,000-byte ceiling on the complete serialized retention row. It evicts oldest entries first until both bounds hold. If a new entry cannot fit even by itself, the engine rejects that entry instead of retaining it and leaves the existing row intact. A retry that successfully starts a fresh run attempts to remove its retained source entry; a failed removal is logged. Retention is best-effort: a retention write failure is logged rather than made fatal.
 
@@ -484,6 +489,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `JobOptions` | Final readonly policy declaration constructed with optional named parameters `?int $max_runtime`, `?RetryPolicy $retry`, `?OverlapPolicy $overlap`, `?\Closure $overlap_key`, and `?int $priority`. Null uses the documented default for each policy except priority, where it defers to the priority resolution ladder ending at engine default 10. `max_runtime` supplies per-invocation crash-reclamation credit, not an execution limit. Construction stores `max_runtime` and priority without validating their declared bounds: `jobs()->register()` rejects an invalid `max_runtime` or job-default priority, `schedules()->sync()` rejects an invalid schedule priority, and `jobs()->dispatch()` rejects an invalid explicit priority. The [consumer limits](#consumer-limits) give the exact bounds and effective clamp. |
 | `KindExecutionInterface` | Empty marker shared by the standard and chunked execution roles so a kind-agnostic declaration can require execution membership while registration resolves the kind-specific role. |
 | `JobExecutionInterface` | Standard execution role extending `KindExecutionInterface` and requiring only `handle( array $start_args, RunContextInterface $context ): void`. |
+| `CompletionInterface` | Optional post-run role requiring only `on_completed( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ): void`. Extends nothing, so any execution object may declare it. Registration subscribes the declaring object to `a8csp_bgje/completed/{identity}`; the parameters are that hook's payload. |
 | `ChunkedJobExecutionInterface` | Standalone chunked execution role extending `KindExecutionInterface` and requiring only `generate_queue( array $start_args, RunContextInterface $context ): iterable` and `process_chunk( array $chunk_args, ChunkedRunContextInterface $context ): void`; it does not extend `JobExecutionInterface`. |
 | `Schedule` | Readonly schedule declaration constructed from `name`, `recurrence`, target `job`, `args`, `catch_up`, and `priority`; only `name`, `recurrence`, and `job` are required, and the rest default to an empty array, `CatchUpPolicy::RunOnce`, and null. |
 | `Recurrence` | Readonly fixed-interval recurrence created with `every( int $seconds )` or `every_anchored( int $seconds, int $anchor )`; an anchor is reduced modulo the interval. |
@@ -535,7 +541,7 @@ The `job()` and `chunked_job()` constructors bind the built-in kind to its typed
 
 ### Job execution and policy
 
-`JobExecutionInterface` requires exactly `handle( array $start_args, RunContextInterface $context ): void`. The definition supplies the name and policy, so the execution role carries no naming, policy, or lifecycle-reaction methods. A normal return succeeds. A handler that catches its own failure and returns normally therefore records no failed attempt and leaves the retry budget untouched. Only a throwable that escapes the handler fails the attempt and follows the retry policy, except `NonRetryableException`, which fails permanently.
+`JobExecutionInterface` requires exactly `handle( array $start_args, RunContextInterface $context ): void`. The definition supplies the name and policy, so the execution role carries no naming or policy methods, and the only lifecycle reaction it may carry is the optional `CompletionInterface` described below. A normal return succeeds. A handler that catches its own failure and returns normally therefore records no failed attempt and leaves the retry budget untouched. Only a throwable that escapes the handler fails the attempt and follows the retry policy, except `NonRetryableException`, which fails permanently.
 
 `JobOptions` carries five independent optional policies: `max_runtime`, `retry`, `overlap`, `overlap_key`, and `priority`. Null uses the documented default for each policy except priority, where it leaves the other resolution rungs operative. `max_runtime` supplies the per-invocation crash-reclamation credit: the engine credits the handler for this duration before its heartbeat begins aging through a separately resolved lock-staleness window. It never interrupts the handler. `jobs()->register()` rejects a non-null value below one second, so `0` is invalid rather than unlimited. Null selects 300 seconds, and declarations above 21,600 seconds (6 hours) remain valid but clamp to that effective credit. An unlimited credit would leave a crashed run's valid lock unreclaimable: under the default `OverlapPolicy::Reject`, every later matching dispatch would be refused because maintenance could never classify the valid lock as stale.
 
@@ -546,6 +552,46 @@ While a non-executing row is fresh and preserved, `wp a8csp-bgje runs cancel` ca
 Neither `JobOptions` nor `Schedule` validates priority during construction. `jobs()->register()` rejects an out-of-range job default, `schedules()->sync()` rejects an out-of-range schedule value, and `jobs()->dispatch()` rejects an out-of-range explicit argument. The remaining defaults are a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
 
 Expiry of the credit and lock-staleness window does not interrupt a handler. Crash reconciliation can then reclaim the run and admit replacement work that overlaps it, so handlers remain idempotent.
+
+### Completion role
+
+`CompletionInterface` is optional and orthogonal to the kind roles. It requires exactly:
+
+- `on_completed( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ): void`
+
+A chunked job has no last chunk, so `ChunkedJobExecutionInterface` offers nowhere to put work that
+belongs after the queue drains. Declaring this role puts it on the execution object instead of
+requiring every consumer to hand-assemble `'a8csp_bgje/completed/' . $scope . ':' . $name` and
+re-derive the argument order. A hook name spelled by hand cannot be checked, and one spelled wrong is
+a listener that silently never fires.
+
+```php
+final class RecountCommentsExecution implements ChunkedJobExecutionInterface, CompletionInterface {
+	public const string NAME = 'recount-comments';
+
+	// generate_queue() and process_chunk() as above.
+
+	public function on_completed( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ): void {
+		my_plugin_publish_recount_summary( (string) $run_id, $start_args );
+	}
+}
+```
+
+`jobs()->register()` subscribes the declared object to that identity's completed hook. Everything
+else follows from being one of that hook's listeners:
+
+- The hook still fires for every other listener, so this role adds a reaction rather than replacing
+  a channel. Consumers that prefer `add_action()` keep using it, and a job may do both.
+- Delivery is the hook's delivery: durable under Action Scheduler, best-effort under WP-Cron, and
+  repeatable across crash-recovery replay. Key what `on_completed()` does to the run identifier so a
+  repeated delivery converges.
+- It runs only where the work was registered. Registration is per-request, so a request that did not
+  register the job subscribes nothing — the same condition as any listener attached beside a
+  registration call.
+- A throwing `on_completed()` leaves the terminal hooks effect unmarked, exactly as a throwing
+  listener on that hook does, and maintenance replays it.
+
+Only completion carries a role. Failed, cancelled, and superseded reactions remain hook-only.
 
 ### Chunked Job and chunked run context
 
@@ -604,7 +650,7 @@ An occurrence is a misfire only when observed strictly after `next_due + grace`;
 
 ## Hooks and filters
 
-Lifecycle reactions are hooks-only. Every event with an identity fires its identity-specific hook first and its generic hook second. Generic lifecycle hooks prepend the identity except `failed`, whose specific and generic variants receive the same self-identifying `RunFailure` object. Terminal hooks (`completed`, `failed`, `cancelled`, and `superseded`) are durable under Action Scheduler and best-effort under WP-Cron; `started` is inline and non-durable. An ordinary job's `started` hook fires on admission before backend delivery is scheduled, so a throwing listener fails the dispatch closed; a chunked job fires `started` after its generated queue is durably persisted and before continuation delivery is scheduled. Fail-closed depends on the terminal write landing: if storage cannot confirm it, the dispatch reports `storage_failed` rather than `execution_failed`, and that run may still be delivered once stale-state maintenance reaches it. Treat that code as "inspect before compensating".
+Lifecycle reactions are hook-driven, and `CompletionInterface` is a subscription to one of these hooks rather than an exception to them. Every event with an identity fires its identity-specific hook first and its generic hook second. Generic lifecycle hooks prepend the identity except `failed`, whose specific and generic variants receive the same self-identifying `RunFailure` object. Terminal hooks (`completed`, `failed`, `cancelled`, and `superseded`) are durable under Action Scheduler and best-effort under WP-Cron; `started` is inline and non-durable. An ordinary job's `started` hook fires on admission before backend delivery is scheduled, so a throwing listener fails the dispatch closed; a chunked job fires `started` after its generated queue is durably persisted and before continuation delivery is scheduled. Fail-closed depends on the terminal write landing: if storage cannot confirm it, the dispatch reports `storage_failed` rather than `execution_failed`, and that run may still be delivered once stale-state maintenance reaches it. Treat that code as "inspect before compensating".
 
 | Event | Hooks and arguments |
 | --- | --- |

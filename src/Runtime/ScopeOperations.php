@@ -4,6 +4,7 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Runtime;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Identity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
+use A8C\SpecialProjects\BackgroundJobsEngine\CompletionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
@@ -75,6 +76,10 @@ final readonly class ScopeOperations {
 	 *
 	 * @param   JobDefinition $definition Job definition to register.
 	 *
+	 * An execution object declaring {@see CompletionInterface} is subscribed to this identity's
+	 * completed hook here, because registration is where the engine is handed the object and the
+	 * identity in the same call.
+	 *
 	 * @throws  \InvalidArgumentException When the identity, job-default priority, crash-reclamation window, kind, or execution role is invalid.
 	 * @throws  \LogicException           When the job identity is already registered.
 	 *
@@ -92,6 +97,10 @@ final readonly class ScopeOperations {
 		}
 
 		$this->dispatcher->register( $identity, $definition );
+
+		if ( $definition->execution instanceof CompletionInterface ) {
+			self::subscribe_completion_role( $identity, $definition->execution );
+		}
 	}
 
 	/**
@@ -314,6 +323,34 @@ final readonly class ScopeOperations {
 	// endregion
 
 	// region HELPERS
+
+	/**
+	 * Subscribes one execution object's completion role to its identity's completed hook.
+	 *
+	 * The subscription is a listener on the published hook rather than a private call site, so the
+	 * role inherits the hook's payload, its ordering against other listeners, and its at-least-once
+	 * delivery instead of acquiring a second set of guarantees to document. It is attached from a
+	 * registration verb rather than a component's `register_hooks()` because the object and its
+	 * identity meet only here; a component attaches before any scope has declared anything.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity            $identity  Complete scope-qualified work identity.
+	 * @param   CompletionInterface $execution Registered execution object declaring the completion role.
+	 *
+	 * @return  void
+	 */
+	private static function subscribe_completion_role( Identity $identity, CompletionInterface $execution ): void {
+		\add_action(
+			'a8csp_bgje/completed/' . (string) $identity,
+			static function ( RunId $run_id, array $start_args, ?RunId $previous_completed_run_id ) use ( $execution ): void {
+				$execution->on_completed( $run_id, $start_args, $previous_completed_run_id );
+			},
+			10,
+			3
+		);
+	}
 
 	/**
 	 * Projects one admitted run into the public boundary value.
