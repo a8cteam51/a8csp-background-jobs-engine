@@ -283,7 +283,7 @@ final class WpdbLockSpy extends \wpdb {
 	 * @param   mixed $query Prepared statement.
 	 * @param   mixed $x     Column offset.
 	 *
-	 * @return  list<mixed>
+	 * @return  list<non-empty-string|null>
 	 */
 	#[\Override]
 	public function get_col( $query = null, $x = 0 ): array {
@@ -294,7 +294,14 @@ final class WpdbLockSpy extends \wpdb {
 			throw new \InvalidArgumentException( 'WpdbLockSpy column offsets must be integers.' );
 		}
 
-		return \array_values( \array_map( static fn ( \stdClass $row ): mixed => \array_values( \get_object_vars( $row ) )[ $x ] ?? null, $this->last_result ?? array() ) );
+		// Core reports a column read as the driver's strings and answers an empty one with null.
+		$values = array();
+		foreach ( $this->last_result ?? array() as $row ) {
+			$value    = \array_values( \get_object_vars( $row ) )[ $x ] ?? null;
+			$values[] = \is_string( $value ) && '' !== $value ? $value : null;
+		}
+
+		return $values;
 	}
 
 	// endregion.
