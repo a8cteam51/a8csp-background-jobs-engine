@@ -7,10 +7,13 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\PortableArguments;
 use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
+use A8C\SpecialProjects\BackgroundJobsEngine\RunCompletionInterface;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\BoundaryErrorMapper;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunDataStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 
@@ -55,12 +58,14 @@ final readonly class ScopeOperations {
 	 * @param   ScheduleOperations $schedules  Schedule engine operations.
 	 * @param   Dispatcher         $dispatcher Background-work admission coordinator.
 	 * @param   Inspection         $inspection Read-only run inspection.
+	 * @param   StoreFactory       $stores     Name-bound run stores.
 	 */
 	public function __construct(
 		private string $scope,
 		private ScheduleOperations $schedules,
 		private Dispatcher $dispatcher,
 		private Inspection $inspection,
+		private StoreFactory $stores,
 	) {}
 
 	// endregion
@@ -69,6 +74,10 @@ final readonly class ScopeOperations {
 
 	/**
 	 * Registers one definition under the bound scope and its declared local name.
+	 *
+	 * An execution object declaring {@see RunCompletionInterface} is subscribed to this identity's
+	 * completed hook here, because registration is where the engine is handed the object and the
+	 * identity in the same call.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -92,6 +101,10 @@ final readonly class ScopeOperations {
 		}
 
 		$this->dispatcher->register( $identity, $definition );
+
+		if ( $definition->execution instanceof RunCompletionInterface ) {
+			self::subscribe_completion_role( $identity, $definition->execution );
+		}
 	}
 
 	/**
@@ -197,6 +210,58 @@ final readonly class ScopeOperations {
 	}
 
 	/**
+	 * Returns the bound scope's persisted schedule registrations with their observable live state.
+	 *
+	 * The projection reports facts and draws no conclusion from them: whether a next_due in the past
+	 * or an invisible occurrence is a problem depends on what the caller declared and how late is
+	 * late, neither of which the engine knows. Execution-overlap lock state is deliberately absent —
+	 * it describes a run rather than a registration, and `wp a8csp-bgje schedules list` renders it
+	 * for an operator who needs it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-return array{observed_at: int, dormant_backend: bool, schedules: list<array{name: string, identity: string, recurrence: int|null, next_due: int, last_fired: int|null, misfire_skips: int, overlap_skips: int, occurrence_visible: bool}>}|\WP_Error
+	 *
+	 * @return  array|\WP_Error
+	 */
+	#[\NoDiscard( 'a schedule-registration inspection result must be handled, not dropped' )]
+	public function inspect_schedules(): array|\WP_Error {
+		// Lock state is not projected here, so it is not resolved either — resolving it would run the
+		// consumer's overlap-key resolver and read a lock row per registration for a value this verb
+		// discards, which a read-only query has no business doing.
+		$inspected = $this->inspection->schedules( $this->scope, with_lock: false );
+		if ( null === $inspected ) {
+			return new \WP_Error( ErrorCode::StorageFailed->value, 'The schedule registry could not be read; repair WordPress option reads and retry.' );
+		}
+
+		$schedules = array();
+		foreach ( $inspected['entries'] as $entry ) {
+			$identity = Identity::tryFrom( $entry['identity'] );
+			if ( null === $identity ) {
+				continue;
+			}
+
+			$schedules[] = array(
+				'name'               => $identity->name(),
+				'identity'           => $entry['identity'],
+				'recurrence'         => $entry['recurrence'],
+				'next_due'           => $entry['next_due'],
+				'last_fired'         => $entry['last_fired'],
+				'misfire_skips'      => $entry['misfire_skips'],
+				'overlap_skips'      => $entry['overlap_skips'],
+				'occurrence_visible' => $entry['occurrence_visible'],
+			);
+		}
+
+		return array(
+			'observed_at'     => $inspected['observed_at'],
+			'dormant_backend' => $inspected['dormant_candidate'],
+			'schedules'       => $schedules,
+		);
+	}
+
+	/**
 	 * Returns one retained run's observable lifecycle status.
 	 *
 	 * @since   1.0.0
@@ -225,14 +290,12 @@ final readonly class ScopeOperations {
 	}
 
 	/**
-	 * Returns the most recently recorded completed run retained for one background-work name.
+	 * Returns the last completed run for one background-work name.
 	 *
-	 * The lookup covers only the retained history window. Each history buffer retains at most the
-	 * positive `a8csp_bgje/history_size` filter value, 30 by default. A completed run
-	 * older than that window returns null as if absent. Clients needing indefinite
-	 * retention keep their own pointer from the completed lifecycle hook. History
-	 * is recorded after those notifications, so a lookup inside either observes the previous retained
-	 * completion.
+	 * Read from the non-evicting slot rather than the capped history buffers, so the answer outlives
+	 * any number of later outcomes; {@see RunHistory::last_completed()} owns that guarantee and the
+	 * order it records in. History is written after the terminal notifications, so a lookup from
+	 * inside one observes the previous completion rather than the run being notified about.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -247,7 +310,7 @@ final readonly class ScopeOperations {
 	#[\NoDiscard( 'a last-completed-run result must be handled, not dropped' )]
 	public function last_completed_run( string $name ): Run|null|\WP_Error {
 		$identity = Identity::compose( $this->scope, $name );
-		$result   = BoundaryErrorMapper::map( $this->inspection->last_completed_run_id( $identity ) );
+		$result   = BoundaryErrorMapper::map( $this->inspection->last_completed_run( $identity ) );
 		if ( $result instanceof \WP_Error ) {
 			return $result;
 		}
@@ -255,7 +318,70 @@ final readonly class ScopeOperations {
 			return null;
 		}
 
-		return self::run( $identity, $result, RunStatus::Completed );
+		return self::run( $identity, $result['run_id'], RunStatus::Completed, $result['at'] );
+	}
+
+	/**
+	 * Stores one consumer value for the duration of one run.
+	 *
+	 * Values must survive `serialize()`/`unserialize()` without materializing an object, which is the
+	 * same portability contract start arguments carry. {@see Runs\Stores\RunDataStore} owns the
+	 * run-scoped lifetime this writes into.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $name   Scope-local job or chunked job name.
+	 * @param   string                  $run_id Run identifier.
+	 * @param   string                  $key    Run data key.
+	 * @param   array<array-key, mixed> $value  Portable value to store.
+	 *
+	 * @throws  \InvalidArgumentException When the identity, key, or value is invalid.
+	 *
+	 * @return  true|\WP_Error
+	 */
+	#[\NoDiscard( 'a data write failure must be handled, not dropped' )]
+	public function set_run_data( string $name, string $run_id, string $key, array $value ): true|\WP_Error {
+		$identity = Identity::compose( $this->scope, $name );
+		$context  = \sprintf( 'Background-work "%1$s" data key "%2$s"', $name, $key );
+		self::assert_data_key( $key, $name );
+
+		// Only portability here: the run's complete data row is the byte ceiling that applies.
+		self::assert_portable_tree( $value, $context . ' value' );
+
+		$stored = $this->stores->run_data( $identity )->remember( $run_id, $key, $value );
+		if ( true === $stored ) {
+			return true;
+		}
+		if ( null === $stored ) {
+			return new \WP_Error( ErrorCode::PayloadRejected->value, \sprintf( '%1$s does not fit; the run\'s complete data row is limited to %2$d serialized bytes.', $context, RunDataStore::MAX_ROW_BYTES ) );
+		}
+
+		return new \WP_Error( ErrorCode::StorageFailed->value, \sprintf( '%s could not be stored; repair WordPress option writes and retry.', $context ) );
+	}
+
+	/**
+	 * Returns one consumer value stored for the duration of one run.
+	 *
+	 * Null separates a key the run never stored from one holding an empty array.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Scope-local job or chunked job name.
+	 * @param   string $run_id Run identifier.
+	 * @param   string $key    Run data key.
+	 *
+	 * @throws  \InvalidArgumentException When the identity or key is invalid.
+	 *
+	 * @return  array<array-key, mixed>|null|\WP_Error
+	 */
+	#[\NoDiscard( 'a data read result must be handled, not dropped' )]
+	public function get_run_data( string $name, string $run_id, string $key ): array|null|\WP_Error {
+		$identity = Identity::compose( $this->scope, $name );
+		self::assert_data_key( $key, $name );
+
+		return BoundaryErrorMapper::map( $this->stores->run_data( $identity )->recall( $run_id, $key ) );
 	}
 
 	/**
@@ -316,6 +442,79 @@ final readonly class ScopeOperations {
 	// region HELPERS
 
 	/**
+	 * Subscribes one execution object's completion role to its identity's completed hook.
+	 *
+	 * The subscription is a listener on the published hook rather than a private call site, so the
+	 * role inherits the hook's payload, its ordering against other listeners, and its at-least-once
+	 * delivery instead of acquiring a second set of guarantees to document. It is attached from a
+	 * registration verb rather than a component's `register_hooks()` because the object and its
+	 * identity meet only here; a component attaches before any scope has declared anything.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity               $identity  Complete scope-qualified work identity.
+	 * @param   RunCompletionInterface $execution Registered execution object declaring the completion role.
+	 *
+	 * @return  void
+	 */
+	private static function subscribe_completion_role( Identity $identity, RunCompletionInterface $execution ): void {
+		// The role's signature is the hook's, so the object's own method is the listener.
+		\add_action( 'a8csp_bgje/completed/' . (string) $identity, array( $execution, 'on_completed' ), 10, 3 );
+	}
+
+	/**
+	 * Returns one value tree's encoded form, rejecting anything that would not survive storage.
+	 *
+	 * Portability is separate from any byte ceiling because the ceilings differ per surface: start
+	 * arguments are capped in JSON bytes, while data is capped by its complete serialized row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $values  Value tree to check.
+	 * @param   string                  $subject Complete subject phrase for the rejection message.
+	 *
+	 * @throws  \InvalidArgumentException When the tree is not a portable, JSON-encodable value.
+	 *
+	 * @return  string
+	 */
+	private static function assert_portable_tree( array $values, string $subject ): string {
+		try {
+			$encoded = \wp_json_encode( $values, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
+		} catch ( \JsonException ) {
+			$encoded = false;
+		}
+
+		if ( ! \is_string( $encoded ) || ! PortableArguments::is_valid( $values ) ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( '%s must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $subject ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		return $encoded;
+	}
+
+	/**
+	 * Rejects a data key that violates the key contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $key  Run data key.
+	 * @param   string $name Scope-local job or chunked job name.
+	 *
+	 * @throws  \InvalidArgumentException When the key violates its grammar or byte ceiling.
+	 *
+	 * @return  void
+	 */
+	private static function assert_data_key( string $key, string $name ): void {
+		if ( ! RunDataStore::is_valid_key( $key ) ) {
+			// Exception values are diagnostic data, not rendered output.
+			throw new \InvalidArgumentException( \sprintf( 'Background-work "%1$s" data key "%2$s" is invalid; use 1 to %3$d bytes matching [a-z0-9_-]+.', $name, $key, RunDataStore::MAX_KEY_BYTES ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+	}
+
+	/**
 	 * Projects one admitted run into the public boundary value.
 	 *
 	 * @since   1.0.0
@@ -324,13 +523,14 @@ final readonly class ScopeOperations {
 	 * @param   Identity  $identity Complete scope-qualified job or chunked job identity.
 	 * @param   string    $run_id   Run identifier.
 	 * @param   RunStatus $status   Public lifecycle state.
+	 * @param   int|null  $ended_at Terminalization timestamp, or null when the projection carries none.
 	 *
 	 * @throws  \ValueError When a non-canonical persisted run identifier is rejected.
 	 *
 	 * @return  Run
 	 */
-	private static function run( Identity $identity, string $run_id, RunStatus $status ): Run {
-		return new Run( (string) $identity, RunId::from( $run_id ), $status );
+	private static function run( Identity $identity, string $run_id, RunStatus $status, ?int $ended_at = null ): Run {
+		return new Run( (string) $identity, RunId::from( $run_id ), $status, $ended_at );
 	}
 
 	/**
@@ -395,16 +595,7 @@ final readonly class ScopeOperations {
 	 * @return  \WP_Error|null Payload rejection when the portable arguments exceed the persisted byte limit.
 	 */
 	private static function assert_portable_args( array $args, string $context ): ?\WP_Error {
-		try {
-			$encoded_args = \wp_json_encode( $args, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION );
-		} catch ( \JsonException ) {
-			$encoded_args = false;
-		}
-
-		if ( ! \is_string( $encoded_args ) || ! PortableArguments::is_valid( $args ) ) {
-			// Exception values are diagnostic data, not rendered output.
-			throw new \InvalidArgumentException( \sprintf( '%s arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.', $context ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
-		}
+		$encoded_args = self::assert_portable_tree( $args, $context . ' arguments' );
 
 		$actual_bytes = \strlen( $encoded_args );
 		if ( self::MAX_ARGUMENTS_BYTES >= $actual_bytes ) {

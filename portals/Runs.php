@@ -50,7 +50,7 @@ final readonly class Runs extends AbstractPortal {
 	}
 
 	/**
-	 * Returns the most recently retained completed run for one background-work name.
+	 * Returns the last completed run for one background-work name.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -116,6 +116,65 @@ final readonly class Runs extends AbstractPortal {
 	public function cancel( string $name, RunId $run_id ): Run|\WP_Error {
 		try {
 			return $this->operations()->cancel( $name, (string) $run_id );
+		} catch ( \InvalidArgumentException $exception ) {
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
+		} catch ( EngineUnavailableException $exception ) {
+			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
+		}
+	}
+
+	/**
+	 * Stores one consumer value for the duration of one run.
+	 *
+	 * Run data belongs to the run rather than to the job. The engine drops the whole row wherever it
+	 * drops the run row — completed, failed, cancelled, superseded, and the corrupt rows maintenance
+	 * removes without firing a hook — so a consumer cannot forget to clean up after a terminal path
+	 * it did not think about.
+	 *
+	 * Values must be a portable, JSON-encodable tree of scalars, null, and arrays within the same
+	 * depth bound as start arguments, and the run's complete data row has its own byte ceiling — the
+	 * README's consumer-limits table carries both. Writing an existing key replaces it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string                  $name   Scope-local job or chunked job name.
+	 * @param   RunId                   $run_id Run identifier.
+	 * @param   string                  $key    Run data key, 1 to 64 bytes matching `[a-z0-9_-]+`.
+	 * @param   array<array-key, mixed> $value  Portable value to store.
+	 *
+	 * @return  true|\WP_Error
+	 */
+	#[\NoDiscard( 'a data write failure must be handled, not dropped' )]
+	public function set_data( string $name, RunId $run_id, string $key, array $value ): true|\WP_Error {
+		try {
+			return $this->operations()->set_run_data( $name, (string) $run_id, $key, $value );
+		} catch ( \InvalidArgumentException $exception ) {
+			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
+		} catch ( EngineUnavailableException $exception ) {
+			return new \WP_Error( ErrorCode::EngineUnavailable->value, $exception->getMessage() );
+		}
+	}
+
+	/**
+	 * Returns one consumer value stored for the duration of one run.
+	 *
+	 * Null separates a key the run never stored from one holding an empty array, and a run whose
+	 * data the engine has already dropped reads as null.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   string $name   Scope-local job or chunked job name.
+	 * @param   RunId  $run_id Run identifier.
+	 * @param   string $key    Run data key.
+	 *
+	 * @return  array<array-key, mixed>|null|\WP_Error
+	 */
+	#[\NoDiscard( 'a data read result must be handled, not dropped' )]
+	public function get_data( string $name, RunId $run_id, string $key ): array|null|\WP_Error {
+		try {
+			return $this->operations()->get_run_data( $name, (string) $run_id, $key );
 		} catch ( \InvalidArgumentException $exception ) {
 			return new \WP_Error( ErrorCode::InvalidArgument->value, $exception->getMessage() );
 		} catch ( EngineUnavailableException $exception ) {

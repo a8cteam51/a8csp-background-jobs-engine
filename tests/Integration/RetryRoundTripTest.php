@@ -414,8 +414,8 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 		);
 		self::assertSame(
 			array(
-				'started'  => array( $failed_run_id, $successful_run_id ),
-				'terminal' => array(
+				'started'        => array( $failed_run_id, $successful_run_id ),
+				'terminal'       => array(
 					array(
 						'run_id' => $failed_run_id,
 						'status' => 'failed',
@@ -425,7 +425,7 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 						'status' => 'completed',
 					),
 				),
-				'by_hash'  => array(
+				'by_hash'        => array(
 					$args_hash => array(
 						'started'  => array( $failed_run_id, $successful_run_id ),
 						'terminal' => array(
@@ -440,8 +440,9 @@ final class RetryRoundTripTest extends AbstractIntegrationTestCase {
 						),
 					),
 				),
+				'last_completed' => array( 'run_id' => $successful_run_id ),
 			),
-			\get_option( 'a8csp_bgje_run_history_' . self::IDENTITY, null ),
+			self::history_without_timestamps( \get_option( 'a8csp_bgje_run_history_' . self::IDENTITY, null ) ),
 			'History must retain the exhausted run and successful manual retry in lifecycle order'
 		);
 		self::assertSame(

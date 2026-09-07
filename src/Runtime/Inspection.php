@@ -43,7 +43,7 @@ use Psr\Clock\ClockInterface;
  *     misfire_skips: int,
  *     overlap_skips: int,
  *     occurrence_visible: bool,
- *     lock: array{state: 'free'|'invalid'|'not_declared'|'overlap_allowed'|'read_failed'|'resolver_failed'}
+ *     lock: array{state: 'free'|'invalid'|'not_declared'|'not_inspected'|'overlap_allowed'|'read_failed'|'resolver_failed'}
  *         |array{state: 'held', run_id: string, stale: bool}
  * }
  * @phpstan-type LiveRunEntry array{
@@ -60,6 +60,7 @@ use Psr\Clock\ClockInterface;
  * @phpstan-type HistoryEntry array{
  *     run_id: string,
  *     outcome: 'completed'|'failed'|'cancelled'|'superseded'|'started',
+ *     at: int|null,
  *     failed_store: bool
  * }
  */
@@ -161,23 +162,26 @@ final readonly class Inspection {
 	}
 
 	/**
-	 * Returns the last completed run ID in the retained terminal recording order.
+	 * Returns the identity's last completed run and when it terminalized.
+	 *
+	 * Read from the non-evicting slot rather than the capped terminal buffers, so a run of failures
+	 * long enough to fill one does not carry the last completion out of the answer.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
 	 *
-	 * @return  AbstractResult<string|null, EngineError>
+	 * @return  AbstractResult<array{run_id: string, at: int|null}|null, EngineError>
 	 */
 	#[\NoDiscard( 'a last-completed-run inspection result must be handled, not dropped' )]
-	public function last_completed_run_id( Identity $identity ): AbstractResult {
-		$entries = $this->stores->run_history( $identity )->terminal_entries();
-		if ( null === $entries ) {
+	public function last_completed_run( Identity $identity ): AbstractResult {
+		$slot = $this->stores->run_history( $identity )->last_completed();
+		if ( null === $slot ) {
 			return new Failure( new EngineError( 'Authoritative option-row read failed; repair WordPress option reads and retry.', reason: EngineErrorReason::StorageFailure, context: array( 'option_name' => RunHistory::OPTION_PREFIX . (string) $identity ), ) );
 		}
 
-		return new Success( RunHistory::newest_completed_run_id( $entries ) );
+		return new Success( array() === $slot ? null : $slot );
 	}
 
 	/**
@@ -186,21 +190,38 @@ final readonly class Inspection {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   string|null $scope Exact scope filter, or null for every scope.
+	 * Resolving a registration's lock state runs the consumer's overlap-key resolver and reads that
+	 * lane's lock row, so a caller that does not render lock state asks for it to be skipped rather
+	 * than paying for a projection it discards.
+	 *
+	 * @param   string|null $scope     Exact scope filter, or null for every scope.
+	 * @param   bool        $with_lock Whether to resolve each registration's execution-overlap lock state.
 	 *
 	 * @phpstan-return array{observed_at: int, dormant_candidate: bool, entries: list<ScheduleEntry>}|null
 	 *
 	 * @return  array|null Null when authoritative schedule-registry inspection fails.
 	 */
-	public function schedules( ?string $scope = null ): ?array {
+	public function schedules( ?string $scope = null, bool $with_lock = true ): ?array {
 		$observed_at = $this->clock->now()->getTimestamp();
-		$read        = $this->schedules->all_registrations();
+		// A scoped caller reads its own registry row. Reading every scope's would fail this answer
+		// for a row belonging to somebody else, and report it as this scope's storage failure.
+		$read = null === $scope ? $this->schedules->all_registrations() : $this->schedules->registrations_for( $scope );
 		if ( $read->is_failure() ) {
 			return null;
 		}
 
 		$registrations = $read->value;
 		\ksort( $registrations, \SORT_STRING );
+
+		$identities = array();
+		foreach ( \array_keys( $registrations ) as $registration_key ) {
+			if ( null !== Identity::tryFrom( $registration_key ) ) {
+				$identities[] = $registration_key;
+			}
+		}
+
+		// One census for every registration rather than a backend query each.
+		$chains = $this->scheduler->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, $identities );
 
 		$entries = array();
 		foreach ( $registrations as $registration_key => $registration ) {
@@ -209,22 +230,17 @@ final readonly class Inspection {
 				continue;
 			}
 
-			$registration_scope = $schedule_identity->scope();
-			if ( null !== $scope && $scope !== $registration_scope ) {
-				continue;
-			}
-
 			$declaration = $this->schedules->declaration( $schedule_identity );
 			$entries[]   = array(
-				'scope'              => $registration_scope,
+				'scope'              => $schedule_identity->scope(),
 				'identity'           => $registration_key,
 				'recurrence'         => null === $declaration ? null : $declaration['schedule']->recurrence->interval,
 				'next_due'           => $registration['next_due'],
 				'last_fired'         => $registration['last_fired'],
 				'misfire_skips'      => $registration['misfire_skips'],
 				'overlap_skips'      => $registration['overlap_skips'],
-				'occurrence_visible' => $this->scheduler->is_scheduled( OccurrenceDelivery::SCHEDULE_HOOK, array( $registration_key ), $registration_key ),
-				'lock'               => $this->schedule_lock( $declaration, $observed_at ),
+				'occurrence_visible' => 0 < $chains[ $registration_key ]['count'],
+				'lock'               => $with_lock ? $this->schedule_lock( $declaration, $observed_at ) : array( 'state' => 'not_inspected' ),
 			);
 		}
 
@@ -499,6 +515,7 @@ final readonly class Inspection {
 			$entries[]                = array(
 				'run_id'       => $entry['run_id'],
 				'outcome'      => $entry['status'],
+				'at'           => $entry['at'],
 				'failed_store' => isset( $failed_ids[ $entry['run_id'] ] ),
 			);
 		}
@@ -517,6 +534,7 @@ final readonly class Inspection {
 			$entries[]       = array(
 				'run_id'       => $run_id,
 				'outcome'      => 'started',
+				'at'           => null,
 				'failed_store' => isset( $failed_ids[ $run_id ] ),
 			);
 		}

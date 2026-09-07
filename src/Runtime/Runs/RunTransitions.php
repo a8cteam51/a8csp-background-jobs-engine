@@ -13,7 +13,6 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockWindows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Kinds\KindHandlerInterface;
-use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunHistory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\RowWriteOutcome;
@@ -615,14 +614,14 @@ final readonly class RunTransitions {
 	 * @return  string|null
 	 */
 	private function last_completed_run_id( Identity $identity ): ?string {
-		$entries = $this->stores->run_history( $identity )->terminal_entries();
-		if ( null === $entries ) {
+		$slot = $this->stores->run_history( $identity )->last_completed();
+		if ( null === $slot ) {
 			$this->logger->warning( 'Previous completed run could not be read while freezing completion hook state because the authoritative run-history read failed; repair WordPress option reads before the next completion.', array( 'identity' => (string) $identity ) );
 
 			return null;
 		}
 
-		return RunHistory::newest_completed_run_id( $entries );
+		return $slot['run_id'] ?? null;
 	}
 
 	/**

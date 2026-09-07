@@ -378,19 +378,20 @@ final class EngineRig {
 		$this->run_due();
 	}
 
-	// endregion.
-
-	// region HELPERS.
-
 	/**
 	 * Makes do_action() invoke callbacks registered by the production graph.
+	 *
+	 * Set-up runs this once over the boot registrations. A verb that subscribes a listener of its
+	 * own — `ScopeOperations::register()` does, for an execution declaring the completion role —
+	 * registers after that snapshot was taken, so a test driving such a verb calls this again to
+	 * pick the new listener up.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	private function activate_registered_hooks(): void {
+	public function activate_registered_hooks(): void {
 		$by_hook = array();
 		foreach ( self::action_registrations() as $registration ) {
 			$by_hook[ $registration['hook_name'] ][] = $registration;
@@ -408,6 +409,10 @@ final class EngineRig {
 
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = $callbacks;
 	}
+
+	// endregion.
+
+	// region HELPERS.
 
 	/**
 	 * Returns validated production action registrations.

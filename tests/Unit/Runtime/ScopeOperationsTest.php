@@ -13,12 +13,15 @@ use A8C\SpecialProjects\BackgroundJobsEngine\RunFailureStage;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunId;
 use A8C\SpecialProjects\BackgroundJobsEngine\RunStatus;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\FailedRunStore;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Storage\OptionRows;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingChunkedJob;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingCompletionJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
@@ -268,6 +271,23 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertSame( ErrorCode::PayloadRejected->value, $result->get_error_code() );
 		self::assertSame( 'Background-work "oversized" arguments contain 8193 JSON bytes; the limit is 8192 bytes.', $result->get_error_message() );
 		self::assertNull( $result->get_error_data() );
+	}
+
+	/**
+	 * Dispatch rejects start arguments that would not survive persistence, naming the work.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_rejects_start_arguments_that_are_not_portable(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageIs( 'Background-work "unportable" arguments must be a JSON-encodable tree of scalars and arrays; use valid UTF-8 strings, finite numbers, and stable scalar identifiers without recursive or excessive nesting.' );
+
+		(void) $client->dispatch( 'unportable', array( 'handle' => new \stdClass() ) );
 	}
 
 	/**
@@ -538,14 +558,19 @@ final class ScopeOperationsTest extends TestCase {
 	}
 
 	/**
-	 * A completed run outside the retained history window is absent at the scope boundary.
+	 * A completion outlives its eviction from the capped terminal history window.
+	 *
+	 * The buffer holds every terminal outcome, so on an identity that fails often the completion is
+	 * carried out of it by later failures — at exactly the moment a caller most wants to know when
+	 * the work last succeeded. The non-evicting slot is what keeps the answer available, while
+	 * per-run inspection still stops at the retained window.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_last_completed_run_is_null_after_completion_leaves_the_retained_window(): void {
+	public function test_last_completed_run_survives_eviction_from_the_retained_window(): void {
 		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
 		self::assertIsArray( $filters );
 		$filters['a8csp_bgje/history_size']       = 1;
@@ -562,6 +587,7 @@ final class ScopeOperationsTest extends TestCase {
 		self::assertInstanceOf( Run::class, $retained );
 		self::assertSame( (string) $completed->id, (string) $retained->id );
 		self::assertSame( RunStatus::Completed, $retained->status );
+		self::assertSame( self::NOW, $retained->ended_at );
 
 		++$this->rig->clock()->timestamp;
 		$newer = $client->dispatch( 'email-digest' );
@@ -573,8 +599,11 @@ final class ScopeOperationsTest extends TestCase {
 		$evicted_completion = $client->inspect( 'email-digest', (string) $completed->id );
 		self::assertNull( $evicted_completion );
 
-		$evicted = $client->last_completed_run( 'email-digest' );
-		self::assertNull( $evicted );
+		$still_answered = $client->last_completed_run( 'email-digest' );
+		self::assertInstanceOf( Run::class, $still_answered );
+		self::assertSame( (string) $completed->id, (string) $still_answered->id );
+		self::assertSame( RunStatus::Completed, $still_answered->status );
+		self::assertSame( self::NOW, $still_answered->ended_at );
 	}
 
 	/**
@@ -735,6 +764,310 @@ final class ScopeOperationsTest extends TestCase {
 			'period'    => array( 'name' => 'refresh.index' ),
 			'non-ASCII' => array( 'name' => 'réindex' ),
 		);
+	}
+
+	/**
+	 * Registration subscribes a declared completion role to the identity's completed hook.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_register_drives_a_declared_completion_role_when_the_run_completes(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$job    = new RecordingCompletionJob( 'digest' );
+		$client->register( $job->definition() );
+		$this->rig->activate_registered_hooks();
+
+		$run = $client->dispatch( 'digest', array( 'site_id' => 7 ) );
+
+		self::assertInstanceOf( Run::class, $run );
+		$this->rig->run_due();
+		$this->rig->assert_completed();
+		self::assertCount( 1, $job->completions );
+		self::assertSame( (string) $run->id, (string) $job->completions[0]['run_id'] );
+		self::assertSame( array( 'site_id' => 7 ), $job->completions[0]['start_args'] );
+		self::assertNull( $job->completions[0]['previous_completed_run_id'] );
+	}
+
+	/**
+	 * The completion role receives the hook's previous-completed argument, not a null placeholder.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_declared_completion_role_receives_the_previous_completed_run(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$job    = new RecordingCompletionJob( 'digest' );
+		$client->register( $job->definition() );
+		$this->rig->activate_registered_hooks();
+
+		$first = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $first );
+		$this->rig->run_due();
+
+		$this->rig->randomizer()->value = 4_242;
+		$second                         = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $second );
+		$this->rig->run_due();
+
+		self::assertCount( 2, $job->completions );
+		self::assertNull( $job->completions[0]['previous_completed_run_id'] );
+		self::assertSame( (string) $first->id, (string) $job->completions[1]['previous_completed_run_id'] );
+		self::assertSame( (string) $second->id, (string) $job->completions[1]['run_id'] );
+	}
+
+	/**
+	 * Schedule-registration inspection reports each declared registration's observable live state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_reports_declared_registrations(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		$client->register( ( new RecordingJob( 'prune' ) )->definition() );
+		// Declared out of order on purpose: the projection is sorted by identity, and a declaration
+		// order that already matched would not show that.
+		self::assertTrue(
+			$client->sync(
+				array(
+					new Schedule( 'weekly', Recurrence::every( 900 ), 'prune' ),
+					new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ),
+				)
+			)
+		);
+
+		// occurrence_visible reads the chain sync() actually created, so the fixture drives it.
+		$registered = $client->inspect_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertSame( self::NOW, $registered['observed_at'] );
+		self::assertFalse( $registered['dormant_backend'] );
+		self::assertCount( 2, $registered['schedules'] );
+		self::assertSame(
+			array(
+				'name'               => 'nightly',
+				'identity'           => 'facade-tests:nightly',
+				'recurrence'         => 300,
+				'next_due'           => self::NOW + 300,
+				'last_fired'         => null,
+				'misfire_skips'      => 0,
+				'overlap_skips'      => 0,
+				'occurrence_visible' => true,
+			),
+			$registered['schedules'][0]
+		);
+		self::assertSame( 'weekly', $registered['schedules'][1]['name'] );
+		self::assertSame( 900, $registered['schedules'][1]['recurrence'] );
+		self::assertSame( array( 'nightly', 'weekly' ), \array_column( $registered['schedules'], 'name' ), 'Entries are ordered by identity, not by declaration order.' );
+	}
+
+	/**
+	 * Schedule-registration inspection runs no consumer code and reads no lock row.
+	 *
+	 * The verb is advertised as read-only. Resolving each registration's lock state would invoke the
+	 * consumer's overlap-key closure and read that lane's lock row — observable side effects, and a
+	 * cost paid for a projection this verb does not return.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_does_not_invoke_the_overlap_key_resolver(): void {
+		$resolved = 0;
+		$client   = $this->rig->operations( 'facade-tests' );
+		$client->register(
+			( new RecordingJob( 'refresh-index' ) )->definition(
+				new JobOptions(
+					overlap_key: static function ( array $args ) use ( &$resolved ): string {
+						++$resolved;
+
+						return 'lane';
+					}
+				)
+			)
+		);
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$resolved                            = 0;
+		$this->rig->wpdb()->recorded_queries = array();
+
+		$registered = $client->inspect_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertCount( 1, $registered['schedules'] );
+		self::assertSame( 0, $resolved, 'A read-only projection must not run the consumer overlap-key resolver.' );
+		self::assertSame(
+			array(),
+			\array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_contains( $query, OverlapGuard::OPTION_PREFIX ) ) ),
+			'A read-only projection must not read execution-overlap lock rows.'
+		);
+	}
+
+	/**
+	 * Schedule-registration inspection is confined to the bound scope.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_excludes_another_scope(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$neighbour = $this->rig->operations( 'other-scope' );
+		$neighbour->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		self::assertTrue( $neighbour->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$registered = $client->inspect_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertSame( array( 'facade-tests:nightly' ), \array_column( $registered['schedules'], 'identity' ) );
+	}
+
+	/**
+	 * A registration the current request stopped declaring reports a null recurrence.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_reports_a_null_recurrence_for_an_undeclared_registration(): void {
+		// A registry row with no request-local declaration is the state a request that did not sync sees.
+		[ $option_name, $raw ] = StoreFixtureBuilder::for_identity( 'facade-tests:refresh-index' )->schedule_registration(
+			array(
+				'scope'         => 'facade-tests',
+				'declarations'  => array(),
+				'registrations' => array(
+					'facade-tests:nightly' => StoreFixtureBuilder::schedule_registration_state( 'stale-fingerprint', self::NOW + 300, last_fired: self::NOW - 120, misfire_skips: 2, overlap_skips: 1 ),
+				),
+			)
+		);
+		$this->rig->wpdb()->put( $option_name, $raw );
+
+		$registered = $this->rig->operations( 'facade-tests' )->inspect_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertSame(
+			array(
+				'name'               => 'nightly',
+				'identity'           => 'facade-tests:nightly',
+				'recurrence'         => null,
+				'next_due'           => self::NOW + 300,
+				'last_fired'         => self::NOW - 120,
+				'misfire_skips'      => 2,
+				'overlap_skips'      => 1,
+				'occurrence_visible' => false,
+			),
+			$registered['schedules'][0]
+		);
+	}
+
+	/**
+	 * Inspection reads only the bound scope's registry row, never another scope's.
+	 *
+	 * Reading every scope's row made one caller's answer depend on rows it does not own: an
+	 * unreadable row anywhere returned `storage_failed` to a scope whose own row was fine, described
+	 * as "the schedule registry".
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_reads_only_the_bound_scopes_registry_row(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$foreign = ScheduleRegistry::option_name( 'other-scope' );
+		$this->rig->wpdb()->put( $foreign, StoreFixtureBuilder::corrupt_row( array( 'not' => 'a registry' ) ) );
+		$this->rig->wpdb()->recorded_queries = array();
+
+		$registered = $client->inspect_schedules();
+
+		self::assertIsArray( $registered );
+		self::assertSame( array( 'nightly' ), \array_column( $registered['schedules'], 'name' ) );
+		self::assertSame(
+			array(),
+			\array_values( \array_filter( $this->rig->wpdb()->recorded_queries, static fn ( string $query ): bool => \str_contains( $query, $foreign ) ) ),
+			'A scope-bound inspection must not touch another scope\'s registry row.'
+		);
+	}
+
+	/**
+	 * An unreadable schedule registry surfaces as a storage failure rather than an empty list.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_reports_an_unreadable_registry(): void {
+		$client = $this->rig->operations( 'facade-tests' );
+		$client->register( ( new RecordingJob( 'refresh-index' ) )->definition() );
+		self::assertTrue( $client->sync( array( new Schedule( 'nightly', Recurrence::every( 300 ), 'refresh-index' ) ) ) );
+
+		$this->rig->wpdb()->fail_next_read_at( 'query_filtered' );
+		$result = $client->inspect_schedules();
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::StorageFailed->value, $result->get_error_code() );
+		self::assertSame( 'The schedule registry could not be read; repair WordPress option reads and retry.', $result->get_error_message() );
+	}
+
+	/**
+	 * The completed hook's previous-completion argument survives eviction from the history buffer.
+	 *
+	 * It is frozen from the same non-evicting slot the boundary verb reads, so the hook payload and
+	 * `runs()->last_completed()` cannot disagree about which run completed last.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_previous_completed_run_survives_eviction_from_the_retained_window(): void {
+		$filters = $GLOBALS['a8csp_bgje_test_filter_values'] ?? null;
+		self::assertIsArray( $filters );
+		$filters['a8csp_bgje/history_size']       = 1;
+		$GLOBALS['a8csp_bgje_test_filter_values'] = $filters;
+
+		$client = $this->rig->operations( 'facade-tests' );
+		$job    = new RecordingCompletionJob( 'digest' );
+		$client->register( $job->definition() );
+		$this->rig->activate_registered_hooks();
+
+		$first = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $first );
+		$this->rig->run_due();
+
+		// A later terminal outcome fills the one-entry buffer and carries the completion out of it.
+		++$this->rig->clock()->timestamp;
+		$this->rig->randomizer()->value = 4_242;
+		$cancelled                      = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $cancelled );
+		self::assertInstanceOf( Run::class, $client->cancel( 'digest', (string) $cancelled->id ) );
+
+		++$this->rig->clock()->timestamp;
+		$this->rig->randomizer()->value = 8_484;
+		$second                         = $client->dispatch( 'digest' );
+		self::assertInstanceOf( Run::class, $second );
+		$this->rig->run_due();
+
+		self::assertCount( 2, $job->completions );
+		self::assertSame( (string) $second->id, (string) $job->completions[1]['run_id'] );
+		self::assertSame( (string) $first->id, (string) $job->completions[1]['previous_completed_run_id'] );
 	}
 
 	// endregion.

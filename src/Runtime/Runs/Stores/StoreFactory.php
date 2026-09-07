@@ -58,6 +58,20 @@ final readonly class StoreFactory {
 	}
 
 	/**
+	 * Constructs the per-run data store for a job or chunked job identity.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete scope-qualified job or chunked job identity.
+	 *
+	 * @return  RunDataStore
+	 */
+	public function run_data( Identity $identity ): RunDataStore {
+		return new RunDataStore( $identity, $this->rows );
+	}
+
+	/**
 	 * Constructs the latest-run pointer for a job or chunked job identity.
 	 *
 	 * @since   1.0.0

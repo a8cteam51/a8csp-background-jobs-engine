@@ -727,7 +727,9 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertIsArray( $history_rows );
 		$history_row = $history_rows[0] ?? null;
 		self::assertIsArray( $history_row );
-		self::assertSame( array( 'run_id', 'outcome', 'failed_store' ), \array_keys( $history_row ) );
+		self::assertSame( array( 'run_id', 'outcome', 'ended', 'failed_store' ), \array_keys( $history_row ) );
+		// The clock does not move between the cancellation and the listing, so the age is exactly zero.
+		self::assertSame( '0s ago', $history_row['ended'] );
 		self::assertSame( '—', $history_row['failed_store'] );
 	}
 

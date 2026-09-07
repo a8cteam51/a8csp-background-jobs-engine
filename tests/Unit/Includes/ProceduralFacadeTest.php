@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit\Includes;
 
 use A8C\SpecialProjects\BackgroundJobsEngine\CatchUpPolicy;
+use A8C\SpecialProjects\BackgroundJobsEngine\ErrorCode;
 use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
 use A8C\SpecialProjects\BackgroundJobsEngine\NonRetryableException;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
@@ -28,7 +29,10 @@ use PHPUnit\Framework\TestCase;
 #[CoversFunction( 'a8csp_bgje_dispatch_job_at' )]
 #[CoversFunction( 'a8csp_bgje_sync_schedules' )]
 #[CoversFunction( 'a8csp_bgje_dispatch_schedule' )]
+#[CoversFunction( 'a8csp_bgje_inspect_schedules' )]
 #[CoversFunction( 'a8csp_bgje_inspect_run' )]
+#[CoversFunction( 'a8csp_bgje_set_run_data' )]
+#[CoversFunction( 'a8csp_bgje_get_run_data' )]
 #[CoversFunction( 'a8csp_bgje_last_completed_run' )]
 #[CoversFunction( 'a8csp_bgje_retry_failed_run' )]
 #[CoversFunction( 'a8csp_bgje_cancel_run' )]
@@ -252,6 +256,67 @@ final class ProceduralFacadeTest extends TestCase {
 		self::assertSame( 300, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['interval'] ?? null );
 		self::assertSame( 0, self::latest_backend_call( $this->rig, 'schedule_recurring' )['args']['priority'] ?? null );
 		self::assertSame( 41, self::latest_backend_call( $this->rig, 'enqueue_async' )['args']['priority'] ?? null );
+	}
+
+	/**
+	 * The registration-inspection alias returns the bound scope's registry projection.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_alias_projects_the_bound_scope(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::SCOPE, self::job( 'scheduled-job' ) ) );
+		self::assertTrue( \a8csp_bgje_sync_schedules( self::SCOPE, new Schedule( 'nightly', Recurrence::every( 300 ), 'scheduled-job' ) ) );
+
+		$registered = \a8csp_bgje_inspect_schedules( self::SCOPE );
+
+		self::assertIsArray( $registered );
+		self::assertSame( self::NOW, $registered['observed_at'] );
+		self::assertFalse( $registered['dormant_backend'] );
+		self::assertSame( array( 'nightly' ), \array_column( $registered['schedules'], 'name' ) );
+		self::assertSame( 300, $registered['schedules'][0]['recurrence'] );
+		self::assertSame( self::NOW + 300, $registered['schedules'][0]['next_due'] );
+	}
+
+	/**
+	 * The registration-inspection alias rejects a scope that violates the scope contract.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_inspect_schedules_alias_rejects_an_invalid_scope(): void {
+		$result = \a8csp_bgje_inspect_schedules( 'Not A Scope' );
+
+		self::assertInstanceOf( \WP_Error::class, $result );
+		self::assertSame( ErrorCode::InvalidArgument->value, $result->get_error_code() );
+	}
+
+	/**
+	 * The data aliases round-trip one run's value and reject a malformed run identifier.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_run_data_aliases_delegate_to_the_bound_engine(): void {
+		self::assertTrue( \a8csp_bgje_register_job( self::SCOPE, self::job( 'data-job' ) ) );
+		$run = \a8csp_bgje_dispatch_job( self::SCOPE, 'data-job' );
+		self::assertInstanceOf( Run::class, $run );
+
+		self::assertNull( \a8csp_bgje_get_run_data( self::SCOPE, 'data-job', (string) $run->id, 'seen' ) );
+		self::assertTrue( \a8csp_bgje_set_run_data( self::SCOPE, 'data-job', (string) $run->id, 'seen', array( 'hosts' => array( 'a' ) ) ) );
+
+		self::assertSame( array( 'hosts' => array( 'a' ) ), \a8csp_bgje_get_run_data( self::SCOPE, 'data-job', (string) $run->id, 'seen' ) );
+
+		$rejected = \a8csp_bgje_set_run_data( self::SCOPE, 'data-job', 'not-a-run-id', 'seen', array() );
+		self::assertInstanceOf( \WP_Error::class, $rejected );
+		self::assertSame( ErrorCode::InvalidArgument->value, $rejected->get_error_code() );
+		self::assertSame( 'Run identifier is malformed; pass a run ID the engine returned.', $rejected->get_error_message() );
 	}
 
 	/**

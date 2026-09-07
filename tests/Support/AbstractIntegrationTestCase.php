@@ -302,6 +302,134 @@ abstract class AbstractIntegrationTestCase extends TestCase {
 	}
 
 	/**
+	 * Returns a persisted run-history row with its terminalization timestamps projected away.
+	 *
+	 * Integration runs on the wall clock, so a caller cannot name the timestamps; what it can assert
+	 * is which runs the row holds. This proves each recorded terminal entry carries an integer
+	 * timestamp and then removes it, leaving the outcomes for the caller to pin exactly.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $history Persisted run-history option value.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	protected static function history_without_timestamps( mixed $history ): array {
+		self::assertIsArray( $history );
+
+		$projected = array();
+		foreach ( $history as $key => $value ) {
+			$projected[ $key ] = match ( $key ) {
+				'terminal'       => self::terminal_without_timestamps( $value ),
+				'by_hash'        => self::by_hash_without_timestamps( $value ),
+				'last_completed' => self::last_completed_without_timestamp( $value ),
+				default          => $value,
+			};
+		}
+
+		return $projected;
+	}
+
+	/**
+	 * Returns inspection history entries with their terminalization timestamps projected away.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $entries Inspection history entries.
+	 *
+	 * @return  list<array<array-key, mixed>>
+	 */
+	protected static function history_entries_without_timestamps( mixed $entries ): array {
+		self::assertIsArray( $entries );
+
+		$projected = array();
+		foreach ( $entries as $entry ) {
+			self::assertIsArray( $entry );
+			self::assertArrayHasKey( 'at', $entry );
+			if ( 'started' === ( $entry['outcome'] ?? null ) ) {
+				self::assertNull( $entry['at'], 'A started entry has not terminalized, so it carries no timestamp.' );
+			} else {
+				self::assertIsInt( $entry['at'], 'A terminal history entry carries an integer timestamp.' );
+			}
+			unset( $entry['at'] );
+			$projected[] = $entry;
+		}
+
+		return $projected;
+	}
+
+	/**
+	 * Returns one terminal buffer with each entry's timestamp proved and removed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $terminal Persisted terminal buffer.
+	 *
+	 * @return  list<array<array-key, mixed>>
+	 */
+	private static function terminal_without_timestamps( mixed $terminal ): array {
+		self::assertIsArray( $terminal );
+
+		$projected = array();
+		foreach ( $terminal as $entry ) {
+			self::assertIsArray( $entry );
+			self::assertIsInt( $entry['at'] ?? null );
+			unset( $entry['at'] );
+			$projected[] = $entry;
+		}
+
+		return $projected;
+	}
+
+	/**
+	 * Returns argument-scoped buffers with each terminal entry's timestamp proved and removed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $by_hash Persisted argument-scoped buffers.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private static function by_hash_without_timestamps( mixed $by_hash ): array {
+		self::assertIsArray( $by_hash );
+
+		$projected = array();
+		foreach ( $by_hash as $hash => $buffers ) {
+			self::assertIsArray( $buffers );
+			$buffers['terminal'] = self::terminal_without_timestamps( $buffers['terminal'] ?? null );
+			$projected[ $hash ]  = $buffers;
+		}
+
+		return $projected;
+	}
+
+	/**
+	 * Returns the last-completed slot with its timestamp proved and removed.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   mixed $slot Persisted last-completed slot.
+	 *
+	 * @return  array<array-key, mixed>
+	 */
+	private static function last_completed_without_timestamp( mixed $slot ): array {
+		self::assertIsArray( $slot );
+		if ( array() === $slot ) {
+			return array();
+		}
+
+		self::assertIsInt( $slot['at'] ?? null );
+		unset( $slot['at'] );
+
+		return $slot;
+	}
+
+	/**
 	 * Returns the engine's insertion-ordered identity for portable arguments.
 	 *
 	 * @since   1.0.0

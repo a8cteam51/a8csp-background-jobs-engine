@@ -26,11 +26,13 @@ final readonly class Run {
 	 * @param   string    $identity Complete {scope}:{name} job or chunked-job identity.
 	 * @param   RunId     $id       Run identifier.
 	 * @param   RunStatus $status   Run lifecycle state at projection time.
+	 * @param   int|null  $ended_at Unix timestamp the run reached its terminal state, or null when the projection does not carry one.
 	 */
 	public function __construct(
 		public string $identity,
 		public RunId $id,
 		public RunStatus $status,
+		public ?int $ended_at = null,
 	) {}
 
 	// endregion

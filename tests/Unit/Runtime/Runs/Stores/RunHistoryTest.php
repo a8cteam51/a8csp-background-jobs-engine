@@ -329,9 +329,192 @@ final class RunHistoryTest extends TestCase {
 				array(
 					'run_id' => $terminal_run_id,
 					'status' => 'completed',
+					'at'     => null,
 				),
 			),
 			$buffers['terminal'] ?? null
+		);
+	}
+
+	/**
+	 * The last-completed slot outlives every later terminal outcome that fills the buffer.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_survives_a_buffer_filled_by_later_outcomes(): void {
+		$this->set_history_size( 2 );
+		$store = $this->store();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW ) );
+		foreach ( range( 2, 6 ) as $index ) {
+			self::assertTrue( $store->record_terminal( self::run_id( $index ), self::hash( 1 ), RunStatus::Failed, self::NOW + $index ) );
+		}
+
+		self::assertSame(
+			array( self::run_id( 5 ), self::run_id( 6 ) ),
+			\array_column( $store->terminal_entries() ?? array(), 'run_id' ),
+			'The capped buffer holds only the newest outcomes.'
+		);
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 1 ),
+				'at'     => self::NOW,
+			),
+			$store->last_completed()
+		);
+	}
+
+	/**
+	 * An identity that has never completed reports no last completion rather than a read failure.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_last_completed_is_empty_before_any_completion(): void {
+		$store = $this->store();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Failed, self::NOW ) );
+
+		self::assertSame( array(), $store->last_completed() );
+	}
+
+	/**
+	 * A replayed completion that is already the slot leaves it untouched.
+	 *
+	 * At-least-once delivery replays a terminal transition, and the identifier check inside record()
+	 * answers that while the run is still buffered — which is what keeps the common replay from
+	 * rewriting the slot at all.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_replayed_completion_leaves_its_own_slot_untouched(): void {
+		$store = $this->store();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW ) );
+		$before = $this->raw_row();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW ) );
+
+		self::assertSame( $before, $this->raw_row(), 'A replay of the buffered run must not rewrite the row at all.' );
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 1 ),
+				'at'     => self::NOW,
+			),
+			$store->last_completed()
+		);
+	}
+
+	/**
+	 * A completion stamped by a skewed clock does not pin the slot against every later one.
+	 *
+	 * The slot is recorded in terminalization order rather than gated on the stored timestamp. A gate
+	 * would be unrecoverable here: one run terminalized under a forward-skewed clock would beat every
+	 * subsequent completion for the lifetime of the identity, and nothing surfaces it.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_forward_skewed_completion_does_not_pin_the_last_completed_slot(): void {
+		$store = $this->store();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW + 86_400 * 3_650 ) );
+		self::assertSame( self::run_id( 1 ), ( $store->last_completed() ?? array() )['run_id'] ?? null );
+
+		self::assertTrue( $store->record_terminal( self::run_id( 2 ), self::hash( 2 ), RunStatus::Completed, self::NOW ) );
+
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 2 ),
+				'at'     => self::NOW,
+			),
+			$store->last_completed(),
+			'A later completion must be able to take the slot back from a skewed one.'
+		);
+	}
+
+	/**
+	 * A completion recorded in the same second as the last one takes the slot.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_same_second_completion_takes_the_last_completed_slot(): void {
+		$store = $this->store();
+
+		self::assertTrue( $store->record_terminal( self::run_id( 1 ), self::hash( 1 ), RunStatus::Completed, self::NOW ) );
+		self::assertTrue( $store->record_terminal( self::run_id( 2 ), self::hash( 2 ), RunStatus::Completed, self::NOW ) );
+
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 2 ),
+				'at'     => self::NOW,
+			),
+			$store->last_completed(),
+			'Run identifiers order by a random suffix within one second, so recording order decides.'
+		);
+	}
+
+	/**
+	 * A row written before the slot existed still answers, from its retained terminal buffer.
+	 *
+	 * Reading only the slot would make an upgraded site answer null for an identity that has
+	 * completed, until its next completion — briefly worse than the version it upgraded from. The
+	 * buffer is the floor that keeps this verb's answer monotonic across the upgrade.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_slotless_row_answers_from_the_retained_buffer(): void {
+		$raw = \maybe_serialize(
+			array(
+				'started'  => array(),
+				'terminal' => array(
+					array(
+						'run_id' => self::run_id( 1 ),
+						'status' => 'completed',
+					),
+				),
+				'by_hash'  => array(),
+			)
+		);
+		self::assertIsString( $raw );
+		$this->rig->wpdb()->put( RunHistory::OPTION_PREFIX . self::IDENTITY, $raw );
+
+		$store = $this->store();
+
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 1 ),
+				'at'     => null,
+			),
+			$store->last_completed(),
+			'A pre-slot row answers from its buffer, with no timestamp to report.'
+		);
+		self::assertSame(
+			array(
+				array(
+					'run_id' => self::run_id( 1 ),
+					'status' => 'completed',
+					'at'     => null,
+				),
+			),
+			$store->terminal_entries(),
+			'The entry survives hydration without its timestamp rather than being dropped.'
 		);
 	}
 

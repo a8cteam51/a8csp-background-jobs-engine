@@ -1391,15 +1391,7 @@ final class RunReconciliationTest extends TestCase {
 		);
 		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame(
-			array(
-				array(
-					'run_id' => self::RUN_ID,
-					'status' => 'superseded',
-				),
-			),
-			$history['terminal'] ?? null
-		);
+		$this->assert_terminal_buffer( $history, array( self::RUN_ID => 'superseded' ) );
 		$lock = $this->wpdb->rows[ $this->lock_option_name() ] ?? null;
 		self::assertIsString( $lock );
 		$lock_row = \maybe_unserialize( $lock );
@@ -1443,15 +1435,7 @@ final class RunReconciliationTest extends TestCase {
 		);
 		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame(
-			array(
-				array(
-					'run_id' => self::RUN_ID,
-					'status' => 'superseded',
-				),
-			),
-			$history['terminal'] ?? null
-		);
+		$this->assert_terminal_buffer( $history, array( self::RUN_ID => 'superseded' ) );
 	}
 
 	/**
@@ -1657,15 +1641,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $options );
 		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame(
-			array(
-				array(
-					'run_id' => self::RUN_ID,
-					'status' => 'failed',
-				),
-			),
-			$history['terminal'] ?? null
-		);
+		$this->assert_terminal_buffer( $history, array( self::RUN_ID => 'failed' ) );
 		$diagnostic = $this->exception_diagnostic( $throwable );
 		self::assertSame( 'warning', $diagnostic['level'] ?? null );
 		self::assertSame(
@@ -2065,15 +2041,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertArrayNotHasKey( FailedRunStore::OPTION_PREFIX . self::IDENTITY, $this->options() );
 		$history = $this->options()[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame(
-			array(
-				array(
-					'run_id' => self::RUN_ID,
-					'status' => 'superseded',
-				),
-			),
-			$history['terminal'] ?? null
-		);
+		$this->assert_terminal_buffer( $history, array( self::RUN_ID => 'superseded' ) );
 		$lock = \maybe_unserialize( $this->wpdb->rows[ $this->lock_option_name() ] ?? '' );
 		self::assertIsArray( $lock );
 		self::assertSame( $replacement_run_id, $lock['run_id'] ?? null );
@@ -2587,18 +2555,28 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array( 'hooks', 'history' ), $state['effects'] ?? null );
 		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		$appended = $terminal[1] ?? null;
+		self::assertIsArray( $appended );
+		$recorded_at = $appended['at'] ?? null;
+		self::assertIsInt( $recorded_at );
+		// The seeded pre-bucket entry carries no timestamp, so it hydrates with a null one rather
+		// than being dropped, while the entry this sweep wrote carries the run's terminal time.
 		self::assertSame(
 			array(
 				array(
 					'run_id' => self::PREVIOUS_RUN_ID,
 					'status' => 'completed',
+					'at'     => null,
 				),
 				array(
 					'run_id' => self::RUN_ID,
 					'status' => 'completed',
+					'at'     => $recorded_at,
 				),
 			),
-			$history['terminal'] ?? null
+			$terminal
 		);
 		self::assertCount( 2, $this->fired_actions() );
 		self::assertCount( 1, $this->logger->records );
@@ -2681,6 +2659,48 @@ final class RunReconciliationTest extends TestCase {
 		$this->backend->calls                     = array();
 		$this->logger->records                    = array();
 		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
+	}
+
+	/**
+	 * Asserts a terminal buffer's outcomes in order, without pinning the timestamps.
+	 *
+	 * Terminalization times are pinned against the run row in the transition and lifecycle suites;
+	 * here the buffer's contents are the subject, so each entry's timestamp is only required to be
+	 * a persisted integer or the null a pre-timestamp row hydrates to.
+	 *
+	 * @phpstan-param array<string, 'completed'|'failed'|'cancelled'|'superseded'> $expected
+	 *
+	 * @param   array<array-key, mixed> $history  Hydrated run-history row.
+	 * @param   array                   $expected Expected outcome per run identifier, in order.
+	 *
+	 * @return  void
+	 */
+	private function assert_terminal_buffer( array $history, array $expected ): void {
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		self::assertCount( \count( $expected ), $terminal );
+
+		$entries = array();
+		foreach ( \array_values( $terminal ) as $entry ) {
+			self::assertIsArray( $entry );
+			self::assertArrayHasKey( 'at', $entry );
+			$at = $entry['at'];
+			self::assertTrue( null === $at || \is_int( $at ), 'A terminal entry carries an integer timestamp or none at all.' );
+			$entries[] = array(
+				'run_id' => $entry['run_id'] ?? null,
+				'status' => $entry['status'] ?? null,
+			);
+		}
+
+		$wanted = array();
+		foreach ( $expected as $run_id => $status ) {
+			$wanted[] = array(
+				'run_id' => $run_id,
+				'status' => $status,
+			);
+		}
+
+		self::assertSame( $wanted, $entries );
 	}
 
 	/**
@@ -2794,15 +2814,7 @@ final class RunReconciliationTest extends TestCase {
 		self::assertSame( array( $failure ), $actions[0]['args'] ?? null );
 		$history = $options[ 'a8csp_bgje_run_history_' . self::IDENTITY ] ?? null;
 		self::assertIsArray( $history );
-		self::assertSame(
-			array(
-				array(
-					'run_id' => self::RUN_ID,
-					'status' => 'failed',
-				),
-			),
-			$history['terminal'] ?? null
-		);
+		$this->assert_terminal_buffer( $history, array( self::RUN_ID => 'failed' ) );
 	}
 
 	/**

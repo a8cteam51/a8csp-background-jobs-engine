@@ -261,8 +261,11 @@ final readonly class StoreFixtureBuilder {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   list<array{run_id: string, args_hash: string}>                    $started  Started entries in record order.
-	 * @param   list<array{run_id: string, args_hash: string, status: RunStatus}> $terminal Terminal entries in record order.
+	 * An omitted terminal `at` defaults to the run identifier's own timestamp prefix, which keeps a
+	 * fixture deterministic without every call site naming a time it does not care about.
+	 *
+	 * @param   list<array{run_id: string, args_hash: string}>                              $started  Started entries in record order.
+	 * @param   list<array{run_id: string, args_hash: string, status: RunStatus, at?: int}> $terminal Terminal entries in record order.
 	 *
 	 * @return  array{string, string}
 	 */
@@ -276,7 +279,7 @@ final readonly class StoreFixtureBuilder {
 					}
 				}
 				foreach ( $terminal as $entry ) {
-					if ( ! $store->record_terminal( $entry['run_id'], $entry['args_hash'], $entry['status'] ) ) {
+					if ( ! $store->record_terminal( $entry['run_id'], $entry['args_hash'], $entry['status'], $entry['at'] ?? (int) \substr( $entry['run_id'], 0, RunIdentity::TIME_DIGITS ) ) ) {
 						throw new \LogicException( 'Production RunHistory rejected an isolated terminal fixture.' );
 					}
 				}

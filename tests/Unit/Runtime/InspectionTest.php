@@ -137,18 +137,22 @@ final class InspectionTest extends TestCase {
 				array(
 					'scope'         => 'scope-b',
 					'declarations'  => array(),
-					'registrations' => array( 'scope-b:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 600, misfire_skips: 4, overlap_skips: 5 ) ),
+					// Stored out of identity order on purpose: the projection sorts, and a stored order that
+					// already matched would not show that.
+					'registrations' => array(
+						'scope-b:stale'    => StoreFixtureBuilder::schedule_registration_state( 'stale', self::NOW + 900 ),
+						'scope-b:orphaned' => StoreFixtureBuilder::schedule_registration_state( 'orphaned', self::NOW + 600, misfire_skips: 4, overlap_skips: 5 ),
+					),
 				)
 			)
 		);
 		unset( $this->rig->wpdb()->rows[ ScheduleRegistry::option_name( 'a8csp-bgje' ) ] );
 		$this->put( $fixture->lock( \hash( 'sha256', 'dedup:scope:all' ), 'run-lock', self::NOW, self::NOW ) );
-		$this->rig->backend()->scheduled = true;
 
 		$snapshot = $this->rig->inspection()->schedules();
 
 		self::assertNotNull( $snapshot );
-		self::assertSame( array( 'scope-a:nightly', 'scope-b:orphaned' ), \array_column( $snapshot['entries'], 'identity' ) );
+		self::assertSame( array( 'scope-a:nightly', 'scope-b:orphaned', 'scope-b:stale' ), \array_column( $snapshot['entries'], 'identity' ) );
 		self::assertSame( 300, $snapshot['entries'][0]['recurrence'] );
 		self::assertSame(
 			array(
@@ -160,7 +164,8 @@ final class InspectionTest extends TestCase {
 		);
 		self::assertSame( array( 'state' => 'not_declared' ), $snapshot['entries'][1]['lock'] );
 		self::assertTrue( $snapshot['entries'][0]['occurrence_visible'] );
-		self::assertSame( array( 'scope-b' ), \array_column( $this->rig->inspection()->schedules( 'scope-b' )['entries'] ?? array(), 'scope' ) );
+		self::assertFalse( $snapshot['entries'][1]['occurrence_visible'] );
+		self::assertSame( array( 'scope-b', 'scope-b' ), \array_column( $this->rig->inspection()->schedules( 'scope-b' )['entries'] ?? array(), 'scope' ) );
 	}
 
 	/**
@@ -464,10 +469,16 @@ final class InspectionTest extends TestCase {
 			)
 		);
 
-		$result = $this->rig->inspection()->last_completed_run_id( self::identity( $identity ) );
+		$result = $this->rig->inspection()->last_completed_run( self::identity( $identity ) );
 
 		self::assertInstanceOf( Success::class, $result );
-		self::assertSame( self::run_id( 1 ), $result->value );
+		self::assertSame(
+			array(
+				'run_id' => self::run_id( 1 ),
+				'at'     => self::NOW,
+			),
+			$result->value
+		);
 	}
 
 	/**

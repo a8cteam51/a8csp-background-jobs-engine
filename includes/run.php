@@ -106,3 +106,59 @@ function a8csp_bgje_cancel_run( string $scope, string $name, string $run_id ): R
 
 	return a8csp_bgje( $scope )->runs()->cancel( $name, $id );
 }
+
+/**
+ * Stores one consumer value for the duration of one run.
+ *
+ * The engine drops the run's whole data row wherever it drops the run row, however that run
+ * ended, so the value needs no cleanup of its own.
+ *
+ * @api
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string                  $scope  Client plugin scope.
+ * @param   string                  $name   Scope-local job or chunked job name.
+ * @param   string                  $run_id Run identifier.
+ * @param   string                  $key    Run data key, 1 to 64 bytes matching `[a-z0-9_-]+`.
+ * @param   array<array-key, mixed> $value  Portable value to store.
+ *
+ * @return  true|\WP_Error
+ */
+#[\NoDiscard( 'a data write failure must be handled, not dropped' )]
+function a8csp_bgje_set_run_data( string $scope, string $name, string $run_id, string $key, array $value ): true|\WP_Error {
+	$id = RunId::tryFrom( $run_id );
+	if ( null === $id ) {
+		return new \WP_Error( ErrorCode::InvalidArgument->value, 'Run identifier is malformed; pass a run ID the engine returned.' );
+	}
+
+	return a8csp_bgje( $scope )->runs()->set_data( $name, $id, $key, $value );
+}
+
+/**
+ * Returns one consumer value stored for the duration of one run.
+ *
+ * Null separates a key the run never stored from one holding an empty array.
+ *
+ * @api
+ *
+ * @since   1.0.0
+ * @version 1.0.0
+ *
+ * @param   string $scope  Client plugin scope.
+ * @param   string $name   Scope-local job or chunked job name.
+ * @param   string $run_id Run identifier.
+ * @param   string $key    Run data key.
+ *
+ * @return  array<array-key, mixed>|null|\WP_Error
+ */
+#[\NoDiscard( 'a data read result must be handled, not dropped' )]
+function a8csp_bgje_get_run_data( string $scope, string $name, string $run_id, string $key ): array|null|\WP_Error {
+	$id = RunId::tryFrom( $run_id );
+	if ( null === $id ) {
+		return new \WP_Error( ErrorCode::InvalidArgument->value, 'Run identifier is malformed; pass a run ID the engine returned.' );
+	}
+
+	return a8csp_bgje( $scope )->runs()->get_data( $name, $id, $key );
+}

@@ -8,6 +8,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\EngineError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunReconciliation;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\RunDataStore;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Stores\StoreFactory;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\CleanupIntents;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
@@ -145,21 +146,27 @@ final class MaintenanceJob implements JobExecutionInterface {
 		$runs_cursor          = null;
 		$locks_cursor         = null;
 		$registrations_cursor = null;
+		$data_cursor          = null;
 		if ( null !== $cursor_raw ) {
 			$decoded_cursor = RawOptionDecoder::decode( $cursor_raw );
+			// A cursor of another shape restarts every phase from its prefix start, which costs one
+			// pass and cannot skip a row.
 			if (
 				\is_array( $decoded_cursor )
-				&& 3 === \count( $decoded_cursor )
+				&& 4 === \count( $decoded_cursor )
 				&& \array_key_exists( 'runs', $decoded_cursor )
 				&& \array_key_exists( 'locks', $decoded_cursor )
 				&& \array_key_exists( 'registrations', $decoded_cursor )
+				&& \array_key_exists( 'data', $decoded_cursor )
 				&& ( null === $decoded_cursor['runs'] || \is_string( $decoded_cursor['runs'] ) )
 				&& ( null === $decoded_cursor['locks'] || \is_string( $decoded_cursor['locks'] ) )
 				&& ( null === $decoded_cursor['registrations'] || \is_string( $decoded_cursor['registrations'] ) )
+				&& ( null === $decoded_cursor['data'] || \is_string( $decoded_cursor['data'] ) )
 			) {
 				$runs_cursor          = $decoded_cursor['runs'];
 				$locks_cursor         = $decoded_cursor['locks'];
 				$registrations_cursor = $decoded_cursor['registrations'];
+				$data_cursor          = $decoded_cursor['data'];
 			}
 		}
 
@@ -443,12 +450,85 @@ final class MaintenanceJob implements JobExecutionInterface {
 		}
 		$registration_incomplete = null !== $registrations_cursor;
 
-		if ( $run_incomplete || $lock_incomplete || $registration_incomplete ) {
+		$data_count = 0;
+		while ( $data_count < self::RUN_SWEEP_BUDGET ) {
+			$data_page = $this->rows->option_names_after( RunDataStore::OPTION_PREFIX, $data_cursor, self::SWEEP_PAGE_SIZE );
+			if ( $data_page->is_failure() ) {
+				$this->log_sweep_abort( 'Maintenance run-data sweep aborted while enumerating data rows; repair WordPress option reads and retry the sweep.', 'data-enumeration', $data_page->error );
+
+				return;
+			}
+
+			$data_count += $data_page->value['scanned'];
+			foreach ( $data_page->value['names'] as $option_name ) {
+				$data_identity = RunDataStore::from_option_name( $option_name );
+				if ( null === $data_identity ) {
+					continue;
+				}
+
+				// The run row is created at admission and deleted when the run finishes, so its
+				// absence means the data belongs to a run that is over — including the corrupt
+				// rows deleted with no terminal hook, and a late write from a replayed hook.
+				$inspected = $this->stores->run_store( $data_identity['identity'] )->inspect( $data_identity['run_id'] );
+				if ( $inspected->is_failure() ) {
+					$this->log_sweep_abort(
+						'Maintenance run-data sweep aborted while reading the run a data row belongs to; repair WordPress option reads and retry the sweep.',
+						'data-run-read',
+						$inspected->error,
+						array( 'option_name' => $option_name )
+					);
+
+					return;
+				}
+				if ( null !== $inspected->value ) {
+					continue;
+				}
+
+				$selected_data = $this->rows->read( $option_name );
+				if ( $selected_data->is_failure() ) {
+					$this->log_sweep_abort( 'Maintenance run-data sweep aborted while reading a data row; repair WordPress option reads and retry the sweep.', 'data-read', $selected_data->error, array( 'option_name' => $option_name ) );
+
+					return;
+				}
+
+				$data_raw = $selected_data->value;
+				if ( null === $data_raw ) {
+					continue;
+				}
+
+				$data_delete = $this->rows->delete_if_value_matches( $option_name, $data_raw );
+				if ( RowDeleteOutcome::DeleteFailed === $data_delete ) {
+					// Skip the row rather than abandon the phase. The cursor is persisted only after
+					// the loop, so returning here would leave it pointing before this row and every
+					// later pass would stall on it, stranding every data row behind it in keyset
+					// order. One undeletable row costs one retry per pass instead.
+					$this->logger->warning(
+						'Run data for a run that no longer exists could not be deleted; the sweep skips it and retries on its next pass, so no action is needed unless the warning recurs.',
+						array(
+							'option_name' => $option_name,
+							'phase'       => 'data-delete',
+							'outcome'     => $data_delete->value,
+						)
+					);
+
+					continue;
+				}
+			}
+
+			$data_cursor = $data_page->value['next_cursor'];
+			if ( null === $data_cursor ) {
+				break;
+			}
+		}
+		$data_incomplete = null !== $data_cursor;
+
+		if ( $run_incomplete || $lock_incomplete || $registration_incomplete || $data_incomplete ) {
 			$replacement_raw = \maybe_serialize(
 				array(
 					'runs'          => $run_incomplete ? $runs_cursor : null,
 					'locks'         => $lock_incomplete ? $locks_cursor : null,
 					'registrations' => $registration_incomplete ? $registrations_cursor : null,
+					'data'          => $data_incomplete ? $data_cursor : null,
 				)
 			);
 			if ( ! \is_string( $replacement_raw ) ) {

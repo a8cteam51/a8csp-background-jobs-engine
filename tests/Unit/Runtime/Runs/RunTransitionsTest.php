@@ -354,14 +354,21 @@ final class RunTransitionsTest extends TestCase {
 		self::assertSame( 1, $this->backend->scheduled_count( ActionDeliveries::DELIVER_HOOK, $replacement_action_args, self::IDENTITY ) );
 		$history = $this->option( 'a8csp_bgje_run_history_' . self::IDENTITY );
 		self::assertIsArray( $history );
+		$terminal = $history['terminal'] ?? null;
+		self::assertIsArray( $terminal );
+		$superseded_entry = $terminal[0] ?? null;
+		self::assertIsArray( $superseded_entry );
+		$superseded_at = $superseded_entry['at'] ?? null;
+		self::assertIsInt( $superseded_at );
 		self::assertSame(
 			array(
 				array(
 					'run_id' => self::RUN_ID,
 					'status' => 'superseded',
+					'at'     => $superseded_at,
 				),
 			),
-			$history['terminal'] ?? null
+			$terminal
 		);
 	}
 
@@ -570,9 +577,12 @@ final class RunTransitionsTest extends TestCase {
 		self::assertIsArray( $terminal );
 		$first_terminal = $terminal[0] ?? null;
 		self::assertIsArray( $first_terminal );
+		$failed_at = $first_terminal['at'] ?? null;
+		self::assertIsInt( $failed_at );
 		$expected_terminal = array(
 			'run_id' => self::RUN_ID,
 			'status' => 'failed',
+			'at'     => $failed_at,
 		);
 		self::assertSame( $expected_terminal, $first_terminal );
 		$by_hash = $history['by_hash'] ?? null;
@@ -976,6 +986,38 @@ final class RunTransitionsTest extends TestCase {
 		self::assertNull( $this->lock() );
 		self::assertSame( array(), $this->logger->records );
 		$this->assert_terminal_history( 'completed' );
+	}
+
+	/**
+	 * Completion freezes the previous completion from the non-evicting slot into the hook payload.
+	 *
+	 * The predecessor is read here, not at hook time, and it comes from the slot the capped terminal
+	 * buffers do not evict — so an identity that has failed often still tells a listener which run
+	 * last succeeded.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_complete_run_freezes_the_previous_completion_into_the_hook_payload(): void {
+		$previous_run_id = '00000000001699999999-0000000000000000007';
+		$this->prepare_run_action();
+		$run_store = new RunStore( $this->identity, $this->clock, new OptionRows( $this->wpdb ) );
+		$history   = new RunHistory( $this->identity, new OptionRows( $this->wpdb ), $this->logger );
+		self::assertTrue( $history->record_terminal( $previous_run_id, self::ARGS_HASH, RunStatus::Completed, self::NOW - 500 ) );
+		$state = $this->claim_delivery_ownership( self::RUN_ID, $this->action_sequence(), $run_store );
+		self::assertInstanceOf( RunState::class, $state );
+		$GLOBALS['a8csp_bgje_test_fired_actions'] = array();
+
+		$this->terminal_transitions->complete_run( $this->handler, $this->identity, self::RUN_ID, $state, $run_store );
+
+		$completed = $this->fired_actions()[0] ?? null;
+		self::assertIsArray( $completed );
+		self::assertSame( 'a8csp_bgje/completed/' . self::IDENTITY, $completed['hook_name'] );
+		$carried = $completed['args'][2] ?? null;
+		self::assertInstanceOf( RunId::class, $carried, 'The completed hook must carry a previous completion, not null.' );
+		self::assertSame( $previous_run_id, (string) $carried, 'The completed hook must carry the previous completion frozen at transition time.' );
 	}
 
 	/**
@@ -1545,28 +1587,33 @@ final class RunTransitionsTest extends TestCase {
 	 * @return  void
 	 */
 	private function assert_terminal_history( string $status ): void {
-		$this->recorded_run_state( $status );
+		// Taken from the terminal run row rather than named here, so the assertion also proves the
+		// history timestamp is the row's terminal heartbeat and not some other clock reading.
+		$ended_at = $this->recorded_run_state( $status )['heartbeat_at'] ?? null;
+		self::assertIsInt( $ended_at );
+
+		$entry = array(
+			'run_id' => self::RUN_ID,
+			'status' => $status,
+			'at'     => $ended_at,
+		);
 
 		self::assertSame(
 			array(
-				'started'  => array( self::RUN_ID ),
-				'terminal' => array(
-					array(
-						'run_id' => self::RUN_ID,
-						'status' => $status,
-					),
-				),
-				'by_hash'  => array(
+				'started'        => array( self::RUN_ID ),
+				'terminal'       => array( $entry ),
+				'by_hash'        => array(
 					self::ARGS_HASH => array(
 						'started'  => array( self::RUN_ID ),
-						'terminal' => array(
-							array(
-								'run_id' => self::RUN_ID,
-								'status' => $status,
-							),
-						),
+						'terminal' => array( $entry ),
 					),
 				),
+				'last_completed' => 'completed' === $status
+					? array(
+						'run_id' => self::RUN_ID,
+						'at'     => $ended_at,
+					)
+					: array(),
 			),
 			$this->option( 'a8csp_bgje_run_history_' . self::IDENTITY )
 		);
