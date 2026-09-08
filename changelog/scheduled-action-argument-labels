@@ -1,6 +1,0 @@
-Significance: patch
-Type: added
-
-WordPress admin › Tools › Scheduled Actions now names the engine's own action arguments instead of numbering them. A delivery row reads `identity`, `run_id` and `action_sequence`; a schedule tick reads `schedule_identity`.
-
-The stored arguments are unchanged. They stay a positional list because that array is the row's identity in the scheduler's own store, and because WordPress cron delivers a keyed array to a callback as PHP named arguments. Naming happens where the row is displayed, so nothing about how work is scheduled, matched or cancelled moves with it. Rows scheduled by anything other than the engine are left exactly as the list table renders them.
