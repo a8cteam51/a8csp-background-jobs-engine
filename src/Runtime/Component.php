@@ -287,6 +287,7 @@ final class Component extends AbstractComponent {
 			$action_deliveries->register_hooks();
 			$occurrence_delivery->register_hooks();
 			$maintenance_schedule->register_hooks();
+			ScheduledActionLabels::register_hooks();
 		} finally {
 			self::$booting = false;
 		}

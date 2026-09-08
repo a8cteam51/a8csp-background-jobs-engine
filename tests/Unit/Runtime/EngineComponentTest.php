@@ -7,6 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Boundary\Result\Success;
 use A8C\SpecialProjects\BackgroundJobsEngine\Recurrence;
 use A8C\SpecialProjects\BackgroundJobsEngine\Run;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Component;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\ActionDeliveries;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Schedules\ScheduleRegistry;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Schedule;
@@ -49,6 +50,7 @@ final class EngineComponentTest extends TestCase {
 		require_once \dirname( __DIR__ ) . '/wp-lock-stubs.php';
 		require_once \dirname( __DIR__ ) . '/wp-time-constant-stubs.php';
 		require_once __DIR__ . '/Backends/wp-json-encode-stub.php';
+		require_once __DIR__ . '/wp-esc-html-stub.php';
 		require_once \dirname( __DIR__ ) . '/wp-cron-stubs.php';
 		require_once \dirname( __DIR__, 3 ) . '/functions.php';
 	}
@@ -126,6 +128,34 @@ final class EngineComponentTest extends TestCase {
 	}
 
 	/**
+	 * The registered graph names engine delivery arguments on the scheduled-actions screen.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_register_hooks_names_engine_arguments_for_the_scheduled_actions_screen(): void {
+		$component = new Component();
+		$component->initialize();
+		$component->register_hooks();
+
+		$row = array(
+			'hook' => ActionDeliveries::DELIVER_HOOK,
+			'args' => array( 'consumer-plugin:published-job', 'run-id', 4 ),
+		);
+
+		self::assertSame(
+			'<ul>'
+			. '<li><code>&#039;identity&#039; => &#039;consumer-plugin:published-job&#039;</code></li>'
+			. '<li><code>&#039;run_id&#039; => &#039;run-id&#039;</code></li>'
+			. '<li><code>&#039;action_sequence&#039; => 4</code></li>'
+			. '</ul>',
+			\apply_filters( 'action_scheduler_list_table_column_args', '<ul><li><code>0 => &#039;unnamed&#039;</code></li></ul>', $row )
+		);
+	}
+
+	/**
 	 * The published schedule operations synchronize a client scope.
 	 *
 	 * @since   1.0.0
@@ -169,7 +199,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertNotSame( $dispatcher, Component::get_dispatcher() );
 		self::assertNotSame( $inspection, Component::get_inspection() );
 		self::assertCount( 3, $this->action_registrations() );
-		self::assertCount( 1, $this->filter_registrations() );
+		self::assertCount( 2, $this->filter_registrations() );
 	}
 
 	/**
@@ -211,7 +241,7 @@ final class EngineComponentTest extends TestCase {
 		self::assertSame( $dispatcher, Component::get_dispatcher() );
 		self::assertSame( $schedules, Component::get_schedules() );
 		self::assertCount( 2, $this->action_registrations() );
-		self::assertCount( 2, $this->filter_registrations() );
+		self::assertCount( 3, $this->filter_registrations() );
 	}
 
 	/**
