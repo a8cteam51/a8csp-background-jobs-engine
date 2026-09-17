@@ -33,8 +33,6 @@
 
 \defined( 'ABSPATH' ) || exit;
 
-// The metadata reader parses this absolute path: a WP_PLUGIN_DIR-derived one resolves to
-// nothing for an mu-plugin, and the kernel serves both load positions unmodified.
 \define( 'A8CSP_BGJE_FILE', __FILE__ );
 \define( 'A8CSP_BGJE_BASENAME', plugin_basename( __FILE__ ) );
 \define( 'A8CSP_BGJE_DIR_PATH', plugin_dir_path( __FILE__ ) );
