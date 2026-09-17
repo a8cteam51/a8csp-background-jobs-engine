@@ -33,6 +33,8 @@ jobs:
         include:
           - name: 'WP 7.1'
             wp-version: '7.1'
+          # Unpinned on purpose: wp-env defaults to latest stable, so this leg never needs a bump.
+          - name: 'WP latest'
           - name: 'WP nightly'
             wp-env-core: 'https://wordpress.org/nightly-builds/wordpress-latest.zip'
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
