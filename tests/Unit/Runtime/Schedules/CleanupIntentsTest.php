@@ -44,7 +44,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins durable cleanup-intent storage and unknown-chain convergence.
- *
  */
 #[CoversClass( CleanupIntents::class )]
 #[UsesClass( ScheduleOperations::class )]

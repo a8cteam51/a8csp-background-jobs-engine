@@ -8,7 +8,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins portable-argument depth boundaries directly.
- *
  */
 #[CoversClass( PortableArguments::class )]
 final class PortableArgumentsTest extends TestCase {

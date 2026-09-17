@@ -11,7 +11,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins schedule construction, validation, and behavioral identity.
- *
  */
 #[CoversClass( Schedule::class )]
 #[UsesClass( Recurrence::class )]

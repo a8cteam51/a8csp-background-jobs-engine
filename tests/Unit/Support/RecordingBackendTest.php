@@ -12,7 +12,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins the reusable scheduling backend recorder used by facade tests.
- *
  */
 #[CoversNothing]
 final class RecordingBackendTest extends TestCase {

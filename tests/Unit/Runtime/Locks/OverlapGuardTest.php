@@ -49,7 +49,6 @@ final class LockRowWakeupProbe {
  *
  * @since   1.0.0
  * @version 1.0.0
- *
  */
 #[CoversClass( OverlapGuard::class )]
 #[CoversClass( MaintenanceFenceOutcome::class )]

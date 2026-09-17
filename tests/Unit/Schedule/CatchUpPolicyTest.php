@@ -8,7 +8,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins the closed schedule-catch-up vocabulary.
- *
  */
 #[CoversClass( CatchUpPolicy::class )]
 final class CatchUpPolicyTest extends TestCase {

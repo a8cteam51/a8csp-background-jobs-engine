@@ -12,7 +12,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins filterable continuation and lock timing policy.
- *
  */
 #[CoversClass( LockWindows::class )]
 final class LockWindowsTest extends TestCase {

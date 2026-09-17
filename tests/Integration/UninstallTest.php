@@ -27,7 +27,6 @@ final class UninstallTest extends AbstractIntegrationTestCase {
 	/**
 	 * A canary option the footprint never lists. Its survival is what proves the test
 	 * exercises "delete only what's owned" rather than "delete everything".
-	 *
 	 */
 	private const string LIKE_CANARY_OPTION = 'a8cspXbgjeYtest_uninstall_canary';
 
