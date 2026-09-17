@@ -93,7 +93,7 @@ if ( ! \function_exists( 'get_plugin_data' ) ) {
 			'TextDomain'      => 'a8csp-background-jobs-engine',
 			'DomainPath'      => '/languages',
 			'Network'         => false,
-			'RequiresWP'      => '7.0',
+			'RequiresWP'      => '7.1',
 			'RequiresPHP'     => '8.5',
 			'UpdateURI'       => 'https://github.com/a8cteam51/a8csp-background-jobs-engine',
 			'RequiresPlugins' => '',

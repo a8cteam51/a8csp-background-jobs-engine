@@ -31,8 +31,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: 'WP 7.0'
-            wp-version: '7.0'
+          - name: 'WP 7.1'
+            wp-version: '7.1'
           - name: 'WP nightly'
             wp-env-core: 'https://wordpress.org/nightly-builds/wordpress-latest.zip'
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk

@@ -10,7 +10,7 @@ The test rig defines three PHPUnit suites, exposes five local run configurations
 - **Integration** (`tests/Integration/`) — the complete `Integration` suite runs against a
   supported WordPress version with Action Scheduler active on port 21380. The command runs
   `tests/complete-as-migration.php` before PHPUnit so the Action Scheduler store is on its
-  completed migration schema. CI runs this configuration against WordPress 7.0 and nightly.
+  completed migration schema. CI runs this configuration against WordPress 7.1 and nightly.
 - **Degraded** — the `Integration` suite filtered to `--group=degraded` runs on port 21384 with
   Action Scheduler absent, exercising the WP-Cron-only path. The command refuses to start PHPUnit
   if the Action Scheduler class or enqueue function is present.

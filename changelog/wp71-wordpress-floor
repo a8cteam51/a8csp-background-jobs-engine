@@ -1,0 +1,4 @@
+Significance: minor
+Type: changed
+
+The supported WordPress floor is 7.1. On a site below it the engine does not load: the requirements gate reports the unmet version in an admin notice rather than fataling, and `a8csp_bgje()` is never defined. Upgrade WordPress to 7.1 or later before updating the plugin.

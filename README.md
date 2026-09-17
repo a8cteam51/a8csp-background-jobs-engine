@@ -2,8 +2,8 @@
 
 **Contributors:** wpspecialprojects
 **Tags:**
-**Requires at least:** 7.0
-**Tested up to:** 7.0
+**Requires at least:** 7.1
+**Tested up to:** 7.1
 **Requires PHP:** 8.5
 **Stable tag:** 1.0.0-beta.5
 **License:** GPL v2 or later

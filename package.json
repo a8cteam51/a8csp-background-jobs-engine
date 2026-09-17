@@ -26,7 +26,7 @@
   "scripts": {
     "packages-install": "npm install",
     "packages-update": "npm update",
-    "packages-update:wp": "wp-scripts packages-update --dist-tag=wp-7.0",
+    "packages-update:wp": "wp-scripts packages-update --dist-tag=wp-7.1",
 
     "lint": "npm-run-all --sequential lint:**",
     "lint:pkg-json": "wp-scripts lint-pkg-json",
