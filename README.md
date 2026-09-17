@@ -874,6 +874,20 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 
 Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Its history `ended` column is how long ago each run terminalized, and reads `—` for a started entry and for a row written before the engine recorded terminal times. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
 
+## Development
+
+Install the development dependencies and start the local environment:
+
+```sh
+composer packages-install
+npm ci
+npm run wp-env:start
+```
+
+The site comes up on the port `.wp-env.json` declares, with Action Scheduler and the engine activated. `composer lint:php` runs PHPCS and PHPStan; `composer quality-check` is the pre-push gate and adds manifest validation and the Unit suite. wp-env publishes the site on every network interface with fixed development credentials, so treat it as visible to your local network rather than to localhost alone.
+
+The test rig, its five local run configurations, and the mutation job are documented in [`tests/README.md`](tests/README.md); the architecture map is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Releasing
 
 The canonical SemVer contract is tiered:
