@@ -33,7 +33,7 @@ jobs:
         include:
           - name: 'WP 7.1'
             wp-version: '7.1'
-          # Unpinned on purpose: wp-env defaults to latest stable, so this leg never needs a bump.
+          # wp-env defaults to latest stable.
           - name: 'WP latest'
           - name: 'WP nightly'
             wp-env-core: 'https://wordpress.org/nightly-builds/wordpress-latest.zip'
