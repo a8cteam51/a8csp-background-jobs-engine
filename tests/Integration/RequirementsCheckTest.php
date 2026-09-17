@@ -7,7 +7,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTe
 /**
  * Verifies the requirements gate degrades gracefully on a below-floor runtime.
  *
- * Runs in both matrix entries: at-floor it must pass, below-floor (WP 6.9.4)
+ * Runs in both matrix entries: at-floor it must pass, below-floor (WP 7.0.4)
  * it must yield a WP_Error without loading the plugin proper.
  *
  * @since   1.0.0
@@ -28,7 +28,7 @@ final class RequirementsCheckTest extends AbstractIntegrationTestCase {
 		$requirements = \constant( 'A8CSP_BGJE_REQUIREMENTS_RESULT' );
 		$wp_version   = \get_bloginfo( 'version' );
 
-		if ( \version_compare( $wp_version, '7.0', '<' ) ) {
+		if ( \version_compare( $wp_version, '7.1', '<' ) ) {
 			self::assertInstanceOf( \WP_Error::class, $requirements );
 			self::assertFalse( \function_exists( 'a8csp_bgje' ) );
 		} else {
