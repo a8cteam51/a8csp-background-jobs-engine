@@ -48,7 +48,7 @@ function a8csp_bgje_get_plugin_metadata( $property = null ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
-		$plugin_file = trailingslashit( WP_PLUGIN_DIR ) . A8CSP_BGJE_BASENAME;
+		$plugin_file = \constant( 'A8CSP_BGJE_FILE' );
 		$metadata    = get_plugin_data( $plugin_file, false, $can_translate );
 
 		// Extra plugin headers registered by other plugins exist only once those plugins have
@@ -300,8 +300,8 @@ function a8csp_bgje_output_requirements_error( $error ) {
 			$requirements_error = wp_sprintf(
 				/* translators: 1: Plugin name, 2: Plugin version */
 				__( '<strong>%1$s (version %2$s)</strong> could not be initialized.', 'a8csp-background-jobs-engine' ),
-				a8csp_bgje_get_plugin_metadata( 'Name' ),
-				a8csp_bgje_get_plugin_metadata( 'Version' )
+				a8csp_bgje_get_plugin_name(),
+				a8csp_bgje_get_plugin_version()
 			);
 
 			if ( $error->has_errors() ) {

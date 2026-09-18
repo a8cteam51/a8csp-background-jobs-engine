@@ -33,6 +33,7 @@
 
 \defined( 'ABSPATH' ) || exit;
 
+\define( 'A8CSP_BGJE_FILE', __FILE__ );
 \define( 'A8CSP_BGJE_BASENAME', plugin_basename( __FILE__ ) );
 \define( 'A8CSP_BGJE_DIR_PATH', plugin_dir_path( __FILE__ ) );
 

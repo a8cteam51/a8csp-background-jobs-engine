@@ -4,8 +4,9 @@
 		 bootstrap="tests/bootstrap.php"
 		 colors="true"
 		 cacheDirectory="tests/.cache/phpunit"
-		 executionOrder="depends"
+		 executionOrder="depends,defects,random"
 		 beStrictAboutOutputDuringTests="true"
+		 failOnNotice="true"
 		 failOnRisky="true"
 		 failOnWarning="true"
 		 defaultTestSuite="Unit">

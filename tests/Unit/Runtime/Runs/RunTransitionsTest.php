@@ -58,7 +58,6 @@ use PHPUnit\Framework\TestCase;
  *
  * @since   1.0.0
  * @version 1.0.0
- *
  */
 #[CoversClass( RunTransitions::class )]
 #[UsesClass( EngineError::class )]

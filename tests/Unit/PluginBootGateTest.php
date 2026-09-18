@@ -17,7 +17,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Exercises the complete `Plugin::boot()` path outside WordPress through the recording hook stubs.
- *
  */
 #[CoversClass( Plugin::class )]
 #[UsesClass( AbstractComponent::class )]

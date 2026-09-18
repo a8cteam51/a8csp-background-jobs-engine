@@ -13,7 +13,6 @@ use Psr\Log\LogLevel;
 
 /**
  * Exercises the engine logger's public hook and default error-log sink.
- *
  */
 #[CoversClass( EngineLogger::class )]
 #[CoversClass( ThrowableContextNormalizer::class )]

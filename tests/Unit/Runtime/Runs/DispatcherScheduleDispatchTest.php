@@ -30,7 +30,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins schedule-only overlap dispatch through the public schedule front door.
- *
  */
 #[CoversClass( Dispatcher::class )]
 final class DispatcherScheduleDispatchTest extends TestCase {

@@ -5,10 +5,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Guards agreement between the plugin header floors and composer.json.
- *
- * @load-bearing structural-guard
- * @pin-rationale This release-metadata guard keeps the plugin header and composer PHP floors in cross-file agreement so packaged installs cannot advertise an unsupported runtime.
+ * Guards agreement between the plugin header floors and composer.json. Holding the two PHP floors
+ * in cross-file agreement is what stops a packaged install advertising an unsupported runtime.
  */
 final class PluginHeaderFloorsTest extends TestCase {
 	// region TESTS.

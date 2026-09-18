@@ -8,7 +8,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins fixed-interval recurrence construction.
- *
  */
 #[CoversClass( Recurrence::class )]
 final class RecurrenceTest extends TestCase {

@@ -11,7 +11,6 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins the two Result variants and their branch-then-property consumption contract.
- *
  */
 #[CoversClass( AbstractResult::class )]
 #[CoversClass( Success::class )]
