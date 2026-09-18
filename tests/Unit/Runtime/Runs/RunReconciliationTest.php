@@ -186,6 +186,21 @@ final class RunReconciliationTest extends TestCase {
 		$this->maintenance          = new MaintenanceJob( $option_rows, $reconciliation, $guard, $this->stores, $cleanup_intents, $this->logger );
 	}
 
+	/**
+	 * Clears the terminal-hook callbacks these scenarios plant.
+	 *
+	 * The stub registry is a superglobal that outlives the class, so a planted callback
+	 * would otherwise fire inside any later class sharing the identity.
+	 *
+	 * @return  void
+	 */
+	#[\Override]
+	protected function tearDown(): void {
+		$GLOBALS['a8csp_bgje_test_action_callbacks'] = array();
+
+		parent::tearDown();
+	}
+
 	// endregion.
 
 	// region TESTS.
