@@ -197,6 +197,7 @@ final class RunReconciliationTest extends TestCase {
 	#[\Override]
 	protected function tearDown(): void {
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']    = array();
 
 		parent::tearDown();
 	}
