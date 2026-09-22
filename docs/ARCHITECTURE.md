@@ -26,8 +26,8 @@ every surviving component is initialized before any hook can fire.
   boundary.
 - `includes/` groups the procedural facade by concept: `job.php` provides background-work
   registration plus kind-agnostic immediate and absolute-time dispatch, `schedule.php` provides
-  schedule synchronization and dispatch, and `run.php` provides run inspection, retry, and
-  cancellation.
+  schedule synchronization, dispatch, and inspection, and `run.php` provides run inspection,
+  per-run data, retry, and cancellation.
 - `portals/` holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services; `src/` root holds
   the bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
   `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the
