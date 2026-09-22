@@ -350,14 +350,21 @@ final readonly class RunsCommand {
 					);
 				}
 
-				if ( 1 === \count( $args ) && true === ( $assoc_args['all'] ?? null ) && ( ! \array_key_exists( 'yes', $assoc_args ) || \is_bool( $assoc_args['yes'] ) ) ) {
+				if ( \array_key_exists( 'yes', $assoc_args ) && ( 1 !== \count( $args ) || ! \is_bool( $assoc_args['yes'] ) ) ) {
+					return array(
+						'action'  => 'error',
+						'message' => 'Purge accepts --yes only as a flag with --all; use wp a8csp-bgje failed-runs purge --all [--yes].',
+					);
+				}
+
+				if ( 1 === \count( $args ) && true === ( $assoc_args['all'] ?? null ) ) {
 					return array(
 						'action'   => 'purge',
 						'identity' => null,
 					);
 				}
 
-				if ( 2 === \count( $args ) && ! \array_key_exists( 'all', $assoc_args ) && ! \array_key_exists( 'yes', $assoc_args ) ) {
+				if ( 2 === \count( $args ) && ! \array_key_exists( 'all', $assoc_args ) ) {
 					$identity = Identity::tryFrom( $args[1] );
 					if ( null === $identity ) {
 						return array(

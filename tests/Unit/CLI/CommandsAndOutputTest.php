@@ -1543,9 +1543,10 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_failed_run_requests(): array {
-		$list_usage  = 'List accepts only --scope and --format; use wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>].';
-		$retry_usage = 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.';
-		$purge_usage = 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].';
+		$list_usage      = 'List accepts only --scope and --format; use wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>].';
+		$retry_usage     = 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.';
+		$purge_usage     = 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].';
+		$purge_yes_usage = 'Purge accepts --yes only as a flag with --all; use wp a8csp-bgje failed-runs purge --all [--yes].';
 		return array(
 			'missing action'         => array(
 				'args'       => array(),
@@ -1650,7 +1651,7 @@ final class CommandsAndOutputTest extends TestCase {
 			'purge name yes'         => array(
 				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'yes' => true ),
-				'message'    => $purge_usage,
+				'message'    => $purge_yes_usage,
 			),
 			'purge all string yes'   => array(
 				'args'       => array( 'purge' ),
@@ -1658,7 +1659,7 @@ final class CommandsAndOutputTest extends TestCase {
 					'all' => true,
 					'yes' => 'y',
 				),
-				'message'    => $purge_usage,
+				'message'    => $purge_yes_usage,
 			),
 		);
 	}
