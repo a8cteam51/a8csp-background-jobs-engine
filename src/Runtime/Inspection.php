@@ -220,7 +220,6 @@ final readonly class Inspection {
 			}
 		}
 
-		// One census for every registration rather than a backend query each.
 		$chains = $this->scheduler->scheduled_chains( OccurrenceDelivery::SCHEDULE_HOOK, $identities );
 
 		$entries = array();

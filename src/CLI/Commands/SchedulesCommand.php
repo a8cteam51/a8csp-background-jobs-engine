@@ -54,7 +54,8 @@ final readonly class SchedulesCommand {
 	 * An overdue `next_due` with `occurrence_visible: no` means no occurrence is visible on currently-ready
 	 * backends. A separately reported dormant backend candidate may retain an occurrence outside that
 	 * ready set and is not absence. `occurrence_visible: yes` means a ready backend currently holds a
-	 * pending or in-progress occurrence.
+	 * pending occurrence. Action Scheduler queues the next occurrence only after a running tick finishes,
+	 * so a single `no` can be transient.
 	 * A held lock identifies overlapping work, while rising `misfire_skips` or `overlap_skips` identifies
 	 * grace-policy or overlap-policy drops.
 	 *
