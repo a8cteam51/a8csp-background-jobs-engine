@@ -1,15 +1,9 @@
-# wp dist-archive walks the disk rather than the Git index, so this file removes
-# development-only paths that must not ship in the release zip.
-#
-# Patterns follow gitignore semantics: a bare name (no slash) matches at
-# any depth, a leading `/` anchors to the repo root. `/build` is root-
-# anchored so it excludes only top-level development tooling and generated analysis output.
+# wp dist-archive walks the disk, not git, so this file lists everything the release zip must not
+# carry. `/build` holds Infection's logs.
 
 .git*
 .idea
 .vscode
-.gitattributes
-.gitignore
 .distignore
 node_modules
 tests
@@ -30,6 +24,9 @@ package*.json
 composer.json
 composer.lock
 /docs
+AGENTS.md
+CLAUDE.md
+.agents
 
 # Secret material — never ship, even if a consumer forgets to list it.
 # .pem/.key are root-anchored (leading /) so certs bundled under vendor/
