@@ -113,8 +113,9 @@ Every interface ends in `Interface`; every abstract class begins with `Abstract`
 ## Delivery and degradation
 
 The engine writes through the first ready backend in preference order and reads or clears across
-every ready backend. Action Scheduler becomes ready when its procedural API is available and
-`action_scheduler_init` has fired; writes before that point route to WP-Cron. Terminal
+every ready backend. Action Scheduler becomes ready when its procedural API is available,
+`action_scheduler_init` has fired, and the elected copy meets the supported floor the README
+states; until then, writes route to WP-Cron. Terminal
 lifecycle-hook delivery is at-least-once under Action Scheduler and best-effort under WP-Cron.
 
 A schedule chain is a recurring tick on `a8csp_bgje/internal/schedule_due`. The tick performs
