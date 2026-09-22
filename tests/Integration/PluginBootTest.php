@@ -35,5 +35,19 @@ final class PluginBootTest extends AbstractIntegrationTestCase {
 		self::assertSame( 'unknown_job', $result->get_error_code() );
 	}
 
+	/**
+	 * The entry file registers both self-updater filters, so an installed copy is offered releases
+	 * and its View details request is answered locally.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_the_self_updater_filters_are_registered(): void {
+		self::assertSame( 10, has_filter( 'update_plugins_github.com', 'a8csp_bgje_check_github_release_update' ) );
+		self::assertSame( 10, has_filter( 'plugins_api', 'a8csp_bgje_get_github_release_information' ) );
+	}
+
 	// endregion.
 }
