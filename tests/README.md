@@ -18,8 +18,8 @@ The test rig defines three PHPUnit suites, exposes five local run configurations
   suite runs on port 21381 against the below-floor WordPress fixture and verifies that the
   requirements gate degrades gracefully instead of fataling.
 - **Multisite** — the `Integration` suite filtered to `--group=multisite` runs on port 21382. The
-  command converts the fixture to multisite when needed, network-activates Action Scheduler and
-  the engine, runs `tests/complete-as-migration.php`, and then starts PHPUnit.
+  environment converts the fixture to a network and network-activates Action Scheduler and the
+  engine when it starts; the command runs `tests/complete-as-migration.php` and then PHPUnit.
 
 ## Running the configurations
 
