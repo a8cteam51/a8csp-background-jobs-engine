@@ -9,7 +9,7 @@
 **License:** GPL v2 or later
 **License URI:** <https://www.gnu.org/licenses/gpl-2.0.html>
 
-A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.
+A WordPress background-work engine that uses Action Scheduler when available, with a documented best-effort WP-Cron fallback.
 
 ## What it is
 

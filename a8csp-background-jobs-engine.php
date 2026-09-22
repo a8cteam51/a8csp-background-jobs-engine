@@ -18,7 +18,7 @@
  * Plugin Name:             A8CSP Background Jobs Engine
  * Plugin URI:              https://specialprojects.automattic.com
  * Update URI:              https://github.com/a8cteam51/a8csp-background-jobs-engine
- * Description:             A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.
+ * Description:             A WordPress background-work engine that uses Action Scheduler when available, with a documented best-effort WP-Cron fallback.
  * Version:                 1.0.0-beta.5
  * Requires at least:       7.1
  * Tested up to:            7.1
