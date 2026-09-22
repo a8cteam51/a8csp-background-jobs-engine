@@ -60,8 +60,7 @@ jobs:
 
           echo "Infection generated $count mutants."
 
-      # Local Infection runs are unreliable (macOS tmpdir coverage race), so CI is authoritative --
-      # keep the report even when the run or the guard above fails, to diagnose from.
+      # Keep the report even when the run or the guard above fails, to diagnose from.
       - name: Upload Infection logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
