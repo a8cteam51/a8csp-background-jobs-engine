@@ -528,7 +528,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `ChunkedRunContextInterface` | Extends `RunContextInterface` with `append_chunk( array $chunk_args ): void` and `prepend_chunk( array $chunk_args ): void`. |
 | `NonRetryableException` | Runtime exception that marks client work as permanently failed. |
 
-The engine supplies the implementations of `RunContextInterface` and `ChunkedRunContextInterface`; consumers must not implement either, and methods may be added to both in minor versions. A test that calls a standard handler directly passes a `RunContext`.
+The engine supplies the implementations of `RunContextInterface` and `ChunkedRunContextInterface`; consumers must not implement either, and methods may be added to both in minor versions. A test that calls `handle()` or `generate_queue()` directly passes a `RunContext`, whose constructor may gain optional parameters as the interface grows; `process_chunk()` has no context a consumer can construct.
 
 `JobKind::from()` validates kind-key grammar but does not install a kind. Only engine-installed kinds can be registered. The generic definition path is registration data, while kind handlers and their SPI stay internal.
 

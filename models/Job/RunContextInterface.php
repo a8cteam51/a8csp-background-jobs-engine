@@ -8,8 +8,8 @@ namespace A8C\SpecialProjects\BackgroundJobsEngine;
  * Gives one work invocation controlled access to its own run.
  *
  * The engine supplies the implementation an invocation receives; consumers must not implement this
- * interface, and methods may be added in minor versions. A test that calls a handler directly passes
- * a `RunContext`.
+ * interface, and methods may be added in minor versions. A test that calls `handle()` or
+ * `generate_queue()` directly passes a `RunContext`.
  *
  * @api
  *
