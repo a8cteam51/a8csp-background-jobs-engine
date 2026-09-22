@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a045ec058706933821bb762a12141db7",
+    "content-hash": "f9b8496f2519e7960856cb5e78570373",
     "packages": [
         {
             "name": "psr/clock",
@@ -108,16 +108,16 @@
     "packages-dev": [
         {
             "name": "a8csp/configs",
-            "version": "dev-trunk",
+            "version": "v1.0.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/a8cteam51/a8csp-configs.git",
-                "reference": "8d6e3bd85bfcf6daa0ed050af81259c785cdcb5e"
+                "reference": "67392ce62cd343bc5ce8c65da264c778cdd86210"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/a8cteam51/a8csp-configs/zipball/8d6e3bd85bfcf6daa0ed050af81259c785cdcb5e",
-                "reference": "8d6e3bd85bfcf6daa0ed050af81259c785cdcb5e",
+                "url": "https://api.github.com/repos/a8cteam51/a8csp-configs/zipball/67392ce62cd343bc5ce8c65da264c778cdd86210",
+                "reference": "67392ce62cd343bc5ce8c65da264c778cdd86210",
                 "shasum": ""
             },
             "require": {
@@ -136,13 +136,11 @@
                 "wp-coding-standards/wpcs": "^3"
             },
             "require-dev": {
-                "composer/composer": "^2",
                 "phpcompatibility/php-compatibility": "^10@alpha",
                 "phpcompatibility/phpcompatibility-paragonie": "^2@alpha",
                 "phpcompatibility/phpcompatibility-wp": "^3@alpha",
                 "phpunit/phpunit": "^13"
             },
-            "default-branch": true,
             "type": "library",
             "autoload-dev": {
                 "psr-4": {
@@ -175,10 +173,10 @@
             ],
             "description": "The canonical collection of shared configuration files and reusable CI workflows for A8C Special Projects repositories.",
             "support": {
-                "source": "https://github.com/a8cteam51/a8csp-configs/tree/trunk",
+                "source": "https://github.com/a8cteam51/a8csp-configs/tree/v1.0.0",
                 "issues": "https://github.com/a8cteam51/a8csp-configs/issues"
             },
-            "time": "2026-09-17T15:32:23+00:00"
+            "time": "2026-09-22T10:11:14+00:00"
         },
         {
             "name": "automattic/jetpack-changelogger",
@@ -7623,7 +7621,6 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
-        "a8csp/configs": 20,
         "phpcompatibility/php-compatibility": 15,
         "phpcompatibility/phpcompatibility-paragonie": 15,
         "phpcompatibility/phpcompatibility-wp": 15,

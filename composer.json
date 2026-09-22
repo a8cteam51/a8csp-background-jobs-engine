@@ -33,7 +33,7 @@
     "psr/log": "^3"
   },
   "require-dev": {
-    "a8csp/configs": "dev-trunk",
+    "a8csp/configs": "^1",
     "automattic/jetpack-changelogger": "^7",
 
     "phpcompatibility/phpcompatibility-wp": "^3@alpha",
