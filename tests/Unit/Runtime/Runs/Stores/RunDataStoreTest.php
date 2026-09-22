@@ -18,6 +18,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingCompletionJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\RecordingJob;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\StoreFixtureBuilder;
+use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\WpdbLockSpy;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -473,6 +474,85 @@ final class RunDataStoreTest extends TestCase {
 		self::assertNull( $client->get_run_data( 'accumulating', (string) $run->id, 'seen' ), 'The data must be gone once the run is finished.' );
 	}
 
+	/**
+	 * A key of exactly the byte ceiling is accepted; the ceiling is inclusive.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_key_at_the_byte_ceiling_is_accepted(): void {
+		$run = $this->dispatch();
+		$key = \str_repeat( 'a', RunDataStore::MAX_KEY_BYTES );
+
+		self::assertTrue( $this->client->set_run_data( self::NAME, (string) $run->id, $key, array( 'kept' ) ) );
+		self::assertSame( array( 'kept' ), $this->client->get_run_data( self::NAME, (string) $run->id, $key ) );
+	}
+
+	/**
+	 * A row of exactly the ceiling is stored and one byte more is refused; the ceiling is inclusive.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_row_at_the_ceiling_is_accepted_and_one_byte_more_is_refused(): void {
+		$run    = $this->dispatch();
+		$probe  = RunDataStore::MAX_ROW_BYTES - 64;
+		$length = $probe + RunDataStore::MAX_ROW_BYTES - \strlen( self::serialized( array( 'fill' => array( \str_repeat( 'a', $probe ) ) ) ) );
+		self::assertSame( RunDataStore::MAX_ROW_BYTES, \strlen( self::serialized( array( 'fill' => array( \str_repeat( 'a', $length ) ) ) ) ), 'The fixture row must measure exactly the ceiling.' );
+
+		$refused = $this->client->set_run_data( self::NAME, (string) $run->id, 'fill', array( \str_repeat( 'a', $length + 1 ) ) );
+
+		self::assertInstanceOf( \WP_Error::class, $refused );
+		self::assertSame( ErrorCode::PayloadRejected->value, $refused->get_error_code() );
+		self::assertTrue( $this->client->set_run_data( self::NAME, (string) $run->id, 'fill', array( \str_repeat( 'a', $length ) ) ) );
+	}
+
+	/**
+	 * An insert that loses to a concurrent writer's row is retried as a merge, so both writes land.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_lost_insert_merges_with_the_row_that_won(): void {
+		$run         = $this->dispatch();
+		$option_name = $this->data_option_name( (string) $run->id );
+		$this->rig->wpdb()->before_next( 'insert', static fn ( WpdbLockSpy $wpdb ) => $wpdb->put( $option_name, self::serialized( array( 'other' => array( 'theirs' ) ) ) ) );
+
+		self::assertTrue( $this->client->set_run_data( self::NAME, (string) $run->id, 'seen', array( 'ours' ) ) );
+		self::assertSame( array( 'theirs' ), $this->client->get_run_data( self::NAME, (string) $run->id, 'other' ) );
+		self::assertSame( array( 'ours' ), $this->client->get_run_data( self::NAME, (string) $run->id, 'seen' ) );
+	}
+
+	/**
+	 * Finishing a run drops its data, or finds none to drop, without reporting a stranded row.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   bool $stores_data Whether the run stores data before it finishes.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'finished_run_data_provider' )]
+	public function test_a_finished_run_reports_no_stranded_data( bool $stores_data ): void {
+		$run = $this->dispatch();
+		if ( $stores_data ) {
+			self::assertTrue( $this->client->set_run_data( self::NAME, (string) $run->id, 'seen', array( 'a' ) ) );
+		}
+
+		$this->rig->run_due();
+
+		$this->rig->assert_completed();
+		self::assertArrayNotHasKey( $this->data_option_name( (string) $run->id ), $this->rig->wpdb()->rows );
+		self::assertSame( array(), \array_values( \array_filter( $this->rig->logger()->records, static fn ( array $record ): bool => \str_starts_with( $record['message'], 'Run data could not be dropped' ) ) ) );
+	}
+
 	// endregion.
 
 	// region PROVIDERS.
@@ -493,6 +573,21 @@ final class RunDataStoreTest extends TestCase {
 			'slash'      => array( 'seen/count' ),
 			'too long'   => array( \str_repeat( 'a', RunDataStore::MAX_KEY_BYTES + 1 ) ),
 			'whitespace' => array( 'seen count' ),
+		);
+	}
+
+	/**
+	 * Returns whether a finished run stored data first.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  array<string, array{bool}>
+	 */
+	public static function finished_run_data_provider(): array {
+		return array(
+			'without data' => array( false ),
+			'with data'    => array( true ),
 		);
 	}
 
@@ -574,6 +669,21 @@ final class RunDataStoreTest extends TestCase {
 	 */
 	private function data_option_name( string $run_id ): string {
 		return RunDataStore::option_name( Identity::compose( self::SCOPE, self::NAME ), $run_id );
+	}
+
+	/**
+	 * Serializes a data row in the grammar WordPress persists an array option in.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   array<array-key, mixed> $data Data row.
+	 *
+	 * @return  string
+	 */
+	private static function serialized( array $data ): string {
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- The fixture measures and writes the grammar the data store persists.
+		return \serialize( $data );
 	}
 
 	// endregion.
