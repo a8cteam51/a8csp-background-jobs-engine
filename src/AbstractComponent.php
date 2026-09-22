@@ -23,6 +23,7 @@ abstract class AbstractComponent implements ComponentInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 */
+	#[\Override]
 	public static function should_load(): bool {
 		return true;
 	}
@@ -33,6 +34,7 @@ abstract class AbstractComponent implements ComponentInterface {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 */
+	#[\Override]
 	public function initialize(): void {}
 
 	// endregion
