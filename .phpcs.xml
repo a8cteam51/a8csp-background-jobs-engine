@@ -3,7 +3,7 @@
 	<!-- Extend the A8CSP ruleset. -->
 	<rule ref="./vendor/a8csp/configs/php/quality-assurance/phpcs.dist.xml"/>
 
-	<!-- Check that the proper text domain(s) is used everywhere. -->
+	<!-- Check that the proper text domain is used everywhere. -->
 	<rule ref="WordPress.WP.I18n">
 		<properties>
 			<property name="text_domain" type="array">
