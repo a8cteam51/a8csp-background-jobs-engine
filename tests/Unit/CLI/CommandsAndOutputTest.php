@@ -170,6 +170,21 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( 'purge', $purge['action'] );
 		self::assertInstanceOf( Identity::class, $purge['identity'] );
 		self::assertSame( 'consumer-plugin:email-digest', (string) $purge['identity'] );
+
+		// --no-yes keeps the prompt rather than being rejected, so it stays a valid form.
+		self::assertSame(
+			array(
+				'action'   => 'purge',
+				'identity' => null,
+			),
+			RunsCommand::failed_runs_request_from_args(
+				array( 'purge' ),
+				array(
+					'all' => true,
+					'yes' => false,
+				)
+			)
+		);
 	}
 
 	/**
@@ -1546,7 +1561,7 @@ final class CommandsAndOutputTest extends TestCase {
 		$list_usage      = 'List accepts only --scope and --format; use wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>].';
 		$retry_usage     = 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.';
 		$purge_usage     = 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].';
-		$purge_yes_usage = 'Purge accepts --yes only as a flag with --all; use wp a8csp-bgje failed-runs purge --all [--yes].';
+		$purge_yes_usage = 'Purge accepts --yes only as a flag with --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].';
 		return array(
 			'missing action'         => array(
 				'args'       => array(),
@@ -1652,6 +1667,14 @@ final class CommandsAndOutputTest extends TestCase {
 				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
 				'assoc_args' => array( 'yes' => true ),
 				'message'    => $purge_yes_usage,
+			),
+			'purge name all yes'     => array(
+				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
+				'assoc_args' => array(
+					'all' => true,
+					'yes' => true,
+				),
+				'message'    => $purge_usage,
 			),
 			'purge all string yes'   => array(
 				'args'       => array( 'purge' ),
