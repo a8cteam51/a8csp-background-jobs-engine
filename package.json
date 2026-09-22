@@ -48,7 +48,7 @@
     "wp-env:multisite:stop": "wp-env --config .wp-env.multisite.json stop",
     "wp-env:multisite:destroy": "wp-env --config .wp-env.multisite.json destroy",
 
-    "audit": "composer audit --abandoned=report && npm audit",
+    "audit": "composer audit --locked --abandoned=report && npm audit --audit-level=high --omit=dev",
     "audit:fix": "npm audit fix",
     "check:engines": "wp-scripts check-engines",
     "check:licenses": "wp-scripts check-licenses",
