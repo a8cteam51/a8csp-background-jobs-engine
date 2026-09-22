@@ -556,7 +556,7 @@ final class UninstallTest extends TestCase {
 		$plugin_classes = \array_values(
 			\array_filter(
 				\array_diff( \get_declared_classes(), $declared_before ),
-				static fn ( string $class ): bool => 0 === \strpos( $class, 'A8C\\SpecialProjects\\BackgroundJobsEngine\\' ) && false === \strpos( $class, '\\Tests\\' )
+				static fn ( string $declared ): bool => 0 === \strpos( $declared, 'A8C\\SpecialProjects\\BackgroundJobsEngine\\' ) && false === \strpos( $declared, '\\Tests\\' )
 			)
 		);
 
