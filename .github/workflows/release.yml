@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Create the GitHub release'
+        description: 'Create the GitHub release (run from a tag)'
         type: boolean
         required: false
         default: false
