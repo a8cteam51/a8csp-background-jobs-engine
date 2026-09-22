@@ -45,7 +45,7 @@ Action Scheduler is optional and preferred when ready; when absent, the engine r
 
 ## Depending on the engine
 
-The engine is a separate plugin, and `a8csp_bgje()` is a plain function: if the engine is deactivated, every consumer call is a fatal error on `init`. Declare the dependency in your plugin header so WordPress enforces it:
+The engine is a separate plugin, and `a8csp_bgje()` is a plain function the engine defines only while it is active and its requirements check passes. On a site below its PHP or WordPress floor the engine shows an admin notice and loads nothing else. Without the function, every consumer call is a fatal error on `init`. Declare the dependency in your plugin header so WordPress enforces the first condition:
 
 ```php
 /**
@@ -54,12 +54,19 @@ The engine is a separate plugin, and `a8csp_bgje()` is a plain function: if the 
  */
 ```
 
-WordPress refuses to activate your plugin without the engine and blocks deactivating the engine while you depend on it. If the dependency is genuinely optional, guard instead of declaring it:
+WordPress refuses to activate your plugin without the engine and blocks deactivating the engine while you depend on it. It does not check the engine's requirements, so if your plugin must keep working where the engine cannot load, or the dependency is genuinely optional, guard the call on `init`:
 
 ```php
-if ( function_exists( 'a8csp_bgje' ) ) {
-	a8csp_bgje( 'my-plugin' )->jobs()->register( $definition );
-}
+add_action( 'init', static function () use ( $definition ): void {
+	if ( ! function_exists( 'a8csp_bgje' ) ) {
+		return;
+	}
+
+	$registered = a8csp_bgje( 'my-plugin' )->jobs()->register( $definition );
+	if ( is_wp_error( $registered ) ) {
+		error_log( $registered->get_error_message() );
+	}
+}, 2 );
 ```
 
 Never define `a8csp_bgje()` yourself as a fallback; a second definition of the same name is a fatal error the moment both plugins load.
