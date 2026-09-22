@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+On PHP 7.4 and 8.0, the requirements gate shows its admin notice instead of stopping with a fatal error.

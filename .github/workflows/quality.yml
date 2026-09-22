@@ -48,6 +48,7 @@ jobs:
       # functions.php and index.php load only after the requirements gate. Discover the entry by
       # its WordPress "Plugin Name:" header because its filename is repository-specific.
       - name: Check the below-floor files for syntax errors
+        id: syntax
         run: |
           set -euo pipefail
 
@@ -61,3 +62,44 @@ jobs:
           php -l "$GITHUB_WORKSPACE/functions-bootstrap.php"
           php -l "$GITHUB_WORKSPACE/uninstall.php"
           php -l "$GITHUB_WORKSPACE/footprint.php"
+          echo "entry-file=${entry_files[0]}" >> "$GITHUB_OUTPUT"
+
+      # Parsing is not running: this includes the entry file against stubs of the WordPress calls it
+      # makes, and requires the requirements gate to stage its notice without loading functions.php.
+      # An empty autoloader gets past the missing-dependencies branch.
+      - name: Run the requirements gate below the floor
+        env:
+          ENTRY_FILE: ${{ steps.syntax.outputs.entry-file }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GITHUB_WORKSPACE/vendor"
+          echo '<?php' > "$GITHUB_WORKSPACE/vendor/autoload.php"
+          cat > "$RUNNER_TEMP/requirements-gate.php" <<'PHP'
+          <?php
+          define( 'ABSPATH', __DIR__ . '/' );
+          $GLOBALS['notice_staged'] = false;
+          function plugin_basename( $file ) { return basename( dirname( $file ) ) . '/' . basename( $file ); }
+          function plugin_dir_path( $file ) { return dirname( $file ) . '/'; }
+          function plugin_dir_url( $file ) { return 'https://example.test/'; }
+          function add_filter() {}
+          function add_action( $hook ) { $GLOBALS['notice_staged'] = $GLOBALS['notice_staged'] || 'all_admin_notices' === $hook; }
+          function load_plugin_textdomain() {}
+          function did_action() { return 0; }
+          function get_plugin_data() { return array( 'RequiresPHP' => '8.5', 'RequiresWP' => '7.1' ); }
+          function is_php_version_compatible( $required ) { return version_compare( PHP_VERSION, $required, '>=' ); }
+          function is_wp_version_compatible() { return true; }
+          function is_wp_error( $thing ) { return $thing instanceof WP_Error; }
+          class WP_Error {
+            private $codes = array();
+            public function add( $code ) { $this->codes[] = $code; }
+            public function has_errors() { return array() !== $this->codes; }
+          }
+          require getenv( 'ENTRY_FILE' );
+          if ( ! $GLOBALS['notice_staged'] || in_array( dirname( getenv( 'ENTRY_FILE' ) ) . '/functions.php', get_included_files(), true ) ) {
+            fwrite( STDERR, '::error::the requirements gate did not stop at its notice on PHP ' . PHP_VERSION . "\n" );
+            exit( 1 );
+          }
+          echo 'The requirements gate stopped at its notice on PHP ' . PHP_VERSION . "\n";
+          PHP
+          php "$RUNNER_TEMP/requirements-gate.php"

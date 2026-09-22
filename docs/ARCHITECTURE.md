@@ -18,7 +18,7 @@ every surviving component is initialized before any hook can fire.
 - `functions-bootstrap.php` provides the GitHub release updater, plugin metadata,
   version compatibility checks, the requirements gate, and its admin-notice reporter; both root
   bootstrap files stay parsable below the plugin's PHP floor, and CI lints them against the older
-  PHP versions.
+  PHP versions and runs the entry file there to prove the requirements gate stops at its notice.
 - `functions.php` provides the scope-bound front door `a8csp_bgje( string $scope ): Engine`, the
   composition-root accessor `a8csp_bgje_plugin(): Plugin`, and a deterministic loader for the
   procedural facade files. Handle and manager construction is lazy. The runtime graph is assembled

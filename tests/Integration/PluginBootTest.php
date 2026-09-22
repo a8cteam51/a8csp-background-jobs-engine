@@ -27,7 +27,7 @@ final class PluginBootTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_plugin_boots_on_supported_runtime(): void {
-		self::assertTrue( \constant( 'A8CSP_BGJE_REQUIREMENTS_RESULT' ) );
+		self::assertTrue( \a8csp_bgje_validate_requirements() );
 		self::assertTrue( \function_exists( 'a8csp_bgje_plugin' ) );
 		self::assertSame( 10, has_action( 'plugins_loaded', array( \a8csp_bgje_plugin(), 'boot' ) ) );
 		self::assertTrue( \a8csp_bgje_plugin()->is_booted() );

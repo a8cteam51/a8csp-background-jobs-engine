@@ -17,7 +17,7 @@ final class RequirementsCheckTest extends AbstractIntegrationTestCase {
 	// region TESTS.
 
 	/**
-	 * The requirements constant reflects the runtime it booted on.
+	 * The requirements result reflects the runtime it booted on.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -25,7 +25,7 @@ final class RequirementsCheckTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_requirements_gate_matches_runtime(): void {
-		$requirements = \constant( 'A8CSP_BGJE_REQUIREMENTS_RESULT' );
+		$requirements = \a8csp_bgje_validate_requirements();
 		$wp_version   = \get_bloginfo( 'version' );
 
 		if ( \version_compare( $wp_version, '7.1', '<' ) ) {
