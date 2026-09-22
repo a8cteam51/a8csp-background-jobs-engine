@@ -72,8 +72,8 @@ every surviving component is initialized before any hook can fire.
   to a rival independently.
 - `src/CLI/` registers the `wp a8csp-bgje` command surface, including redacted persisted-lock
   inspection gated on WP-CLI.
-- `languages/` contains the POT generated from the plugin's strings; the release workflow
-  regenerates it so archives always ship current strings.
+- `languages/` holds the plugin's translations; `composer i18n:makepot` generates the POT from the
+  plugin's strings, and every release regenerates it.
 - `uninstall.php` loads root `footprint.php`, whose pure-data manifest records option prefixes,
   fixed transient keys, and delivery hooks. Runtime-suffixed option names cannot be enumerated as
   fixed keys, so the `a8csp_bgje_` prefix sweep is the complete ownership boundary. Per site,
