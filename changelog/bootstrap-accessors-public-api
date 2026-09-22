@@ -1,4 +1,0 @@
-Significance: patch
-Type: changed
-
-The plugin-metadata getters `a8csp_bgje_get_plugin_slug()`, `a8csp_bgje_get_plugin_name()` and `a8csp_bgje_get_plugin_version()`, and the `a8csp_bgje_plugin()` accessor, are part of the bound PHP API; the `Plugin` object the accessor returns stays internal.

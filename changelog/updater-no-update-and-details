@@ -1,4 +1,0 @@
-Significance: patch
-Type: fixed
-
-While it is up to date, the plugin lists as update-supported and shows its auto-update toggle, and View details answers from its GitHub release instead of looking the slug up on wordpress.org.

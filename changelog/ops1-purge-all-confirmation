@@ -1,4 +1,0 @@
-Significance: minor
-Type: changed
-
-`wp a8csp-bgje failed-runs purge --all` asks for confirmation before it deletes every retained failed run on the site, as `reset` and `schedules remove` do. Pass `--yes` to skip the prompt in scripts; without it, a non-interactive run stops before deleting anything. `purge <identity>` still runs without a prompt.
