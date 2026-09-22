@@ -462,7 +462,7 @@ add_action( 'init', static function (): void {
 }, 2 );
 ```
 
-The failure summary is engine-authored and redacted; it never contains raw exception text. Terminal hooks can replay across crash recovery, so listeners use the run ID to converge repeated delivery. Their delivery is durable under Action Scheduler and best-effort under WP-Cron. Replay has no attempt limit. A listener that throws on every attempt makes each hourly maintenance pass fire the event again: every listener on the paired identity-specific and generic hooks, and those before it on its own hook, run again, while those after it on its own hook do not run until it succeeds. The finished run's row and per-run data stay until the listener succeeds. A listener that fatals on every attempt stops maintenance for the whole site, because each pass restarts at the same row. Completed, failed, cancelled, and superseded reactions reach consumers through their lifecycle hooks; a completed run additionally drives `RunCompletionInterface` on an execution object that declares it, which is a listener on the same hook.
+The failure summary is engine-authored and redacted; it never contains raw exception text. Terminal hooks can replay across crash recovery, so listeners use the run ID to converge repeated delivery. Their delivery is durable under Action Scheduler and best-effort under WP-Cron. Replay has no attempt limit. A listener that throws on every attempt makes each hourly maintenance pass fire the event again: every listener on the other hook of the identity-specific and generic pair, and those before it on its own hook, run again, while those after it on its own hook do not run until it succeeds. The finished run's row and per-run data stay until the listener succeeds. A listener that fatals on every attempt stops maintenance for the whole site, because each pass restarts at the same row. Completed, failed, cancelled, and superseded reactions reach consumers through their lifecycle hooks; a completed run additionally drives `RunCompletionInterface` on an execution object that declares it, which is a listener on the same hook.
 
 The engine retains up to 20 failed runs per scope-qualified identity for manual retry, subject also to a 1,000,000-byte ceiling on the complete serialized retention row. It evicts oldest entries first until both bounds hold. If a new entry cannot fit even by itself, the engine rejects that entry instead of retaining it and leaves the existing row intact. A retry that successfully starts a fresh run attempts to remove its retained source entry; a failed removal is logged. Retention is best-effort: a retention write failure is logged rather than made fatal.
 
@@ -934,9 +934,10 @@ The command asks for a significance (`patch`, `minor`, `major`), a type, and the
 
 Releases are cut from trunk, in four steps.
 
-1. **Materialize the changelog.** `composer changelog:write` derives the next version from the newest `CHANGELOG.md` entry and the pending fragments' significance, writes that section, and deletes the fragments it consumed. From a prerelease entry the derived version is the matching stable release, so a prerelease passes its suffix with `--prerelease`. Pinning a stable release with `--use-version` changes nothing but makes the version explicit:
+1. **Materialize the changelog.** `composer changelog:write` derives the next version from the newest `CHANGELOG.md` entry and the pending fragments' significance, writes that section, and deletes the fragments it consumed. From a prerelease entry the derived version stays on that prerelease's line only while the pending significance fits the line and any `--prerelease` suffix sorts after the current one; otherwise it moves to the next line. Preview it with `vendor/bin/changelogger version next`, which takes the same `--prerelease`, and pin the version with `--use-version` whenever the preview is not the release you mean:
 
    ```sh
+   vendor/bin/changelogger version next --prerelease=beta.1
    composer changelog:write -- --use-version=1.0.0
    composer changelog:write -- --prerelease=beta.1
    ```
