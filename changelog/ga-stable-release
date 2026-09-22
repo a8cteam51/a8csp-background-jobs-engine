@@ -1,0 +1,4 @@
+Significance: minor
+Type: changed
+
+1.0.0 is the first stable release, and the tiered SemVer contract in the README now binds: the public PHP API, the documented hooks and filters, the public enums and the consumer limits change incompatibly only in a major version. A site running a prerelease is offered 1.0.0 through the dashboard and from then on follows stable releases only.
