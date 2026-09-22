@@ -2,6 +2,8 @@
 /**
  * Uninstall handler. WordPress runs this file directly when the plugin is deleted. The persisted
  * footprint lives in a pure-data manifest; uninstall must not depend on plugin code.
+ * WordPress runs it on sites below the plugin's floor too, so it calls only functions PHP 7.4
+ * provides.
  *
  * @since       1.0.0
  * @version     1.0.0
@@ -58,13 +60,13 @@ $a8csp_bgje_uninstall_site = static function () use ( $a8csp_bgje_footprint ): v
 	$a8csp_bgje_remove_diagnostics_on_uninstall = \defined( 'A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL' ) && true === \constant( 'A8CSP_BGJE_REMOVE_DIAGNOSTICS_ON_UNINSTALL' );
 
 	foreach ( $a8csp_bgje_option_names as $a8csp_bgje_option_name ) {
-		if ( ! \is_string( $a8csp_bgje_option_name ) || ! \str_starts_with( $a8csp_bgje_option_name, $a8csp_bgje_footprint['option_sweep_prefix'] ) ) {
+		if ( ! \is_string( $a8csp_bgje_option_name ) || 0 !== \strncmp( $a8csp_bgje_option_name, $a8csp_bgje_footprint['option_sweep_prefix'], \strlen( $a8csp_bgje_footprint['option_sweep_prefix'] ) ) ) {
 			continue;
 		}
 
 		if ( ! $a8csp_bgje_remove_diagnostics_on_uninstall ) {
 			foreach ( $a8csp_bgje_footprint['retained_option_prefixes'] as $a8csp_bgje_retained_option_prefix ) {
-				if ( \str_starts_with( $a8csp_bgje_option_name, $a8csp_bgje_retained_option_prefix ) ) {
+				if ( 0 === \strncmp( $a8csp_bgje_option_name, $a8csp_bgje_retained_option_prefix, \strlen( $a8csp_bgje_retained_option_prefix ) ) ) {
 					continue 2;
 				}
 			}

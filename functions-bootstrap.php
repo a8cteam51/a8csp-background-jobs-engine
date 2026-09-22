@@ -8,6 +8,8 @@
  * This file loads before the requirements check can run, so it MUST remain parsable on PHP
  * versions below the plugin's declared floor. No modern syntax beyond what it already carries
  * belongs in this file, and a dedicated CI job lints it directly against the older PHP versions.
+ * The updater and the requirements gate also run on those versions, so the file calls only
+ * functions PHP 7.4 provides.
  *
  * @since       1.0.0
  * @version     1.0.0
@@ -129,7 +131,7 @@ function a8csp_bgje_get_plugin_version() {
  * @return  array{version: string, url: string, package: string, body: string}|null
  */
 function a8csp_bgje_get_github_release( $installed_version ) {
-	$prerelease_channel = \str_contains( $installed_version, '-' );
+	$prerelease_channel = false !== \strpos( $installed_version, '-' );
 	$transient_key      = 'a8csp_bgje_github_latest_release_' . ( $prerelease_channel ? 'prerelease' : 'stable' );
 
 	$latest_release_info = get_transient( $transient_key );
@@ -143,7 +145,7 @@ function a8csp_bgje_get_github_release( $installed_version ) {
 		$latest_release_info = array();
 	}
 
-	if ( array() !== $latest_release_info && \array_is_list( $latest_release_info ) ) {
+	if ( array() !== $latest_release_info && \array_values( $latest_release_info ) === $latest_release_info ) {
 		// The GitHub /releases list is ordered by publish time, not version, so keep the highest-versioned non-draft entry rather than the first.
 		$channel_latest         = null;
 		$channel_latest_version = null;
