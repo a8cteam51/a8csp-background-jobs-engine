@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+`RunContextInterface` joins `ChunkedRunContextInterface` as an engine-implemented interface: consumers must not implement it, and minor versions may add methods to it. A test that calls a handler directly passes a `RunContext` instead of its own implementation.

@@ -511,7 +511,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `ChunkedRunContextInterface` | Extends `RunContextInterface` with `append_chunk( array $chunk_args ): void` and `prepend_chunk( array $chunk_args ): void`. |
 | `NonRetryableException` | Runtime exception that marks client work as permanently failed. |
 
-The engine supplies the only implementation of `ChunkedRunContextInterface`; consumers must not implement it, and methods may be added in minor versions.
+The engine supplies the implementations of `RunContextInterface` and `ChunkedRunContextInterface`; consumers must not implement either, and methods may be added to both in minor versions. A test that calls a standard handler directly passes a `RunContext`.
 
 `JobKind::from()` validates kind-key grammar but does not install a kind. Only engine-installed kinds can be registered. The generic definition path is registration data, while kind handlers and their SPI stay internal.
 
@@ -895,7 +895,7 @@ The canonical SemVer contract is tiered:
 
 | Tier | Contract |
 | --- | --- |
-| PHP API | The types in the [public type index](#public-models-roles-and-contexts), `a8csp_bgje()`, and the verb-noun procedural aliases form the bound PHP surface. An incompatible change to an existing name, signature, or documented behavior is breaking, subject to an explicitly documented additive exception such as `ChunkedRunContextInterface`. |
+| PHP API | The types in the [public type index](#public-models-roles-and-contexts), `a8csp_bgje()`, and the verb-noun procedural aliases form the bound PHP surface. An incompatible change to an existing name, signature, or documented behavior is breaking, subject to an explicitly documented additive exception such as `RunContextInterface` and `ChunkedRunContextInterface`. |
 | Hooks and filters | The documented consumer actions and filters form the bound event surface. Minor releases may add hooks and filters. Changing an existing hook's arguments, or a filter's required return, is breaking. |
 | Enums | Public enum cases form an additive vocabulary. Minor releases may add enum cases. Consumers must treat an unknown enum case as a generic value rather than assume the listed cases are exhaustive: a generic failure for `ErrorCode`, and a generic terminal or non-terminal state, as appropriate, for `RunStatus`. |
 | Consumer limits | The values and behaviors in [Consumer limits](#consumer-limits) form the bound limit surface. An incompatible change is breaking. |
