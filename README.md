@@ -929,7 +929,7 @@ The command asks for a significance (`patch`, `minor`, `major`), a type, and the
 
 Releases are cut from trunk, in four steps.
 
-1. **Materialize the changelog.** `composer changelog:write` derives the next version from the newest `CHANGELOG.md` entry and the pending fragments' significance, writes that section, and deletes the fragments it consumed. From a prerelease entry the derived version stays on that prerelease's line only while the pending significance fits the line and any `--prerelease` suffix sorts after the current one; otherwise it moves to the next line. Preview it with `vendor/bin/changelogger version next`, which takes the same `--prerelease`, and pin the version with `--use-version` whenever the preview is not the release you mean:
+1. **Materialize the changelog.** `composer changelog:write` derives the next version from the newest `CHANGELOG.md` entry and the pending fragments' significance, writes that section, and deletes the fragments it consumed. The derived version is not always the next one on the current line: from a prerelease entry it moves to the next line when the pending significance does not fit that line, and a `--prerelease` suffix that sorts before the current one moves it too. Preview it with `vendor/bin/changelogger version next`, which takes the same `--prerelease`, and pin the version with `--use-version` whenever the preview is not the release you mean:
 
    ```sh
    vendor/bin/changelogger version next --prerelease=beta.1
