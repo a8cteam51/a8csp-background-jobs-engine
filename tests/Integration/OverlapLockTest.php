@@ -171,7 +171,7 @@ final class OverlapLockTest extends AbstractIntegrationTestCase {
 		self::assertInstanceOf( \WP_Error::class, $result, 'Reject must refuse a second start under the fresh lock' );
 		self::assertSame( ErrorCode::OverlapHeld->value, $result->get_error_code() );
 		self::assertSame( array( 'run_id' => $run_a ), $result->get_error_data() );
-		self::assertSame( \sprintf( 'chunked_job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', self::REJECT_IDENTITY, $run_a ), $result->get_error_message(), 'The rejected held-lock failure must identify the incumbent run exactly' );
+		self::assertSame( \sprintf( 'chunked_job "%1$s" overlap lock is held by run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', self::REJECT_IDENTITY, $run_a ), $result->get_error_message(), 'The rejected held-lock failure must identify the incumbent run exactly' );
 		self::assertSame( $action_count_before, (int) $store->query_actions( array(), 'count' ), 'A rejected start must not create an Action Scheduler row' );
 		$lock = \get_option( $lock_name, null );
 		self::assertIsArray( $lock );

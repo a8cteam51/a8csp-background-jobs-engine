@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+The `overlap_held` message names the run that holds the overlap lock rather than saying that run is still running. A run that crashed while firing its terminal hooks keeps its lock until the lock goes stale or maintenance replays the run, so it may already be finished.
