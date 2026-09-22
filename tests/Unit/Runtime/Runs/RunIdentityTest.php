@@ -14,15 +14,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( RunIdentity::class )]
 final class RunIdentityTest extends TestCase {
-	// region LIFECYCLE.
-
-	/** Satisfies the production boot guard before the identity helper is autoloaded. */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/** Generation and parsing share the documented fixed-width representation. */

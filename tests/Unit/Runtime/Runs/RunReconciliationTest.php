@@ -183,10 +183,11 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Clears the terminal-hook callbacks these scenarios plant.
+	 * Clears the terminal-hook callbacks and scripted filter values these scenarios plant.
 	 *
-	 * The stub registry is a superglobal that outlives the class, so a planted callback
-	 * would otherwise fire inside any later class sharing the identity.
+	 * Both stub registries are superglobals that outlive the class, so a planted callback would
+	 * otherwise fire inside any later class sharing the identity, and a scripted filter value would
+	 * answer any later class reading that filter.
 	 *
 	 * @return  void
 	 */

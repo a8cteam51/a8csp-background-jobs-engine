@@ -38,7 +38,7 @@ final class JobRegistryTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Satisfies production boot guards and loads WordPress time constants.
+	 * Loads the WordPress time constants the registry reads.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

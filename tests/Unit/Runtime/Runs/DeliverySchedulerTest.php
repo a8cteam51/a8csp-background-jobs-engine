@@ -36,7 +36,7 @@ final class DeliverySchedulerTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Satisfies production file guards before first autoload.
+	 * Loads the JSON-encode stub the scheduler reads through.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

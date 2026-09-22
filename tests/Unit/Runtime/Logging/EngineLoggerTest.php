@@ -21,7 +21,7 @@ final class EngineLoggerTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Satisfies the production boot guard and loads the recording action stub.
+	 * Loads the recording action stub and the JSON-encode stub.
 	 *
 	 * @return  void
 	 */
