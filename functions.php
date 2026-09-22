@@ -57,7 +57,7 @@ function a8csp_bgje( string $scope ): Engine {
 
 $a8csp_bgje_includes = \glob( \constant( 'A8CSP_BGJE_DIR_PATH' ) . 'includes/*.php' );
 if ( false !== $a8csp_bgje_includes ) {
-	\sort( $a8csp_bgje_includes ); // Glob order is filesystem-dependent, so sort for a deterministic load order.
+	\sort( $a8csp_bgje_includes );
 	foreach ( $a8csp_bgje_includes as $a8csp_bgje_include ) {
 		if ( \str_starts_with( \basename( $a8csp_bgje_include ), '_' ) ) {
 			continue; // An underscore prefix opts a file out of automatic loading.
