@@ -57,7 +57,7 @@ final readonly class EngineError implements ErrorInterface {
 	 * @return  self
 	 */
 	public static function held( string $kind, Identity $identity, string $running_run_id ): self {
-		return new self( \sprintf( '%1$s "%2$s" overlap lock is held by run "%3$s"; wait for that run to finish before dispatching the same arguments or overlap key.', $kind, (string) $identity, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
+		return new self( \sprintf( '%1$s "%2$s" overlap lock is held by run "%3$s"; wait for that lock to be released before dispatching the same arguments or overlap key.', $kind, (string) $identity, $running_run_id ), reason: EngineErrorReason::OverlapHeld, context: array( 'run_id' => $running_run_id ), );
 	}
 
 	/**

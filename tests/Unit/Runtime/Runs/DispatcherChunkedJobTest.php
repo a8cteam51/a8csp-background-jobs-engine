@@ -453,7 +453,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		$data  = $error->get_error_data();
 		self::assertIsArray( $data );
-		self::assertSame( \sprintf( 'chunked_job "%1$s" overlap lock is held by run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', self::IDENTITY, self::INCUMBENT_RUN_ID ), $error->get_error_message() );
+		self::assertSame( \sprintf( 'chunked_job "%1$s" overlap lock is held by run "%2$s"; wait for that lock to be released before dispatching the same arguments or overlap key.', self::IDENTITY, self::INCUMBENT_RUN_ID ), $error->get_error_message() );
 		self::assertSame( self::INCUMBENT_RUN_ID, $data['run_id'] ?? null );
 		self::assertSame( self::INCUMBENT_RUN_ID, $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->start_calls() );
