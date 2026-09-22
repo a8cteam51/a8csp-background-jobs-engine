@@ -22,25 +22,6 @@ final class RunIdTest extends TestCase {
 
 	// endregion.
 
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies the production files' ABSPATH boot guard before first autoload.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

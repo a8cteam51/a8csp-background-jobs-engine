@@ -14,25 +14,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( InvalidChunkException::class )]
 final class InvalidChunkExceptionTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Defines the guarded plugin runtime before the internal exception is autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

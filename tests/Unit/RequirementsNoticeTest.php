@@ -28,7 +28,6 @@ final class RequirementsNoticeTest extends TestCase {
 	#[RunInSeparateProcess]
 	#[PreserveGlobalState( false )]
 	public function test_requirements_failure_registers_the_shared_admin_notice_hook(): void {
-		\defined( 'ABSPATH' ) || \define( 'ABSPATH', __DIR__ . '/' );
 		require_once __DIR__ . '/wp-update-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/functions-bootstrap.php';
 

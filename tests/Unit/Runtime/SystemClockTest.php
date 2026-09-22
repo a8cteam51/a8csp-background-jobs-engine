@@ -14,25 +14,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( SystemClock::class )]
 final class SystemClockTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies the production file's direct-access guard.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

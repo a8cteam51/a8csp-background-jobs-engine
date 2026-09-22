@@ -79,10 +79,6 @@ final class OverlapGuardTest extends TestCase {
 	/** Loads guarded WordPress functions before production classes are autoloaded. */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-time-constant-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';

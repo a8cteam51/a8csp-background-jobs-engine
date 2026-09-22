@@ -29,17 +29,12 @@ final class PluginBootGateTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Satisfies the production files' `ABSPATH` boot guard and loads the recording hook stubs before
-	 * the component classes are first autoloaded.
+	 * Loads the recording hook stubs before the component classes are first autoloaded.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once __DIR__ . '/wp-hook-stubs.php';
 		require_once __DIR__ . '/wp-lock-stubs.php';
 		require_once __DIR__ . '/wp-options-stubs.php';

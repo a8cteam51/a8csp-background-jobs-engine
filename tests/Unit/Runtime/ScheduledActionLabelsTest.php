@@ -39,10 +39,6 @@ final class ScheduledActionLabelsTest extends TestCase {
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once \dirname( __DIR__ ) . '/wp-hook-stubs.php';
 		require_once __DIR__ . '/wp-esc-html-stub.php';
 	}

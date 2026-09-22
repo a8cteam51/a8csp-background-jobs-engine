@@ -22,25 +22,6 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( Failure::class )]
 #[UsesClass( SchedulingErrorReason::class )]
 final class SchedulingErrorTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies the production files' `ABSPATH` boot guard before the classes are first autoloaded.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

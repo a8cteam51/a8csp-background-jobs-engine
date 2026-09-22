@@ -15,22 +15,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( PendingAction::class )]
 final class PendingActionTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies the production file's ABSPATH boot guard before first autoload.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

@@ -15,22 +15,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversNothing]
 final class RecordingBackendTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies production boot guards before the backend interface is autoloaded.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

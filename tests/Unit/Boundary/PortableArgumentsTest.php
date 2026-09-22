@@ -11,22 +11,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( PortableArguments::class )]
 final class PortableArgumentsTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies production boot guards before the portable-arguments validator is autoloaded.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

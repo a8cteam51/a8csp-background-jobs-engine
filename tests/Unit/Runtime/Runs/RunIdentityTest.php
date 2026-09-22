@@ -19,9 +19,6 @@ final class RunIdentityTest extends TestCase {
 	/** Satisfies the production boot guard before the identity helper is autoloaded. */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
 	}
 
 	// endregion.

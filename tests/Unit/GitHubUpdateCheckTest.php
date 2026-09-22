@@ -44,9 +44,6 @@ final class GitHubUpdateCheckTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
 		if ( ! \defined( 'A8CSP_BGJE_BASENAME' ) ) {
 			\define( 'A8CSP_BGJE_BASENAME', self::PLUGIN_FILE );
 		}

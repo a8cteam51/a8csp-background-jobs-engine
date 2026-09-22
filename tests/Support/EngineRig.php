@@ -91,10 +91,6 @@ final class EngineRig {
 	 * @return  void
 	 */
 	public static function bootstrap(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once \dirname( __DIR__ ) . '/Unit/wp-options-stubs.php';
 		require_once \dirname( __DIR__ ) . '/Unit/wp-hook-stubs.php';
 		require_once \dirname( __DIR__ ) . '/Unit/wp-lock-stubs.php';
