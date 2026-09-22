@@ -22,8 +22,6 @@ jobs:
   php-syntax:
     name: PHP Syntax
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-php-syntax-check.yml@trunk
-    with:
-      php-versions: '["8.5", "8.6"]'
 
   belowfloor-syntax:
     name: Below-floor syntax (PHP ${{ matrix.php }})

@@ -19,5 +19,3 @@ jobs:
   supply-chain:
     name: Supply-chain audit
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-supply-chain-audit.yml@trunk
-    with:
-      npm-audit-flags: '--audit-level=high --omit=dev'
