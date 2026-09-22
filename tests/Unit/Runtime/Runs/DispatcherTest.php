@@ -1098,15 +1098,16 @@ final class DispatcherTest extends TestCase {
 	 * @param   string $overlap_value Registered overlap policy value.
 	 * @param   int    $heartbeat_age Incumbent lock and row heartbeat age.
 	 * @param   bool   $executing     Whether the incumbent row is mid-execution.
-	 * @param   string $kind          Incumbent's persisted kind key.
-	 * @param   bool   $fails         Whether the takeover records the incumbent as a crash reclamation.
+	 * @param   string $kind            Incumbent's persisted kind key.
+	 * @param   int    $failed_attempts Attempts the incumbent had already consumed.
+	 * @param   bool   $fails           Whether the takeover records the incumbent as a crash reclamation.
 	 *
 	 * @return  void
 	 */
 	#[DataProvider( 'takeover_incumbents' )]
-	public function test_takeover_fails_only_a_stale_executing_incumbent_as_crash_reclamation( string $overlap_value, int $heartbeat_age, bool $executing, string $kind, bool $fails ): void {
+	public function test_takeover_fails_only_a_stale_executing_incumbent_as_crash_reclamation( string $overlap_value, int $heartbeat_age, bool $executing, string $kind, int $failed_attempts, bool $fails ): void {
 		$this->restart_with_overlap_policy( OverlapPolicy::from( $overlap_value ) );
-		$this->seed_running_lock( $heartbeat_age, $executing, $kind );
+		$this->seed_running_lock( $heartbeat_age, $executing, $kind, $failed_attempts );
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
@@ -1135,9 +1136,10 @@ final class DispatcherTest extends TestCase {
 		$failure = $failed[0][0] ?? null;
 		self::assertInstanceOf( RunFailure::class, $failure );
 		self::assertSame( self::INCUMBENT_RUN_ID, (string) $failure->run_id );
-		self::assertSame( 1, $failure->attempts );
+		self::assertSame( $failed_attempts + 1, $failure->attempts );
 		self::assertSame( RunFailureStage::crash_reclamation(), $failure->stage );
 		self::assertSame( ErrorCode::ExecutionFailed, $failure->code );
+		self::assertSame( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by a dispatch that found its execution-overlap lock stale while its run row still recorded an invocation in progress.', self::INCUMBENT_RUN_ID, self::IDENTITY ), $failure->summary );
 		$retained_raw = $this->rig->wpdb()->rows[ 'a8csp_bgje_failed_runs_' . self::IDENTITY ] ?? null;
 		self::assertIsString( $retained_raw );
 		$retained = \maybe_unserialize( $retained_raw );
@@ -2148,44 +2150,49 @@ final class DispatcherTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @return array<string, array{overlap_value: string, heartbeat_age: int, executing: bool, kind: string, fails: bool}>
+	 * @return array<string, array{overlap_value: string, heartbeat_age: int, executing: bool, kind: string, failed_attempts: int, fails: bool}>
 	 */
 	public static function takeover_incumbents(): array {
 		return array(
 			'stale executing under Reject'           => array(
-				'overlap_value' => 'reject',
-				'heartbeat_age' => 901,
-				'executing'     => true,
-				'kind'          => 'job',
-				'fails'         => true,
+				'overlap_value'   => 'reject',
+				'heartbeat_age'   => 901,
+				'executing'       => true,
+				'kind'            => 'job',
+				'failed_attempts' => 0,
+				'fails'           => true,
 			),
 			'stale executing under Replace'          => array(
-				'overlap_value' => 'replace',
-				'heartbeat_age' => 901,
-				'executing'     => true,
-				'kind'          => 'job',
-				'fails'         => true,
+				'overlap_value'   => 'replace',
+				'heartbeat_age'   => 901,
+				'executing'       => true,
+				'kind'            => 'job',
+				'failed_attempts' => 2,
+				'fails'           => true,
 			),
 			'stale executing of an uninstalled kind' => array(
-				'overlap_value' => 'reject',
-				'heartbeat_age' => 901,
-				'executing'     => true,
-				'kind'          => 'acme_kind',
-				'fails'         => true,
+				'overlap_value'   => 'reject',
+				'heartbeat_age'   => 901,
+				'executing'       => true,
+				'kind'            => 'acme_kind',
+				'failed_attempts' => 0,
+				'fails'           => true,
 			),
 			'fresh executing under Replace'          => array(
-				'overlap_value' => 'replace',
-				'heartbeat_age' => 0,
-				'executing'     => true,
-				'kind'          => 'job',
-				'fails'         => false,
+				'overlap_value'   => 'replace',
+				'heartbeat_age'   => 0,
+				'executing'       => true,
+				'kind'            => 'job',
+				'failed_attempts' => 0,
+				'fails'           => false,
 			),
 			'stale idle under Reject'                => array(
-				'overlap_value' => 'reject',
-				'heartbeat_age' => 901,
-				'executing'     => false,
-				'kind'          => 'job',
-				'fails'         => false,
+				'overlap_value'   => 'reject',
+				'heartbeat_age'   => 901,
+				'executing'       => false,
+				'kind'            => 'job',
+				'failed_attempts' => 0,
+				'fails'           => false,
 			),
 		);
 	}
@@ -2353,6 +2360,30 @@ final class DispatcherTest extends TestCase {
 		self::assertSame( array( self::ARGS ), $this->job->calls, 'The restored incumbent must still execute.' );
 	}
 
+	/**
+	 * A crash reclamation that loses its lock transfer puts the incumbent back exactly as it was.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_a_lost_lock_transfer_restores_the_incumbent_it_failed(): void {
+		$this->seed_running_lock( 901, true );
+		$incumbent_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID;
+		$incumbent_raw    = $this->rig->wpdb()->rows[ $incumbent_option ] ?? null;
+		self::assertIsString( $incumbent_raw );
+		// Every admission attempt must lose its transfer, or a later one would admit and hide the restore.
+		$this->rig->wpdb()->fail_updates_targeting( OverlapGuard::OPTION_PREFIX );
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $result, ErrorCode::AdmissionConflict );
+		self::assertSame( $incumbent_raw, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed/' . self::IDENTITY ) );
+		self::assertArrayNotHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $this->rig->wpdb()->rows );
+	}
+
 	// endregion.
 
 	// region HELPERS.
@@ -2442,13 +2473,14 @@ final class DispatcherTest extends TestCase {
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
-	 * @param   int    $heartbeat_age Existing heartbeat age.
-	 * @param   bool   $executing     Whether the incumbent row is mid-execution.
-	 * @param   string $kind          Incumbent's persisted kind key.
+	 * @param   int    $heartbeat_age   Existing heartbeat age.
+	 * @param   bool   $executing       Whether the incumbent row is mid-execution.
+	 * @param   string $kind            Incumbent's persisted kind key.
+	 * @param   int    $failed_attempts Attempts the incumbent had already consumed.
 	 *
 	 * @return  void
 	 */
-	private function seed_running_lock( int $heartbeat_age, bool $executing = false, string $kind = 'job' ): void {
+	private function seed_running_lock( int $heartbeat_age, bool $executing = false, string $kind = 'job', int $failed_attempts = 0 ): void {
 		$heartbeat = self::NOW - $heartbeat_age;
 		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::INCUMBENT_RUN_ID, $heartbeat, $heartbeat ) );
 		$this->put_fixture(
@@ -2461,7 +2493,7 @@ final class DispatcherTest extends TestCase {
 					start_args: self::ARGS,
 					args_hash: $this->args_hash(),
 					kind_state: array(),
-					failed_attempts: 0,
+					failed_attempts: $failed_attempts,
 					action_sequence: 1,
 					created_at: $heartbeat,
 					heartbeat_at: $heartbeat,
