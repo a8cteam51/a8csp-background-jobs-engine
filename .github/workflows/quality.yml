@@ -17,7 +17,7 @@ jobs:
     name: PHP Lint
     uses: a8cteam51/a8csp-configs/.github/workflows/reusable-php-lint.yml@67392ce62cd343bc5ce8c65da264c778cdd86210 # v1.0.0
     with:
-      scripts: '["lint:php:phpcs", "lint:php:phpcs:tests", "lint:php:phpstan", "changelog:validate"]'
+      scripts: '["lint:php:phpcs", "lint:php:phpcs:tests", "lint:php:belowfloor", "lint:php:phpstan", "changelog:validate"]'
 
   php-syntax:
     name: PHP Syntax

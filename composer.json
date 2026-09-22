@@ -73,10 +73,12 @@
     "lint:php": [
       "@lint:php:phpcs",
       "@lint:php:phpcs:tests",
+      "@lint:php:belowfloor",
       "@lint:php:phpstan"
     ],
     "lint:php:phpcs": "phpcs --standard=./.phpcs.xml --basepath=. ./ -v",
     "lint:php:phpcs:tests": "phpcs --standard=./.phpcs.tests.xml --basepath=. ./tests -v",
+    "lint:php:belowfloor": "phpcs --standard=PHPCompatibility --runtime-set testVersion 7.4- --basepath=. -v a8csp-background-jobs-engine.php functions-bootstrap.php uninstall.php footprint.php",
     "lint:php:phpstan": "phpstan analyse -c ./.phpstan.neon -v --memory-limit=1G",
 
     "internationalize": [
