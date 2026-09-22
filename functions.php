@@ -14,6 +14,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
  * component gates before every plugin has loaded. Booting stays tied to the `plugins_loaded`
  * attachment in the main plugin file.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
