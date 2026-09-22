@@ -811,14 +811,19 @@ final readonly class Dispatcher {
 		$claimed_incumbent = null;
 		$superseded_here   = false;
 		if ( null !== $incumbent_snapshot && RunStatus::Running === $incumbent_snapshot['state']->status ) {
+			$incumbent = $incumbent_snapshot['state'];
 			// This exact run-state CAS is the first linearization point: once it wins, the incumbent's in-flight completion CAS cannot commit after takeover.
-			$claimed_incumbent = $this->terminal_transitions->claim_superseded_run( $incumbent_run_id, $incumbent_snapshot['state'], $run_store, $incumbent_snapshot['raw'] );
+			// A stale lock over an executing row means its process died mid-invocation, so the takeover records the crash
+			// reclamation maintenance would record; any other incumbent is displaced as Superseded.
+			$claimed_incumbent = true === $claim->stale && $incumbent->executing
+				? $this->terminal_transitions->claim_failed_run( $incumbent_run_id, $incumbent, $run_store, new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by a dispatch that found its execution-overlap lock stale while the run was still executing.', $incumbent_run_id, (string) $identity ) ), RunState::increment_attempts_safely( $incumbent->failed_attempts ), RunFailureStage::crash_reclamation(), ErrorCode::ExecutionFailed, ( $this->handlers[ $incumbent->kind ] ?? null )?->failure_details( $incumbent ), $incumbent_snapshot['raw'] )
+				: $this->terminal_transitions->claim_superseded_run( $incumbent_run_id, $incumbent, $run_store, $incumbent_snapshot['raw'] );
 			if ( $claimed_incumbent instanceof Failure ) {
 				$run_store->delete_if_unchanged( $run_id, $state );
 
 				return new Failure(
 					new EngineError(
-						\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm the incumbent supersession before overlap transfer; repair option writes and retry.', $run_id, $kind, (string) $identity ),
+						\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm the incumbent terminal transition before overlap transfer; repair option writes and retry.', $run_id, $kind, (string) $identity ),
 						reason: EngineErrorReason::StorageFailure,
 						context: array(
 							'identity' => (string) $identity,
@@ -833,7 +838,7 @@ final readonly class Dispatcher {
 
 				return new Failure(
 					new EngineError(
-						\sprintf( '%1$s "%2$s" incumbent run changed while the replacement was superseding it; retry the dispatch against the current incumbent state.', $kind, (string) $identity ),
+						\sprintf( '%1$s "%2$s" incumbent run changed while the replacement was taking it over; retry the dispatch against the current incumbent state.', $kind, (string) $identity ),
 						reason: EngineErrorReason::AdmissionConflict,
 						context: array(
 							'identity' => (string) $identity,
@@ -914,14 +919,14 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Executes post-resolution supersession effects without abandoning the resolved admission.
+	 * Executes the taken-over incumbent's terminal effects without abandoning the resolved admission.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   Identity                                                                 $identity       Complete scope-qualified work identity.
 	 * @param   string                                                                   $replacement_id Replacement run identifier.
-	 * @param   array{run_id: string, claimed: array{raw: string, state: RunState}}|null $takeover       Claimed incumbent supersession, if any.
+	 * @param   array{run_id: string, claimed: array{raw: string, state: RunState}}|null $takeover       Claimed incumbent terminal transition, if any.
 	 * @param   RunStore                                                                 $run_store      Active-run store.
 	 *
 	 * @return  void
@@ -932,11 +937,15 @@ final readonly class Dispatcher {
 		}
 
 		try {
-			$this->terminal_transitions->execute_claimed_supersession( $identity, $takeover['run_id'], $replacement_id, $takeover['claimed'], $run_store );
+			if ( RunStatus::Failed === $takeover['claimed']['state']->status ) {
+				$this->terminal_transitions->execute_claimed_failure( $identity, $takeover['run_id'], $takeover['claimed'], $run_store );
+			} else {
+				$this->terminal_transitions->execute_claimed_supersession( $identity, $takeover['run_id'], $replacement_id, $takeover['claimed'], $run_store );
+			}
 		} catch ( \Throwable $throwable ) {
-			// The committed Superseded row retains every unmarked effect for maintenance replay.
+			// The committed terminal row retains every unmarked effect for maintenance replay.
 			$this->logger->error(
-				'Superseded-run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
+				'Taken-over run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
 				array(
 					'identity'  => (string) $identity,
 					'run_id'    => $takeover['run_id'],

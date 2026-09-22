@@ -1,0 +1,4 @@
+Significance: patch
+Type: fixed
+
+A dispatch that takes over the stale lane of a run whose process died mid-invocation now fails that run as `crash_reclamation`, the same outcome the maintenance sweep records: the `failed` hooks fire, the run is retained for `failed-runs retry`, and a Chunked Job keeps its in-flight chunk. Such a dispatch previously recorded the crashed run as superseded, so it was not retained and no `failed` hook fired. A run between invocations is still superseded.

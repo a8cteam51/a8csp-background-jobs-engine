@@ -372,8 +372,9 @@ add_action( 'init', static function (): void {
 		2
 	);
 
-	// Superseded: a Replace-policy dispatch displaced this run; the replacement carries its
-	// own lifecycle, so clean up anything keyed to the displaced run's id.
+	// Superseded: a Replace-policy dispatch displaced this run, or a dispatch took over its stale
+	// lane between invocations; the replacement carries its own lifecycle, so clean up anything
+	// keyed to the displaced run's id.
 	add_action(
 		'a8csp_bgje/superseded/my-plugin:email-digest',
 		static function ( RunId $run_id, array $start_args ): void {
@@ -558,7 +559,7 @@ While a non-executing row is fresh and preserved, `wp a8csp-bgje runs cancel` ca
 
 Neither `JobOptions` nor `Schedule` validates priority during construction. `jobs()->register()` rejects an out-of-range job default, `schedules()->sync()` rejects an out-of-range schedule value, and `jobs()->dispatch()` rejects an out-of-range explicit argument. The remaining defaults are a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
 
-Expiry of the credit and lock-staleness window does not interrupt a handler. Crash reconciliation can then reclaim the run and admit replacement work that overlaps it, so handlers remain idempotent.
+Expiry of the credit and lock-staleness window does not interrupt a handler. Crash reconciliation can then reclaim the run and admit replacement work that overlaps it, so handlers remain idempotent. Whichever reaches a stale executing run first, maintenance or a dispatch taking over its lane, fails it as `RunFailureStage::crash_reclamation()` with the same retention and `failed` hooks.
 
 ### Per-run data
 

@@ -365,7 +365,7 @@ final readonly class RunTransitions {
 	 * @return  bool Whether the terminal transition was claimed.
 	 */
 	public function fail_run( KindHandlerInterface $handler, Identity $identity, string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): bool {
-		$terminal_state = $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_error( self::error_detail( $error, $stage, $code, $details ) );
+		$terminal_state = $this->failed_state( $state, $error, $attempts, $stage, $code, $details );
 		$failure_detail = $this->terminal_effects->resolve_failure_detail( $identity, $run_id, $terminal_state, null );
 
 		return $this->claim_and_execute_terminal_transition( $identity, $run_id, $state, $terminal_state, $run_store, $failure_detail, $expected_raw );
@@ -512,6 +512,64 @@ final readonly class RunTransitions {
 		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $claimed['state'], $claimed['raw'], $run_store );
 	}
 
+	/**
+	 * Claims a Failed state without releasing its lock or executing terminal effects.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @phpstan-param array<array-key, mixed>|null $details
+	 *
+	 * @param   string          $run_id       Run identifier.
+	 * @param   RunState        $state        Running state.
+	 * @param   RunStore        $run_store    Active-run store.
+	 * @param   EngineError     $error        Failure detail.
+	 * @param   int             $attempts     Attempts consumed before failure.
+	 * @param   RunFailureStage $stage        Terminalization stage.
+	 * @param   ErrorCode       $code         Machine-readable cause classification.
+	 * @param   array|null      $details      Generic diagnostic payload, or null when no details are available.
+	 * @param   string|null     $expected_raw Exact selected snapshot, or null to derive it from the typed state.
+	 *
+	 * @return  array{raw: string, state: RunState}|Failure<EngineError>|null Exact claimed terminal snapshot, storage or payload failure, or null after a lost fence.
+	 */
+	public function claim_failed_run( string $run_id, RunState $state, RunStore $run_store, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details = null, ?string $expected_raw = null ): array|Failure|null {
+		if ( RunStatus::Running !== $state->status ) {
+			return null;
+		}
+
+		$terminal_state = $this->failed_state( $state, $error, $attempts, $stage, $code, $details );
+		$terminal_raw   = $this->claim_terminal_transition( $run_id, $state, $terminal_state, $run_store, $expected_raw );
+		if ( $terminal_raw instanceof Failure ) {
+			return $terminal_raw;
+		}
+		if ( null === $terminal_raw ) {
+			return null;
+		}
+
+		return array(
+			'raw'   => $terminal_raw,
+			'state' => $terminal_state,
+		);
+	}
+
+	/**
+	 * Executes the replayable effects for one claimed Failed transition.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity                            $identity  Complete scope-qualified work identity.
+	 * @param   string                              $run_id    Run identifier.
+	 * @param   array{raw: string, state: RunState} $claimed   Exact claimed terminal snapshot.
+	 * @param   RunStore                            $run_store Active-run store.
+	 *
+	 * @return  void
+	 */
+	public function execute_claimed_failure( Identity $identity, string $run_id, array $claimed, RunStore $run_store ): void {
+		$this->log_permanent_failure( $identity, $run_id, $claimed['state'] );
+		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $claimed['state'], $claimed['raw'], $run_store, $this->terminal_effects->resolve_failure_detail( $identity, $run_id, $claimed['state'], null ) );
+	}
+
 	// endregion
 
 	// region HELPERS
@@ -553,21 +611,56 @@ final readonly class RunTransitions {
 			return false;
 		}
 		if ( RunStatus::Failed === $replacement->status ) {
-			$this->logger->error(
-				'Run failed permanently; correct the cause, then use failed-runs retry to start a fresh run.',
-				array(
-					'identity'    => (string) $identity,
-					'run_id'      => $run_id,
-					'attempts'    => $replacement->failed_attempts,
-					'stage'       => $replacement->error['stage'] ?? null,
-					'error_class' => $replacement->error['class'] ?? null,
-				)
-			);
+			$this->log_permanent_failure( $identity, $run_id, $replacement );
 		}
 
 		$this->terminal_effects->execute_claimed_transition( $identity, $run_id, $replacement, $terminal_raw, $run_store, $failure_detail );
 
 		return true;
+	}
+
+	/**
+	 * Records that one claimed Failed transition will not be retried automatically.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   Identity $identity Complete scope-qualified work identity.
+	 * @param   string   $run_id   Run identifier.
+	 * @param   RunState $state    Claimed Failed terminal state.
+	 *
+	 * @return  void
+	 */
+	private function log_permanent_failure( Identity $identity, string $run_id, RunState $state ): void {
+		$this->logger->error(
+			'Run failed permanently; correct the cause, then use failed-runs retry to start a fresh run.',
+			array(
+				'identity'    => (string) $identity,
+				'run_id'      => $run_id,
+				'attempts'    => $state->failed_attempts,
+				'stage'       => $state->error['stage'] ?? null,
+				'error_class' => $state->error['class'] ?? null,
+			)
+		);
+	}
+
+	/**
+	 * Builds the Failed terminal state for one running state.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   RunState                     $state    Running state.
+	 * @param   EngineError                  $error    Failure detail.
+	 * @param   int                          $attempts Attempts consumed before failure.
+	 * @param   RunFailureStage              $stage    Terminalization stage.
+	 * @param   ErrorCode                    $code     Machine-readable cause classification.
+	 * @param   array<array-key, mixed>|null $details  Generic diagnostic payload, or null when no details are available.
+	 *
+	 * @return  RunState
+	 */
+	private function failed_state( RunState $state, EngineError $error, int $attempts, RunFailureStage $stage, ErrorCode $code, ?array $details ): RunState {
+		return $state->with_status( RunStatus::Failed )->with_failed_attempts( $attempts )->with_heartbeat_at( $this->clock->now()->getTimestamp() )->with_error( self::error_detail( $error, $stage, $code, $details ) );
 	}
 
 	/**
