@@ -1,0 +1,4 @@
+Significance: patch
+Type: changed
+
+`Schedule::fingerprint()` and `Recurrence::fingerprint_value()` are marked `@internal`: they compute the engine's recurring-chain identity and are not part of the public PHP API. The SemVer contract states that a public member tagged `@internal` on a public type is excluded from it.

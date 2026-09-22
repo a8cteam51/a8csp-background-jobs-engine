@@ -85,6 +85,8 @@ final readonly class Recurrence {
 	/**
 	 * Returns the stable recurrence representation included in schedule fingerprints.
 	 *
+	 * @internal Engine schedule-fingerprint input.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *

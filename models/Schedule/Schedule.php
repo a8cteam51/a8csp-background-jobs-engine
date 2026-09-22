@@ -99,6 +99,8 @@ final readonly class Schedule {
 	/**
 	 * Returns the stable SHA-256 recurring-chain identity.
 	 *
+	 * @internal Engine schedule-chain identity.
+	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
