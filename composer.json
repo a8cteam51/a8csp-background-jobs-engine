@@ -135,20 +135,6 @@
   },
 
   "extra": {
-    "changelogger": {
-      "changelog": "CHANGELOG.md",
-      "changes-dir": "changelog",
-      "versioning": "semver",
-      "default-type": "changed",
-      "types": {
-        "added": "Added",
-        "changed": "Changed",
-        "deprecated": "Deprecated",
-        "removed": "Removed",
-        "fixed": "Fixed",
-        "security": "Security"
-      }
-    },
     "installer-paths": {
       "vendor/wp-plugin/{$name}/": [
         "type:wordpress-plugin"
