@@ -30,7 +30,7 @@ The engine's state persists in non-autoloaded `wp_options` rows under the reserv
 
 ## Installation
 
-The canonical install is the plugin ZIP attached to a [GitHub Release](https://github.com/a8cteam51/a8csp-background-jobs-engine/releases). Download it, upload it as a WordPress plugin, and activate it. The release ZIP bundles production Composer dependencies and the translation template, so it needs no Composer step. Installed copies receive release updates through the dashboard like any plugin.
+The canonical install is the plugin ZIP attached to a [GitHub Release](https://github.com/a8cteam51/a8csp-background-jobs-engine/releases). Download it, upload it as a WordPress plugin, and activate it. The release ZIP bundles production Composer dependencies and the translation template, so it needs no Composer step. Installed copies receive release updates through the dashboard like any plugin, with its auto-update toggle and a **View details** answered from the GitHub release. An installed prerelease (a version containing `-`) follows every release, so it is also offered the next stable release; a stable installation follows stable releases only.
 
 For a source checkout, clone into `wp-content/plugins/a8csp-background-jobs-engine` and install production dependencies:
 

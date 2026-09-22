@@ -45,6 +45,7 @@ require_once A8CSP_BGJE_DIR_PATH . 'functions-bootstrap.php';
 // The self-updater registers before the requirements gates below: an incompatible installation is
 // the one that most needs to be offered the corrective update.
 add_filter( 'update_plugins_github.com', 'a8csp_bgje_check_github_release_update', 10, 3 );
+add_filter( 'plugins_api', 'a8csp_bgje_get_github_release_information', 10, 3 );
 
 // Registration-only since WP 6.7, so include time is safe — and required: core registers the
 // header path only for site-active plugins (wp-settings.php skips it in the network-activated
