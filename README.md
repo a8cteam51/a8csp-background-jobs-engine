@@ -227,7 +227,7 @@ function my_plugin_queue_digest( int $user_id ): void {
 		array( 'user_id' => $user_id )
 	);
 	if ( is_wp_error( $run ) ) {
-		// Another run holds this lane, so there is nothing to queue.
+		// Another run holds this lane and almost always still has this work in hand, so skip.
 		if ( ErrorCode::OverlapHeld->value === $run->get_error_code() ) {
 			return;
 		}

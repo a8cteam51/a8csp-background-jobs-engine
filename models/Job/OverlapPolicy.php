@@ -18,7 +18,7 @@ enum OverlapPolicy: string {
 	/** Admits the run with a per-run identity even while matching work runs. */
 	case Allow = 'allow';
 
-	/** Refuses admission while matching work runs. */
+	/** Refuses admission while a fresh matching overlap lock is held. */
 	case Reject = 'reject';
 
 	/** Transfers overlap ownership to the new run and fences matching work. */
