@@ -101,6 +101,7 @@ final class OverlapGuardTest extends TestCase {
 		$this->rows                             = new OptionRows( $this->wpdb );
 
 		$GLOBALS['a8csp_bgje_test_hooks']                         = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']                 = array();
 		$GLOBALS['a8csp_bgje_test_filter_registrations']          = array();
 		$GLOBALS['a8csp_bgje_test_filter_registration_callbacks'] = array();
 	}
