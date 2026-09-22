@@ -515,6 +515,54 @@ final class UninstallTest extends TestCase {
 		self::assertSame( 1, $GLOBALS['a8csp_bgje_test_blog_id'] );
 	}
 
+
+	/**
+	 * Uninstall reaches no plugin class.
+	 *
+	 * WordPress deletes a plugin with it deactivated and its autoloader unloaded, so a production
+	 * class reached from uninstall.php is a fatal at deletion. The test bootstrap defines ABSPATH,
+	 * which the production files' guard would otherwise stop on, so this asserts the property the
+	 * guard used to enforce by accident.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_uninstall_reaches_no_plugin_class(): void {
+		require_once __DIR__ . '/wp-options-stubs.php';
+		require_once __DIR__ . '/wp-lock-stubs.php';
+		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once __DIR__ . '/as-function-stubs.php';
+		require_once __DIR__ . '/as-class-stubs.php';
+
+		$GLOBALS['a8csp_bgje_test_options']                = array_fill_keys( self::DYNAMIC_OPTIONS, 'sentinel' );
+		$GLOBALS['a8csp_bgje_test_option_calls']           = array();
+		$GLOBALS['a8csp_bgje_test_delete_transient_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']           = false;
+		$GLOBALS['a8csp_bgje_test_blog_id']                = 1;
+		$GLOBALS['a8csp_bgje_test_cron_array']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence']    = 0;
+		$GLOBALS['a8csp_bgje_test_as_calls']               = array();
+		$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
+
+		\define( 'WP_UNINSTALL_PLUGIN', true );
+		$declared_before = \get_declared_classes();
+		require \dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		$plugin_classes = \array_values(
+			\array_filter(
+				\array_diff( \get_declared_classes(), $declared_before ),
+				static fn ( string $class ): bool => 0 === \strpos( $class, 'A8C\\SpecialProjects\\BackgroundJobsEngine\\' ) && false === \strpos( $class, '\\Tests\\' )
+			)
+		);
+
+		self::assertSame( array(), $plugin_classes );
+	}
+
 	// endregion.
 
 	// region HELPERS.
