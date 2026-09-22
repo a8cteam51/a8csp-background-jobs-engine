@@ -865,7 +865,7 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 | List failed runs | `wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>]` |
 | Retry a failed run | `wp a8csp-bgje failed-runs retry <identity> <run_id>` |
 | Purge failed runs for one identity | `wp a8csp-bgje failed-runs purge <identity>` |
-| Purge every failed-run store | `wp a8csp-bgje failed-runs purge --all` |
+| Purge every failed-run store | `wp a8csp-bgje failed-runs purge --all [--yes]` |
 | Cancel a retained run | `wp a8csp-bgje runs cancel <identity> <run_id>` |
 | List runs and recent history | `wp a8csp-bgje runs list <identity> [--format=<format>]` |
 | List execution-overlap locks | `wp a8csp-bgje locks list [--format=<format>]` |
@@ -873,7 +873,7 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 | Remove every schedule in one scope | `wp a8csp-bgje schedules remove <scope> [--yes]` |
 | Destroy all engine state (development reset) | `wp a8csp-bgje reset [--yes]` |
 
-Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Its history `ended` column is how long ago each run terminalized, and reads `—` for a started entry and for a row written before the engine recorded terminal times. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
+Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Its history `ended` column is how long ago each run terminalized, and reads `—` for a started entry and for a row written before the engine recorded terminal times. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`, as does `failed-runs purge --all`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
 
 ## Development
 

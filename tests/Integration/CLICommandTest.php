@@ -391,7 +391,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	public function test_failed_purge_all_discovers_and_removes_the_store(): void {
 		$this->seed_failed_run( self::ALL_STORE_NAME );
 
-		$result = self::run_failed_runs_command( 'purge', '--all' );
+		$result = self::run_failed_runs_command( 'purge', '--all', '--yes' );
 
 		self::assertSame( 0, $result['exit_code'] );
 		self::assertSame( "Success: Purged 1 failed run across all names.\n", $result['stdout'] );
@@ -1282,7 +1282,7 @@ final class CLICommandTest extends AbstractIntegrationTestCase {
 	 * @return  string
 	 */
 	private static function purge_usage_error(): string {
-		return 'Error: Purge requires exactly one identity or --all; ' . "use wp a8csp-bgje failed-runs purge <identity> or purge --all.\n";
+		return 'Error: Purge requires exactly one identity or --all; ' . "use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].\n";
 	}
 
 	// endregion.
