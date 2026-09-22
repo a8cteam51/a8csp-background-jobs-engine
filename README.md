@@ -925,16 +925,16 @@ The command asks for a significance (`patch`, `minor`, `major`), a type, and the
 
 Releases are cut from trunk, in four steps.
 
-1. **Materialize the changelog.** `composer changelog:write` derives the next version from the newest `CHANGELOG.md` entry and the pending fragments' significance, writes that section, and deletes the fragments it consumed. There is nothing to derive from while the changelog is empty, so the first release names its version explicitly, as does any prerelease:
+1. **Materialize the changelog.** `composer changelog:write` derives the next version from the newest `CHANGELOG.md` entry and the pending fragments' significance, writes that section, and deletes the fragments it consumed. From a prerelease entry the derived version can skip to a different line, so the first stable release after prereleases names its version explicitly, as does any prerelease:
 
    ```sh
    composer changelog:write -- --use-version=1.0.0
    composer changelog:write -- --prerelease=beta.1
    ```
 
-2. **Bump the other two versions to the same string.** The release refuses to run unless the plugin header's `Version:` in `a8csp-background-jobs-engine.php`, `"version"` in `package.json`, and the newest `CHANGELOG.md` heading all state one version. The self-updater compares an installed copy against the header rather than against the tag, so the header bump belongs in the commit that gets tagged. Commit the three together and land them on trunk.
+2. **Bump every other version site to the same string.** The release refuses to run unless the plugin header's `Version:` in `a8csp-background-jobs-engine.php`, `"version"` in `package.json`, and the newest `CHANGELOG.md` heading all state one version. Two more sites ship with the release but are not checked: README's `**Stable tag:**` and the two root `"version"` entries at the top of `package-lock.json`. Edit each by line, never with a find-and-replace: the lock file also carries dependency versions and ranges that contain the same string, such as `^1.0.0-beta.5.2`. The self-updater compares an installed copy against the header rather than against the tag, so the header bump belongs in the commit that gets tagged. Commit them together and land them on trunk.
 
-3. **Let trunk go green, then rehearse.** The release reuses the trunk-push `quality.yml` and `tests.yml` runs from the exact commit it tags, so tag only once those have finished. With them green, run the **Release** workflow from the Actions tab leaving **Create the GitHub release** off: that exercises the version check, the provenance check, the build and the smoke install without creating anything.
+3. **Let trunk go green, then rehearse.** The release reuses the trunk-push `quality.yml` and `tests.yml` runs from the exact commit it tags, so tag only once those have finished. A later push to trunk cancels them if they are still running, and a cancelled run fails provenance as a red one does, so confirm this commit's own runs concluded successfully and re-run any that were cancelled. Those runs include legs outside the supported matrix, such as WordPress nightly, the next PHP's development build and the random-order unit run; a red one there ships no defect but still blocks provenance until a re-run passes. With them green, run the **Release** workflow from the Actions tab leaving **Create the GitHub release** off: that exercises the version check, the provenance check, the build and the smoke install without creating anything.
 
 4. **Tag the green commit and publish the tag.**
 
@@ -955,6 +955,6 @@ Both paths — the tag and the rehearsal — run the same jobs, and only the las
 | Smoke test the artifact | Installs and activates that zip in a throwaway wp-env and checks the site serves, then runs `wp help a8csp-bgje`. The smoke environment has no Action Scheduler, so that command is also the proof the CLI surface registers in the documented WP-Cron-only posture. The artifact differs from the tested tree (production dependencies, a regenerated POT, `.distignore` filtering), so it is proven on its own. |
 | Publish the release | Runs only when the release is turned on. Takes the `CHANGELOG.md` section matching the tag as the release notes and creates the GitHub release with the zip attached. A hyphenated version such as `1.0.0-beta.5` publishes as a prerelease and stays off the latest-release endpoint, so stable installations are not offered it. |
 
-`a8csp-background-jobs-engine.zip` carries a second contract beyond the dashboard update. OpsOasis installs the engine through Composer from a `package` repository whose `dist.url` names one release's asset, with a matching `a8csp/background-jobs-engine` version requirement. Renaming the asset, moving a tag that a pin already points at, or letting a declared version never reach the releases page breaks that install outright rather than delaying an update.
+`a8csp-background-jobs-engine.zip` carries a second contract beyond the dashboard update. OpsOasis also pins the engine through Composer, from a `package` repository whose `dist.url` names one release's asset, with a matching `a8csp/background-jobs-engine` version requirement. Renaming the asset, moving a tag that a pin already points at, or letting a declared version never reach the releases page breaks that install outright rather than delaying an update.
 
 The release history is [`CHANGELOG.md`](CHANGELOG.md).
