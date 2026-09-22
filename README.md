@@ -45,7 +45,7 @@ Action Scheduler is optional and preferred when ready; when absent, the engine r
 
 ## Depending on the engine
 
-The engine is a separate plugin, and `a8csp_bgje()` is a plain function the engine defines only while it is active and its requirements check passes. On a site below its PHP or WordPress floor the engine shows an admin notice and loads nothing else. Without the function, every consumer call is a fatal error on `init`. Declare the dependency in your plugin header so WordPress enforces the first condition:
+The engine is a separate plugin, and `a8csp_bgje()` is a plain function the engine defines only while it is active and its requirements check passes. On a site below its PHP or WordPress floor the engine shows an admin notice, and neither `a8csp_bgje()` nor the procedural aliases are defined. Without the function, every consumer call is a fatal error on `init`. Declare the dependency in your plugin header so WordPress knows about it:
 
 ```php
 /**
@@ -54,15 +54,24 @@ The engine is a separate plugin, and `a8csp_bgje()` is a plain function the engi
  */
 ```
 
-WordPress refuses to activate your plugin without the engine and blocks deactivating the engine while you depend on it. It does not check the engine's requirements, so if your plugin must keep working where the engine cannot load, or the dependency is genuinely optional, guard the call on `init`:
+WordPress then refuses to activate your plugin without the engine, and the Plugins screen blocks deactivating the engine while you depend on it. That is not a guarantee: WordPress does not check the engine's requirements, and a deactivation outside that screen or a deleted engine leaves your plugin active. If your plugin must keep working where the engine cannot load, or the dependency is genuinely optional, guard on `function_exists( 'a8csp_bgje' )` and build every engine value after the guard:
 
 ```php
-add_action( 'init', static function () use ( $definition ): void {
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+
+add_action( 'init', static function (): void {
 	if ( ! function_exists( 'a8csp_bgje' ) ) {
 		return;
 	}
 
-	$registered = a8csp_bgje( 'my-plugin' )->jobs()->register( $definition );
+	$registered = a8csp_bgje( 'my-plugin' )->jobs()->register(
+		JobDefinition::closure(
+			'refresh-cache',
+			static function ( array $start_args ): void {
+				my_plugin_refresh_cache( $start_args );
+			}
+		)
+	);
 	if ( is_wp_error( $registered ) ) {
 		error_log( $registered->get_error_message() );
 	}
