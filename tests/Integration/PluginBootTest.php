@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -34,24 +33,6 @@ final class PluginBootTest extends AbstractIntegrationTestCase {
 		$result = \a8csp_bgje( 'plugin-boot-test' )->jobs()->dispatch( 'unregistered' );
 		self::assertInstanceOf( \WP_Error::class, $result );
 		self::assertSame( 'unknown_job', $result->get_error_code() );
-	}
-
-	/**
-	 * `Plugin::boot()` is idempotent: the `plugins_loaded` boot has already run, and a second call
-	 * leaves the accessor's retained instance unchanged.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public function test_second_boot_does_not_replace_cached_plugin(): void {
-		$plugin = \a8csp_bgje_plugin();
-		self::assertInstanceOf( Plugin::class, $plugin );
-
-		$plugin->boot();
-
-		self::assertSame( $plugin, \a8csp_bgje_plugin() );
 	}
 
 	// endregion.

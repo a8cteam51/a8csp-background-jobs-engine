@@ -7,10 +7,9 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Proves the metadata reader tracks plugin load order: extra plugin headers — WooCommerce's
- * `WC requires at least` is the canonical one — exist only once the plugin registering them has
- * loaded, and this plugin can load first. The include-time requirements read must therefore not
- * be memoized into the host gate's later `plugins_loaded` read.
+ * Proves the metadata reader tracks plugin load order: extra plugin headers exist only once the
+ * plugin registering them has loaded, and this plugin can load first. The include-time
+ * requirements read must therefore not be memoized into the reads taken from `plugins_loaded` on.
  *
  * The reader keeps per-request state in a function static, so the test runs in its own process
  * to observe a fresh one.
@@ -57,7 +56,7 @@ final class PluginMetadataCacheTest extends TestCase {
 	 */
 	#[RunInSeparateProcess]
 	#[PreserveGlobalState( false )]
-	public function test_the_host_gate_read_sees_headers_registered_after_include_time(): void {
+	public function test_a_plugins_loaded_read_sees_headers_registered_after_include_time(): void {
 		$GLOBALS['a8csp_bgje_test_did_actions'] = array();
 		$GLOBALS['a8csp_bgje_test_plugin_data'] = array( 'Name' => 'A8CSP Background Jobs Engine' );
 		self::assertNull( \a8csp_bgje_get_plugin_metadata( 'WC requires at least' ), 'The include-time read runs before the registering plugin loads, so the extra header is absent' );
@@ -67,7 +66,7 @@ final class PluginMetadataCacheTest extends TestCase {
 			'Name'                 => 'A8CSP Background Jobs Engine',
 			'WC requires at least' => '11.1',
 		);
-		self::assertSame( '11.1', \a8csp_bgje_get_plugin_metadata( 'WC requires at least' ), 'The host gate read at plugins_loaded must see the header another plugin registered after this plugin was included' );
+		self::assertSame( '11.1', \a8csp_bgje_get_plugin_metadata( 'WC requires at least' ), 'A read at plugins_loaded must see the header another plugin registered after this plugin was included' );
 
 		$GLOBALS['a8csp_bgje_test_plugin_data'] = array( 'Name' => 'mutated' );
 		self::assertSame( '11.1', \a8csp_bgje_get_plugin_metadata( 'WC requires at least' ), 'A read taken once every plugin has loaded is stable and memoized for the request' );
