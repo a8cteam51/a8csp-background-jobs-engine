@@ -1676,6 +1676,16 @@ final class CommandsAndOutputTest extends TestCase {
 				),
 				'message'    => $purge_usage,
 			),
+			'purge extra name yes'   => array(
+				'args'       => array( 'purge', 'consumer-plugin:email-digest', 'other' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => $purge_usage,
+			),
+			'purge yes only'         => array(
+				'args'       => array( 'purge' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => $purge_usage,
+			),
 			'purge all string yes'   => array(
 				'args'       => array( 'purge' ),
 				'assoc_args' => array(
