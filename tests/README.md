@@ -18,8 +18,8 @@ The test rig defines three PHPUnit suites, exposes five local run configurations
   suite runs on port 21381 against the below-floor WordPress fixture and verifies that the
   requirements gate degrades gracefully instead of fataling.
 - **Multisite** — the `Integration` suite filtered to `--group=multisite` runs on port 21382. The
-  command converts the fixture to multisite when needed, network-activates Action Scheduler and
-  the engine, runs `tests/complete-as-migration.php`, and then starts PHPUnit.
+  environment converts the fixture to a network and network-activates Action Scheduler and the
+  engine when it starts; the command runs `tests/complete-as-migration.php` and then PHPUnit.
 
 ## Running the configurations
 
@@ -80,23 +80,20 @@ port that is itself the next block's base.
 
 ## Why plain `TestCase`, not `WP_UnitTestCase`
 
-WordPress core's PHPUnit scaffold supports PHPUnit through version 9; open ticket
-[#62004](https://core.trac.wordpress.org/ticket/62004) tracks compatibility work for PHPUnit 11
-and later. This rig runs PHPUnit 13 directly against plain `TestCase` inside wp-env, without
-depending on `WP_UnitTestCase` or core's PHPUnit compatibility range.
+WordPress core's PHPUnit scaffold supports PHPUnit through version 9. This rig runs current
+PHPUnit directly against plain `TestCase` inside wp-env, without depending on `WP_UnitTestCase`
+or core's PHPUnit compatibility range.
 
 That trade gives up `$this->factory` fixture helpers, `go_to()` routing simulation, and
 `WP_UnitTestCase`'s per-test transaction rollback. The WordPress-backed configurations create
-their explicit fixtures through public WordPress APIs and need to observe persistence, boot-time
-side effects, backend delivery, and uninstall behavior. Automatic transaction rollback would mask
-the storage behavior those tests are written to verify.
+their explicit fixtures through public WordPress APIs, and without rollback the database persists
+across tests, so each test cleans up what it writes. A rolled-back test's rows would also stay
+uncommitted, where the WP-CLI subprocess `CrossProcessContentionTest` runs against the same
+database could not see them.
 
-## Mutation testing (CI-first)
+## Mutation testing
 
 `composer test:unit:mutation` runs Infection against the Unit suite's source. It sits outside the
 default `composer quality-check` target (only `quality-check:all` pulls it in) and does not gate
 pull requests — it runs on its own weekly schedule in CI (`.github/workflows/tests-mutation.yml`),
-since mutation testing is slow. Local runs on macOS are unreliable: a race in Infection's
-coverage-XML tmpdir handling can produce zero generated mutants or a hang, independent of anything
-in this repo's own configuration. Treat the CI job, not a local run, as authoritative for mutation
-results.
+since mutation testing is slow.

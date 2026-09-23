@@ -74,9 +74,9 @@ final readonly class Schedules extends AbstractPortal {
 	 *
 	 * Entries are ordered by composed identity, not by declaration order.
 	 *
-	 * `occurrence_visible` comes from one batched census across every ready scheduling backend, not a
-	 * query per registration, so the call costs a bounded number of backend reads whatever the scope
-	 * declares.
+	 * `occurrence_visible` comes from one census across every ready scheduling backend. Under Action
+	 * Scheduler it costs one exact query per registration plus one hydration per occurrence that query
+	 * matches; under WP-Cron it reads one cron snapshot.
 	 *
 	 * A `recurrence` of null means the registration is persisted but the current request carries no
 	 * declaration for it — `sync()` is per-request, so a request that has not yet synchronised sees

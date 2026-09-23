@@ -53,7 +53,7 @@ final readonly class Schedule {
 	 * @param   string                  $job        Stable target job name.
 	 * @param   array<array-key, mixed> $args       Target job arguments.
 	 * @param   CatchUpPolicy           $catch_up   Missed-occurrence policy.
-	 * @param   int|null                $priority   Advisory priority from 0 through 255, or null to defer to the job default.
+	 * @param   int|null                $priority   Advisory priority from 0 through 255, lower first, or null to defer to the job default.
 	 *
 	 * @throws  \InvalidArgumentException When the argument snapshot is not portable or the definition is not JSON-encodable.
 	 */
@@ -98,6 +98,8 @@ final readonly class Schedule {
 
 	/**
 	 * Returns the stable SHA-256 recurring-chain identity.
+	 *
+	 * @internal Engine schedule-chain identity.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

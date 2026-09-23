@@ -7,9 +7,6 @@
     "text": "build/infection/infection.log",
     "html": "build/infection/infection.html"
   },
-  "mutators": {
-    "@default": true
-  },
   "minMsi": 80,
   "minCoveredMsi": 80,
   "bootstrap": "tests/infection-bootstrap.php",

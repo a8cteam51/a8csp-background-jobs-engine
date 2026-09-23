@@ -35,27 +35,6 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RetryPolicy::class )]
 #[UsesClass( Identity::class )]
 final class JobRegistryTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies production boot guards and loads WordPress time constants.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		require_once \dirname( __DIR__ ) . '/wp-time-constant-stubs.php';
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

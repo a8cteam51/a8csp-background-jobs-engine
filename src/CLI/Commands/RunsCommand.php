@@ -192,6 +192,9 @@ final readonly class RunsCommand {
 	 * [--all]
 	 * : Purge every failed-run store. Valid only with purge and without an identity.
 	 *
+	 * [--yes]
+	 * : Skip the confirmation that purge --all asks for.
+	 *
 	 * [--scope=<scope>]
 	 * : Show only failed runs belonging to the exact scope. Valid only with list.
 	 *
@@ -205,6 +208,7 @@ final readonly class RunsCommand {
 	 *     $ wp a8csp-bgje failed-runs retry consumer-plugin:email-digest 00000000000000000001-0000000000000000001
 	 *     $ wp a8csp-bgje failed-runs purge consumer-plugin:email-digest
 	 *     $ wp a8csp-bgje failed-runs purge --all
+	 *     $ wp a8csp-bgje failed-runs purge --all --yes
 	 *
 	 * List output excludes unreadable entries or whole option rows and reports one count warning on
 	 * STDERR for every format.
@@ -234,6 +238,9 @@ final readonly class RunsCommand {
 				$this->retry_failed_run( $request['identity'], $request['run_id'] );
 				break;
 			case 'purge':
+				if ( null === $request['identity'] ) {
+					\WP_CLI::confirm( 'This permanently deletes every failed run retained on this site, including the arguments failed-runs retry needs. Continue?', $assoc_args );
+				}
 				$this->purge_failed_runs( $request['identity'] );
 				break;
 		}
@@ -336,10 +343,17 @@ final readonly class RunsCommand {
 					'run_id'   => $run_id,
 				);
 			case 'purge':
-				if ( ! self::has_only_keys( $assoc_args, array( 'all' ) ) ) {
+				if ( ! self::has_only_keys( $assoc_args, array( 'all', 'yes' ) ) ) {
 					return array(
 						'action'  => 'error',
-						'message' => 'Purge accepts only --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.',
+						'message' => 'Purge accepts only --all and --yes; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].',
+					);
+				}
+
+				if ( \array_key_exists( 'yes', $assoc_args ) && ( ! \is_bool( $assoc_args['yes'] ) || ( 2 === \count( $args ) && ! \array_key_exists( 'all', $assoc_args ) ) ) ) {
+					return array(
+						'action'  => 'error',
+						'message' => 'Purge accepts --yes only as a flag with --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].',
 					);
 				}
 
@@ -367,7 +381,7 @@ final readonly class RunsCommand {
 
 				return array(
 					'action'  => 'error',
-					'message' => 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.',
+					'message' => 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].',
 				);
 			default:
 				return array(

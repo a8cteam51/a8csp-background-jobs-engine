@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         php: ['8.5', '8.6']
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@67392ce62cd343bc5ce8c65da264c778cdd86210 # v1.0.0
     with:
       php-version: ${{ matrix.php }}
       composer-script: 'test:unit'
@@ -37,7 +37,7 @@ jobs:
           - name: 'WP latest'
           - name: 'WP nightly'
             wp-env-core: 'https://wordpress.org/nightly-builds/wordpress-latest.zip'
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@67392ce62cd343bc5ce8c65da264c778cdd86210 # v1.0.0
     with:
       wp-version: ${{ matrix.wp-version || '' }}
       wp-env-core: ${{ matrix.wp-env-core || '' }}
@@ -46,21 +46,21 @@ jobs:
 
   degraded:
     name: Degraded (AS absent)
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@67392ce62cd343bc5ce8c65da264c778cdd86210 # v1.0.0
     with:
       wp-env-config-file: '.wp-env.degraded.json'
       composer-script: 'test:degraded'
 
   multisite:
     name: Multisite
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@67392ce62cd343bc5ce8c65da264c778cdd86210 # v1.0.0
     with:
       wp-env-config-file: '.wp-env.multisite.json'
       composer-script: 'test:multisite'
 
   requirements:
     name: Requirements (below-floor WP)
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@trunk
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-phpunit.yml@67392ce62cd343bc5ce8c65da264c778cdd86210 # v1.0.0
     with:
       wp-env-config-file: '.wp-env.belowfloor.json'
       composer-script: 'test:requirements'

@@ -28,10 +28,6 @@ final class OverlapIdentityTest extends TestCase {
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
 	}
 

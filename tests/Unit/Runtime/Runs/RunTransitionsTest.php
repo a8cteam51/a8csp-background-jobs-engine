@@ -128,10 +128,6 @@ final class RunTransitionsTest extends TestCase {
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';

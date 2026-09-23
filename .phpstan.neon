@@ -13,10 +13,11 @@ parameters:
     scanFiles:
         - %currentWorkingDirectory%/vendor/wp-cli/wp-cli/php/utils.php
     # The included config autodetects the fixed-name root files (functions-bootstrap.php,
-    # functions.php, uninstall.php); the entry file's name is per-repo, so it is pinned here
-    # explicitly and WPCompat.pluginFile below names it for the same reason.
+    # functions.php, uninstall.php); the entry file's name is per-repo and footprint.php is a root
+    # data manifest, so both are listed here, and WPCompat.pluginFile below names the entry file.
     paths:
         - %currentWorkingDirectory%/a8csp-background-jobs-engine.php
+        - %currentWorkingDirectory%/footprint.php
         - %currentWorkingDirectory%/portals
         - %currentWorkingDirectory%/tests
     WPCompat:

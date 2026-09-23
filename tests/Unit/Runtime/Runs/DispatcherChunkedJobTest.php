@@ -15,6 +15,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingError;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Error\SchedulingErrorReason;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\Dispatcher;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\PendingAction;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Runs\RunState;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\ScopeOperations;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\EngineRig;
@@ -452,7 +453,7 @@ final class DispatcherChunkedJobTest extends TestCase {
 		$error = $this->assert_failure_code( $result, ErrorCode::OverlapHeld );
 		$data  = $error->get_error_data();
 		self::assertIsArray( $data );
-		self::assertSame( \sprintf( 'chunked_job "%1$s" is already running as run "%2$s"; wait for that run to finish before dispatching the same arguments or overlap key.', self::IDENTITY, self::INCUMBENT_RUN_ID ), $error->get_error_message() );
+		self::assertSame( \sprintf( 'chunked_job "%1$s" overlap lock is held by run "%2$s"; wait for that lock to be released before dispatching the same arguments or overlap key.', self::IDENTITY, self::INCUMBENT_RUN_ID ), $error->get_error_message() );
 		self::assertSame( self::INCUMBENT_RUN_ID, $data['run_id'] ?? null );
 		self::assertSame( self::INCUMBENT_RUN_ID, $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->start_calls() );
@@ -744,6 +745,49 @@ final class DispatcherChunkedJobTest extends TestCase {
 		self::assertFalse( \get_option( $this->run_option_name() ) );
 		self::assertSame( 'run-concurrent-owner', $this->lock()['run_id'] ?? null );
 		self::assertSame( array(), $this->start_calls() );
+	}
+
+	/**
+	 * A dispatch that takes over a crashed chunked run retains the chunk that run was processing.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_dispatch_chunked_job_retains_the_in_flight_chunk_of_a_crashed_incumbent(): void {
+		$this->register_chunked_job();
+		$chunk = array( 'page' => 3 );
+		$this->put_fixture( $this->fixtures->lock( $this->args_hash(), self::INCUMBENT_RUN_ID, self::NOW - 901, self::NOW - 901 ) );
+		$this->put_fixture(
+			$this->fixtures->run(
+				self::INCUMBENT_RUN_ID,
+				new RunState(
+					status: RunStatus::Running,
+					kind: 'chunked_job',
+					executing: true,
+					start_args: self::ARGS,
+					args_hash: $this->args_hash(),
+					kind_state: array( $chunk ),
+					failed_attempts: 0,
+					action_sequence: 2,
+					created_at: self::NOW - 901,
+					heartbeat_at: self::NOW - 901,
+					pending: PendingAction::async( 'continue', 10 ),
+				)
+			)
+		);
+
+		$result = $this->client->dispatch( self::NAME, self::ARGS );
+
+		self::assertInstanceOf( Run::class, $result );
+		self::assertSame( self::RUN_ID, $this->lock()['run_id'] ?? null );
+		$failed = $this->rig->hooks()->fired( 'a8csp_bgje/failed/' . self::IDENTITY );
+		self::assertCount( 1, $failed );
+		$failure = $failed[0][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( RunFailureStage::crash_reclamation(), $failure->stage );
+		self::assertSame( array( 'failed_chunk' => $chunk ), $failure->details );
 	}
 
 	// endregion.

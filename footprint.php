@@ -1,4 +1,4 @@
-<?php
+<?php declare( strict_types=1 );
 /**
  * Persisted uninstall footprint manifest.
  *
@@ -6,8 +6,6 @@
  * @version     1.0.0
  * @package     A8C\SpecialProjects\BackgroundJobsEngine
  */
-
-declare( strict_types=1 );
 
 \defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 

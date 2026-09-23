@@ -17,6 +17,8 @@ use PHPUnit\Framework\TestCase;
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState( false )]
 #[CoversFunction( 'a8csp_bgje_check_github_release_update' )]
+#[CoversFunction( 'a8csp_bgje_get_github_release' )]
+#[CoversFunction( 'a8csp_bgje_get_github_release_information' )]
 final class GitHubUpdateCheckTest extends TestCase {
 	// region FIELDS AND CONSTANTS.
 
@@ -42,9 +44,6 @@ final class GitHubUpdateCheckTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
 		if ( ! \defined( 'A8CSP_BGJE_BASENAME' ) ) {
 			\define( 'A8CSP_BGJE_BASENAME', self::PLUGIN_FILE );
 		}
@@ -246,7 +245,9 @@ final class GitHubUpdateCheckTest extends TestCase {
 	}
 
 	/**
-	 * Equal and older releases produce no update offer.
+	 * An equal or older release is still returned: core files a reply that is not newer than the
+	 * installed version under `no_update`, which marks the plugin as update-supported and shows its
+	 * auto-update toggle.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -256,11 +257,34 @@ final class GitHubUpdateCheckTest extends TestCase {
 	 * @return  void
 	 */
 	#[DataProvider( 'non_newer_versions' )]
-	public function test_equal_or_older_release_is_not_offered( string $installed_version ): void {
+	public function test_equal_or_older_release_is_returned_for_the_no_update_list( string $installed_version ): void {
 		$release                                    = $this->release( 'v1.1.0' );
 		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $release );
 
-		self::assertFalse( $this->apply_update_filter( $installed_version ) );
+		self::assertSame(
+			array(
+				'slug'    => 'a8csp-background-jobs-engine',
+				'version' => '1.1.0',
+				'url'     => $release['html_url'],
+				'package' => $release['assets'][0]['browser_download_url'],
+			),
+			$this->apply_update_filter( $installed_version )
+		);
+	}
+
+	/**
+	 * Another plugin's check, and an update an earlier filter already supplied, pass through
+	 * without a fetch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_foreign_checks_and_settled_updates_pass_through(): void {
+		self::assertFalse( \a8csp_bgje_check_github_release_update( false, $this->plugin_data( '1.0.0' ), 'some-other-plugin/some-other-plugin.php' ) );
+		self::assertSame( array( 'version' => '9.9.9' ), \a8csp_bgje_check_github_release_update( array( 'version' => '9.9.9' ), $this->plugin_data( '1.0.0' ), self::PLUGIN_FILE ) );
+		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_remote_requests'] );
 	}
 
 	/**
@@ -315,6 +339,86 @@ final class GitHubUpdateCheckTest extends TestCase {
 
 		self::assertFalse( $this->apply_update_filter( '1.0.0' ) );
 		$this->assert_negative_cache();
+	}
+
+	/**
+	 * "View details" for the plugin's own slug answers from the release the update check cached:
+	 * name, version, package and the release notes as the changelog, with no second fetch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_plugin_information_for_the_own_slug_shows_the_cached_release(): void {
+		$this->stage_plugin_information();
+		$release                                    = $this->release( 'v1.1.0' );
+		$release['body']                            = "Fixes the <widget>.\nAdds a setting.";
+		$GLOBALS['a8csp_bgje_test_remote_response'] = $this->http_response( $release );
+
+		$this->apply_update_filter( '1.0.0' );
+		$information = \a8csp_bgje_get_github_release_information( false, 'plugin_information', (object) array( 'slug' => 'a8csp-background-jobs-engine' ) );
+
+		self::assertIsObject( $information );
+		self::assertSame(
+			array(
+				'name'          => 'A8CSP Background Jobs Engine',
+				'slug'          => 'a8csp-background-jobs-engine',
+				'version'       => '1.1.0',
+				'download_link' => $release['assets'][0]['browser_download_url'],
+				'external'      => true,
+				'sections'      => array( 'changelog' => "Fixes the &lt;widget&gt;.<br />\nAdds a setting." ),
+			),
+			\get_object_vars( $information )
+		);
+		self::assertSame( array( self::API_URL_STABLE ), $GLOBALS['a8csp_bgje_test_remote_requests'] );
+	}
+
+	/**
+	 * Without a usable release, "View details" for the plugin's own slug still answers locally
+	 * with the installed version and no package, so core never looks the slug up on wordpress.org.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_plugin_information_for_the_own_slug_stays_local_without_a_release(): void {
+		$this->stage_plugin_information();
+		$GLOBALS['a8csp_bgje_test_remote_response'] = new \WP_Error( 'http_error' );
+
+		$information = \a8csp_bgje_get_github_release_information( false, 'plugin_information', (object) array( 'slug' => 'a8csp-background-jobs-engine' ) );
+
+		self::assertIsObject( $information );
+		self::assertSame(
+			array(
+				'name'     => 'A8CSP Background Jobs Engine',
+				'slug'     => 'a8csp-background-jobs-engine',
+				'version'  => '1.0.0',
+				'external' => true,
+				'sections' => array( 'changelog' => 'The release notes are unavailable.' ),
+			),
+			\get_object_vars( $information )
+		);
+	}
+
+	/**
+	 * Requests for other slugs, other plugins_api actions, and requests an earlier filter already
+	 * answered pass through untouched and without a fetch.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_plugin_information_passes_other_requests_through(): void {
+		$this->stage_plugin_information();
+		$answered = (object) array( 'name' => 'Answered elsewhere' );
+
+		self::assertFalse( \a8csp_bgje_get_github_release_information( false, 'plugin_information', (object) array( 'slug' => 'woocommerce' ) ) );
+		self::assertFalse( \a8csp_bgje_get_github_release_information( false, 'query_plugins', (object) array( 'slug' => 'a8csp-background-jobs-engine' ) ) );
+		self::assertSame( $answered, \a8csp_bgje_get_github_release_information( $answered, 'plugin_information', (object) array( 'slug' => 'a8csp-background-jobs-engine' ) ) );
+		self::assertSame( array(), $GLOBALS['a8csp_bgje_test_remote_requests'] );
 	}
 
 	// endregion.
@@ -449,6 +553,24 @@ final class GitHubUpdateCheckTest extends TestCase {
 			),
 			$GLOBALS['a8csp_bgje_test_set_transient_calls']
 		);
+	}
+
+	/**
+	 * Loads the metadata, translation and escaping stubs the plugin-information handler reads
+	 * through.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	private function stage_plugin_information(): void {
+		if ( ! \defined( 'A8CSP_BGJE_FILE' ) ) {
+			\define( 'A8CSP_BGJE_FILE', \dirname( __DIR__, 2 ) . '/a8csp-background-jobs-engine.php' );
+		}
+
+		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once __DIR__ . '/Runtime/wp-esc-html-stub.php';
 	}
 
 	// endregion.

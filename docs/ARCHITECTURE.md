@@ -18,7 +18,7 @@ every surviving component is initialized before any hook can fire.
 - `functions-bootstrap.php` provides the GitHub release updater, plugin metadata,
   version compatibility checks, the requirements gate, and its admin-notice reporter; both root
   bootstrap files stay parsable below the plugin's PHP floor, and CI lints them against the older
-  PHP versions.
+  PHP versions and runs the entry file there to prove the requirements gate stops at its notice.
 - `functions.php` provides the scope-bound front door `a8csp_bgje( string $scope ): Engine`, the
   composition-root accessor `a8csp_bgje_plugin(): Plugin`, and a deterministic loader for the
   procedural facade files. Handle and manager construction is lazy. The runtime graph is assembled
@@ -26,8 +26,8 @@ every surviving component is initialized before any hook can fire.
   boundary.
 - `includes/` groups the procedural facade by concept: `job.php` provides background-work
   registration plus kind-agnostic immediate and absolute-time dispatch, `schedule.php` provides
-  schedule synchronization and dispatch, and `run.php` provides run inspection, retry, and
-  cancellation.
+  schedule synchronization, dispatch, and inspection, and `run.php` provides run inspection,
+  per-run data, retry, and cancellation.
 - `portals/` holds the public `Engine`, `Jobs`, `Schedules`, and `Runs` services; `src/` root holds
   the bootstrapping mechanism: `src/ComponentInterface.php` is the one contract,
   `src/ComponentCollection.php` the shared gated collection, `src/AbstractComponent.php` the
@@ -72,8 +72,8 @@ every surviving component is initialized before any hook can fire.
   to a rival independently.
 - `src/CLI/` registers the `wp a8csp-bgje` command surface, including redacted persisted-lock
   inspection gated on WP-CLI.
-- `languages/` contains the POT generated from the plugin's strings; the release workflow
-  regenerates it so archives always ship current strings.
+- `languages/` holds the plugin's translations; `composer i18n:makepot` generates the POT from the
+  plugin's strings, and every release regenerates it.
 - `uninstall.php` loads root `footprint.php`, whose pure-data manifest records option prefixes,
   fixed transient keys, and delivery hooks. Runtime-suffixed option names cannot be enumerated as
   fixed keys, so the `a8csp_bgje_` prefix sweep is the complete ownership boundary. Per site,
@@ -113,8 +113,9 @@ Every interface ends in `Interface`; every abstract class begins with `Abstract`
 ## Delivery and degradation
 
 The engine writes through the first ready backend in preference order and reads or clears across
-every ready backend. Action Scheduler becomes ready when its procedural API is available and
-`action_scheduler_init` has fired; writes before that point route to WP-Cron. Terminal
+every ready backend. Action Scheduler becomes ready when its procedural API is available,
+`action_scheduler_init` has fired, and the elected copy meets the supported floor the README
+states; until then, writes route to WP-Cron. Terminal
 lifecycle-hook delivery is at-least-once under Action Scheduler and best-effort under WP-Cron.
 
 A schedule chain is a recurring tick on `a8csp_bgje/internal/schedule_due`. The tick performs

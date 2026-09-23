@@ -2,7 +2,7 @@
   "name": "a8csp/background-jobs-engine",
   "type": "wordpress-plugin",
 
-  "description": "A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.",
+  "description": "A WordPress background-work engine that uses Action Scheduler when available, with a documented best-effort WP-Cron fallback.",
   "homepage": "https://github.com/a8cteam51/a8csp-background-jobs-engine",
   "license": "GPL-2.0-or-later",
   "authors": [
@@ -33,7 +33,7 @@
     "psr/log": "^3"
   },
   "require-dev": {
-    "a8csp/configs": "dev-trunk",
+    "a8csp/configs": "^1",
     "automattic/jetpack-changelogger": "^7",
 
     "phpcompatibility/phpcompatibility-wp": "^3@alpha",
@@ -44,7 +44,7 @@
     "phpunit/phpunit": "^13",
     "wp-cli/i18n-command": "^2",
 
-    "wp-plugin/action-scheduler": "^4.1",
+    "wp-plugin/action-scheduler": "^4.2",
 
     "roave/security-advisories": "dev-latest"
   },
@@ -73,10 +73,12 @@
     "lint:php": [
       "@lint:php:phpcs",
       "@lint:php:phpcs:tests",
+      "@lint:php:belowfloor",
       "@lint:php:phpstan"
     ],
     "lint:php:phpcs": "phpcs --standard=./.phpcs.xml --basepath=. ./ -v",
     "lint:php:phpcs:tests": "phpcs --standard=./.phpcs.tests.xml --basepath=. ./tests -v",
+    "lint:php:belowfloor": "phpcs --standard=PHPCompatibility --runtime-set testVersion 7.4- --basepath=. -v a8csp-background-jobs-engine.php functions-bootstrap.php uninstall.php footprint.php",
     "lint:php:phpstan": "phpstan analyse -c ./.phpstan.neon -v --memory-limit=1G",
 
     "internationalize": [
@@ -94,19 +96,19 @@
     "test:unit": "@php vendor/bin/phpunit --testsuite=Unit",
     "test:unit:mutation": "@php vendor/bin/infection --threads=max",
     "test:integration": [
-      "if [ -n \"$GITHUB_ACTIONS\" ]; then echo 'CI owns the wp-env lifecycle — skipping start.'; else ./node_modules/.bin/wp-env --config .wp-env.tests.json start; fi",
+      "./node_modules/.bin/wp-env --config .wp-env.tests.json start",
       "npm --prefix=. run test:integration"
     ],
     "test:requirements": [
-      "if [ -n \"$GITHUB_ACTIONS\" ]; then echo 'CI owns the wp-env lifecycle — skipping start.'; else ./node_modules/.bin/wp-env --config .wp-env.belowfloor.json start; fi",
+      "./node_modules/.bin/wp-env --config .wp-env.belowfloor.json start",
       "npm --prefix=. run test:requirements"
     ],
     "test:degraded": [
-      "if [ -n \"$GITHUB_ACTIONS\" ]; then echo 'CI owns the wp-env lifecycle — skipping start.'; else ./node_modules/.bin/wp-env --config .wp-env.degraded.json start; fi",
+      "./node_modules/.bin/wp-env --config .wp-env.degraded.json start",
       "npm --prefix=. run test:degraded"
     ],
     "test:multisite": [
-      "if [ -n \"$GITHUB_ACTIONS\" ]; then echo 'CI owns the wp-env lifecycle — skipping start.'; else ./node_modules/.bin/wp-env --config .wp-env.multisite.json start; fi",
+      "./node_modules/.bin/wp-env --config .wp-env.multisite.json start",
       "npm --prefix=. run test:multisite"
     ],
 
@@ -124,9 +126,6 @@
     "changelog:validate": "@php vendor/bin/changelogger validate",
     "changelog:write": "@php vendor/bin/changelogger write"
   },
-  "scripts-descriptions": {
-    "test:integration": "Integration suite on .wp-env.tests.json. The $GITHUB_ACTIONS guard in front of every suite verb keeps the start out of CI, which owns the container's lifecycle in its own step. On this verb it is also load-bearing: only the integration matrix passes wp-env-core, so a second start would fall back to whatever core the config names — and .wp-env.tests.json names none, which makes it wp-env's default of latest stable. The floor leg is exposed too, not just nightly: it passes wp-version, which the workflow maps into the same step-scoped variable, so it would go green without testing the version it asked for. The latest leg names no core, so the fallback is what it wanted anyway. It names GITHUB_ACTIONS rather than the conventional CI because devcontainers and task runners export CI too, and CI=false still satisfies -n, which would skip the start locally in silence."
-  },
   "config": {
     "allow-plugins": {
       "composer/*": true,
@@ -138,20 +137,6 @@
   },
 
   "extra": {
-    "changelogger": {
-      "changelog": "CHANGELOG.md",
-      "changes-dir": "changelog",
-      "versioning": "semver",
-      "default-type": "changed",
-      "types": {
-        "added": "Added",
-        "changed": "Changed",
-        "deprecated": "Deprecated",
-        "removed": "Removed",
-        "fixed": "Fixed",
-        "security": "Security"
-      }
-    },
     "installer-paths": {
       "vendor/wp-plugin/{$name}/": [
         "type:wordpress-plugin"

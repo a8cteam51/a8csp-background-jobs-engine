@@ -14,6 +14,8 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
  * component gates before every plugin has loaded. Booting stays tied to the `plugins_loaded`
  * attachment in the main plugin file.
  *
+ * @api
+ *
  * @since   1.0.0
  * @version 1.0.0
  *
@@ -57,7 +59,7 @@ function a8csp_bgje( string $scope ): Engine {
 
 $a8csp_bgje_includes = \glob( \constant( 'A8CSP_BGJE_DIR_PATH' ) . 'includes/*.php' );
 if ( false !== $a8csp_bgje_includes ) {
-	\sort( $a8csp_bgje_includes ); // Glob order is filesystem-dependent, so sort for a deterministic load order.
+	\sort( $a8csp_bgje_includes );
 	foreach ( $a8csp_bgje_includes as $a8csp_bgje_include ) {
 		if ( \str_starts_with( \basename( $a8csp_bgje_include ), '_' ) ) {
 			continue; // An underscore prefix opts a file out of automatic loading.

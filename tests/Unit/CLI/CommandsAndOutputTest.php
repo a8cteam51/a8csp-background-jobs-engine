@@ -170,6 +170,21 @@ final class CommandsAndOutputTest extends TestCase {
 		self::assertSame( 'purge', $purge['action'] );
 		self::assertInstanceOf( Identity::class, $purge['identity'] );
 		self::assertSame( 'consumer-plugin:email-digest', (string) $purge['identity'] );
+
+		// --no-yes keeps the prompt rather than being rejected, so it stays a valid form.
+		self::assertSame(
+			array(
+				'action'   => 'purge',
+				'identity' => null,
+			),
+			RunsCommand::failed_runs_request_from_args(
+				array( 'purge' ),
+				array(
+					'all' => true,
+					'yes' => false,
+				)
+			)
+		);
 	}
 
 	/**
@@ -390,6 +405,25 @@ final class CommandsAndOutputTest extends TestCase {
 
 		self::assertSame( 0, $result->exit_code );
 		self::assertSame( 'This permanently removes every schedule registration for scope "consumer-plugin" and converges its recurring occurrences on ready backends. Dormant occurrences on unavailable backends converge later. Existing runs are not cancelled. Continue? [y/n] ', $result->stdout );
+		self::assertSame( '', $result->stderr );
+		self::assertIsArray( $probe );
+		self::assertSame( $probe['before'] ?? null, $probe['after'] ?? null );
+	}
+
+	/**
+	 * Declining the all-names purge confirmation keeps every retained failed run.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  void
+	 */
+	public function test_declined_failed_run_purge_confirmation_prevents_every_mutation(): void {
+		$result = CliHarness::run_interactive( 'failed-runs-purge-declined', "n\n" );
+		$probe  = \json_decode( $result->probe, true, 512, \JSON_THROW_ON_ERROR );
+
+		self::assertSame( 0, $result->exit_code );
+		self::assertSame( 'This permanently deletes every failed run retained on this site, including the arguments failed-runs retry needs. Continue? [y/n] ', $result->stdout );
 		self::assertSame( '', $result->stderr );
 		self::assertIsArray( $probe );
 		self::assertSame( $probe['before'] ?? null, $probe['after'] ?? null );
@@ -817,7 +851,14 @@ final class CommandsAndOutputTest extends TestCase {
 	public function test_failed_run_purge_reports_a_silent_database_failure(): void {
 		$this->rig->wpdb()->fail_next_read_at( 'reconnect_failed' );
 
-		$result = CliHarness::run( 'failed-runs', array( 'purge' ), array( 'all' => true ) );
+		$result = CliHarness::run(
+			'failed-runs',
+			array( 'purge' ),
+			array(
+				'all' => true,
+				'yes' => true,
+			)
+		);
 
 		self::assertSame( 1, $result->exit_code );
 		self::assertSame( '', $result->stdout );
@@ -1499,7 +1540,10 @@ final class CommandsAndOutputTest extends TestCase {
 			),
 			'purge all'    => array(
 				'args'       => array( 'purge' ),
-				'assoc_args' => array( 'all' => true ),
+				'assoc_args' => array(
+					'all' => true,
+					'yes' => true,
+				),
 				'action'     => 'purge',
 			),
 		);
@@ -1514,9 +1558,10 @@ final class CommandsAndOutputTest extends TestCase {
 	 * @return  array<string, array{args: list<string>, assoc_args: array<string, mixed>, message: string}>
 	 */
 	public static function invalid_failed_run_requests(): array {
-		$list_usage  = 'List accepts only --scope and --format; use wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>].';
-		$retry_usage = 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.';
-		$purge_usage = 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.';
+		$list_usage      = 'List accepts only --scope and --format; use wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>].';
+		$retry_usage     = 'Retry requires exactly an identity and run_id; use wp a8csp-bgje failed-runs retry <identity> <run_id>.';
+		$purge_usage     = 'Purge requires exactly one identity or --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].';
+		$purge_yes_usage = 'Purge accepts --yes only as a flag with --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].';
 		return array(
 			'missing action'         => array(
 				'args'       => array(),
@@ -1616,7 +1661,38 @@ final class CommandsAndOutputTest extends TestCase {
 			'purge flag'             => array(
 				'args'       => array( 'purge' ),
 				'assoc_args' => array( 'format' => 'json' ),
-				'message'    => 'Purge accepts only --all; use wp a8csp-bgje failed-runs purge <identity> or purge --all.',
+				'message'    => 'Purge accepts only --all and --yes; use wp a8csp-bgje failed-runs purge <identity> or purge --all [--yes].',
+			),
+			'purge name yes'         => array(
+				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => $purge_yes_usage,
+			),
+			'purge name all yes'     => array(
+				'args'       => array( 'purge', 'consumer-plugin:email-digest' ),
+				'assoc_args' => array(
+					'all' => true,
+					'yes' => true,
+				),
+				'message'    => $purge_usage,
+			),
+			'purge extra name yes'   => array(
+				'args'       => array( 'purge', 'consumer-plugin:email-digest', 'other' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => $purge_usage,
+			),
+			'purge yes only'         => array(
+				'args'       => array( 'purge' ),
+				'assoc_args' => array( 'yes' => true ),
+				'message'    => $purge_usage,
+			),
+			'purge all string yes'   => array(
+				'args'       => array( 'purge' ),
+				'assoc_args' => array(
+					'all' => true,
+					'yes' => 'y',
+				),
+				'message'    => $purge_yes_usage,
 			),
 		);
 	}

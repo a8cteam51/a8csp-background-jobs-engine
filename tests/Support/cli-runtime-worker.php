@@ -20,6 +20,48 @@ require_once __DIR__ . '/../bootstrap.php';
 EngineRig::bootstrap();
 require_once __DIR__ . '/WpCliRuntimeStub.php';
 
+/**
+ * Writes the rig's storage and pending-action state before and after the command to the parent's
+ * probe stream, so a declined confirmation can be shown to have changed nothing.
+ *
+ * @param   EngineRig $rig Active engine rig.
+ *
+ * @return  void
+ */
+function a8csp_bgje_worker_probe_mutations( EngineRig $rig ): void {
+	$before = array(
+		'wpdb'    => $rig->wpdb()->rows,
+		'options' => $GLOBALS['a8csp_bgje_test_options'],
+		'pending' => $rig->backend()->pending_actions,
+	);
+
+	$probe = \fopen( 'php://fd/3', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- File descriptor 3 is the parent's isolated test probe.
+	if ( false === $probe ) {
+		throw new \RuntimeException( 'The CLI worker probe stream is unavailable.' );
+	}
+	\register_shutdown_function(
+		static function () use ( $rig, $before, $probe ): void {
+			$after   = array(
+				'wpdb'    => $rig->wpdb()->rows,
+				'options' => $GLOBALS['a8csp_bgje_test_options'],
+				'pending' => $rig->backend()->pending_actions,
+			);
+			$encoded = \wp_json_encode(
+				array(
+					'before' => $before,
+					'after'  => $after,
+				),
+				\JSON_THROW_ON_ERROR
+			);
+			if ( ! \is_string( $encoded ) ) {
+				throw new \RuntimeException( 'The CLI worker probe could not encode its mutation evidence.' );
+			}
+			\fwrite( $probe, $encoded ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- File descriptor 3 carries test-only mutation evidence.
+			\fclose( $probe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- File descriptor 3 is a native process resource.
+		}
+	);
+}
+
 $scenario = $argv[1] ?? null;
 if ( ! \is_string( $scenario ) ) {
 	throw new \InvalidArgumentException( 'A CLI worker scenario is required.' );
@@ -71,37 +113,7 @@ try {
 			if ( true !== $synced ) {
 				throw new \LogicException( 'The CLI worker could not seed schedule-removal fixtures.' );
 			}
-			$before = array(
-				'wpdb'    => $rig->wpdb()->rows,
-				'options' => $GLOBALS['a8csp_bgje_test_options'],
-				'pending' => $rig->backend()->pending_actions,
-			);
-
-			$probe = \fopen( 'php://fd/3', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- File descriptor 3 is the parent's isolated test probe.
-			if ( false === $probe ) {
-				throw new \RuntimeException( 'The CLI worker probe stream is unavailable.' );
-			}
-			\register_shutdown_function(
-				static function () use ( $rig, $before, $probe ): void {
-					$after   = array(
-						'wpdb'    => $rig->wpdb()->rows,
-						'options' => $GLOBALS['a8csp_bgje_test_options'],
-						'pending' => $rig->backend()->pending_actions,
-					);
-					$encoded = \wp_json_encode(
-						array(
-							'before' => $before,
-							'after'  => $after,
-						),
-						\JSON_THROW_ON_ERROR
-					);
-					if ( ! \is_string( $encoded ) ) {
-						throw new \RuntimeException( 'The CLI worker probe could not encode its mutation evidence.' );
-					}
-					\fwrite( $probe, $encoded ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- File descriptor 3 carries test-only mutation evidence.
-					\fclose( $probe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- File descriptor 3 is a native process resource.
-				}
-			);
+			a8csp_bgje_worker_probe_mutations( $rig );
 			$result = CliHarness::run( 'schedules', array( 'remove', 'consumer-plugin' ) );
 			break;
 
@@ -116,6 +128,13 @@ try {
 			$result = CliHarness::run( 'failed-runs', array( 'list' ), array( 'format' => 'csv' ) );
 			break;
 
+		case 'failed-runs-purge-declined':
+			[ $name, $raw ] = StoreFixtureBuilder::for_identity( 'consumer-plugin:email-digest' )->failed( $now - 60, array( 'site_id' => 7 ), new RunFailure( identity: 'consumer-plugin:email-digest', run_id: RunId::from( '00000000000000086400-0000000000000000001' ), attempts: 2, stage: RunFailureStage::execution(), code: ErrorCode::ExecutionFailed, summary: 'Handler failed.', details: null ), new EngineError( 'Handler failed.', \RuntimeException::class ) );
+			$rig->wpdb()->put( $name, $raw );
+			a8csp_bgje_worker_probe_mutations( $rig );
+			$result = CliHarness::run( 'failed-runs', array( 'purge' ), array( 'all' => true ) );
+			break;
+
 		case 'reset-declined':
 			$operations = $rig->operations( 'reset-tests' );
 			$operations->register( ( new RecordingJob( 'refresh' ) )->definition() );
@@ -125,37 +144,7 @@ try {
 				throw new \LogicException( 'The CLI worker could not seed reset fixtures.' );
 			}
 			$rig->backend()->pending_actions[ ActionDeliveries::DELIVER_HOOK ] = 5;
-			$before = array(
-				'wpdb'    => $rig->wpdb()->rows,
-				'options' => $GLOBALS['a8csp_bgje_test_options'],
-				'pending' => $rig->backend()->pending_actions,
-			);
-
-			$probe = \fopen( 'php://fd/3', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- File descriptor 3 is the parent's isolated test probe.
-			if ( false === $probe ) {
-				throw new \RuntimeException( 'The CLI worker probe stream is unavailable.' );
-			}
-			\register_shutdown_function(
-				static function () use ( $rig, $before, $probe ): void {
-					$after   = array(
-						'wpdb'    => $rig->wpdb()->rows,
-						'options' => $GLOBALS['a8csp_bgje_test_options'],
-						'pending' => $rig->backend()->pending_actions,
-					);
-					$encoded = \wp_json_encode(
-						array(
-							'before' => $before,
-							'after'  => $after,
-						),
-						\JSON_THROW_ON_ERROR
-					);
-					if ( ! \is_string( $encoded ) ) {
-						throw new \RuntimeException( 'The CLI worker probe could not encode its mutation evidence.' );
-					}
-					\fwrite( $probe, $encoded ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- File descriptor 3 carries test-only mutation evidence.
-					\fclose( $probe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- File descriptor 3 is a native process resource.
-				}
-			);
+			a8csp_bgje_worker_probe_mutations( $rig );
 			$result = CliHarness::run( 'reset' );
 			break;
 

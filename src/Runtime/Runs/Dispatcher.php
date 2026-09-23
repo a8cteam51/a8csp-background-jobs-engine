@@ -20,6 +20,7 @@ use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\HeartbeatOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockClaimResult;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\LockTransferOutcome;
+use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\MaintenanceFenceOutcome;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapGuard;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\Locks\OverlapIdentity;
 use A8C\SpecialProjects\BackgroundJobsEngine\Runtime\RandomizerInterface;
@@ -66,9 +67,10 @@ final readonly class Dispatcher {
 	 * Admission attempts one imperative dispatch may spend losing races before it reports a conflict.
 	 *
 	 * Two or greater. Each attempt is a complete read-decide-write against current storage, so a lost
-	 * attempt leaves the lane exactly as it found it and a further attempt is the only thing that can
-	 * make progress. Attempts carry no delay: a lost compare-and-swap means a rival already committed,
-	 * and every round has exactly one winner, so waiting adds latency without improving the odds.
+	 * attempt leaves the lane as it found it, apart from failing a crashed run whose lane a rival took,
+	 * and a further attempt is the only thing that can make progress. Attempts carry no delay: a lost
+	 * compare-and-swap means a rival already committed, and every round has exactly one winner, so
+	 * waiting adds latency without improving the odds.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -145,8 +147,9 @@ final readonly class Dispatcher {
 	 *
 	 * Re-attempting cannot duplicate work. Admission never reaches handler code, which runs from a
 	 * delivery instead, and an attempt that loses its lane deletes its own provisional run row against
-	 * the exact bytes it wrote and restores any supersession it performed. A further attempt is also
-	 * corrective: it takes custody of a supersession replay a losing attempt could not restore.
+	 * the exact bytes it wrote and restores any incumbent it took over, except a crash reclamation whose
+	 * lane a rival took, which stands for maintenance to replay. A further attempt is also corrective: it
+	 * takes custody of a supersession replay a losing attempt could not restore.
 	 *
 	 * One conflict is raised after a run has been admitted and its listeners have run, when a listener
 	 * destroys the run it was told about. Each attempt there admits a distinct run, so a further
@@ -809,16 +812,21 @@ final readonly class Dispatcher {
 		}
 
 		$claimed_incumbent = null;
-		$superseded_here   = false;
+		$claimed_here      = false;
 		if ( null !== $incumbent_snapshot && RunStatus::Running === $incumbent_snapshot['state']->status ) {
+			$incumbent = $incumbent_snapshot['state'];
 			// This exact run-state CAS is the first linearization point: once it wins, the incumbent's in-flight completion CAS cannot commit after takeover.
-			$claimed_incumbent = $this->terminal_transitions->claim_superseded_run( $incumbent_run_id, $incumbent_snapshot['state'], $run_store, $incumbent_snapshot['raw'] );
+			// A stale lock over an executing row means its process died mid-invocation, so the takeover records the crash
+			// reclamation maintenance would record; any other incumbent is displaced as Superseded.
+			$claimed_incumbent = true === $claim->stale && $incumbent->executing
+				? $this->terminal_transitions->claim_failed_run( $incumbent_run_id, $incumbent, $run_store, new EngineError( \sprintf( 'Run "%1$s" for background-work "%2$s" was failed by a dispatch that found its execution-overlap lock stale while its run row still recorded an invocation in progress.', $incumbent_run_id, (string) $identity ) ), RunState::increment_attempts_safely( $incumbent->failed_attempts ), RunFailureStage::crash_reclamation(), ErrorCode::ExecutionFailed, ( $this->handlers[ $incumbent->kind ] ?? null )?->failure_details( $incumbent ), $incumbent_snapshot['raw'] )
+				: $this->terminal_transitions->claim_superseded_run( $incumbent_run_id, $incumbent, $run_store, $incumbent_snapshot['raw'] );
 			if ( $claimed_incumbent instanceof Failure ) {
 				$run_store->delete_if_unchanged( $run_id, $state );
 
 				return new Failure(
 					new EngineError(
-						\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm the incumbent supersession before overlap transfer; repair option writes and retry.', $run_id, $kind, (string) $identity ),
+						\sprintf( 'Run "%1$s" for %2$s "%3$s" could not confirm the incumbent terminal transition before overlap transfer; repair option writes and retry.', $run_id, $kind, (string) $identity ),
 						reason: EngineErrorReason::StorageFailure,
 						context: array(
 							'identity' => (string) $identity,
@@ -833,7 +841,7 @@ final readonly class Dispatcher {
 
 				return new Failure(
 					new EngineError(
-						\sprintf( '%1$s "%2$s" incumbent run changed while the replacement was superseding it; retry the dispatch against the current incumbent state.', $kind, (string) $identity ),
+						\sprintf( '%1$s "%2$s" incumbent run changed while the replacement was taking it over; retry the dispatch against the current incumbent state.', $kind, (string) $identity ),
 						reason: EngineErrorReason::AdmissionConflict,
 						context: array(
 							'identity' => (string) $identity,
@@ -844,9 +852,12 @@ final readonly class Dispatcher {
 				);
 			}
 
-			$superseded_here = true;
+			$claimed_here = true;
 		} elseif ( null !== $incumbent_snapshot && RunStatus::Superseded === $incumbent_snapshot['state']->status ) {
 			// An unresolved lock transfer leaves Superseded effects pending; a retry with a definite transfer owns their replay.
+			// A Failed row left the same way is not taken into custody: the run's own failure path writes that status too, so
+			// replaying it here could fire its failed hooks a second time while its process is still running them. Maintenance
+			// replays it after the terminal grace period.
 			$claimed_incumbent = array(
 				'raw'   => $incumbent_snapshot['raw'],
 				'state' => $incumbent_snapshot['state'],
@@ -875,14 +886,17 @@ final readonly class Dispatcher {
 			// A rival may advance the provisional state while the overlap transfer is in flight.
 			$run_store->delete_if_unchanged( $run_id, $state );
 			// The exact lock-transfer winner owns replay; competing snapshots cannot safely fire the same unmarked effects.
-			// Losing the transfer means the incumbent never left its lane, so the supersession written above is undone
-			// against the exact bytes it wrote. A row that moved since belongs to whoever moved it.
-			$restored = $superseded_here && null !== $incumbent_snapshot && null !== $claimed_incumbent
+			// The terminal state written above is undone against the exact bytes it wrote, because the incumbent may still
+			// hold its lane: a delivery refreshes the lock before its run row. A row that moved since belongs to whoever
+			// moved it. A crash reclamation stands once the lock names another run, which read the row as Failed and took
+			// no custody of it; undoing it then would leave a crashed run recorded as running under that run's lock.
+			$restored = $claimed_here && null !== $incumbent_snapshot && null !== $claimed_incumbent
+				&& ( RunStatus::Failed !== $claimed_incumbent['state']->status || MaintenanceFenceOutcome::Transferred !== $this->overlap_guard->classify_run_fence( $identity, $args_hash, $incumbent_run_id ) )
 				? $run_store->replace_if_raw_matches( $incumbent_run_id, $claimed_incumbent['raw'], $incumbent_snapshot['state'] )
 				: '';
 			if ( ! \is_string( $restored ) ) {
 				$this->logger->warning(
-					'A lost overlap transfer could not restore the run it superseded; maintenance owns its terminal effects.',
+					'A lost overlap transfer could not restore the run it took over; maintenance owns its terminal effects.',
 					array(
 						'identity' => (string) $identity,
 						'run_id'   => $incumbent_run_id,
@@ -914,14 +928,14 @@ final readonly class Dispatcher {
 	}
 
 	/**
-	 * Executes post-resolution supersession effects without abandoning the resolved admission.
+	 * Executes the taken-over incumbent's terminal effects without abandoning the resolved admission.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @param   Identity                                                                 $identity       Complete scope-qualified work identity.
 	 * @param   string                                                                   $replacement_id Replacement run identifier.
-	 * @param   array{run_id: string, claimed: array{raw: string, state: RunState}}|null $takeover       Claimed incumbent supersession, if any.
+	 * @param   array{run_id: string, claimed: array{raw: string, state: RunState}}|null $takeover       Claimed incumbent terminal transition, if any.
 	 * @param   RunStore                                                                 $run_store      Active-run store.
 	 *
 	 * @return  void
@@ -932,11 +946,15 @@ final readonly class Dispatcher {
 		}
 
 		try {
-			$this->terminal_transitions->execute_claimed_supersession( $identity, $takeover['run_id'], $replacement_id, $takeover['claimed'], $run_store );
+			if ( RunStatus::Failed === $takeover['claimed']['state']->status ) {
+				$this->terminal_transitions->execute_claimed_failure( $identity, $takeover['run_id'], $takeover['claimed'], $run_store );
+			} else {
+				$this->terminal_transitions->execute_claimed_supersession( $identity, $takeover['run_id'], $replacement_id, $takeover['claimed'], $run_store );
+			}
 		} catch ( \Throwable $throwable ) {
-			// The committed Superseded row retains every unmarked effect for maintenance replay.
+			// The committed terminal row retains every unmarked effect for maintenance replay.
 			$this->logger->error(
-				'Superseded-run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
+				'Taken-over run terminal effects could not finish synchronously; the durable terminal row retains unmarked effects for maintenance replay.',
 				array(
 					'identity'  => (string) $identity,
 					'run_id'    => $takeover['run_id'],

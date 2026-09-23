@@ -16,22 +16,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass( Success::class )]
 #[CoversClass( Failure::class )]
 final class ResultTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies the production files' `ABSPATH` boot guard before the classes are first autoloaded.
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

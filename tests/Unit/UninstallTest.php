@@ -3,6 +3,7 @@
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
@@ -513,6 +514,80 @@ final class UninstallTest extends TestCase {
 		self::assertSame( $site_ids, $GLOBALS['a8csp_bgje_test_blog_switch_calls'] );
 		self::assertSame( \array_fill( 0, 101, 1 ), $GLOBALS['a8csp_bgje_test_blog_restore_calls'] );
 		self::assertSame( 1, $GLOBALS['a8csp_bgje_test_blog_id'] );
+	}
+
+
+	/**
+	 * Uninstall reaches no plugin class.
+	 *
+	 * WordPress deletes a plugin with it deactivated and its autoloader unloaded, so a production
+	 * class reached from uninstall.php is a fatal at deletion. The test bootstrap defines ABSPATH,
+	 * which the production files' guard would otherwise stop on, so this asserts the property the
+	 * guard used to enforce by accident. Both site modes run with Action Scheduler initialized, so
+	 * the network loop and the Action Scheduler unscheduling are covered too, and interfaces and
+	 * traits count because reading an interface constant autoloads the interface alone.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @param   bool $is_multisite Whether uninstall runs on a network.
+	 *
+	 * @return  void
+	 */
+	#[DataProvider( 'site_modes' )]
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_uninstall_reaches_no_plugin_class( bool $is_multisite ): void {
+		require_once __DIR__ . '/wp-options-stubs.php';
+		require_once __DIR__ . '/wp-lock-stubs.php';
+		require_once __DIR__ . '/wp-cron-stubs.php';
+		require_once __DIR__ . '/as-function-stubs.php';
+		require_once __DIR__ . '/as-class-stubs.php';
+
+		$GLOBALS['a8csp_bgje_test_options']                = array_fill_keys( self::DYNAMIC_OPTIONS, 'sentinel' );
+		$GLOBALS['a8csp_bgje_test_option_calls']           = array();
+		$GLOBALS['a8csp_bgje_test_delete_transient_calls'] = array();
+		$GLOBALS['a8csp_bgje_test_is_multisite']           = $is_multisite;
+		$GLOBALS['a8csp_bgje_test_blog_id']                = 1;
+		$GLOBALS['a8csp_bgje_test_cron_array']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_calls']             = array();
+		$GLOBALS['a8csp_bgje_test_cron_event_sequence']    = 0;
+		$GLOBALS['a8csp_bgje_test_as_calls']               = array();
+		$GLOBALS['wpdb']                                   = new UninstallWpdbSpy();
+
+		self::assertTrue( \class_alias( UninstallActionSchedulerStub::class, 'ActionScheduler' ) );
+		\define( 'WP_UNINSTALL_PLUGIN', true );
+		$declared        = static fn (): array => \array_merge( \get_declared_classes(), \get_declared_interfaces(), \get_declared_traits() );
+		$declared_before = $declared();
+		require \dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		self::assertNotSame( array(), $this->action_scheduler_calls() );
+
+		$plugin_classes = \array_values(
+			\array_filter(
+				\array_diff( $declared(), $declared_before ),
+				static fn ( string $declared ): bool => 0 === \strpos( $declared, 'A8C\\SpecialProjects\\BackgroundJobsEngine\\' ) && false === \strpos( $declared, '\\Tests\\' )
+			)
+		);
+
+		self::assertSame( array(), $plugin_classes );
+	}
+
+	// endregion.
+
+	// region DATA PROVIDERS.
+
+	/**
+	 * Supplies the single-site and network uninstall modes.
+	 *
+	 * @since   1.0.0
+	 * @version 1.0.0
+	 *
+	 * @return  iterable<string, array{bool}>
+	 */
+	public static function site_modes(): iterable {
+		yield 'single site' => array( false );
+		yield 'multisite' => array( true );
 	}
 
 	// endregion.

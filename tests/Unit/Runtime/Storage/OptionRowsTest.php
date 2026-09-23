@@ -35,10 +35,6 @@ final class OptionRowsTest extends TestCase {
 	/** Loads the guarded WordPress cache and site functions. */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
 	}
 

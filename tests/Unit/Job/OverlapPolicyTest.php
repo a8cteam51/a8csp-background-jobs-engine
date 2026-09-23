@@ -14,25 +14,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( OverlapPolicy::class )]
 final class OverlapPolicyTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies the production file's `ABSPATH` boot guard before first autoload.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

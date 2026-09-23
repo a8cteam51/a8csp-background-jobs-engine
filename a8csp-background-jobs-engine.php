@@ -18,8 +18,8 @@
  * Plugin Name:             A8CSP Background Jobs Engine
  * Plugin URI:              https://specialprojects.automattic.com
  * Update URI:              https://github.com/a8cteam51/a8csp-background-jobs-engine
- * Description:             A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.
- * Version:                 1.0.0-beta.5
+ * Description:             A WordPress background-work engine that uses Action Scheduler when available, with a documented best-effort WP-Cron fallback.
+ * Version:                 1.0.0
  * Requires at least:       7.1
  * Tested up to:            7.1
  * Requires PHP:            8.5
@@ -45,6 +45,7 @@ require_once A8CSP_BGJE_DIR_PATH . 'functions-bootstrap.php';
 // The self-updater registers before the requirements gates below: an incompatible installation is
 // the one that most needs to be offered the corrective update.
 add_filter( 'update_plugins_github.com', 'a8csp_bgje_check_github_release_update', 10, 3 );
+add_filter( 'plugins_api', 'a8csp_bgje_get_github_release_information', 10, 3 );
 
 // Registration-only since WP 6.7, so include time is safe — and required: core registers the
 // header path only for site-active plugins (wp-settings.php skips it in the network-activated
@@ -58,9 +59,8 @@ if ( ! \is_file( A8CSP_BGJE_DIR_PATH . 'vendor/autoload.php' ) ) {
 }
 require_once A8CSP_BGJE_DIR_PATH . 'vendor/autoload.php';
 
-\define( 'A8CSP_BGJE_REQUIREMENTS_RESULT', a8csp_bgje_validate_requirements() );
-if ( is_wp_error( A8CSP_BGJE_REQUIREMENTS_RESULT ) ) {
-	a8csp_bgje_output_requirements_error( A8CSP_BGJE_REQUIREMENTS_RESULT );
+if ( is_wp_error( a8csp_bgje_validate_requirements() ) ) {
+	a8csp_bgje_output_requirements_error( a8csp_bgje_validate_requirements() );
 } else {
 	require_once A8CSP_BGJE_DIR_PATH . 'functions.php';
 	add_action( 'plugins_loaded', array( a8csp_bgje_plugin(), 'boot' ) );

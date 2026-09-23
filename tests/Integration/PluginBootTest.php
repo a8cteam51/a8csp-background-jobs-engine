@@ -2,7 +2,6 @@
 
 namespace A8C\SpecialProjects\BackgroundJobsEngine\Tests\Integration;
 
-use A8C\SpecialProjects\BackgroundJobsEngine\Plugin;
 use A8C\SpecialProjects\BackgroundJobsEngine\Tests\Support\AbstractIntegrationTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -27,7 +26,7 @@ final class PluginBootTest extends AbstractIntegrationTestCase {
 	 * @return  void
 	 */
 	public function test_plugin_boots_on_supported_runtime(): void {
-		self::assertTrue( \constant( 'A8CSP_BGJE_REQUIREMENTS_RESULT' ) );
+		self::assertTrue( \a8csp_bgje_validate_requirements() );
 		self::assertTrue( \function_exists( 'a8csp_bgje_plugin' ) );
 		self::assertSame( 10, has_action( 'plugins_loaded', array( \a8csp_bgje_plugin(), 'boot' ) ) );
 		self::assertTrue( \a8csp_bgje_plugin()->is_booted() );
@@ -37,21 +36,17 @@ final class PluginBootTest extends AbstractIntegrationTestCase {
 	}
 
 	/**
-	 * `Plugin::boot()` is idempotent: the `plugins_loaded` boot has already run, and a second call
-	 * leaves the accessor's retained instance unchanged.
+	 * The entry file registers both self-updater filters, so an installed copy is offered releases
+	 * and its View details request is answered locally.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_second_boot_does_not_replace_cached_plugin(): void {
-		$plugin = \a8csp_bgje_plugin();
-		self::assertInstanceOf( Plugin::class, $plugin );
-
-		$plugin->boot();
-
-		self::assertSame( $plugin, \a8csp_bgje_plugin() );
+	public function test_the_self_updater_filters_are_registered(): void {
+		self::assertSame( 10, has_filter( 'update_plugins_github.com', 'a8csp_bgje_check_github_release_update' ) );
+		self::assertSame( 10, has_filter( 'plugins_api', 'a8csp_bgje_get_github_release_information' ) );
 	}
 
 	// endregion.

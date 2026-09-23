@@ -36,7 +36,7 @@ final class DeliverySchedulerTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Satisfies production file guards before first autoload.
+	 * Loads the JSON-encode stub the scheduler reads through.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -45,10 +45,6 @@ final class DeliverySchedulerTest extends TestCase {
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once \dirname( __DIR__ ) . '/Backends/wp-json-encode-stub.php';
 	}
 

@@ -32,7 +32,7 @@ enum ErrorCode: string {
 	/** The requested schedule is unsynchronized, inactive, or stale. */
 	case UnknownSchedule = 'unknown_schedule';
 
-	/** An overlap lock is held by a run that is still going; skip or wait. */
+	/** An overlap lock is held by another run; skip or wait. */
 	case OverlapHeld = 'overlap_held';
 
 	/** Admission lost a race and admitted nothing. */

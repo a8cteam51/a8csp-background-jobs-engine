@@ -26,25 +26,6 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( JobOptions::class )]
 #[UsesClass( OverlapPolicy::class )]
 final class JobDefinitionTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies production-file boot guards before the model types autoload.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

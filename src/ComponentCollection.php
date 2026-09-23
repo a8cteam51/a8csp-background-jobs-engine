@@ -47,8 +47,9 @@ final class ComponentCollection {
 	 * Gates and constructs the given component classes into a collection.
 	 *
 	 * The static gates run BEFORE construction, so an optional integration whose companion is
-	 * absent is never autoloaded into a fatal; the survivors construct in registration order and
-	 * run each later phase in that same order.
+	 * absent is never constructed; the survivors construct in registration order and run each later
+	 * phase in that same order. Calling a gate autoloads its class, so a gated class must load
+	 * without its companion.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

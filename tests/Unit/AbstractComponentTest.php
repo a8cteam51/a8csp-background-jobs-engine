@@ -14,26 +14,6 @@ use PHPUnit\Framework\TestCase;
  */
 #[CoversClass( AbstractComponent::class )]
 final class AbstractComponentTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Satisfies the production files' `ABSPATH` boot guard before the class under test autoloads.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
-		parent::setUpBeforeClass();
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**

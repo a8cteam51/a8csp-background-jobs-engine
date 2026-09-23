@@ -508,7 +508,7 @@ final readonly class OverlapGuard {
 	/**
 	 * Classifies run ownership without deleting a stale lock needed by a redelivered action.
 	 *
-	 * @internal Engine maintenance only.
+	 * @internal Engine maintenance and admission only.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0

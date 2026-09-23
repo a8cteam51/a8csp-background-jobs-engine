@@ -117,10 +117,6 @@ final class RunReconciliationTest extends TestCase {
 	 */
 	#[\Override]
 	public static function setUpBeforeClass(): void {
-		if ( ! \defined( 'ABSPATH' ) ) {
-			\define( 'ABSPATH', __DIR__ . '/' );
-		}
-
 		require_once \dirname( __DIR__, 2 ) . '/wp-options-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-hook-stubs.php';
 		require_once \dirname( __DIR__, 2 ) . '/wp-lock-stubs.php';
@@ -187,16 +183,18 @@ final class RunReconciliationTest extends TestCase {
 	}
 
 	/**
-	 * Clears the terminal-hook callbacks these scenarios plant.
+	 * Clears the terminal-hook callbacks and scripted filter values these scenarios plant.
 	 *
-	 * The stub registry is a superglobal that outlives the class, so a planted callback
-	 * would otherwise fire inside any later class sharing the identity.
+	 * Both stub registries are superglobals that outlive the class, so a planted callback would
+	 * otherwise fire inside any later class sharing the identity, and a scripted filter value would
+	 * answer any later class reading that filter.
 	 *
 	 * @return  void
 	 */
 	#[\Override]
 	protected function tearDown(): void {
 		$GLOBALS['a8csp_bgje_test_action_callbacks'] = array();
+		$GLOBALS['a8csp_bgje_test_filter_values']    = array();
 
 		parent::tearDown();
 	}

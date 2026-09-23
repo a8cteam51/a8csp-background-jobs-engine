@@ -1,15 +1,6 @@
 # A8CSP Background Jobs Engine
 
-**Contributors:** wpspecialprojects
-**Tags:**
-**Requires at least:** 7.1
-**Tested up to:** 7.1
-**Requires PHP:** 8.5
-**Stable tag:** 1.0.0-beta.5
-**License:** GPL v2 or later
-**License URI:** <https://www.gnu.org/licenses/gpl-2.0.html>
-
-A background-work engine for WordPress sites: Jobs, Schedules, and Chunked Jobs using Action Scheduler when available, with a documented best-effort WP-Cron fallback.
+A WordPress background-work engine that uses Action Scheduler when available, with a documented best-effort WP-Cron fallback.
 
 ## What it is
 
@@ -22,15 +13,19 @@ Consumers use four connected surfaces:
 - **The procedural aliases** — twelve verb-noun `a8csp_bgje_*()` functions take `$scope` first, accept the same `JobDefinition` registration value as the Jobs manager and the same variadic `Schedule` values as the Schedules manager, and invoke the capability-manager verbs.
 - **The lifecycle hooks** — observe runs through the `a8csp_bgje/*` actions.
 
-The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run`, `RunContext`, and `RunFailure`; execution callbacks depend on `RunContextInterface` or `ChunkedRunContextInterface`. The procedural aliases accept the same typed definition and schedule values as their capability-manager counterparts.
+The data boundary is deliberate: capability managers accept typed definition, policy, and schedule values, and payloads the engine hands to consumer code are typed objects such as `Run`, `RunContext`, and `RunFailure`, though some are documented arrays, notably the result of `schedules()->inspect()` listed under [Schedule](#schedule); execution callbacks depend on `RunContextInterface` or `ChunkedRunContextInterface`. The procedural aliases accept the same typed definition and schedule values as their capability-manager counterparts.
 
-Delivery uses Action Scheduler when it is ready and falls back to WP-Cron otherwise. At-least-once delivery is guaranteed **only under Action Scheduler**; WP-Cron is best-effort. An occurrence on a temporarily unavailable backend is dormant, not lost.
+Delivery uses Action Scheduler when it is ready and falls back to WP-Cron otherwise. At-least-once delivery is guaranteed **only under Action Scheduler**; WP-Cron is best-effort. An occurrence on a temporarily unavailable backend is dormant, not lost. WordPress keeps every WP-Cron event in one `cron` option that each scheduling write replaces whole, so under WP-Cron an engine write made at the end of a long handler can erase another plugin's event scheduled meanwhile, or bring back one a parallel runner already ran; use Action Scheduler for long or chunked work.
 
 The engine's state persists in non-autoloaded `wp_options` rows under the reserved `a8csp_bgje_` prefix, so it adds no weight to ordinary page loads.
 
+## Requirements
+
+The engine needs the WordPress and PHP versions its plugin header declares (`Requires at least`, `Requires PHP`); below either floor it stays off and shows an admin notice naming the version it needs. Action Scheduler is optional; its supported floor is stated under [Installation](#installation).
+
 ## Installation
 
-The canonical install is the plugin ZIP attached to a [GitHub Release](https://github.com/a8cteam51/a8csp-background-jobs-engine/releases). Download it, upload it as a WordPress plugin, and activate it. The release ZIP bundles production Composer dependencies and the translation template, so it needs no Composer step. Installed copies receive release updates through the dashboard like any plugin.
+The canonical install is the plugin ZIP attached to a [GitHub Release](https://github.com/a8cteam51/a8csp-background-jobs-engine/releases). Download it, upload it as a WordPress plugin, and activate it. The release ZIP bundles production Composer dependencies and the translation template, so it needs no Composer step. Installed copies receive release updates through the dashboard like any plugin, with its auto-update toggle and a **View details** answered from the GitHub release. An installed prerelease (a version containing `-`) follows every release, so it is also offered the next stable release; a stable installation follows stable releases only.
 
 For a source checkout, clone into `wp-content/plugins/a8csp-background-jobs-engine` and install production dependencies:
 
@@ -41,11 +36,11 @@ cd a8csp-background-jobs-engine
 composer install --no-dev
 ```
 
-Action Scheduler is optional and preferred when ready; when absent, the engine runs on WP-Cron alone. **Action Scheduler 4.1.0 is the supported floor.** Chunked Jobs schedule each successor as a unique action that differs from the running one only in its sequence argument, and Action Scheduler made unique scheduling args-aware in 4.0.0; that is the functional requirement. The floor sits above it because 4.1.0 hardened deserialization of stored schedule data, and the engine declines to drive an elected copy below that. An initialized copy below 4.1.0 is treated as unusable rather than trusted: the engine runs on WP-Cron and flags the elected copy as unsupported in its scheduling diagnostics. Action Scheduler elects the highest version among every bundled copy on the site, so the deciding version is not necessarily the one shipped beside any single plugin.
+Action Scheduler is optional and preferred when ready; when absent, the engine runs on WP-Cron alone. **Action Scheduler 4.2.0 is the supported floor.** Chunked Jobs schedule each successor as a unique action that differs from the running one only in its sequence argument, and Action Scheduler made unique scheduling args-aware in 4.0.0; that is the functional requirement. The floor above it is policy: 4.2.0 keeps 4.1.0's hardened deserialization of stored schedule data and its database store inserts unique actions atomically, and the engine declines to drive an elected copy below it. The engine calls nothing either release added. An initialized copy below 4.2.0 is treated as unusable rather than trusted: the engine runs on WP-Cron and its scheduling diagnostics report a dormant scheduling backend. Action Scheduler elects the highest version among every bundled copy on the site, so the deciding version is not necessarily the one shipped beside any single plugin. A copy bundled by another plugin, such as WooCommerce, can be older than the floor; install or update the standalone Action Scheduler plugin so the elected copy reaches it.
 
 ## Depending on the engine
 
-The engine is a separate plugin, and `a8csp_bgje()` is a plain function: if the engine is deactivated, every consumer call is a fatal error on `init`. Declare the dependency in your plugin header so WordPress enforces it:
+The engine is a separate plugin, and `a8csp_bgje()` is a plain function the engine defines only while it is active and its requirements check passes. On a site below its PHP or WordPress floor the engine shows an admin notice, and neither `a8csp_bgje()` nor the procedural aliases are defined. Without the function, every consumer call is a fatal error on `init`. Declare the dependency in your plugin header so WordPress knows about it:
 
 ```php
 /**
@@ -54,12 +49,28 @@ The engine is a separate plugin, and `a8csp_bgje()` is a plain function: if the 
  */
 ```
 
-WordPress refuses to activate your plugin without the engine and blocks deactivating the engine while you depend on it. If the dependency is genuinely optional, guard instead of declaring it:
+WordPress then refuses to activate your plugin without the engine, and the Plugins screen blocks deactivating the engine while you depend on it. That is not a guarantee: WordPress does not check the engine's requirements, and a deactivation outside that screen or a deleted engine leaves your plugin active. If your plugin must keep working where the engine cannot load, or the dependency is genuinely optional, guard on `function_exists( 'a8csp_bgje' )` and build every engine value after the guard:
 
 ```php
-if ( function_exists( 'a8csp_bgje' ) ) {
-	a8csp_bgje( 'my-plugin' )->jobs()->register( $definition );
-}
+use A8C\SpecialProjects\BackgroundJobsEngine\JobDefinition;
+
+add_action( 'init', static function (): void {
+	if ( ! function_exists( 'a8csp_bgje' ) ) {
+		return;
+	}
+
+	$registered = a8csp_bgje( 'my-plugin' )->jobs()->register(
+		JobDefinition::closure(
+			'refresh-cache',
+			static function ( array $start_args ): void {
+				my_plugin_refresh_cache( $start_args );
+			}
+		)
+	);
+	if ( is_wp_error( $registered ) ) {
+		error_log( $registered->get_error_message() );
+	}
+}, 2 );
 ```
 
 Never define `a8csp_bgje()` yourself as a fallback; a second definition of the same name is a fatal error the moment both plugins load.
@@ -211,7 +222,7 @@ function my_plugin_queue_digest( int $user_id ): void {
 		array( 'user_id' => $user_id )
 	);
 	if ( is_wp_error( $run ) ) {
-		// A run already owns this lane and is doing the work, so there is nothing to queue.
+		// Another run holds this lane and almost always still has this work in hand, so skip.
 		if ( ErrorCode::OverlapHeld->value === $run->get_error_code() ) {
 			return;
 		}
@@ -333,7 +344,8 @@ cancelled, or superseded — and each fires its identity-specific hook first, th
 An execution object may also declare `RunCompletionInterface` and receive its own completions without
 naming a hook. That is a subscription the engine makes on the consumer's behalf at
 `jobs()->register()`, not a second mechanism: the payload, the ordering against other listeners and
-the at-least-once delivery are the hook's. See [Completion role](#completion-role).
+the delivery guarantee (at-least-once under Action Scheduler, best-effort under WP-Cron) are the hook's.
+See [Completion role](#completion-role).
 
 ```php
 use A8C\SpecialProjects\BackgroundJobsEngine\RunFailure;
@@ -372,8 +384,9 @@ add_action( 'init', static function (): void {
 		2
 	);
 
-	// Superseded: a Replace-policy dispatch displaced this run; the replacement carries its
-	// own lifecycle, so clean up anything keyed to the displaced run's id.
+	// Superseded: a Replace-policy dispatch displaced this run, or a dispatch took over its stale
+	// lane between invocations; the replacement carries its own lifecycle, so clean up anything
+	// keyed to the displaced run's id.
 	add_action(
 		'a8csp_bgje/superseded/my-plugin:email-digest',
 		static function ( RunId $run_id, array $start_args ): void {
@@ -444,7 +457,7 @@ add_action( 'init', static function (): void {
 }, 2 );
 ```
 
-The failure summary is engine-authored and redacted; it never contains raw exception text. Terminal hooks can replay across crash recovery, so listeners use the run ID to converge repeated delivery. Their delivery is durable under Action Scheduler and best-effort under WP-Cron. Completed, failed, cancelled, and superseded reactions reach consumers through their lifecycle hooks; a completed run additionally drives `RunCompletionInterface` on an execution object that declares it, which is a listener on the same hook.
+The failure summary is engine-authored and redacted; it never contains raw exception text. Terminal hooks can replay across crash recovery, so listeners use the run ID to converge repeated delivery. Their delivery is durable under Action Scheduler and best-effort under WP-Cron. Replay has no attempt limit. A listener that throws on every attempt makes maintenance fire the event again whenever its hourly sweep reaches that run: every listener on the other hook of the identity-specific and generic pair, and those before it on its own hook, run again, while those after it on its own hook do not run until it succeeds. The finished run's row and per-run data stay until the listener succeeds. A listener that fatals on every attempt stops maintenance for the whole site, because each pass restarts at the same row. Completed, failed, cancelled, and superseded reactions reach consumers through their lifecycle hooks; a completed run additionally drives `RunCompletionInterface` on an execution object that declares it, which is a listener on the same hook.
 
 The engine retains up to 20 failed runs per scope-qualified identity for manual retry, subject also to a 1,000,000-byte ceiling on the complete serialized retention row. It evicts oldest entries first until both bounds hold. If a new entry cannot fit even by itself, the engine rejects that entry instead of retaining it and leaves the existing row intact. A retry that successfully starts a fresh run attempts to remove its retained source entry; a failed removal is logged. Retention is best-effort: a retention write failure is logged rather than made fatal.
 
@@ -452,7 +465,7 @@ The engine retains up to 20 failed runs per scope-qualified identity for manual 
 
 `a8csp_bgje( string $scope ): Engine` returns the lazy scope-bound handle. Each alias below takes `$scope` first, converts wire run identifiers to their public values where needed, invokes the matching capability-manager verb, and returns the same shape.
 
-The procedural facade is grouped by concept: `includes/job.php` provides background-work registration plus kind-agnostic immediate and absolute-time dispatch, `includes/schedule.php` provides schedule synchronization and dispatch, and `includes/run.php` provides run inspection, retry, and cancellation.
+The procedural facade is grouped by concept: `includes/job.php` provides background-work registration plus kind-agnostic immediate and absolute-time dispatch, `includes/schedule.php` provides schedule synchronization, dispatch, and inspection, and `includes/run.php` provides run inspection, per-run data, retry, and cancellation.
 
 | Capability-manager verb | Procedural alias | Returns |
 | --- | --- | --- |
@@ -510,7 +523,7 @@ This table is the public PHP type index. Every listed type is marked `@api` and 
 | `ChunkedRunContextInterface` | Extends `RunContextInterface` with `append_chunk( array $chunk_args ): void` and `prepend_chunk( array $chunk_args ): void`. |
 | `NonRetryableException` | Runtime exception that marks client work as permanently failed. |
 
-The engine supplies the only implementation of `ChunkedRunContextInterface`; consumers must not implement it, and methods may be added in minor versions.
+The engine supplies the implementations of `RunContextInterface` and `ChunkedRunContextInterface`; consumers must not implement either, and methods may be added to both in minor versions. A test that calls `handle()` or `generate_queue()` directly passes a `RunContext`, whose constructor may gain optional parameters as the interface grows; `process_chunk()` has no public context class to construct.
 
 `JobKind::from()` validates kind-key grammar but does not install a kind. Only engine-installed kinds can be registered. The generic definition path is registration data, while kind handlers and their SPI stay internal.
 
@@ -556,9 +569,9 @@ Maintenance also crash-fails a persisted `Running`, executing run when schema-in
 
 While a non-executing row is fresh and preserved, `wp a8csp-bgje runs cancel` can resolve it only when the identity has a live executable registration matching the persisted kind; otherwise cancellation returns `unknown_job`. Once the heartbeat is stale, maintenance can crash-reclaim the engine-installed `job` and `chunked_job` kinds without that consumer registration and then reclaim the orphaned malformed lock.
 
-Neither `JobOptions` nor `Schedule` validates priority during construction. `jobs()->register()` rejects an out-of-range job default, `schedules()->sync()` rejects an out-of-range schedule value, and `jobs()->dispatch()` rejects an out-of-range explicit argument. The remaining defaults are a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
+Neither `JobOptions` nor `Schedule` validates priority during construction. `jobs()->register()` rejects an out-of-range job default, `schedules()->sync()` rejects an out-of-range schedule value, and `jobs()->dispatch()` rejects an out-of-range explicit argument. The remaining defaults are a `RetryPolicy` with 3 maximum attempts, a 60-second base delay, multiplier 2, and 3,600-second maximum delay, `OverlapPolicy::Reject`, and a null overlap-key resolver. Each retry waits a delay drawn uniformly from zero up to that attempt's ceiling, `RetryPolicy::delay_ceiling_for_attempt()`, so a retry can run at once. The `priority` field defaults to null; the resolution ladder ends at engine default 10. A null resolver uses the canonical argument hash: the hash of the start arguments' JSON in insertion order, so key order is part of the identity. The `a8csp_bgje/retry_policy` filter receives the resolved policy before `a8csp_bgje/retry_policy/{identity}` applies the work-specific result.
 
-Expiry of the credit and lock-staleness window does not interrupt a handler. Crash reconciliation can then reclaim the run and admit replacement work that overlaps it, so handlers remain idempotent.
+Expiry of the credit and lock-staleness window does not interrupt a handler. Crash reconciliation can then reclaim the run and admit replacement work that overlaps it, so handlers remain idempotent. Whichever reaches a stale executing run first, maintenance or a dispatch taking over its lane, fails it as `RunFailureStage::crash_reclamation()` with the same retention and `failed` hooks. A run waiting for a delivery is graded from when that delivery was due (its admission, its `dispatch_at()` time or its retry time) or from its last chunk, not from when a backend picks it up, so scheduler latency beyond the lock-staleness window lets a matching Reject dispatch or schedule tick take its lane over. A Job on the default argument hash loses no work that way, only the displaced run's per-run data, but a Chunked Job repeats its completed chunks, and one taken over while waiting to complete never fires its own completion. Raise `a8csp_bgje/lock_staleness` where the queue runs behind.
 
 ### Per-run data
 
@@ -709,7 +722,7 @@ foreach ( $registered['schedules'] as $schedule ) {
 | `schedules[]['last_fired']` | Unix timestamp of the last admitted occurrence, or null when none has been. |
 | `schedules[]['misfire_skips']` | Occurrences dropped beyond the grace window under `CatchUpPolicy::Skip`. |
 | `schedules[]['overlap_skips']` | Occurrences recorded as skipped because a matching lock was held. |
-| `schedules[]['occurrence_visible']` | Whether a ready scheduling backend can currently see this chain's occurrence. |
+| `schedules[]['occurrence_visible']` | Whether a ready scheduling backend currently holds a pending occurrence for this chain. Action Scheduler queues a recurring action's next occurrence only after the running one finishes, so a single `false` can be transient. |
 
 The projection reports facts and draws no conclusion from them: whether a `next_due` in the past or
 an invisible occurrence is a problem depends on what the caller declared and on how late is late,
@@ -728,10 +741,11 @@ Register work for each former action hook, then use a scope-bound handle or its 
 | `as_enqueue_async_action( $hook, $args, $group )` | `a8csp_bgje_dispatch_job( 'my-plugin', 'name', $args )` |
 | `as_schedule_single_action( $ts, $hook, $args, $group )` | `a8csp_bgje_dispatch_job_at( 'my-plugin', 'name', $ts, $args )` — `$ts` remains an absolute Unix timestamp. |
 | `as_schedule_recurring_action( $ts, $interval, $hook, $args, $group )` | Include `new Schedule( 'name', Recurrence::every_anchored( $interval, $ts ), 'name', $args )` in the complete declaration passed variadically to `a8csp_bgje_sync_schedules( 'my-plugin', ... )`. The anchor preserves the fixed UTC phase modulo the interval, not the exact first timestamp or site-local time. |
+| `as_schedule_cron_action( $ts, $cron, $hook, $args, $group )` | No calendar or cron recurrence. Fixed daily slots map to several `Recurrence::every_anchored( DAY_IN_SECONDS, $hour * HOUR_IN_SECONDS )` schedules that all target one job with the same arguments, so they share its overlap lane unless the job uses `OverlapPolicy::Allow`. Anchors are UTC and do not follow daylight saving time. |
 | `as_unschedule_action( $hook, $args, $group )` | Omit that schedule from the next complete declaration passed to `a8csp_bgje_sync_schedules()`. |
 | `as_unschedule_all_actions( … )` | `a8csp_bgje_sync_schedules( 'my-plugin' )` removes every schedule this scope declares. |
-| `as_next_scheduled_action( … )` | No public next-due query. Treat the declaration passed to a successful `a8csp_bgje_sync_schedules()` call as the source of truth. |
-| `as_has_scheduled_action( … )` | No public pending/running boolean query. |
+| `as_next_scheduled_action( … )` | For a recurring action, `a8csp_bgje_inspect_schedules( 'my-plugin' )`: each registration's `next_due` is the occurrence the registry expects next, compared against `observed_at`. A single timed run has no next-due query. |
+| `as_has_scheduled_action( … )` | For a recurring action, each registration's `occurrence_visible` from `a8csp_bgje_inspect_schedules()` says whether a ready backend holds a pending occurrence for the chain. There is no such query for single runs. |
 
 The key difference is partitioning: Action Scheduler's `$group` defaults to `''`, leaving work unpartitioned and easy to clear by accident. The engine requires the scope up front and composes it into every identity. Repeated `jobs()->dispatch()` calls reject matching live work under the default overlap policy.
 
@@ -743,7 +757,7 @@ Schedule-driven jobs and chunked job chunks MUST be idempotent. The overlap guar
 
 ## Admission, overlap, and catch-up policies
 
-Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. `overlap_held` and `admission_conflict` are different answers. `overlap_held` means a run owns the lane and is doing the work, so skipping is correct. `admission_conflict` means admission lost a race to a rival dispatch and admitted nothing. **Dispatch admits again on your behalf when that happens**, up to three attempts in total, because a lost attempt leaves the lane exactly as it found it and never reaches your handler; an attempt that follows also takes custody of replaying a supersession the losing attempt could not restore. Where dispatch re-admits on your behalf, `admission_conflict` therefore reaches you only when a lane stayed contended across every attempt, which makes it worth logging rather than retrying by hand. Re-admission is logged at debug level. Scheduled occurrence delivery admits once, because the scheduler redelivers a due occurrence on its own. Manual schedule dispatch also admits once, and nothing redelivers it, so that caller owns the retry; it also reports `admission_conflict` before any admission is attempted when another delivery holds that schedule's occurrence decision. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
+Each definition resolves one `OverlapPolicy` for imperative and scheduled admission. `JobOptions::$overlap_key`, when present, receives the start arguments and derives an opaque 1-to-64-byte collision identity; `null` uses the canonical argument hash, in which the start arguments' key order is significant. A resolver that throws or returns a value other than string or null surfaces as `execution_failed` instead of escaping; an empty or oversized string produces `payload_rejected`. Imperative dispatch rejects an `execution_failed` resolver result before creating a run. A recurring occurrence consumes that result as a terminal run, fires the `failed` hook, attempts retention, and logs the outcome. Failed-run retry returns `execution_failed` and keeps its source entry retained. Matching is confined to the scope-qualified identity. Failed-run retry preserves `Allow`; `Reject` and `Replace` retry with `Reject`. `overlap_held` and `admission_conflict` are different answers. `overlap_held` means another run holds the lane's overlap lock. That run is almost always still doing the work, so skipping is correct; rarely it is a finished run that could not release the lock, and the lane frees once that lock goes stale or maintenance replays the run. `admission_conflict` means admission lost a race to a rival dispatch and admitted nothing. **Dispatch admits again on your behalf when that happens**, up to three attempts in total, because a lost attempt never reaches your handler and leaves the lane as it found it, except that a crashed run whose lane a rival dispatch took stays failed and maintenance reports it; an attempt that follows also takes custody of replaying a supersession the losing attempt could not restore. Where dispatch re-admits on your behalf, `admission_conflict` therefore reaches you only when a lane stayed contended across every attempt, which makes it worth logging rather than retrying by hand. Re-admission is logged at debug level. Scheduled occurrence delivery admits once, because the scheduler redelivers a due occurrence on its own. Manual schedule dispatch also admits once, and nothing redelivers it, so that caller owns the retry; it also reports `admission_conflict` before any admission is attempted when another delivery holds that schedule's occurrence decision. Catch-up independently determines what happens when a scheduled delivery is late beyond its grace window.
 
 | Overlap | `run_once` catch-up (default) | `skip` catch-up |
 | --- | --- | --- |
@@ -806,7 +820,7 @@ Raw throwable values held directly in context arrays never reach listeners at an
 
 ## Priority is advisory
 
-Priority uses the range in [Consumer limits](#consumer-limits). The resolution ladder is: explicit dispatch argument > schedule value > job default > engine default 10. The first two rungs belong to imperative and scheduled admission respectively, so one resolution evaluates only its applicable rung. Manual `retry_failed()` is the exception: it replays the retained failed run's admitted priority without resolving the ladder again; a retained entry without a priority field uses engine default 10. Action Scheduler honors the resolved value; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
+Lower values run first: 0 is the most urgent, as in Action Scheduler. Priority uses the range in [Consumer limits](#consumer-limits). The resolution ladder is: explicit dispatch argument > schedule value > job default > engine default 10. The first two rungs belong to imperative and scheduled admission respectively, so one resolution evaluates only its applicable rung. Manual `retry_failed()` is the exception: it replays the retained failed run's admitted priority without resolving the ladder again; a retained entry without a priority field uses engine default 10. Action Scheduler honors the resolved value; WP-Cron accepts and ignores it. Keeping the field in the common API permits transparent backend failover.
 
 Priority is absent from the schedule fingerprint, so an omitted value and an explicit `10` hash identically. For an already-converged chain with exactly one tick, a priority-only declaration edit performs no scheduling-backend write and preserves the recurring chain, its next-due anchor, and its misfire and overlap counters. A successful sync also resets the undeclared-occurrence counters the engine keeps for registrations that earlier syncs stopped declaring. The recurring chain stores no priority; occurrence admission reads `Schedule::$priority` from the current request's declaration. Under the per-request declaration contract, the edited value governs the next admitted occurrence's delivery. The unchanged-fingerprint census still repairs a missing or duplicated chain, and a chain firing at a cadence the declaration no longer asks for: scheduling retains an existing chain rather than rewriting it, so a chain created against a superseded declaration would otherwise keep its own cadence while every fingerprint and count agreed.
 
@@ -839,13 +853,13 @@ The engine is designed for a handful of plugins with tens of jobs and schedules 
 - **Schedules per scope:** low tens. Each scope's registrations live in one option row that every occurrence rewrites, so co-firing hundreds of schedules for one scope adds contention. For declarations whose fingerprints match, synchronization censuses every ready backend. Action Scheduler issues one identity-scoped occurrence query per declaration and then hydrates each occurrence it matched, so a converged chain costs two queries per declaration and a duplicated one costs a further query per surplus occurrence; WP-Cron buckets the requested identities from one cron snapshot. The aggregate count lets the unchanged-declaration fast path distinguish exactly one tick from a missing or duplicated chain.
 - **Chunked Job chunk count:** thousands is fine; the queue is capped at 983,616 persisted serialization bytes, but chunk *count* is not. Each chunk is measured once as it is generated and each context mutation measures only its own chunk, so the queue cost is linear in chunk count. Prefer fewer, larger chunks anyway: every chunk is a separate scheduled delivery, and that overhead dominates.
 - **`history_size` filter:** the default 30 is generous; there is no hard maximum, so a very large value grows the per-identity history row.
-- **Action Scheduler group rows:** the engine creates one AS group per scope-qualified Job or Chunked Job identity. Action Scheduler does not garbage-collect groups, so retired identities leave rows behind, but lifetime run count does not increase this table.
+- **Action Scheduler group rows:** the engine creates one AS group per scope-qualified Job, Chunked Job, or Schedule identity. Action Scheduler does not garbage-collect groups, so retired identities leave rows behind, but lifetime run count does not increase this table.
 
 Action Scheduler exposes the site-global `action_scheduler_queue_runner_batch_size`, `action_scheduler_queue_runner_concurrent_batches`, and `action_scheduler_queue_runner_time_limit` queue-runner filters. The engine filters none of them: every Action Scheduler consumer, including WooCommerce, shares those settings, so changing them also changes third-party throughput. Queue-runner tuning belongs to the site; use Action Scheduler's [performance guidance](https://actionscheduler.org/perf/) and [high-volume reference plugin](https://github.com/woocommerce/action-scheduler-high-volume) as references.
 
 ## Testing consumer code
 
-Do not redefine `a8csp_bgje()` or the `a8csp_bgje_*()` aliases; the engine declares them unconditionally, so a test redefinition fatals. Keep application code testable by placing engine capability calls behind an application-owned interface or callable and fake that boundary in unit tests. Exercise the public models and functions in WordPress integration tests. Types under `src/Boundary/` cross engine-layer boundaries and remain internal engine seams, not consumer injection contracts.
+Do not redefine `a8csp_bgje()` or the `a8csp_bgje_*()` aliases; the engine declares them without a `function_exists()` guard, so a test redefinition fatals. Keep application code testable by placing engine capability calls behind an application-owned interface or callable and fake that boundary in unit tests. Exercise the public models and functions in WordPress integration tests. Types under `src/Boundary/` cross engine-layer boundaries and remain internal engine seams, not consumer injection contracts.
 
 ## Multisite
 
@@ -864,7 +878,7 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 | List failed runs | `wp a8csp-bgje failed-runs list [--scope=<scope>] [--format=<format>]` |
 | Retry a failed run | `wp a8csp-bgje failed-runs retry <identity> <run_id>` |
 | Purge failed runs for one identity | `wp a8csp-bgje failed-runs purge <identity>` |
-| Purge every failed-run store | `wp a8csp-bgje failed-runs purge --all` |
+| Purge every failed-run store | `wp a8csp-bgje failed-runs purge --all [--yes]` |
 | Cancel a retained run | `wp a8csp-bgje runs cancel <identity> <run_id>` |
 | List runs and recent history | `wp a8csp-bgje runs list <identity> [--format=<format>]` |
 | List execution-overlap locks | `wp a8csp-bgje locks list [--format=<format>]` |
@@ -872,7 +886,7 @@ The command root is `wp a8csp-bgje`, exposing four action-taking subcommands —
 | Remove every schedule in one scope | `wp a8csp-bgje schedules remove <scope> [--yes]` |
 | Destroy all engine state (development reset) | `wp a8csp-bgje reset [--yes]` |
 
-Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Its history `ended` column is how long ago each run terminalized, and reads `—` for a started entry and for a row written before the engine recorded terminal times. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
+Every `<identity>` is a composed `{scope}:{name}`; PHP calls take the scope-local name while the CLI takes the full identity. Every list subcommand accepts `table`, `csv`, `json`, `count`, or `yaml` (default `table`). `runs list` includes recent history only in `table`, `json`, and `yaml`, and its `count` is the bounded live count. Its history `ended` column is how long ago each run terminalized, and reads `—` for a started entry and for a row written before the engine recorded terminal times. `reset` permanently deletes every engine runtime option row and pending backend action, including the maintenance registration the next boot recreates; it prompts unless `--yes`, as does `failed-runs purge --all`. It leaves the release updater's cached lookup alone, which belongs to the update mechanism rather than to background work and expires on its own. `schedules remove` converges a scope's schedules to empty without cancelling existing runs and errors on a scope with no persisted registry row.
 
 ## Development
 
@@ -894,10 +908,11 @@ The canonical SemVer contract is tiered:
 
 | Tier | Contract |
 | --- | --- |
-| PHP API | The types in the [public type index](#public-models-roles-and-contexts), `a8csp_bgje()`, and the verb-noun procedural aliases form the bound PHP surface. An incompatible change to an existing name, signature, or documented behavior is breaking, subject to an explicitly documented additive exception such as `ChunkedRunContextInterface`. |
+| PHP API | The types in the [public type index](#public-models-roles-and-contexts), `a8csp_bgje()`, the verb-noun procedural aliases, the `a8csp_bgje_get_plugin_slug()`, `a8csp_bgje_get_plugin_name()` and `a8csp_bgje_get_plugin_version()` metadata getters, and `a8csp_bgje_plugin()` form the bound PHP surface. `a8csp_bgje_plugin()` is bound as a function; the `Plugin` object it returns is internal. A public member tagged `@internal` on one of those types is not part of it. An incompatible change to an existing name, signature, or documented behavior is breaking, subject to an explicitly documented additive exception such as `RunContextInterface` and `ChunkedRunContextInterface`. |
 | Hooks and filters | The documented consumer actions and filters form the bound event surface. Minor releases may add hooks and filters. Changing an existing hook's arguments, or a filter's required return, is breaking. |
 | Enums | Public enum cases form an additive vocabulary. Minor releases may add enum cases. Consumers must treat an unknown enum case as a generic value rather than assume the listed cases are exhaustive: a generic failure for `ErrorCode`, and a generic terminal or non-terminal state, as appropriate, for `RunStatus`. |
 | Consumer limits | The values and behaviors in [Consumer limits](#consumer-limits) form the bound limit surface. An incompatible change is breaking. |
+| WP-CLI | The `wp a8csp-bgje` commands in [WP-CLI](#wp-cli), their arguments and flags, and the fields of `csv`, `json` and `yaml` output and the `count` value form the bound command surface. Minor releases may add subcommands, flags, formats and output fields. `table` layout and message wording are not bound. |
 
 Everything else is internal unless this README explicitly documents it as public.
 
@@ -915,16 +930,17 @@ The command asks for a significance (`patch`, `minor`, `major`), a type, and the
 
 Releases are cut from trunk, in four steps.
 
-1. **Materialize the changelog.** `composer changelog:write` derives the next version from the newest `CHANGELOG.md` entry and the pending fragments' significance, writes that section, and deletes the fragments it consumed. There is nothing to derive from while the changelog is empty, so the first release names its version explicitly, as does any prerelease:
+1. **Materialize the changelog.** `composer changelog:write` derives the next version from the newest `CHANGELOG.md` entry and the pending fragments' significance, writes that section, and deletes the fragments it consumed. The derived version is not always the next one on the current line: from a prerelease entry it moves to the next line when the pending significance does not fit that line, and a `--prerelease` suffix that sorts before the current one moves it too. Preview it with `vendor/bin/changelogger version next`, which takes the same `--prerelease`, and pin the version with `--use-version` whenever the preview is not the release you mean:
 
    ```sh
+   vendor/bin/changelogger version next --prerelease=beta.1
    composer changelog:write -- --use-version=1.0.0
    composer changelog:write -- --prerelease=beta.1
    ```
 
-2. **Bump the other two versions to the same string.** The release refuses to run unless the plugin header's `Version:` in `a8csp-background-jobs-engine.php`, `"version"` in `package.json`, and the newest `CHANGELOG.md` heading all state one version. The self-updater compares an installed copy against the header rather than against the tag, so the header bump belongs in the commit that gets tagged. Commit the three together and land them on trunk.
+2. **Bump every other version site to the same string.** The release refuses to run unless the plugin header's `Version:` in `a8csp-background-jobs-engine.php`, `"version"` in `package.json`, and the newest `CHANGELOG.md` heading all state one version. The two root `"version"` entries at the top of `package-lock.json` are part of the tagged commit too, but are not checked. Edit each by line, never with a find-and-replace: the lock file also carries dependency versions and ranges that contain the same string, such as `^1.0.0-beta.5.2`. The self-updater compares an installed copy against the header rather than against the tag, so the header bump belongs in the commit that gets tagged. Commit them together and land them on trunk.
 
-3. **Let trunk go green, then rehearse.** The release reuses the trunk-push `quality.yml` and `tests.yml` runs from the exact commit it tags, so tag only once those have finished. With them green, run the **Release** workflow from the Actions tab leaving **Create the GitHub release** off: that exercises the version check, the provenance check, the build and the smoke install without creating anything.
+3. **Let trunk go green, then rehearse.** The release reuses the trunk-push `quality.yml` and `tests.yml` runs from the exact commit it tags, so tag only once those have finished. A later push to trunk cancels them if they are still running, and a cancelled run fails provenance as a red one does, so confirm this commit's own runs concluded successfully and re-run any that were cancelled. Those runs include legs outside the supported matrix, WordPress nightly and the next PHP's development build, and every leg runs its tests in random order; a red leg that ships no defect still blocks provenance until a re-run passes. With them green, run the **Release** workflow from the Actions tab leaving **Create the GitHub release** off: that exercises the version check, the provenance check, the build and the smoke install without creating anything.
 
 4. **Tag the green commit and publish the tag.**
 
@@ -933,18 +949,8 @@ Releases are cut from trunk, in four steps.
    git push origin "v1.0.0"
    ```
 
-   Tagging is the maintainer's step and the tag is signed, so expect the signing key's own confirmation prompt and GitHub reporting the tag as verified. The workflow triggers on `v*` tags only, and the publish step passes `--verify-tag`, so the tag has to reach the remote before the release can be created.
+   Pushing a `v*` tag runs the release, and the publish step passes `--verify-tag`, so the tag has to reach the remote before the release can be created.
 
-Both paths — the tag and the rehearsal — run the same jobs, and only the last one is conditional:
-
-| Job | What it proves |
-| --- | --- |
-| Verify release version | The plugin header, `package.json` and the newest `CHANGELOG.md` entry state one version. On a tag the tag states it too; on a dispatch there is no tag, so only the three declared versions are held against each other. Turning the release on from a non-tag ref fails here by design, which is why a dispatch cannot publish by accident. |
-| Verify release provenance | Trunk-push runs of `quality.yml` and `tests.yml` succeeded at this exact commit. A missing or red run fails the job; fix it, land the fix, and re-tag. |
-| Build the release artifact | Validates the changelog, installs production dependencies only, regenerates the committed POT — failing loudly if `make-pot` does not recognise the plugin — and packs `a8csp-background-jobs-engine.zip`. |
-| Smoke test the artifact | Installs and activates that zip in a throwaway wp-env and checks the site serves, then runs `wp help a8csp-bgje`. The smoke environment has no Action Scheduler, so that command is also the proof the CLI surface registers in the documented WP-Cron-only posture. The artifact differs from the tested tree (production dependencies, a regenerated POT, `.distignore` filtering), so it is proven on its own. |
-| Publish the release | Runs only when the release is turned on. Takes the `CHANGELOG.md` section matching the tag as the release notes and creates the GitHub release with the zip attached. A hyphenated version such as `1.0.0-beta.5` publishes as a prerelease and stays off the latest-release endpoint, so stable installations are not offered it. |
-
-`a8csp-background-jobs-engine.zip` carries a second contract beyond the dashboard update. OpsOasis installs the engine through Composer from a `package` repository whose `dist.url` names one release's asset, with a matching `a8csp/background-jobs-engine` version requirement. Renaming the asset, moving a tag that a pin already points at, or letting a declared version never reach the releases page breaks that install outright rather than delaying an update.
+`a8csp-background-jobs-engine.zip` carries a second contract beyond the dashboard update. A consumer can also pin the engine through Composer, from a `package` repository whose `dist.url` names one release's asset, with a matching `a8csp/background-jobs-engine` version requirement. Renaming the asset, moving a tag that a pin already points at, or letting a declared version never reach the releases page breaks such an install outright rather than delaying an update.
 
 The release history is [`CHANGELOG.md`](CHANGELOG.md).
