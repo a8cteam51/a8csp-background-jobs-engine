@@ -38,7 +38,7 @@ final class JobRegistryTest extends TestCase {
 	// region LIFECYCLE.
 
 	/**
-	 * Loads the WordPress time constants the registry reads.
+	 * Loads the WordPress time constants that `RetryPolicy`'s defaults read.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
