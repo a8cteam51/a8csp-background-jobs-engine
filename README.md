@@ -912,6 +912,7 @@ The canonical SemVer contract is tiered:
 | Hooks and filters | The documented consumer actions and filters form the bound event surface. Minor releases may add hooks and filters. Changing an existing hook's arguments, or a filter's required return, is breaking. |
 | Enums | Public enum cases form an additive vocabulary. Minor releases may add enum cases. Consumers must treat an unknown enum case as a generic value rather than assume the listed cases are exhaustive: a generic failure for `ErrorCode`, and a generic terminal or non-terminal state, as appropriate, for `RunStatus`. |
 | Consumer limits | The values and behaviors in [Consumer limits](#consumer-limits) form the bound limit surface. An incompatible change is breaking. |
+| WP-CLI | The `wp a8csp-bgje` commands in [WP-CLI](#wp-cli), their arguments and flags, and the fields of `csv`, `json` and `yaml` output and the `count` value form the bound command surface. Minor releases may add subcommands, flags, formats and output fields. `table` layout and message wording are not bound. |
 
 Everything else is internal unless this README explicitly documents it as public.
 
