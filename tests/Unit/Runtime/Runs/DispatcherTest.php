@@ -2361,26 +2361,26 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * A crash reclamation that loses its lock transfer stays failed and leaves its effects to maintenance.
+	 * A crash reclamation that loses its lock transfer while the lock still names the incumbent puts the
+	 * incumbent back exactly as it was.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_a_lost_lock_transfer_leaves_the_crash_reclamation_to_maintenance(): void {
+	public function test_a_lost_lock_transfer_restores_the_incumbent_it_failed(): void {
 		$this->seed_running_lock( 901, true );
-		// Every admission attempt must lose its transfer, or a later one would admit and replay the failure itself.
+		$incumbent_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID;
+		$incumbent_raw    = $this->rig->wpdb()->rows[ $incumbent_option ] ?? null;
+		self::assertIsString( $incumbent_raw );
+		// Every admission attempt must lose its transfer, or a later one would admit and hide the restore.
 		$this->rig->wpdb()->fail_updates_targeting( OverlapGuard::OPTION_PREFIX );
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
 		$this->assert_failure_code( $result, ErrorCode::AdmissionConflict );
-		$incumbent = $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID );
-		self::assertIsArray( $incumbent );
-		self::assertSame( 'failed', $incumbent['status'] ?? null );
-		self::assertIsArray( $incumbent['error'] ?? null );
-		self::assertSame( 'crash_reclamation', $incumbent['error']['stage'] ?? null );
+		self::assertSame( $incumbent_raw, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed/' . self::IDENTITY ) );
 		self::assertArrayNotHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $this->rig->wpdb()->rows );
 	}
