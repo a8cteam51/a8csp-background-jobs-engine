@@ -35,23 +35,6 @@ use PHPUnit\Framework\TestCase;
 #[UsesClass( RetryPolicy::class )]
 #[UsesClass( Identity::class )]
 final class JobRegistryTest extends TestCase {
-	// region LIFECYCLE.
-
-	/**
-	 * Loads the WordPress time constants that `RetryPolicy`'s defaults read.
-	 *
-	 * @since   1.0.0
-	 * @version 1.0.0
-	 *
-	 * @return  void
-	 */
-	#[\Override]
-	public static function setUpBeforeClass(): void {
-		require_once \dirname( __DIR__ ) . '/wp-time-constant-stubs.php';
-	}
-
-	// endregion.
-
 	// region TESTS.
 
 	/**
