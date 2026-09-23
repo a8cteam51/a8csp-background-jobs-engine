@@ -11,9 +11,9 @@ updates:
     cooldown:
       default-days: 7
       exclude:
-        - "a8cteam51/a8csp-configs"
+        - "a8cteam51/a8csp-configs/*"
     ignore:
-      - dependency-name: "a8cteam51/a8csp-configs"
+      - dependency-name: "a8cteam51/a8csp-configs/*"
         update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "ci"

@@ -23,4 +23,4 @@ jobs:
       # CodeQL's SARIF upload in the called workflow needs this -- a reusable
       # workflow can never escalate beyond what this job grants.
       security-events: write
-    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-codeql.yml@67392ce62cd343bc5ce8c65da264c778cdd86210 # v1.0.0
+    uses: a8cteam51/a8csp-configs/.github/workflows/reusable-codeql.yml@295fdb54961eb5a95ec9ed52f183cb44a16e004b # v1.1.0

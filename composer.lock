@@ -108,16 +108,16 @@
     "packages-dev": [
         {
             "name": "a8csp/configs",
-            "version": "v1.0.0",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/a8cteam51/a8csp-configs.git",
-                "reference": "67392ce62cd343bc5ce8c65da264c778cdd86210"
+                "reference": "295fdb54961eb5a95ec9ed52f183cb44a16e004b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/a8cteam51/a8csp-configs/zipball/67392ce62cd343bc5ce8c65da264c778cdd86210",
-                "reference": "67392ce62cd343bc5ce8c65da264c778cdd86210",
+                "url": "https://api.github.com/repos/a8cteam51/a8csp-configs/zipball/295fdb54961eb5a95ec9ed52f183cb44a16e004b",
+                "reference": "295fdb54961eb5a95ec9ed52f183cb44a16e004b",
                 "shasum": ""
             },
             "require": {
@@ -173,10 +173,10 @@
             ],
             "description": "The canonical collection of shared configuration files and reusable CI workflows for A8C Special Projects repositories.",
             "support": {
-                "source": "https://github.com/a8cteam51/a8csp-configs/tree/v1.0.0",
+                "source": "https://github.com/a8cteam51/a8csp-configs/tree/v1.1.0",
                 "issues": "https://github.com/a8cteam51/a8csp-configs/issues"
             },
-            "time": "2026-09-22T10:11:14+00:00"
+            "time": "2026-09-23T11:53:42+00:00"
         },
         {
             "name": "automattic/jetpack-changelogger",
