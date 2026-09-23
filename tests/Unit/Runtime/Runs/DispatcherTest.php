@@ -2361,27 +2361,66 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
-	 * A crash reclamation that loses its lock transfer puts the incumbent back exactly as it was.
+	 * A crash reclamation that loses its lock transfer stays failed and leaves its effects to maintenance.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
 	 *
 	 * @return  void
 	 */
-	public function test_a_lost_lock_transfer_restores_the_incumbent_it_failed(): void {
+	public function test_a_lost_lock_transfer_leaves_the_crash_reclamation_to_maintenance(): void {
 		$this->seed_running_lock( 901, true );
-		$incumbent_option = RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID;
-		$incumbent_raw    = $this->rig->wpdb()->rows[ $incumbent_option ] ?? null;
-		self::assertIsString( $incumbent_raw );
-		// Every admission attempt must lose its transfer, or a later one would admit and hide the restore.
+		// Every admission attempt must lose its transfer, or a later one would admit and replay the failure itself.
 		$this->rig->wpdb()->fail_updates_targeting( OverlapGuard::OPTION_PREFIX );
 
 		$result = $this->client->dispatch( self::NAME, self::ARGS );
 
 		$this->assert_failure_code( $result, ErrorCode::AdmissionConflict );
-		self::assertSame( $incumbent_raw, $this->rig->wpdb()->rows[ $incumbent_option ] ?? null );
+		$incumbent = $this->option( RunStore::OPTION_PREFIX . self::IDENTITY . '_' . self::INCUMBENT_RUN_ID );
+		self::assertIsArray( $incumbent );
+		self::assertSame( 'failed', $incumbent['status'] ?? null );
+		self::assertIsArray( $incumbent['error'] ?? null );
+		self::assertSame( 'crash_reclamation', $incumbent['error']['stage'] ?? null );
 		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/failed/' . self::IDENTITY ) );
 		self::assertArrayNotHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $this->rig->wpdb()->rows );
+	}
+
+	/**
+	 * A rival that takes the lane between a crash reclamation's two writes leaves the crash on record.
+	 *
+	 * @load-bearing concurrency
+	 * @pin-rationale R3 transfers the stale lock after R2 has failed the crashed R1 and before R2's own transfer. R3 takes no custody of a Failed row, so a restore by the losing R2 would leave R1 running under R3's lock, and maintenance would supersede it instead of reporting the crash.
+	 * @fixture StoreFixtureBuilder
+	 */
+	public function test_a_rival_transfer_leaves_the_crash_reclamation_standing(): void {
+		$this->seed_running_lock( 901, true );
+		$nested = null;
+		$this->rig->wpdb()->before_next( 'update', static function (): void {} );
+		$this->rig->wpdb()->before_next(
+			'update',
+			function () use ( &$nested ): void {
+				$this->rig->randomizer()->value = 43;
+				$nested                         = $this->client->dispatch( self::NAME, self::ARGS );
+			}
+		);
+
+		$outer = $this->client->dispatch( self::NAME, self::ARGS );
+
+		$this->assert_failure_code( $outer, ErrorCode::AdmissionConflict );
+		self::assertInstanceOf( Run::class, $nested );
+		// The rival still holds the lane when maintenance sweeps, as a long-running replacement would.
+		self::assertNotNull( $this->rig->backend()->take_next_delivery() );
+		$this->rig->clock()->timestamp = self::NOW + 3_601;
+		$this->rig->run_maintenance();
+
+		self::assertSame( array(), $this->rig->hooks()->fired( 'a8csp_bgje/superseded/' . self::IDENTITY ) );
+		$failed = $this->rig->hooks()->fired( 'a8csp_bgje/failed/' . self::IDENTITY );
+		self::assertCount( 1, $failed );
+		$failure = $failed[0][0] ?? null;
+		self::assertInstanceOf( RunFailure::class, $failure );
+		self::assertSame( self::INCUMBENT_RUN_ID, (string) $failure->run_id );
+		self::assertSame( RunFailureStage::crash_reclamation(), $failure->stage );
+		self::assertArrayHasKey( 'a8csp_bgje_failed_runs_' . self::IDENTITY, $this->rig->wpdb()->rows );
 	}
 
 	// endregion.

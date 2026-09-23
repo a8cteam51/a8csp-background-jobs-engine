@@ -66,9 +66,10 @@ final readonly class Dispatcher {
 	 * Admission attempts one imperative dispatch may spend losing races before it reports a conflict.
 	 *
 	 * Two or greater. Each attempt is a complete read-decide-write against current storage, so a lost
-	 * attempt leaves the lane exactly as it found it and a further attempt is the only thing that can
-	 * make progress. Attempts carry no delay: a lost compare-and-swap means a rival already committed,
-	 * and every round has exactly one winner, so waiting adds latency without improving the odds.
+	 * attempt leaves the lane as it found it, apart from failing a run it found crashed, and a further
+	 * attempt is the only thing that can make progress. Attempts carry no delay: a lost compare-and-swap
+	 * means a rival already committed, and every round has exactly one winner, so waiting adds latency
+	 * without improving the odds.
 	 *
 	 * @since   1.0.0
 	 * @version 1.0.0
@@ -145,8 +146,9 @@ final readonly class Dispatcher {
 	 *
 	 * Re-attempting cannot duplicate work. Admission never reaches handler code, which runs from a
 	 * delivery instead, and an attempt that loses its lane deletes its own provisional run row against
-	 * the exact bytes it wrote and restores any incumbent it took over. A further attempt is also
-	 * corrective: it takes custody of a supersession replay a losing attempt could not restore.
+	 * the exact bytes it wrote and restores an incumbent it superseded; a crash reclamation stands for
+	 * maintenance to replay. A further attempt is also corrective: it takes custody of a supersession
+	 * replay a losing attempt could not restore.
 	 *
 	 * One conflict is raised after a run has been admitted and its listeners have run, when a listener
 	 * destroys the run it was told about. Each attempt there admits a distinct run, so a further
@@ -883,9 +885,11 @@ final readonly class Dispatcher {
 			// A rival may advance the provisional state while the overlap transfer is in flight.
 			$run_store->delete_if_unchanged( $run_id, $state );
 			// The exact lock-transfer winner owns replay; competing snapshots cannot safely fire the same unmarked effects.
-			// Losing the transfer means the incumbent never left its lane, so the terminal state written above is undone
-			// against the exact bytes it wrote. A row that moved since belongs to whoever moved it.
-			$restored = $claimed_here && null !== $incumbent_snapshot && null !== $claimed_incumbent
+			// A supersession is undone against the exact bytes it wrote, because a displaced incumbent may still be working
+			// its lane; a row that moved since belongs to whoever moved it. A crash reclamation stands and maintenance
+			// replays it: its evidence is what the sweep fails a run on, and a rival that took the lane takes no custody of
+			// a Failed row, so undoing it would leave a crashed run recorded as running under another run's lock.
+			$restored = $claimed_here && null !== $incumbent_snapshot && null !== $claimed_incumbent && RunStatus::Superseded === $claimed_incumbent['state']->status
 				? $run_store->replace_if_raw_matches( $incumbent_run_id, $claimed_incumbent['raw'], $incumbent_snapshot['state'] )
 				: '';
 			if ( ! \is_string( $restored ) ) {
