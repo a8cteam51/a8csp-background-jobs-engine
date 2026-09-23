@@ -54,8 +54,9 @@ final readonly class ActionSchedulerBackend implements BackendInterface {
 	 * and sequence. Action Scheduler made unique scheduling args-aware in 4.0.0; before that the
 	 * running row blocks the successor's insert, and the run fails terminally at its first
 	 * continuation. That is the functional requirement. The floor above it is policy: 4.2.0 keeps 4.1.0's
-	 * hardened deserialization of stored schedule data and inserts unique actions atomically, and the
-	 * engine declines to drive an elected copy below it. The engine calls nothing either release added.
+	 * hardened deserialization of stored schedule data and its database store inserts unique actions
+	 * atomically, and the engine declines to drive an elected copy below it. The engine calls nothing
+	 * either release added.
 	 * Action Scheduler publishes no version constant, so `ActionScheduler_Versions` is the only surface
 	 * this can read.
 	 *
