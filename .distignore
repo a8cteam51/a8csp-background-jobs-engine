@@ -29,11 +29,13 @@ CLAUDE.md
 .agents
 
 # Secret material — never ship, even if a consumer forgets to list it.
-# .pem/.key are root-anchored (leading /) so certs bundled under vendor/
-# (e.g. CA bundles) still ship.
+# .pem/.key/.sql are root-anchored (leading /) so certs and SQL files bundled under vendor/
+# (e.g. CA bundles) still ship, while a dump left at the root for a wp-env import does not.
 .env*
 /*.pem
 /*.key
 id_rsa*
 .npmrc
 auth.json
+/*.sql
+/*.sql.gz
